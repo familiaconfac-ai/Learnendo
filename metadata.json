@@ -1,0 +1,7 @@
+{
+  "name": "Learnendo - Unit 1 Mastery",
+  "description": "Comprehensive English training platform for A1 learners.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
