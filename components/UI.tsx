@@ -216,13 +216,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         <div className="flex flex-col items-center gap-6">
           <div className="flex gap-4">
             {item.audioValue && (
-               <button onClick={() => speak(item.audioValue)} className="w-16 h-16 bg-blue-600 text-white rounded-2xl shadow-[0_6px_0_0_#1e40af] text-3xl active:translate-y-1 transition-all">
-                  <i className="fas fa-volume-up"></i>
+               <button onClick={() => speak(item.audioValue)} className="w-16 h-16 bg-blue-600 text-white rounded-2xl shadow-[0_6px_0_0_#1e40af] text-3xl active:translate-y-1 transition-all flex items-center justify-center">
+                  <i className="fa-solid fa-volume-high"></i>
                </button>
             )}
             {item.audioValue && (
-               <button onClick={() => speak(item.audioValue, 0.6)} className="w-16 h-16 bg-blue-400 text-white rounded-2xl shadow-[0_6px_0_0_#0284c7] text-3xl active:translate-y-1 transition-all">
-                  <i className="fas fa-turtle"></i>
+               <button onClick={() => speak(item.audioValue, 0.40)} className="w-16 h-16 bg-orange-400 text-white rounded-2xl shadow-[0_6px_0_0_#c2410c] text-4xl active:translate-y-1 transition-all flex items-center justify-center">
+                  <i className="fa-solid fa-turtle text-white drop-shadow-md"></i>
                </button>
             )}
           </div>
@@ -264,7 +264,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       </div>
 
       <div className={`fixed bottom-0 left-0 right-0 p-6 flex flex-col items-center border-t-4 transition-all ${feedback === 'correct' ? 'bg-green-100 border-green-200' : feedback === 'wrong' ? 'bg-red-100 border-red-200' : 'bg-white border-slate-100'}`}>
-        <div className="w-full max-w-sm">
+        <div className="w-full max-sm:max-w-xs max-w-sm">
           {showFooter ? (
             <div className="flex items-center justify-between gap-4">
               <div className="flex flex-col">
@@ -279,7 +279,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               </div>
               <button 
                 onClick={() => onResult(feedback === 'correct', userInput)} 
-                className="px-12 py-5 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all shrink-0"
+                className="px-10 py-5 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all shrink-0"
               >
                 CONTINUE
               </button>
@@ -311,6 +311,7 @@ export const ResultDashboard: React.FC<{
   onRestart: () => void 
 }> = ({ score, totalTime, sentToTeacher, currentLesson, onWhatsApp, onNextLesson, onRestart }) => {
   const handleWA = () => {
+    // Teacher WhatsApp: 17991011930
     const text = `Learnendo Mastery: Lesson ${currentLesson} complete with ${score.toFixed(1)}/10 in ${Math.round(totalTime)}s!`;
     window.open(`https://wa.me/5517991011930?text=${encodeURIComponent(text)}`, '_blank');
     onWhatsApp?.();
@@ -347,6 +348,12 @@ export const ResultDashboard: React.FC<{
       {currentLesson < 12 && isPerfect && (
         <button onClick={onNextLesson} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black uppercase mb-4 shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all">
           Unlock Lesson {currentLesson + 1}
+        </button>
+      )}
+
+      {!isPerfect && (
+        <button onClick={onRestart} className="w-full py-5 bg-orange-500 text-white rounded-3xl font-black uppercase mb-4 shadow-[0_8px_0_0_#c2410c] active:translate-y-1 transition-all">
+          Try Mastery Again
         </button>
       )}
 
