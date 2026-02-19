@@ -1,25 +1,43 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
-import { LESSON_CONFIGS, GRAMMAR_GUIDES } from '../constants';
+import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS } from '../constants';
 
 const SUCCESS_SOUND = "https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3";
 const ERR_SOUND = "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3";
 
-const AVATARS = {
-  teacher: "https://img.freepik.com/free-vector/man-suit-with-glasses_1308-46603.jpg",
-  student: "https://img.freepik.com/free-vector/student-boy-backpack_1308-41221.jpg"
+const TRANSLATIONS: Record<string, string> = {
+  'Identify the color of the shirt:': 'Identifique a cor da camisa:',
+  'Identify the color of the car:': 'Identifique a cor do carro:',
+  'Identify the color of the sky:': 'Identifique a cor do céu:',
+  'Identify the color of the object:': 'Identifique a cor do objeto:',
+  'Identify the color of the phone:': 'Identifique a cor do telefone:',
+  'What color is it?': 'Que cor é essa?',
+  'Math: What is four times two?': 'Matemática: Quanto é quatro vezes dois?',
+  'Math: What is ten divided by two?': 'Matemática: Quanto é dez dividido por dois?',
+  'Math: What is two plus three?': 'Matemática: Quanto é dois mais três?',
+  'Math: What is ten plus five?': 'Matemática: Quanto é dez mais cinco?',
+  'Type in words what you hear:': 'Digite em palavras o que você ouve:',
+  'Listen and pick the correct number:': 'Ouça e escolha o número correto:',
+  'Say the result:': 'Diga o resultado:',
+  'Say the number:': 'Diga o número:'
 };
 
-const COLOR_MAP: Record<string, string> = {
-  'Red': 'bg-red-500',
-  'Blue': 'bg-blue-500',
-  'Green': 'bg-green-500',
-  'Yellow': 'bg-yellow-400',
-  'Orange': 'bg-orange-500',
-  'Purple': 'bg-purple-600',
-  'Black': 'bg-black',
-  'White': 'bg-white border-2 border-slate-200'
+const COLOR_STYLE_MAP: Record<string, string> = {
+  'Red': 'text-red-500',
+  'Blue': 'text-blue-500',
+  'Green': 'text-green-500',
+  'Yellow': 'text-yellow-400',
+  'Orange': 'text-orange-500',
+  'Purple': 'text-purple-600',
+  'Black': 'text-black',
+  'White': 'text-slate-300'
+};
+
+const NUMBER_MAP: Record<string, string> = {
+  'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
+  'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19', 'twenty': '20',
+  'one hundred': '100', 'one thousand': '1000'
 };
 
 export const Header: React.FC<{ lessonId: number, progress?: UserProgress }> = ({ lessonId, progress }) => {
@@ -58,7 +76,7 @@ export const LearningPathView: React.FC<{
   const lessonConfig = LESSON_CONFIGS[progress.currentLesson - 1] || LESSON_CONFIGS[0];
   const modules = lessonConfig.modules.map((type, idx) => ({
     type: type as PracticeModuleType,
-    icon: idx === 6 ? 'fa-award' : 'fa-graduation-cap',
+    icon: MODULE_ICONS[type] || 'fa-graduation-cap',
     color: ['bg-amber-400', 'bg-orange-400', 'bg-rose-400', 'bg-emerald-400', 'bg-teal-400', 'bg-indigo-400', 'bg-purple-500'][idx],
     shadow: ['bg-amber-600', 'bg-orange-600', 'bg-rose-600', 'bg-emerald-600', 'bg-teal-600', 'bg-indigo-600', 'bg-purple-700'][idx]
   }));
@@ -124,6 +142,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
   const [isListening, setIsListening] = useState(false);
   const [feedback, setFeedback] = useState<'none'|'correct'|'wrong'>('none');
   const [showFooter, setShowFooter] = useState(false);
+  const [showHint, setShowHint] = useState(false);
   const [praiseText, setPraiseText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -131,6 +150,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     setUserInput('');
     setFeedback('none');
     setShowFooter(false);
+    setShowHint(false);
     
     if (item.audioValue && item.type !== 'speaking') {
       speak(item.audioValue);
@@ -159,10 +179,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
   };
 
   const handleCheck = (val?: string) => {
-    const response = val || userInput;
-    const cleanInput = response.trim().toLowerCase().replace(/[.,!?;:]/g, "");
+    const response = (val || userInput).trim().toLowerCase().replace(/[.,!?;:]/g, "");
     const cleanTarget = item.correctValue.toLowerCase().replace(/[.,!?;:]/g, "");
-    const isCorrect = cleanInput === cleanTarget;
+    
+    // Check for Word-to-Digit or Digit-to-Word matches
+    const isCorrect = (response === cleanTarget) || 
+                      (NUMBER_MAP[response] === cleanTarget) || 
+                      (NUMBER_MAP[cleanTarget] === response);
     
     setFeedback(isCorrect ? 'correct' : 'wrong');
     setShowFooter(true);
@@ -173,15 +196,20 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       speak(p);
     } else {
       new Audio(ERR_SOUND).play().catch(()=>{});
-      setPraiseText("Almost there!");
-      speak("Try again!");
+      setPraiseText("Try again!");
+      speak("Almost there!");
     }
   };
 
   const renderDisplay = () => {
-    if (item.displayValue === '■') {
+    if (item.displayValue?.startsWith('fa-')) {
+        const colorClass = COLOR_STYLE_MAP[item.correctValue] || 'text-blue-900';
         return (
-            <div className={`w-32 h-32 rounded-3xl shadow-xl transition-all ${COLOR_MAP[item.correctValue] || 'bg-slate-200'}`} />
+            <div className="flex flex-col items-center gap-4 animate-in fade-in duration-700">
+               <div className="w-40 h-40 bg-slate-50 rounded-full flex items-center justify-center border-4 border-slate-100 shadow-inner">
+                  <i className={`fas ${item.displayValue} text-7xl ${colorClass}`}></i>
+               </div>
+            </div>
         );
     }
     return (
@@ -190,6 +218,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         </div>
     );
   };
+
+  const translation = TRANSLATIONS[item.instruction];
 
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col items-center outline-none">
@@ -203,15 +233,16 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       </div>
 
       <div className="flex-1 w-full max-w-sm px-6 flex flex-col justify-center pb-40">
-        
-        {item.character && (
-            <div className="flex items-center gap-3 mb-6 bg-slate-50 p-4 rounded-3xl border-2 border-slate-100 animate-in slide-in-from-top-4">
-                <img src={AVATARS[item.character]} className="w-12 h-12 rounded-full border-2 border-white shadow-sm" alt="Character" />
-                <p className="text-xs font-black uppercase text-slate-400 tracking-widest">{item.character}</p>
+        <div className="relative group mb-8 cursor-help" onClick={() => setShowHint(!showHint)}>
+          <h2 className="text-base font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600">
+            {item.instruction}
+          </h2>
+          {translation && showHint && (
+            <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-3 py-1.5 rounded-lg whitespace-nowrap z-10 animate-in fade-in slide-in-from-top-1 font-bold">
+              {translation}
             </div>
-        )}
-
-        <h2 className="text-base font-black text-slate-800 text-center uppercase mb-8 tracking-tight leading-relaxed">{item.instruction}</h2>
+          )}
+        </div>
         
         <div className="flex flex-col items-center gap-6">
           <div className="flex gap-4">
@@ -236,9 +267,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                   key={opt}
                   disabled={showFooter}
                   onClick={() => { setUserInput(opt); handleCheck(opt); }}
-                  className={`p-4 border-2 rounded-2xl font-black uppercase text-lg transition-all flex flex-col items-center gap-2 ${userInput === opt ? 'bg-blue-600 text-white border-blue-700' : 'bg-white border-slate-100 text-slate-800'}`}
+                  className={`p-6 border-2 rounded-2xl font-black uppercase text-lg transition-all flex flex-col items-center gap-2 ${userInput === opt ? 'bg-blue-600 text-white border-blue-700' : 'bg-white border-slate-100 text-slate-800'}`}
                  >
-                   {COLOR_MAP[opt] && <div className={`w-8 h-8 rounded-full ${COLOR_MAP[opt]}`} />}
                    {opt}
                  </button>
                ))}
@@ -311,9 +341,8 @@ export const ResultDashboard: React.FC<{
   onRestart: () => void 
 }> = ({ score, totalTime, sentToTeacher, currentLesson, onWhatsApp, onNextLesson, onRestart }) => {
   const handleWA = () => {
-    // Teacher WhatsApp: 17991011930
     const text = `Learnendo Mastery: Lesson ${currentLesson} complete with ${score.toFixed(1)}/10 in ${Math.round(totalTime)}s!`;
-    window.open(`https://wa.me/5517991011930?text=${encodeURIComponent(text)}`, '_blank');
+    window.open(`https://wa.me/5517991010930?text=${encodeURIComponent(text)}`, '_blank');
     onWhatsApp?.();
   };
 
@@ -335,17 +364,13 @@ export const ResultDashboard: React.FC<{
         </div>
       </div>
       
-      {!sentToTeacher ? (
+      {isPerfect && !sentToTeacher && (
         <button onClick={handleWA} className="w-full py-5 bg-green-500 text-white rounded-3xl font-black uppercase mb-4 shadow-[0_8px_0_0_#15803d] active:translate-y-1 transition-all">
           <i className="fab fa-whatsapp mr-2 text-xl"></i> Send to Teacher
         </button>
-      ) : (
-        <div className="mb-4 p-4 bg-green-50 text-green-700 rounded-2xl font-bold text-sm">
-          Score reported to teacher!
-        </div>
       )}
 
-      {currentLesson < 12 && isPerfect && (
+      {isPerfect && currentLesson < 12 && (
         <button onClick={onNextLesson} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black uppercase mb-4 shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all">
           Unlock Lesson {currentLesson + 1}
         </button>
@@ -368,11 +393,20 @@ export const InfoSection: React.FC<{ onStart: (name: string, email: string) => v
   const [name, setName] = useState('');
   return (
     <div className="text-center py-10 flex flex-col items-center animate-in fade-in zoom-in">
-      <div className="w-36 h-36 mb-10 bg-white rounded-3xl p-1 border-4 border-blue-100 shadow-2xl overflow-hidden">
-        <img src="https://img.freepik.com/free-vector/cyborg-face-concept_23-2148529452.jpg" alt="AI Tutor" className="w-full h-full object-cover rounded-2xl"/>
+      <div className="w-36 h-36 mb-10 bg-white rounded-3xl p-1 border-4 border-blue-100 shadow-2xl overflow-hidden relative group">
+        <img 
+          src="https://img.freepik.com/free-vector/cyborg-face-concept_23-2148529452.jpg" 
+          alt="Learnendo AI Tutor" 
+          className="w-full h-full object-cover rounded-2xl transition-transform duration-500 group-hover:scale-110"
+        />
+        <div className="absolute inset-0 bg-blue-600/20 mix-blend-overlay"></div>
       </div>
-      <h2 className="text-3xl font-black text-slate-900 mb-2 uppercase tracking-tight">Your AI English Tutor</h2>
-      <p className="text-slate-500 mb-12 font-bold text-xs uppercase tracking-widest">Mastery Day by Day • A1 Proficiency</p>
+      <h2 className="text-3xl font-black text-slate-900 mb-2 uppercase tracking-tight">Learnendo AI Tutor</h2>
+      <div className="mb-12 space-y-1">
+        <p className="text-slate-500 font-black text-xs uppercase tracking-widest">Mastering Day by Day</p>
+        <p className="text-blue-600 font-black text-[10px] uppercase tracking-[0.2em]">Workbook 1</p>
+        <p className="text-slate-400 font-bold text-[8px] uppercase tracking-widest">A1 Proficiency</p>
+      </div>
       <form onSubmit={(e) => { e.preventDefault(); if(name.trim()) onStart(name, ''); }} className="w-full max-w-[320px] space-y-4">
         <input 
           placeholder="What is your name?" 
