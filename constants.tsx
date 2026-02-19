@@ -31,20 +31,20 @@ const L1_TRACKS = [
     { type: 'multiple-choice', instruction: 'Which letter sounds like "S" (Family /e/)?', audioValue: 'S', options: ['X', 'J', 'K', 'R'], correctValue: 'X' },
     { type: 'multiple-choice', instruction: 'Which letter is in a group by itself (/oʊ/)?', audioValue: 'O', options: ['O', 'E', 'G', 'T'], correctValue: 'O' }
   ]),
-  // Island 2: Numbers 0-10 Cardinal (Recall training)
+  // Island 2: Numbers 0-10 Cardinal
   ...createItems(1, 2, [
     { type: 'identification', instruction: 'Listen and pick the correct number:', audioValue: 'Zero', options: ['0', '1', '6', '10'], correctValue: '0', isNewVocab: true },
-    { type: 'identification', instruction: 'Listen and pick the correct number:', audioValue: 'Three', options: ['2', '3', 'Tree', '13'], correctValue: '3' },
+    { type: 'identification', instruction: 'Listen and pick the correct number:', audioValue: 'Three', options: ['2', '3', '7', '13'], correctValue: '3' },
     { type: 'identification', instruction: 'Listen and pick the correct number:', audioValue: 'Eight', options: ['A', '8', 'H', '18'], correctValue: '8' },
     { type: 'writing', instruction: 'Type in words what you hear:', audioValue: 'One', correctValue: 'one' },
     { type: 'writing', instruction: 'Type in words what you hear:', audioValue: 'Two', correctValue: 'two' },
     { type: 'writing', instruction: 'Type in words what you hear:', audioValue: 'Five', correctValue: 'five' },
-    { type: 'speaking', instruction: 'Pronounce correctly: Three (Not tree)', displayValue: '3', audioValue: 'Three', correctValue: 'three' },
-    { type: 'speaking', instruction: 'Pronounce correctly: Eight (Not H)', displayValue: '8', audioValue: 'Eight', correctValue: 'eight' },
+    { type: 'speaking', instruction: 'Pronounce correctly: Three', displayValue: '3', audioValue: 'Three', correctValue: 'three' },
+    { type: 'speaking', instruction: 'Pronounce correctly: Eight', displayValue: '8', audioValue: 'Eight', correctValue: 'eight' },
     { type: 'writing', instruction: 'Math: What is two plus three?', displayValue: 'Math', audioValue: 'What is two plus three', correctValue: '5' },
     { type: 'writing', instruction: 'Type in words what you hear:', audioValue: 'Ten', correctValue: 'ten' }
   ]),
-  // Island 3: Numbers 11-20 Cardinal (Recall training)
+  // Island 3: Numbers 11-20 Cardinal
   ...createItems(1, 3, [
     { type: 'identification', instruction: 'Listen and pick:', audioValue: 'Eleven', options: ['1', '11', '12', '21'], correctValue: '11', isNewVocab: true },
     { type: 'identification', instruction: 'Listen and pick:', audioValue: 'Twelve', options: ['2', '12', '20', '22'], correctValue: '12' },
@@ -54,21 +54,21 @@ const L1_TRACKS = [
     { type: 'writing', instruction: 'Math: What is ten plus five?', displayValue: 'Math', audioValue: 'What is ten plus five', correctValue: '15' },
     { type: 'multiple-choice', instruction: 'Review: Which letter sounds like "H" (Family /ei/)?', audioValue: 'H', options: ['A', 'B', 'C', 'D'], correctValue: 'A' }
   ]),
-  // Island 4: Basic Colors (No color hints in options)
+  // Island 4: Basic Colors
   ...createItems(1, 4, [
     { type: 'multiple-choice', instruction: 'Identify the color of the shirt:', displayValue: 'fa-shirt', audioValue: 'Green', options: ['Red', 'Blue', 'Green', 'Yellow'], correctValue: 'Green', isNewVocab: true },
     { type: 'multiple-choice', instruction: 'Identify the color of the car:', displayValue: 'fa-car', audioValue: 'Red', options: ['Red', 'Blue', 'Green', 'Black'], correctValue: 'Red' },
     { type: 'multiple-choice', instruction: 'Identify the color of the sky:', displayValue: 'fa-cloud-sun', audioValue: 'Blue', options: ['Red', 'Blue', 'Green', 'Black'], correctValue: 'Blue' },
-    { type: 'writing', instruction: 'What color is it?', displayValue: 'fa-lemon', audioValue: 'What color is it?', correctValue: 'yellow' }
+    { type: 'identification', instruction: 'What color is it?', displayValue: 'fa-lemon', audioValue: 'Yellow', options: ['Yellow', 'Orange', 'Green', 'Blue'], correctValue: 'Yellow' }
   ]),
-  // Island 5: Secondary Colors (No color hints in options)
+  // Island 5: Secondary Colors
   ...createItems(1, 5, [
     { type: 'multiple-choice', instruction: 'Identify the color of the object:', displayValue: 'fa-carrot', audioValue: 'Orange', options: ['Orange', 'Yellow', 'Purple', 'White'], correctValue: 'Orange', isNewVocab: true },
     { type: 'multiple-choice', instruction: 'Identify the color of the phone:', displayValue: 'fa-mobile-screen', audioValue: 'Black', options: ['Black', 'White', 'Purple', 'Blue'], correctValue: 'Black' },
     { type: 'multiple-choice', instruction: 'Identify the color of the cloud:', displayValue: 'fa-cloud', audioValue: 'White', options: ['Black', 'White', 'Purple', 'Blue'], correctValue: 'White' },
-    { type: 'writing', instruction: 'What color is it?', displayValue: 'fa-wine-glass', audioValue: 'What color is it?', correctValue: 'purple' }
+    { type: 'multiple-choice', instruction: 'Identify the color of the glass:', displayValue: 'fa-wine-glass', audioValue: 'Purple', options: ['Purple', 'Blue', 'Red', 'Pink'], correctValue: 'Purple' }
   ]),
-  // Island 6: Math Practice (No visual equations)
+  // Island 6: Math Practice
   ...createItems(1, 6, [
     { type: 'writing', instruction: 'Math: What is four times two?', displayValue: 'Math', audioValue: 'What is four times two', correctValue: '8' },
     { type: 'writing', instruction: 'Math: What is ten divided by two?', displayValue: 'Math', audioValue: 'What is ten divided by two', correctValue: '5' },
@@ -83,7 +83,7 @@ const L1_TRACKS = [
   ])
 ];
 
-// Lesson 2: Vowels (Expanded)
+// Lesson 2: Vowels
 const L2_TRACKS = [
   ...createItems(2, 1, [
     { type: 'multiple-choice', instruction: 'Identify the short sound:', displayValue: 'Cat', audioValue: 'Cat', options: ['Short A', 'Long A', 'Neutral', 'Hard'], correctValue: 'Short A' },

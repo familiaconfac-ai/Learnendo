@@ -12,6 +12,7 @@ const TRANSLATIONS: Record<string, string> = {
   'Identify the color of the sky:': 'Identifique a cor do céu:',
   'Identify the color of the object:': 'Identifique a cor do objeto:',
   'Identify the color of the phone:': 'Identifique a cor do telefone:',
+  'Identify the color of the glass:': 'Identifique a cor da taça:',
   'What color is it?': 'Que cor é essa?',
   'Math: What is four times two?': 'Matemática: Quanto é quatro veces dois?',
   'Math: What is ten divided by two?': 'Matemática: Quanto é dez dividido por dois?',
@@ -20,24 +21,40 @@ const TRANSLATIONS: Record<string, string> = {
   'Type in words what you hear:': 'Digite em palavras o que você ouve:',
   'Listen and pick the correct number:': 'Ouça e escolha o número correto:',
   'Say the result:': 'Diga o resultado:',
-  'Say the number:': 'Diga o número:'
+  'Say the number:': 'Diga o número:',
+  'Which letter sounds like "A" (Family /ei/)?': 'Qual letra tem o som parecido com "A" (Família /ei/)?',
+  'Which letter sounds like "B" (Family /i:/)?': 'Qual letra tem o som parecido com "B" (Família /i:/)?',
+  'Which letter sounds like "F" (Family /e/)?': 'Qual letra tem o som parecido com "F" (Família /e/)?',
+  'Which letter sounds like "I" (Family /ai/)?': 'Qual letra tem o som parecido com "I" (Família /ai/)?',
+  'Which letter sounds like "U" (Family /ju:/)?': 'Qual letra tem o som parecido com "U" (Família /ju:/)?',
+  'Which letter sounds like "S" (Family /e/)?': 'Qual letra tem o som parecido com "S" (Família /e/)?',
+  'Which letter is in a group by itself (/oʊ/)?': 'Qual letra está em um grupo sozinha (/oʊ/)?'
 };
 
 const COLOR_STYLE_MAP: Record<string, string> = {
   'Red': 'text-red-500',
-  'Blue': 'text-blue-500',
-  'Green': 'text-green-500',
+  'Blue': 'text-blue-700',
+  'Green': 'text-green-600',
   'Yellow': 'text-yellow-400',
   'Orange': 'text-orange-500',
   'Purple': 'text-purple-600',
-  'Black': 'text-black',
-  'White': 'text-slate-300'
+  'Black': 'text-slate-900',
+  'White': 'text-slate-200'
 };
 
 const NUMBER_MAP: Record<string, string> = {
   'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
   'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19', 'twenty': '20',
   'one hundred': '100', 'one thousand': '1000'
+};
+
+const shuffle = <T,>(array: T[]): T[] => {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 };
 
 export const Header: React.FC<{ lessonId: number, progress?: UserProgress }> = ({ lessonId, progress }) => {
@@ -146,17 +163,30 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
   const [praiseText, setPraiseText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
+
   useEffect(() => {
     setUserInput('');
     setFeedback('none');
     setShowFooter(false);
     setShowHint(false);
+    setSelectedOption(null);
     
+    // Shuffle options to ensure randomness
+    if (item.options && item.options.length > 0) {
+      setShuffledOptions(shuffle(item.options));
+    } else {
+      setShuffledOptions([]);
+    }
+    
+    // Play target audio
     if (item.audioValue && item.type !== 'speaking') {
       speak(item.audioValue);
     }
+    
     setTimeout(() => inputRef.current?.focus(), 200);
-  }, [item]);
+  }, [item.id]);
 
   const speak = (text: string, rate = 1) => {
     if (!text) return;
@@ -178,16 +208,18 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     rec.start();
   };
 
-  const handleCheck = (val?: string) => {
-    const response = (val || userInput).trim().toLowerCase().replace(/[.,!?;:]/g, "");
+  const handleCheck = () => {
+    const response = (userInput || selectedOption || '').trim().toLowerCase().replace(/[.,!?;:]/g, "");
     const cleanTarget = item.correctValue.toLowerCase().replace(/[.,!?;:]/g, "");
     
+    // Broad matching for numbers and simple strings
     const isCorrect = (response === cleanTarget) || 
                       (NUMBER_MAP[response] === cleanTarget) || 
                       (NUMBER_MAP[cleanTarget] === response);
     
     setFeedback(isCorrect ? 'correct' : 'wrong');
     setShowFooter(true);
+
     if (isCorrect) {
       new Audio(SUCCESS_SOUND).play().catch(()=>{});
       const p = ["Excellent!", "Great job!", "Perfect!", "Spot on!"][Math.floor(Math.random()*4)];
@@ -196,12 +228,28 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     } else {
       new Audio(ERR_SOUND).play().catch(()=>{});
       setPraiseText("Try again!");
-      speak("Almost there!");
+      speak("No, that's not it.");
+    }
+  };
+
+  const handleOptionClick = (opt: string) => {
+    // If already showing footer, don't allow changes unless it was wrong
+    if (showFooter && feedback === 'correct') return;
+    
+    setSelectedOption(opt);
+    // CRITICAL: Play the sound of the clicked letter/number/color immediately
+    speak(opt);
+    
+    // Reset feedback if student wants to try another option after being wrong
+    if (feedback === 'wrong') {
+       setShowFooter(false);
+       setFeedback('none');
     }
   };
 
   const renderDisplay = () => {
     if (item.displayValue?.startsWith('fa-')) {
+        // Use the correctValue to determine color if it's an icon-based identification
         const colorClass = COLOR_STYLE_MAP[item.correctValue] || 'text-blue-900';
         return (
             <div className="flex flex-col items-center gap-4 animate-in fade-in duration-700">
@@ -219,6 +267,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
   };
 
   const translation = TRANSLATIONS[item.instruction];
+  const isMultipleChoice = item.type === 'multiple-choice' || item.type === 'identification';
 
   return (
     <div className="fixed inset-0 bg-white z-50 flex flex-col items-center outline-none">
@@ -259,14 +308,14 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           
           {item.displayValue && renderDisplay()}
           
-          {(item.type === 'multiple-choice' || item.type === 'identification') && item.options ? (
+          {isMultipleChoice && shuffledOptions.length > 0 ? (
              <div className="grid grid-cols-2 gap-3 w-full">
-               {item.options.map((opt) => (
+               {shuffledOptions.map((opt) => (
                  <button 
                   key={opt}
-                  disabled={showFooter}
-                  onClick={() => { setUserInput(opt); handleCheck(opt); }}
-                  className={`p-6 border-2 rounded-2xl font-black uppercase text-lg transition-all flex flex-col items-center gap-2 ${userInput === opt ? 'bg-blue-600 text-white border-blue-700' : 'bg-white border-slate-100 text-slate-800'}`}
+                  disabled={showFooter && feedback === 'correct'}
+                  onClick={() => handleOptionClick(opt)}
+                  className={`p-6 border-4 rounded-3xl font-black uppercase text-2xl transition-all flex flex-col items-center gap-2 ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-700 shadow-lg' : 'bg-white border-slate-100 text-slate-800 hover:border-blue-200'}`}
                  >
                    {opt}
                  </button>
@@ -276,10 +325,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
             <div className="w-full relative group">
               <input 
                 ref={inputRef} 
-                disabled={showFooter} 
+                disabled={showFooter && feedback === 'correct'} 
                 className={`w-full p-6 border-4 rounded-3xl text-center text-3xl font-black focus:border-blue-500 outline-none bg-white transition-all ${feedback === 'wrong' ? 'border-red-200 text-red-600' : 'border-slate-100 text-slate-800 shadow-sm'}`} 
                 value={userInput} 
-                onChange={(e) => setUserInput(e.target.value)} 
+                onChange={(e) => {
+                   setUserInput(e.target.value);
+                   if (feedback === 'wrong') { setFeedback('none'); setShowFooter(false); }
+                }} 
                 placeholder="..." 
               />
               {item.type === 'speaking' && !showFooter && (
@@ -302,27 +354,33 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                 </div>
                 {feedback === 'wrong' && (
                   <div className="text-red-700 font-bold text-xs mt-1 animate-in fade-in">
-                    Correct: <span className="font-black text-sm uppercase">{item.correctValue}</span>
+                    The correct answer is: <span className="font-black text-sm uppercase underline decoration-2">{item.correctValue}</span>
                   </div>
                 )}
               </div>
               <button 
-                onClick={() => onResult(feedback === 'correct', userInput)} 
-                className="px-10 py-5 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all shrink-0"
+                onClick={() => {
+                   if (feedback === 'correct') {
+                     onResult(true, userInput || selectedOption || '');
+                   } else {
+                     // Stay on item to try again
+                     setFeedback('none');
+                     setShowFooter(false);
+                   }
+                }} 
+                className={`px-10 py-5 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0`}
               >
-                CONTINUE
+                {feedback === 'correct' ? 'CONTINUE' : 'GOT IT'}
               </button>
             </div>
           ) : (
-            (item.type !== 'multiple-choice' && item.type !== 'identification') && (
-              <button 
-                disabled={!userInput.trim()}
-                onClick={() => handleCheck()} 
-                className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0"
-              >
-                CHECK
-              </button>
-            )
+            <button 
+              disabled={isMultipleChoice ? !selectedOption : !userInput.trim()}
+              onClick={() => handleCheck()} 
+              className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0"
+            >
+              CHECK
+            </button>
           )}
         </div>
       </div>
@@ -346,7 +404,6 @@ export const ResultDashboard: React.FC<{
     onWhatsApp?.();
   };
 
-  // ADMIN RULE: Allow progress regardless of score
   const isPerfect = score >= 10 || isAdmin;
 
   return (

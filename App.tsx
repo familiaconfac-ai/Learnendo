@@ -8,7 +8,7 @@ import {
 import { saveAssessmentResult } from './services/db';
 
 const STORAGE_KEY = 'learnendo_user_v7';
-// Corrected bypass key as requested
+// Corrected bypass key as requested: Martins73
 const BYPASS_KEY = 'Martins73';
 
 const App: React.FC = () => {
@@ -42,7 +42,7 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
     checkDailyUnlock(progress);
-  }, [progress]);
+  }, [progress, student.name]);
 
   const checkDailyUnlock = (p: UserProgress) => {
     // ADMIN BYPASS: Ignore all daily locking rules
