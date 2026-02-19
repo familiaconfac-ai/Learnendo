@@ -57,28 +57,36 @@ const shuffle = <T,>(array: T[]): T[] => {
   return result;
 };
 
-export const Header: React.FC<{ lessonId: number, progress?: UserProgress }> = ({ lessonId, progress }) => {
+export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({ lessonId, progress }) => {
   const lessonName = LESSON_CONFIGS.find(l => l.id === lessonId)?.name || "English Training";
+  const currentDiamond = progress.lessonData[lessonId]?.diamond || 0;
+
   return (
-    <header className="flex flex-col items-center mb-6 w-full max-w-sm mx-auto">
-      <div className="flex items-center justify-between w-full mb-4 px-1">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-[0_4px_0_0_#1e40af]">
-            <i className="fas fa-bolt text-sm"></i>
+    <header className="flex flex-col items-center mb-6 w-full max-w-sm mx-auto bg-white/80 backdrop-blur-md p-4 rounded-3xl shadow-sm border border-white">
+      <div className="flex items-center justify-between w-full mb-3">
+        <div className="flex items-center gap-1.5">
+          <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-[0_3px_0_0_#1e40af]">
+            <i className="fas fa-bolt text-[10px]"></i>
           </div>
-          <h1 className="text-xl font-black text-blue-900 uppercase tracking-tighter">Learnendo</h1>
+          <h1 className="text-sm font-black text-blue-900 uppercase tracking-tighter">Learnendo</h1>
         </div>
-        <div className="flex items-center gap-4">
-           <div className="flex items-center gap-1 text-orange-500 font-black text-sm">
-             <i className="fas fa-fire"></i> {progress?.streakCount || 0}
+        <div className="flex items-center gap-3">
+           <div className="flex items-center gap-1 text-orange-500 font-black text-xs">
+             <i className="fas fa-fire"></i> {progress.streakCount}
            </div>
-           <div className="flex items-center gap-1 text-blue-500 font-black text-sm">
-             <i className="fas fa-star"></i> {progress?.totalPoints || 0}
+           <div className="flex items-center gap-1 text-blue-400 font-black text-xs">
+             <i className="fas fa-snowflake"></i> {progress.iceCount}
+           </div>
+           <div className="flex items-center gap-1 text-blue-600 font-black text-xs">
+             <i className="fas fa-gem"></i> {currentDiamond}
+           </div>
+           <div className="flex items-center gap-1 text-amber-500 font-black text-xs">
+             <i className="fas fa-star"></i> {progress.totalStars}
            </div>
         </div>
       </div>
-      <div className="w-full text-center">
-        <p className="text-slate-600 font-bold text-sm tracking-tight">Lesson {lessonId}: {lessonName}</p>
+      <div className="w-full text-center border-t border-slate-100 pt-2">
+        <p className="text-slate-500 font-bold text-[10px] uppercase tracking-wider">Lesson {lessonId}: {lessonName}</p>
       </div>
     </header>
   );
@@ -88,50 +96,82 @@ export const LearningPathView: React.FC<{
   progress: UserProgress; 
   onSelectModule: (type: PracticeModuleType) => void; 
   moduleNames: Record<string, string>;
-}> = ({ progress, onSelectModule, moduleNames }) => {
+  isLessonLocked: (id: number) => boolean;
+  islandWeights: number[];
+}> = ({ progress, onSelectModule, moduleNames, isLessonLocked, islandWeights }) => {
   const [selectedMod, setSelectedMod] = useState<PracticeModuleType | null>(null);
-  const lessonConfig = LESSON_CONFIGS.find(l => l.id === progress.currentLesson) || LESSON_CONFIGS[0];
-  const modules = lessonConfig.modules.map((type, idx) => ({
-    type: type as PracticeModuleType,
-    icon: MODULE_ICONS[type] || 'fa-graduation-cap',
-    color: ['bg-amber-400', 'bg-orange-400', 'bg-rose-400', 'bg-emerald-400', 'bg-teal-400', 'bg-indigo-400', 'bg-purple-500'][idx],
-    shadow: ['bg-amber-600', 'bg-orange-600', 'bg-rose-600', 'bg-emerald-600', 'bg-teal-600', 'bg-indigo-600', 'bg-purple-700'][idx]
-  }));
+  const currentLId = progress.currentLesson;
+  const lessonConfig = LESSON_CONFIGS.find(l => l.id === currentLId) || LESSON_CONFIGS[0];
+  const lessonLocked = isLessonLocked(currentLId);
+  
+  const modules = lessonConfig.modules.map((type, idx) => {
+    const score = progress.lessonData[currentLId]?.islandScores[type] || 0;
+    const max = islandWeights[idx] || 10;
+    return {
+      type: type as PracticeModuleType,
+      icon: MODULE_ICONS[type] || 'fa-graduation-cap',
+      color: ['bg-amber-400', 'bg-orange-400', 'bg-rose-400', 'bg-emerald-400', 'bg-teal-400', 'bg-indigo-400', 'bg-purple-500'][idx],
+      shadow: ['bg-amber-600', 'bg-orange-600', 'bg-rose-600', 'bg-emerald-600', 'bg-teal-600', 'bg-indigo-600', 'bg-purple-700'][idx],
+      isMastered: score >= max,
+      score,
+      max
+    };
+  });
+
+  if (lessonLocked) {
+    return (
+      <div className="flex flex-col items-center py-20 text-center animate-in fade-in zoom-in">
+        <div className="w-32 h-32 bg-slate-200 rounded-full flex items-center justify-center text-slate-400 text-5xl mb-6 shadow-inner">
+          <i className="fas fa-lock"></i>
+        </div>
+        <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-2">Lesson Locked</h2>
+        <p className="text-slate-500 font-bold text-sm max-w-[240px]">Master 100% of the previous lesson and wait until tomorrow to unlock this path.</p>
+        <button 
+           onClick={() => {}} // Could add logic to go back to previous lesson
+           className="mt-8 px-8 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase shadow-lg text-xs"
+        >
+          Back to Training
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center py-10 relative">
       <div className="absolute top-0 bottom-0 w-2 bg-slate-200 rounded-full left-1/2 -translate-x-1/2 -z-10" />
       {modules.map((mod, idx) => {
-        const isUnlocked = progress.unlockedModules.includes(mod.type);
-        const isCompleted = progress.completedModules.includes(mod.type);
         const xPos = idx % 2 === 0 ? '-translate-x-12' : 'translate-x-12';
-        
         return (
           <div key={mod.type} className={`mb-12 flex flex-col items-center ${xPos}`}>
             <div className="relative">
-               <div className={`absolute top-2 w-20 h-20 rounded-full ${isUnlocked ? mod.shadow : 'bg-slate-300'} -z-10`} />
+               <div className={`absolute top-2 w-20 h-20 rounded-full ${mod.shadow} -z-10`} />
                <button 
-                disabled={!isUnlocked}
                 onClick={() => setSelectedMod(mod.type)}
-                className={`relative w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl transition-all ${isUnlocked ? mod.color : 'bg-slate-200 text-slate-400'} shadow-[inset_0_-8px_0_rgba(0,0,0,0.15)] active:translate-y-1`}
+                className={`relative w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl transition-all ${mod.color} shadow-[inset_0_-8px_0_rgba(0,0,0,0.15)] active:translate-y-1`}
               >
-                {isUnlocked ? <i className={`fas ${mod.icon}`}></i> : <i className="fas fa-lock text-xl"></i>}
-                {isCompleted && (
+                <i className={`fas ${mod.icon}`}></i>
+                {mod.isMastered && (
                   <div className="absolute -bottom-1 -right-1 bg-blue-600 w-8 h-8 rounded-full border-4 border-white flex items-center justify-center text-[10px] text-white">
-                    <i className="fas fa-check"></i>
+                    <i className="fas fa-gem"></i>
                   </div>
                 )}
                </button>
             </div>
-            <p className={`text-[10px] font-black uppercase mt-4 tracking-wider text-center max-w-[90px] leading-tight ${isUnlocked ? 'text-slate-800' : 'text-slate-300'}`}>
-              {moduleNames[mod.type] || "Tracking"}
-            </p>
+            <div className="mt-4 flex flex-col items-center">
+              <p className={`text-[10px] font-black uppercase tracking-wider text-center max-w-[90px] leading-tight text-slate-800`}>
+                {moduleNames[mod.type] || "Tracking"}
+              </p>
+              <div className="mt-1 flex gap-1 items-center bg-white px-2 py-0.5 rounded-full border border-slate-100 shadow-sm">
+                <i className="fas fa-gem text-[8px] text-blue-500"></i>
+                <span className="text-[9px] font-black text-slate-600">{mod.score}/{mod.max}</span>
+              </div>
+            </div>
           </div>
         );
       })}
 
       {selectedMod && (
-        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 bg-black/50 z-[300] flex items-center justify-center p-6 backdrop-blur-sm animate-in fade-in">
           <div className="bg-white w-full max-w-sm rounded-[2.5rem] p-8 shadow-2xl animate-in zoom-in slide-in-from-bottom-5">
             <h3 className="text-xl font-black text-slate-800 mb-4 uppercase tracking-tight">{moduleNames[selectedMod] || "Track Details"}</h3>
             <div className="space-y-3 mb-8">
@@ -173,14 +213,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     setShowHint(false);
     setSelectedOption(null);
     
-    // Shuffle options to ensure randomness
     if (item.options && item.options.length > 0) {
       setShuffledOptions(shuffle(item.options));
     } else {
       setShuffledOptions([]);
     }
     
-    // Play target audio
     if (item.audioValue && item.type !== 'speaking') {
       speak(item.audioValue);
     }
@@ -212,7 +250,6 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const response = (userInput || selectedOption || '').trim().toLowerCase().replace(/[.,!?;:]/g, "");
     const cleanTarget = item.correctValue.toLowerCase().replace(/[.,!?;:]/g, "");
     
-    // Broad matching for numbers and simple strings
     const isCorrect = (response === cleanTarget) || 
                       (NUMBER_MAP[response] === cleanTarget) || 
                       (NUMBER_MAP[cleanTarget] === response);
@@ -233,14 +270,9 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
   };
 
   const handleOptionClick = (opt: string) => {
-    // If already showing footer, don't allow changes unless it was wrong
     if (showFooter && feedback === 'correct') return;
-    
     setSelectedOption(opt);
-    // CRITICAL: Play the sound of the clicked letter/number/color immediately
     speak(opt);
-    
-    // Reset feedback if student wants to try another option after being wrong
     if (feedback === 'wrong') {
        setShowFooter(false);
        setFeedback('none');
@@ -249,7 +281,6 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
   const renderDisplay = () => {
     if (item.displayValue?.startsWith('fa-')) {
-        // Use the correctValue to determine color if it's an icon-based identification
         const colorClass = COLOR_STYLE_MAP[item.correctValue] || 'text-blue-900';
         return (
             <div className="flex flex-col items-center gap-4 animate-in fade-in duration-700">
@@ -277,7 +308,6 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
             <div className="h-full bg-green-500 transition-all duration-300" style={{ width: `${(currentIdx / totalItems) * 100}%` }} />
           </div>
         </div>
-        <Header lessonId={lessonId} />
       </div>
 
       <div className="flex-1 w-full max-w-sm px-6 flex flex-col justify-center pb-40">
@@ -363,7 +393,6 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                    if (feedback === 'correct') {
                      onResult(true, userInput || selectedOption || '');
                    } else {
-                     // Stay on item to try again
                      setFeedback('none');
                      setShowFooter(false);
                    }
@@ -397,46 +426,49 @@ export const ResultDashboard: React.FC<{
   onNextLesson?: () => void;
   onRestart: () => void;
   isAdmin?: boolean;
-}> = ({ score, totalTime, sentToTeacher, currentLesson, onWhatsApp, onNextLesson, onRestart, isAdmin }) => {
+  todayKey?: string;
+  lastCompletionDayKey?: string;
+}> = ({ score, totalTime, sentToTeacher, currentLesson, onWhatsApp, onNextLesson, onRestart, isAdmin, todayKey, lastCompletionDayKey }) => {
   const handleWA = () => {
-    const text = `Learnendo Mastery: Lesson ${currentLesson} complete with ${score.toFixed(1)}/10 in ${Math.round(totalTime)}s!`;
+    const text = `Learnendo Mastery: Lesson ${currentLesson} complete with Diamond ${score}/100 in ${Math.round(totalTime)}s!`;
     window.open(`https://wa.me/5517991010930?text=${encodeURIComponent(text)}`, '_blank');
     onWhatsApp?.();
   };
 
-  const isPerfect = score >= 10 || isAdmin;
+  const isMastered = score >= 100 || isAdmin;
+  const isLockedByTime = !isAdmin && isMastered && lastCompletionDayKey === todayKey;
 
   return (
     <div className="p-10 text-center bg-white rounded-[3rem] shadow-2xl border-4 border-blue-50 animate-in zoom-in duration-300">
-      <div className={`w-24 h-24 ${isPerfect ? 'bg-yellow-400' : 'bg-slate-200'} rounded-full flex items-center justify-center text-white text-5xl mx-auto mb-8 shadow-[0_8px_0_0_rgba(0,0,0,0.1)]`}><i className={`fas ${isPerfect ? 'fa-trophy' : 'fa-star-half-alt text-slate-400'}`}></i></div>
-      <h2 className="text-3xl font-black text-slate-900 mb-4 uppercase tracking-tighter">{isPerfect ? 'Unit Mastered!' : 'Keep Practicing'}</h2>
-      
-      <div className="grid grid-cols-2 gap-4 mb-8">
-        <div className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-100 shadow-sm">
-          <p className="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Mastery</p>
-          <p className={`text-3xl font-black ${isPerfect ? 'text-blue-600' : 'text-orange-500'}`}>{score.toFixed(1)}/10</p>
-        </div>
-        <div className="bg-slate-50 p-6 rounded-3xl border-2 border-slate-100 shadow-sm">
-          <p className="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Time</p>
-          <p className="text-3xl font-black text-slate-800">{Math.round(totalTime)}s</p>
-        </div>
+      <div className={`w-24 h-24 ${isMastered ? 'bg-blue-600 text-white' : 'bg-slate-200 text-slate-400'} rounded-full flex items-center justify-center text-5xl mx-auto mb-8 shadow-lg`}>
+        <i className={`fas ${isMastered ? 'fa-gem' : 'fa-gem opacity-40'}`}></i>
       </div>
+      <h2 className="text-3xl font-black text-slate-900 mb-2 uppercase tracking-tighter">
+        {isMastered ? 'Unit Mastered!' : 'Almost There'}
+      </h2>
+      <p className="text-slate-500 font-bold text-xs uppercase tracking-widest mb-8">Diamond Level: {score}/100</p>
       
-      {isPerfect && !sentToTeacher && (
+      {!isMastered && (
+        <div className="bg-orange-50 p-4 rounded-2xl border-2 border-orange-100 mb-8 animate-pulse">
+           <p className="text-xs font-black text-orange-600 uppercase tracking-tight">You made {score}/100 in this lesson. Repita para dominar (100/100).</p>
+        </div>
+      )}
+
+      {isLockedByTime && (
+        <div className="bg-blue-50 p-4 rounded-2xl border-2 border-blue-100 mb-8">
+           <p className="text-xs font-black text-blue-600 uppercase tracking-tight">Congratulations! Wait until tomorrow to unlock the next lesson.</p>
+        </div>
+      )}
+      
+      {isMastered && !sentToTeacher && (
         <button onClick={handleWA} className="w-full py-5 bg-green-500 text-white rounded-3xl font-black uppercase mb-4 shadow-[0_8px_0_0_#15803d] active:translate-y-1 transition-all">
           <i className="fab fa-whatsapp mr-2 text-xl"></i> Send to Teacher
         </button>
       )}
 
-      {isPerfect && currentLesson < 24 && (
+      {isMastered && currentLesson < 24 && !isLockedByTime && (
         <button onClick={onNextLesson} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black uppercase mb-4 shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all">
           Unlock Lesson {currentLesson + 1}
-        </button>
-      )}
-
-      {!isPerfect && (
-        <button onClick={onRestart} className="w-full py-5 bg-orange-500 text-white rounded-3xl font-black uppercase mb-4 shadow-[0_8px_0_0_#c2410c] active:translate-y-1 transition-all">
-          Try Mastery Again
         </button>
       )}
 

@@ -32,12 +32,18 @@ export interface AnswerLog {
 
 export interface UserProgress {
   currentLesson: number;
-  unlockedModules: PracticeModuleType[];
-  completedModules: PracticeModuleType[];
-  totalPoints: number;
+  // Progress per lesson: { [lessonId]: { diamond: 0-100, islandScores: { [trackId]: number } } }
+  lessonData: {
+    [lessonId: number]: {
+      diamond: number;
+      islandScores: { [trackId: string]: number };
+      lastCompletionDayKey?: string;
+    }
+  };
+  totalStars: number;
   streakCount: number;
-  lastCompletionDate?: string; 
-  startDate?: string;
-  sentToTeacher?: boolean;
+  iceCount: number;
+  lastActiveDayKey?: string;
+  virtualDayOffset: number; // For admin simulation
   bypassActive?: boolean;
 }
