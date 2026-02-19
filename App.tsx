@@ -8,7 +8,8 @@ import {
 import { saveAssessmentResult } from './services/db';
 
 const STORAGE_KEY = 'learnendo_user_v7';
-const BYPASS_KEY = 'Martin 73';
+// Corrected bypass key as requested
+const BYPASS_KEY = 'Martins73';
 
 const App: React.FC = () => {
   const [section, setSection] = useState<SectionType>(SectionType.INFO);
@@ -35,31 +36,30 @@ const App: React.FC = () => {
   const [logs, setLogs] = useState<AnswerLog[]>([]);
   const [activeModule, setActiveModule] = useState<PracticeModuleType | undefined>();
 
+  // Logical Flag for Admin Access
+  const isAdmin = student.name === BYPASS_KEY || progress.bypassActive;
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
     checkDailyUnlock(progress);
   }, [progress]);
 
   const checkDailyUnlock = (p: UserProgress) => {
-    if (p.bypassActive) return;
+    // ADMIN BYPASS: Ignore all daily locking rules
+    if (isAdmin) return;
 
     const now = new Date();
     const start = new Date(p.startDate || now.toISOString());
-    // Use Math.floor to get full days since start
     const daysSinceStart = Math.floor((now.getTime() - start.getTime()) / (1000 * 3600 * 24));
     
     const currentLessonConfig = LESSON_CONFIGS.find(l => l.id === p.currentLesson);
     if (!currentLessonConfig) return;
 
-    // Progression rule: Unlock Track N if Day >= (N-1) AND Track N-1 is completed.
-    // Index 0 (Track 1) is unlocked on Day 0.
-    // Index 1 (Track 2) is unlocked on Day 1 IF Track 1 (Index 0) is in completedModules.
-    
     const newUnlocked = [...p.unlockedModules];
     let changed = false;
 
     currentLessonConfig.modules.forEach((modType, idx) => {
-      if (idx === 0) return; // Track 1 always handled by initial state
+      if (idx === 0) return; 
       
       const prevMod = currentLessonConfig.modules[idx - 1];
       const isPrevCompleted = p.completedModules.includes(prevMod);
@@ -77,11 +77,13 @@ const App: React.FC = () => {
   };
 
   const startLesson = (name: string) => {
-    const isBypass = name === BYPASS_KEY;
+    // Logic: Admin Mode prevails immediately
+    const isNowAdmin = name === BYPASS_KEY;
     setStudent({ name });
     setStartTime(Date.now());
     
-    if (isBypass) {
+    if (isNowAdmin) {
+      // Unlock all possible modules for all lessons immediately
       const allModules = LESSON_CONFIGS.flatMap(l => l.modules);
       setProgress(prev => ({ 
         ...prev, 
@@ -118,7 +120,6 @@ const App: React.FC = () => {
     }]);
 
     if (!isCorrect) {
-      // Re-add failed item to the end of the queue for immediate practice
       setActiveItems(prev => [...prev, { ...item, id: `${item.id}-retry-${Date.now()}` }]);
       setCurrentIdx(prev => prev + 1);
       return; 
@@ -129,7 +130,6 @@ const App: React.FC = () => {
     if (currentIdx < activeItems.length - 1) {
       setCurrentIdx(prev => prev + 1);
     } else {
-      // Track Finished
       const activeModuleType = activeModule!;
       const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === activeModuleType).length;
       const pointsGained = Math.round((firstTryCorrectCount / baseItemsCount) * 100);
@@ -148,11 +148,10 @@ const App: React.FC = () => {
         lastCompletionDate: now.toISOString()
       }));
 
-      // Logic: Only show results screen for the FINAL Mastery track of the lesson
+      // Only show result dashboard for the final Mastery track
       if (isMasteryTrack) {
         finishLesson();
       } else {
-        // Return to path for regular islands
         setSection(SectionType.PATH);
       }
     }
@@ -175,16 +174,15 @@ const App: React.FC = () => {
   };
 
   const nextLessonAction = () => {
-    if (progress.currentLesson < 24) { // Supported up to lesson 24
+    if (progress.currentLesson < 24) { 
       const nextL = progress.currentLesson + 1;
       const firstModOfNext = `L${nextL}_TRACK1`;
       
       setProgress(prev => ({
         ...prev,
         currentLesson: nextL,
-        // When unlocking a new lesson, the start date resets for the new one-island-per-day sequence
         startDate: new Date().toISOString(),
-        unlockedModules: prev.bypassActive ? prev.unlockedModules : [...new Set([...prev.unlockedModules, firstModOfNext])],
+        unlockedModules: isAdmin ? prev.unlockedModules : [...new Set([...prev.unlockedModules, firstModOfNext])],
         sentToTeacher: false
       }));
       setSection(SectionType.PATH);
@@ -217,7 +215,6 @@ const App: React.FC = () => {
         )}
         {section === SectionType.RESULTS && (
           <ResultDashboard 
-            // Recalculate score based on current module (Mastery track)
             score={(firstTryCorrectCount / PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length) * 10} 
             totalTime={(Date.now() - startTime) / 1000}
             sentToTeacher={progress.sentToTeacher}
@@ -225,6 +222,7 @@ const App: React.FC = () => {
             onWhatsApp={() => setProgress(prev => ({ ...prev, sentToTeacher: true }))}
             onNextLesson={nextLessonAction}
             onRestart={() => setSection(SectionType.PATH)}
+            isAdmin={isAdmin}
           />
         )}
       </div>

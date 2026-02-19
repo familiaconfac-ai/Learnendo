@@ -13,7 +13,7 @@ const TRANSLATIONS: Record<string, string> = {
   'Identify the color of the object:': 'Identifique a cor do objeto:',
   'Identify the color of the phone:': 'Identifique a cor do telefone:',
   'What color is it?': 'Que cor é essa?',
-  'Math: What is four times two?': 'Matemática: Quanto é quatro vezes dois?',
+  'Math: What is four times two?': 'Matemática: Quanto é quatro veces dois?',
   'Math: What is ten divided by two?': 'Matemática: Quanto é dez dividido por dois?',
   'Math: What is two plus three?': 'Matemática: Quanto é dois mais três?',
   'Math: What is ten plus five?': 'Matemática: Quanto é dez mais cinco?',
@@ -182,7 +182,6 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const response = (val || userInput).trim().toLowerCase().replace(/[.,!?;:]/g, "");
     const cleanTarget = item.correctValue.toLowerCase().replace(/[.,!?;:]/g, "");
     
-    // Flexible checking: word forms match digits and vice versa
     const isCorrect = (response === cleanTarget) || 
                       (NUMBER_MAP[response] === cleanTarget) || 
                       (NUMBER_MAP[cleanTarget] === response);
@@ -338,15 +337,17 @@ export const ResultDashboard: React.FC<{
   currentLesson: number;
   onWhatsApp?: () => void; 
   onNextLesson?: () => void;
-  onRestart: () => void 
-}> = ({ score, totalTime, sentToTeacher, currentLesson, onWhatsApp, onNextLesson, onRestart }) => {
+  onRestart: () => void;
+  isAdmin?: boolean;
+}> = ({ score, totalTime, sentToTeacher, currentLesson, onWhatsApp, onNextLesson, onRestart, isAdmin }) => {
   const handleWA = () => {
     const text = `Learnendo Mastery: Lesson ${currentLesson} complete with ${score.toFixed(1)}/10 in ${Math.round(totalTime)}s!`;
     window.open(`https://wa.me/5517991010930?text=${encodeURIComponent(text)}`, '_blank');
     onWhatsApp?.();
   };
 
-  const isPerfect = score >= 10;
+  // ADMIN RULE: Allow progress regardless of score
+  const isPerfect = score >= 10 || isAdmin;
 
   return (
     <div className="p-10 text-center bg-white rounded-[3rem] shadow-2xl border-4 border-blue-50 animate-in zoom-in duration-300">
