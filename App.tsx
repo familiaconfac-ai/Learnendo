@@ -7,8 +7,8 @@ import {
 } from './components/UI';
 import { saveAssessmentResult } from './services/db';
 
-const STORAGE_KEY = 'learnendo_user_v6';
-const BYPASS_KEY = 'Martins73';
+const STORAGE_KEY = 'learnendo_user_v7';
+const BYPASS_KEY = 'Martin 73';
 
 const App: React.FC = () => {
   const [section, setSection] = useState<SectionType>(SectionType.INFO);
@@ -45,20 +45,34 @@ const App: React.FC = () => {
 
     const now = new Date();
     const start = new Date(p.startDate || now.toISOString());
-    const dayOfStudy = Math.floor((now.getTime() - start.getTime()) / (1000 * 3600 * 24));
+    // Use Math.floor to get full days since start
+    const daysSinceStart = Math.floor((now.getTime() - start.getTime()) / (1000 * 3600 * 24));
     
-    const lessonConfig = LESSON_CONFIGS.find(l => l.id === p.currentLesson);
-    if (!lessonConfig) return;
+    const currentLessonConfig = LESSON_CONFIGS.find(l => l.id === p.currentLesson);
+    if (!currentLessonConfig) return;
 
-    const lastCompletedIdxInLesson = p.completedModules.filter(m => m.startsWith(`L${p.currentLesson}_TRACK`)).length - 1;
-    const nextIdx = lastCompletedIdxInLesson + 1;
+    // Progression rule: Unlock Track N if Day >= (N-1) AND Track N-1 is completed.
+    // Index 0 (Track 1) is unlocked on Day 0.
+    // Index 1 (Track 2) is unlocked on Day 1 IF Track 1 (Index 0) is in completedModules.
+    
+    const newUnlocked = [...p.unlockedModules];
+    let changed = false;
 
-    if (nextIdx < lessonConfig.modules.length) {
-      const nextMod = lessonConfig.modules[nextIdx] as PracticeModuleType;
-      // Unlock logic: Current track must be completed and midnight passed for next island
-      if (dayOfStudy >= nextIdx && !p.unlockedModules.includes(nextMod)) {
-        setProgress(prev => ({ ...prev, unlockedModules: [...new Set([...prev.unlockedModules, nextMod])] }));
+    currentLessonConfig.modules.forEach((modType, idx) => {
+      if (idx === 0) return; // Track 1 always handled by initial state
+      
+      const prevMod = currentLessonConfig.modules[idx - 1];
+      const isPrevCompleted = p.completedModules.includes(prevMod);
+      const isTimeRight = daysSinceStart >= idx;
+
+      if (isTimeRight && isPrevCompleted && !newUnlocked.includes(modType)) {
+        newUnlocked.push(modType);
+        changed = true;
       }
+    });
+
+    if (changed) {
+      setProgress(prev => ({ ...prev, unlockedModules: [...new Set(newUnlocked)] }));
     }
   };
 
@@ -93,7 +107,7 @@ const App: React.FC = () => {
 
   const handleResult = (isCorrect: boolean, val: string) => {
     const item = activeItems[currentIdx];
-    const isFirstTry = !logs.some(l => l.question === item.id);
+    const isFirstTry = !logs.some(l => l.question === item.instruction);
     
     setLogs(prev => [...prev, {
       question: item.instruction,
@@ -104,6 +118,7 @@ const App: React.FC = () => {
     }]);
 
     if (!isCorrect) {
+      // Re-add failed item to the end of the queue for immediate practice
       setActiveItems(prev => [...prev, { ...item, id: `${item.id}-retry-${Date.now()}` }]);
       setCurrentIdx(prev => prev + 1);
       return; 
@@ -114,6 +129,7 @@ const App: React.FC = () => {
     if (currentIdx < activeItems.length - 1) {
       setCurrentIdx(prev => prev + 1);
     } else {
+      // Track Finished
       const activeModuleType = activeModule!;
       const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === activeModuleType).length;
       const pointsGained = Math.round((firstTryCorrectCount / baseItemsCount) * 100);
@@ -121,20 +137,22 @@ const App: React.FC = () => {
       const newCompleted = [...new Set([...progress.completedModules, activeModuleType])];
       const now = new Date();
 
-      const lessonModules = LESSON_CONFIGS[progress.currentLesson - 1].modules;
-      const lessonComplete = lessonModules.every(m => newCompleted.includes(m));
+      const currentLessonConfig = LESSON_CONFIGS.find(l => l.id === progress.currentLesson)!;
+      const isMasteryTrack = currentLessonConfig.modules[currentLessonConfig.modules.length - 1] === activeModuleType;
 
       setProgress(prev => ({ 
         ...prev, 
         completedModules: newCompleted, 
         totalPoints: prev.totalPoints + pointsGained,
-        streakCount: prev.streakCount + (lessonComplete ? 0 : 1),
+        streakCount: prev.streakCount + 1,
         lastCompletionDate: now.toISOString()
       }));
 
-      if (lessonComplete) {
+      // Logic: Only show results screen for the FINAL Mastery track of the lesson
+      if (isMasteryTrack) {
         finishLesson();
       } else {
+        // Return to path for regular islands
         setSection(SectionType.PATH);
       }
     }
@@ -143,12 +161,13 @@ const App: React.FC = () => {
   const finishLesson = async () => {
     setSection(SectionType.RESULTS);
     const totalTime = (Date.now() - startTime) / 1000;
-    const finalScore = (firstTryCorrectCount / activeItems.length) * 10;
+    const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length;
+    const finalScore = (firstTryCorrectCount / baseItemsCount) * 10;
 
     await saveAssessmentResult({
       studentName: student.name,
       studentEmail: '',
-      lesson: `Lesson ${progress.currentLesson}`,
+      lesson: `Lesson ${progress.currentLesson} Mastery`,
       score: parseFloat(finalScore.toFixed(1)),
       durationSeconds: Math.round(totalTime),
       allAnswers: logs
@@ -156,16 +175,17 @@ const App: React.FC = () => {
   };
 
   const nextLessonAction = () => {
-    if (progress.currentLesson < 12) {
+    if (progress.currentLesson < 24) { // Supported up to lesson 24
       const nextL = progress.currentLesson + 1;
-      const firstMod = `L${nextL}_TRACK1`;
+      const firstModOfNext = `L${nextL}_TRACK1`;
       
       setProgress(prev => ({
         ...prev,
         currentLesson: nextL,
-        unlockedModules: prev.bypassActive ? prev.unlockedModules : [...new Set([...prev.unlockedModules, firstMod])],
-        sentToTeacher: false,
-        startDate: new Date().toISOString()
+        // When unlocking a new lesson, the start date resets for the new one-island-per-day sequence
+        startDate: new Date().toISOString(),
+        unlockedModules: prev.bypassActive ? prev.unlockedModules : [...new Set([...prev.unlockedModules, firstModOfNext])],
+        sentToTeacher: false
       }));
       setSection(SectionType.PATH);
     }
@@ -197,7 +217,8 @@ const App: React.FC = () => {
         )}
         {section === SectionType.RESULTS && (
           <ResultDashboard 
-            score={(firstTryCorrectCount / activeItems.length) * 10} 
+            // Recalculate score based on current module (Mastery track)
+            score={(firstTryCorrectCount / PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length) * 10} 
             totalTime={(Date.now() - startTime) / 1000}
             sentToTeacher={progress.sentToTeacher}
             currentLesson={progress.currentLesson}

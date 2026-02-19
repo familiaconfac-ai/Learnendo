@@ -73,7 +73,7 @@ export const LearningPathView: React.FC<{
   moduleNames: Record<string, string>;
 }> = ({ progress, onSelectModule, moduleNames }) => {
   const [selectedMod, setSelectedMod] = useState<PracticeModuleType | null>(null);
-  const lessonConfig = LESSON_CONFIGS[progress.currentLesson - 1] || LESSON_CONFIGS[0];
+  const lessonConfig = LESSON_CONFIGS.find(l => l.id === progress.currentLesson) || LESSON_CONFIGS[0];
   const modules = lessonConfig.modules.map((type, idx) => ({
     type: type as PracticeModuleType,
     icon: MODULE_ICONS[type] || 'fa-graduation-cap',
@@ -182,7 +182,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const response = (val || userInput).trim().toLowerCase().replace(/[.,!?;:]/g, "");
     const cleanTarget = item.correctValue.toLowerCase().replace(/[.,!?;:]/g, "");
     
-    // Check for Word-to-Digit or Digit-to-Word matches
+    // Flexible checking: word forms match digits and vice versa
     const isCorrect = (response === cleanTarget) || 
                       (NUMBER_MAP[response] === cleanTarget) || 
                       (NUMBER_MAP[cleanTarget] === response);
@@ -370,7 +370,7 @@ export const ResultDashboard: React.FC<{
         </button>
       )}
 
-      {isPerfect && currentLesson < 12 && (
+      {isPerfect && currentLesson < 24 && (
         <button onClick={onNextLesson} className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black uppercase mb-4 shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all">
           Unlock Lesson {currentLesson + 1}
         </button>
