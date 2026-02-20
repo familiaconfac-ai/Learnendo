@@ -38,7 +38,7 @@ const L1_TRACKS = [
     { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ei/', audioValue: 'H', options: ['A', 'E', 'I', 'O'], correctValue: 'A' },
     { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ai/', audioValue: 'Y', options: ['I', 'E', 'A', 'U'], correctValue: 'I' },
     { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ju:/', audioValue: 'Q', options: ['U', 'O', 'A', 'E'], correctValue: 'U' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /e/', audioValue: 'Z', options: ['X', 'Y', 'W', 'V'], correctValue: 'X' },
+    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'Z', options: ['X', 'Y', 'W', 'V'], correctValue: 'V' },
     { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'G', options: ['B', 'A', 'F', 'L'], correctValue: 'B' },
     { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ei/', audioValue: 'K', options: ['J', 'L', 'M', 'N'], correctValue: 'J' },
     { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'D', options: ['C', 'F', 'H', 'J'], correctValue: 'C' },
