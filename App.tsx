@@ -293,16 +293,19 @@ const App: React.FC = () => {
     return false;
   };
 
-  const handleEmailLogin = async (email: string, pass: string) => {
+  const handleAuthAction = async (email: string, pass: string, isLogin: boolean) => {
     try {
-      const { loginWithEmail } = await import('./services/firebase');
-      const user = await loginWithEmail(email, pass);
+      const { loginWithEmail, registerWithEmail } = await import('./services/firebase');
+      const user = isLogin 
+        ? await loginWithEmail(email, pass)
+        : await registerWithEmail(email, pass);
+        
       if (user && user.email) {
         startLesson(user.email.split('@')[0]);
       }
     } catch (err: any) {
-      console.error("Login Error:", err);
-      alert(err.message || "Failed to login");
+      console.error("Auth Error:", err);
+      alert(err.message || "Authentication failed");
     }
   };
 
@@ -313,7 +316,7 @@ const App: React.FC = () => {
           <Header lessonId={progress.currentLesson} progress={progress} />
         )}
         
-        {section === SectionType.INFO && <InfoSection onStart={startLesson} onEmailLogin={handleEmailLogin} />}
+        {section === SectionType.INFO && <InfoSection onStart={startLesson} onAuthAction={handleAuthAction} />}
         {section === SectionType.PATH && (
           <>
             <LearningPathView 

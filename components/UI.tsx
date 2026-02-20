@@ -459,11 +459,32 @@ export const ResultDashboard: React.FC<{
   );
 };
 
-export const InfoSection: React.FC<{ onStart: (name: string, email: string) => void; onEmailLogin: (email: string, pass: string) => void }> = ({ onStart, onEmailLogin }) => {
+export const InfoSection: React.FC<{ 
+  onStart: (name: string, email: string) => void; 
+  onAuthAction: (email: string, pass: string, isLogin: boolean) => void 
+}> = ({ onStart, onAuthAction }) => {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoginMode, setIsLoginMode] = useState(true);
+  const [error, setError] = useState('');
+
+  const validateEmail = (e: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  };
+
+  const handleAuth = () => {
+    setError('');
+    if (!email.trim() || !password.trim()) {
+      setError('Please fill in all fields');
+      return;
+    }
+    if (!validateEmail(email)) {
+      setError('Please enter a valid email address');
+      return;
+    }
+    onAuthAction(email, password, isLoginMode);
+  };
 
   return (
     <div className="text-center py-10 flex flex-col items-center animate-in fade-in zoom-in">
@@ -486,22 +507,27 @@ export const InfoSection: React.FC<{ onStart: (name: string, email: string) => v
           <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
             {isLoginMode ? 'Sign In' : 'Register'}
           </h3>
+          {error && (
+            <div className="text-[10px] font-bold text-red-500 uppercase animate-in fade-in slide-in-from-top-1">
+              {error}
+            </div>
+          )}
           <input 
             type="email"
             placeholder="Email" 
             className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 font-bold text-sm focus:border-blue-500 outline-none transition-all" 
             value={email} 
-            onChange={(e) => setEmail(e.target.value)} 
+            onChange={(e) => { setEmail(e.target.value); setError(''); }} 
           />
           <input 
             type="password"
             placeholder="Password" 
             className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 font-bold text-sm focus:border-blue-500 outline-none transition-all" 
             value={password} 
-            onChange={(e) => setPassword(e.target.value)} 
+            onChange={(e) => { setPassword(e.target.value); setError(''); }} 
           />
           <button 
-            onClick={() => onEmailLogin(email, password)}
+            onClick={handleAuth}
             className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all"
           >
             {isLoginMode ? 'Login' : 'Sign Up'}
