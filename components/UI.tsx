@@ -7,6 +7,12 @@ const SUCCESS_SOUND = "https://assets.mixkit.co/active_storage/sfx/1435/1435-pre
 const ERR_SOUND = "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3";
 
 const TRANSLATIONS: Record<string, string> = {
+  'Which letter has the same vocalic sound as that letter? /ei/': 'Qual letra tem o mesmo som vocálico que esta letra? /ei/',
+  'Which letter has the same vocalic sound as that letter? /i:/': 'Qual letra tem o mesmo som vocálico que esta letra? /i:/',
+  'Which letter has the same vocalic sound as that letter? /e/': 'Qual letra tem o mesmo som vocálico que esta letra? /e/',
+  'Which letter has the same vocalic sound as that letter? /ai/': 'Qual letra tem o mesmo som vocálico que esta letra? /ai/',
+  'Which letter has the same vocalic sound as that letter? /ju:/': 'Qual letra tem o mesmo som vocálico que esta letra? /ju:/',
+  'Which letter has the same vocalic sound as that letter? /oʊ/': 'Qual letra tem o mesmo som vocálico que esta letra? /oʊ/',
   'Identify the color of the shirt:': 'Identifique a cor da camisa:',
   'Identify the color of the car:': 'Identifique a cor do carro:',
   'Identify the color of the sky:': 'Identifique a cor do céu:',
@@ -97,8 +103,9 @@ export const LearningPathView: React.FC<{
   onSelectModule: (type: PracticeModuleType) => void; 
   moduleNames: Record<string, string>;
   isLessonLocked: (id: number) => boolean;
+  isModuleLocked: (type: PracticeModuleType) => boolean;
   islandWeights: number[];
-}> = ({ progress, onSelectModule, moduleNames, isLessonLocked, islandWeights }) => {
+}> = ({ progress, onSelectModule, moduleNames, isLessonLocked, isModuleLocked, islandWeights }) => {
   const [selectedMod, setSelectedMod] = useState<PracticeModuleType | null>(null);
   const currentLId = progress.currentLesson;
   const lessonConfig = LESSON_CONFIGS.find(l => l.id === currentLId) || LESSON_CONFIGS[0];
@@ -107,14 +114,16 @@ export const LearningPathView: React.FC<{
   const modules = lessonConfig.modules.map((type, idx) => {
     const score = progress.lessonData[currentLId]?.islandScores[type] || 0;
     const max = islandWeights[idx] || 10;
+    const locked = isModuleLocked(type);
     return {
       type: type as PracticeModuleType,
       icon: MODULE_ICONS[type] || 'fa-graduation-cap',
-      color: ['bg-amber-400', 'bg-orange-400', 'bg-rose-400', 'bg-emerald-400', 'bg-teal-400', 'bg-indigo-400', 'bg-purple-500'][idx],
-      shadow: ['bg-amber-600', 'bg-orange-600', 'bg-rose-600', 'bg-emerald-600', 'bg-teal-600', 'bg-indigo-600', 'bg-purple-700'][idx],
+      color: locked ? 'bg-slate-300' : ['bg-amber-400', 'bg-orange-400', 'bg-rose-400', 'bg-emerald-400', 'bg-teal-400', 'bg-indigo-400', 'bg-purple-500'][idx],
+      shadow: locked ? 'bg-slate-400' : ['bg-amber-600', 'bg-orange-600', 'bg-rose-600', 'bg-emerald-600', 'bg-teal-600', 'bg-indigo-600', 'bg-purple-700'][idx],
       isMastered: score >= max,
       score,
-      max
+      max,
+      locked
     };
   });
 
@@ -146,10 +155,10 @@ export const LearningPathView: React.FC<{
             <div className="relative">
                <div className={`absolute top-2 w-20 h-20 rounded-full ${mod.shadow} -z-10`} />
                <button 
-                onClick={() => setSelectedMod(mod.type)}
-                className={`relative w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl transition-all ${mod.color} shadow-[inset_0_-8px_0_rgba(0,0,0,0.15)] active:translate-y-1`}
+                onClick={() => !mod.locked && setSelectedMod(mod.type)}
+                className={`relative w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl transition-all ${mod.color} shadow-[inset_0_-8px_0_rgba(0,0,0,0.15)] active:translate-y-1 ${mod.locked ? 'cursor-not-allowed opacity-80' : ''}`}
               >
-                <i className={`fas ${mod.icon}`}></i>
+                <i className={`fas ${mod.locked ? 'fa-lock' : mod.icon}`}></i>
                 {mod.isMastered && (
                   <div className="absolute -bottom-1 -right-1 bg-blue-600 w-8 h-8 rounded-full border-4 border-white flex items-center justify-center text-[10px] text-white">
                     <i className="fas fa-gem"></i>
@@ -284,14 +293,14 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         const colorClass = COLOR_STYLE_MAP[item.correctValue] || 'text-blue-900';
         return (
             <div className="flex flex-col items-center gap-4 animate-in fade-in duration-700">
-               <div className="w-40 h-40 bg-slate-50 rounded-full flex items-center justify-center border-4 border-slate-100 shadow-inner">
-                  <i className={`fas ${item.displayValue} text-7xl ${colorClass}`}></i>
+               <div className="w-32 h-32 bg-slate-50 rounded-full flex items-center justify-center border-4 border-slate-100 shadow-inner">
+                  <i className={`fas ${item.displayValue} text-6xl ${colorClass}`}></i>
                </div>
             </div>
         );
     }
     return (
-        <div className={`text-6xl font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 ${item.isNewVocab && !showFooter ? 'text-blue-500' : 'text-blue-900'}`}>
+        <div className={`text-5xl font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 ${item.isNewVocab && !showFooter ? 'text-blue-500' : 'text-blue-900'}`}>
           {item.displayValue}
         </div>
     );
@@ -325,12 +334,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         <div className="flex flex-col items-center gap-6">
           <div className="flex gap-4">
             {item.audioValue && (
-               <button onClick={() => speak(item.audioValue)} className="w-16 h-16 bg-blue-600 text-white rounded-2xl shadow-[0_6px_0_0_#1e40af] text-3xl active:translate-y-1 transition-all flex items-center justify-center">
+               <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] text-2xl active:translate-y-1 transition-all flex items-center justify-center">
                   <i className="fa-solid fa-volume-high"></i>
                </button>
             )}
             {item.audioValue && (
-               <button onClick={() => speak(item.audioValue, 0.40)} className="w-16 h-16 bg-orange-400 text-white rounded-2xl shadow-[0_6px_0_0_#c2410c] text-4xl active:translate-y-1 transition-all flex items-center justify-center">
+               <button onClick={() => speak(item.audioValue, 0.40)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] text-3xl active:translate-y-1 transition-all flex items-center justify-center">
                   <i className="fa-solid fa-turtle text-white drop-shadow-md"></i>
                </button>
             )}
@@ -339,13 +348,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           {item.displayValue && renderDisplay()}
           
           {isMultipleChoice && shuffledOptions.length > 0 ? (
-             <div className="grid grid-cols-2 gap-3 w-full">
+             <div className="grid grid-cols-2 gap-2 w-full">
                {shuffledOptions.map((opt) => (
                  <button 
                   key={opt}
                   disabled={showFooter && feedback === 'correct'}
                   onClick={() => handleOptionClick(opt)}
-                  className={`p-6 border-4 rounded-3xl font-black uppercase text-2xl transition-all flex flex-col items-center gap-2 ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-700 shadow-lg' : 'bg-white border-slate-100 text-slate-800 hover:border-blue-200'}`}
+                  className={`p-4 border-4 rounded-3xl font-black uppercase text-xl transition-all flex flex-col items-center gap-1 ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-700 shadow-lg' : 'bg-white border-slate-100 text-slate-800 hover:border-blue-200'}`}
                  >
                    {opt}
                  </button>
@@ -356,7 +365,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               <input 
                 ref={inputRef} 
                 disabled={showFooter && feedback === 'correct'} 
-                className={`w-full p-6 border-4 rounded-3xl text-center text-3xl font-black focus:border-blue-500 outline-none bg-white transition-all ${feedback === 'wrong' ? 'border-red-200 text-red-600' : 'border-slate-100 text-slate-800 shadow-sm'}`} 
+                className={`w-full p-4 border-4 rounded-3xl text-center text-2xl font-black focus:border-blue-500 outline-none bg-white transition-all ${feedback === 'wrong' ? 'border-red-200 text-red-600' : 'border-slate-100 text-slate-800 shadow-sm'}`} 
                 value={userInput} 
                 onChange={(e) => {
                    setUserInput(e.target.value);
@@ -397,7 +406,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                      setShowFooter(false);
                    }
                 }} 
-                className={`px-10 py-5 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0`}
+                className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0`}
               >
                 {feedback === 'correct' ? 'CONTINUE' : 'GOT IT'}
               </button>
@@ -406,7 +415,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
             <button 
               disabled={isMultipleChoice ? !selectedOption : !userInput.trim()}
               onClick={() => handleCheck()} 
-              className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0"
+              className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0"
             >
               CHECK
             </button>

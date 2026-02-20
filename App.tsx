@@ -1,20 +1,23 @@
-
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog } from './types';
 import { PRACTICE_ITEMS, MODULE_NAMES, LESSON_CONFIGS } from './constants';
 import { 
   InfoSection, PracticeSection, ResultDashboard, Header, LearningPathView
 } from './components/UI';
 import { saveAssessmentResult } from './services/db';
+import { ensureAnonAuth, auth } from './services/firebase';
+
+console.log('Firebase Auth Object:', auth);
 
 const STORAGE_KEY = 'learnendo_v8_mastery';
 const BYPASS_KEY = 'Martins73';
 
-const ISLAND_WEIGHTS = [25, 15, 15, 15, 10, 10, 10];
+const ISLAND_WEIGHTS = [25, 15, 15, 10, 10, 10, 15];
 
 const App: React.FC = () => {
   const [section, setSection] = useState<SectionType>(SectionType.INFO);
   const [student, setStudent] = useState({ name: '' });
+  const [authStatus, setAuthStatus] = useState<{ status: 'loading' | 'ok' | 'error'; uid?: string; message?: string }>({ status: 'loading' });
   
   const [progress, setProgress] = useState<UserProgress>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -27,7 +30,8 @@ const App: React.FC = () => {
       streakCount: 0,
       iceCount: 0,
       virtualDayOffset: 0,
-      bypassActive: false
+      bypassActive: false,
+      sentToTeacher: false
     };
   });
   
@@ -40,7 +44,26 @@ const App: React.FC = () => {
 
   const isAdmin = student.name === BYPASS_KEY || progress.bypassActive;
 
-  // Helper: Get effective current date key (string YYYY-MM-DD)
+  // Initialize Anonymous Auth on mount within a useEffect
+  useEffect(() => {
+    let mounted = true;
+    const initAuth = async () => {
+      try {
+        const res = await ensureAnonAuth();
+        if (mounted) {
+          setAuthStatus({ status: 'ok', uid: res.uid });
+        }
+      } catch (err: any) {
+        console.error("Authentication failed:", err);
+        if (mounted) {
+          setAuthStatus({ status: 'error', message: err.message || 'Auth failure' });
+        }
+      }
+    };
+    initAuth();
+    return () => { mounted = false; };
+  }, []);
+
   const getTodayKey = (offset: number = 0) => {
     const d = new Date();
     d.setDate(d.getDate() + (progress.virtualDayOffset || 0) + offset);
@@ -53,7 +76,6 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
   }, [progress]);
 
-  // Handle Streak and Ice Logic on mount and day change
   useEffect(() => {
     const today = getTodayKey();
     if (progress.lastActiveDayKey === today) return;
@@ -63,16 +85,14 @@ const App: React.FC = () => {
       let newStreak = prev.streakCount;
       let newIce = prev.iceCount;
 
-      // If last active was not today or yesterday, streak might break or ice increase
       if (prev.lastActiveDayKey && prev.lastActiveDayKey !== yesterday) {
-        // Find gap
         const lastDate = new Date(prev.lastActiveDayKey);
         const todayDate = new Date(today);
         const diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 3600 * 24));
         
         if (diffDays > 1) {
-          newStreak = 0; // Broke streak
-          newIce += (diffDays - 1); // Missed days are ice
+          newStreak = 0;
+          newIce += (diffDays - 1);
         }
       }
 
@@ -136,7 +156,6 @@ const App: React.FC = () => {
 
     if (isFirstTry) {
       setFirstTryCorrectCount(prev => prev + 1);
-      // Star points are cumulative and never capped
       const starPoints = calculateDifficultyStar(item.type);
       setProgress(prev => ({ ...prev, totalStars: prev.totalStars + starPoints }));
     }
@@ -164,22 +183,26 @@ const App: React.FC = () => {
       if (!lessonData[lessonId]) lessonData[lessonId] = { diamond: 0, islandScores: {} };
       
       const oldScores = { ...lessonData[lessonId].islandScores };
-      // Diamond score respects the ceiling per island
+      
+      // Update score only if it's better
       oldScores[currentTrack] = Math.max(oldScores[currentTrack] || 0, rawIslandScore);
-
-      // Fix: Cast Object.values to number[] to ensure reduce results in a number and avoid 'unknown' operator issues on lines 171, 178, and 188
+      
+      // Calculate total diamond score for the lesson
       const totalDiamond = (Object.values(oldScores) as number[]).reduce((a: number, b: number) => a + b, 0);
       
-      const isLastIsland = trackIndex === lessonConfig.modules.length - 1;
       const today = getTodayKey();
-
-      // Streak logic: If lesson reaches 100 today for the first time
       let newStreak = prev.streakCount;
-      if (totalDiamond >= 100 && lessonData[lessonId].diamond < 100) {
-        if (lessonData[lessonId].lastCompletionDayKey !== today) {
-           newStreak += 1;
-           lessonData[lessonId].lastCompletionDayKey = today;
-        }
+      
+      // Check if this specific island was just completed perfectly for the first time today
+      if (rawIslandScore >= weight) {
+         if (!lessonData[lessonId].islandCompletionDates) {
+            lessonData[lessonId].islandCompletionDates = {};
+         }
+         if (!lessonData[lessonId].islandCompletionDates[currentTrack]) {
+            lessonData[lessonId].islandCompletionDates[currentTrack] = today;
+            // Only increment streak if the whole lesson reaches 100%? 
+            // The user said "If the person gets 21 out of 25, it means they did not get 100%. On that island, so they have to do it again. Because then the next island will not open."
+         }
       }
 
       lessonData[lessonId] = {
@@ -191,12 +214,7 @@ const App: React.FC = () => {
       return { ...prev, lessonData, streakCount: newStreak };
     });
 
-    const isMasteryTrack = trackIndex === lessonConfig.modules.length - 1;
-    if (isMasteryTrack) {
-      finishLesson();
-    } else {
-      setSection(SectionType.PATH);
-    }
+    setSection(SectionType.PATH);
   };
 
   const finishLesson = async () => {
@@ -235,24 +253,48 @@ const App: React.FC = () => {
     setProgress(prev => ({ ...prev, virtualDayOffset: prev.virtualDayOffset + 1 }));
   };
 
+  const isModuleLocked = (moduleType: PracticeModuleType) => {
+    if (isAdmin) return false;
+    const lessonId = progress.currentLesson;
+    const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId)!;
+    const trackIndex = lessonConfig.modules.indexOf(moduleType);
+    
+    if (trackIndex === 0) return false; // First island always open
+    
+    const prevModule = lessonConfig.modules[trackIndex - 1];
+    const prevScore = progress.lessonData[lessonId]?.islandScores[prevModule] || 0;
+    const prevMax = ISLAND_WEIGHTS[trackIndex - 1];
+    
+    // Must have 100% on previous island
+    if (prevScore < prevMax) return true;
+    
+    // Must be a different day than when previous island was completed
+    const completionDate = progress.lessonData[lessonId]?.islandCompletionDates?.[prevModule];
+    const today = getTodayKey();
+    if (completionDate === today) return true;
+    
+    return false;
+  };
+
   const isLessonLocked = (lessonId: number) => {
     if (isAdmin) return false;
     if (lessonId === 1) return false;
-    
     const prevL = lessonId - 1;
     const prevData = progress.lessonData[prevL];
     if (!prevData || prevData.diamond < 100) return true;
-
-    // Check if it's past midnight of completion day
-    const completionDay = prevData.lastCompletionDayKey;
+    
+    // Check if the last island of the previous lesson was completed today
+    const lessonConfig = LESSON_CONFIGS.find(l => l.id === prevL)!;
+    const lastModule = lessonConfig.modules[lessonConfig.modules.length - 1];
+    const completionDay = prevData.islandCompletionDates?.[lastModule];
+    
     const today = getTodayKey();
-    if (completionDay === today) return true; // Still the same day
-
+    if (completionDay === today) return true;
     return false;
   };
 
   return (
-    <div className="min-h-screen bg-blue-50 pb-8 flex justify-center">
+    <div className="min-h-screen bg-blue-50 pb-8 flex flex-col items-center">
       <div className="w-full max-w-sm px-4 pt-6">
         {section !== SectionType.INFO && section !== SectionType.PRACTICE && (
           <Header lessonId={progress.currentLesson} progress={progress} />
@@ -266,10 +308,11 @@ const App: React.FC = () => {
               moduleNames={MODULE_NAMES} 
               onSelectModule={startModule}
               isLessonLocked={isLessonLocked}
+              isModuleLocked={isModuleLocked}
               islandWeights={ISLAND_WEIGHTS}
             />
             {isAdmin && (
-              <div className="fixed bottom-4 left-4 z-[200]">
+              <div className="fixed bottom-10 left-4 z-[200]">
                 <button 
                   onClick={simulateNextDay}
                   className="bg-slate-800 text-white text-[10px] font-black px-4 py-2 rounded-full shadow-lg border-2 border-slate-600 uppercase tracking-tighter active:scale-95"
@@ -304,6 +347,13 @@ const App: React.FC = () => {
           />
         )}
       </div>
+
+      {/* Debug Auth Footer */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-black/90 text-[8px] text-white/70 px-2 py-1 pointer-events-none z-[9999] font-mono text-center border-t border-white/10">
+        {authStatus.status === 'ok' 
+          ? `Auth: OK uid=${authStatus.uid?.substring(0, 8)}` 
+          : `Auth: ${authStatus.status === 'loading' ? 'LOADING...' : 'ERROR: ' + (authStatus.message || 'Unknown Failure')}`}
+      </footer>
     </div>
   );
 };

@@ -1,4 +1,5 @@
 
+
 export enum SectionType {
   INFO = 'INFO',
   PATH = 'PATH',
@@ -37,6 +38,7 @@ export interface UserProgress {
     [lessonId: number]: {
       diamond: number;
       islandScores: { [trackId: string]: number };
+      islandCompletionDates?: { [trackId: string]: string };
       lastCompletionDayKey?: string;
     }
   };
@@ -46,4 +48,6 @@ export interface UserProgress {
   lastActiveDayKey?: string;
   virtualDayOffset: number; // For admin simulation
   bypassActive?: boolean;
+  // Property to track if the results for the current lesson session were shared with the teacher
+  sentToTeacher?: boolean;
 }
