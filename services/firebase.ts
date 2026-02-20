@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
@@ -40,9 +40,10 @@ export async function loginWithEmail(email: string, pass: string) {
   }
 }
 
-export async function registerWithEmail(email: string, pass: string) {
+export async function registerWithEmail(email: string, pass: string, fullName: string) {
   try {
     const result = await createUserWithEmailAndPassword(auth, email, pass);
+    await updateProfile(result.user, { displayName: fullName });
     return result.user;
   } catch (error) {
     console.error("Error registering with email", error);

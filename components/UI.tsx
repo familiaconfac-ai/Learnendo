@@ -461,9 +461,10 @@ export const ResultDashboard: React.FC<{
 
 export const InfoSection: React.FC<{ 
   onStart: (name: string, email: string) => void; 
-  onAuthAction: (email: string, pass: string, isLogin: boolean) => void 
+  onAuthAction: (email: string, pass: string, isLogin: boolean, fullName?: string) => void 
 }> = ({ onStart, onAuthAction }) => {
   const [name, setName] = useState('');
+  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoginMode, setIsLoginMode] = useState(true);
@@ -479,11 +480,15 @@ export const InfoSection: React.FC<{
       setError('Please fill in all fields');
       return;
     }
+    if (!isLoginMode && !fullName.trim()) {
+      setError('Please enter your full name');
+      return;
+    }
     if (!validateEmail(email)) {
       setError('Please enter a valid email address');
       return;
     }
-    onAuthAction(email, password, isLoginMode);
+    onAuthAction(email, password, isLoginMode, fullName);
   };
 
   return (
@@ -511,6 +516,15 @@ export const InfoSection: React.FC<{
             <div className="text-[10px] font-bold text-red-500 uppercase animate-in fade-in slide-in-from-top-1">
               {error}
             </div>
+          )}
+          {!isLoginMode && (
+            <input 
+              type="text"
+              placeholder="Full Name" 
+              className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 font-bold text-sm focus:border-blue-500 outline-none transition-all" 
+              value={fullName} 
+              onChange={(e) => { setFullName(e.target.value); setError(''); }} 
+            />
           )}
           <input 
             type="email"

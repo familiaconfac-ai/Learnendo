@@ -293,15 +293,16 @@ const App: React.FC = () => {
     return false;
   };
 
-  const handleAuthAction = async (email: string, pass: string, isLogin: boolean) => {
+  const handleAuthAction = async (email: string, pass: string, isLogin: boolean, fullName?: string) => {
     try {
       const { loginWithEmail, registerWithEmail } = await import('./services/firebase');
       const user = isLogin 
         ? await loginWithEmail(email, pass)
-        : await registerWithEmail(email, pass);
+        : await registerWithEmail(email, pass, fullName || '');
         
-      if (user && user.email) {
-        startLesson(user.email.split('@')[0]);
+      if (user) {
+        const nameToUse = user.displayName || user.email?.split('@')[0] || 'Student';
+        startLesson(nameToUse);
       }
     } catch (err: any) {
       console.error("Auth Error:", err);
