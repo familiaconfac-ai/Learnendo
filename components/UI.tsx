@@ -488,7 +488,7 @@ export const ResultDashboard: React.FC<{
   );
 };
 
-export const InfoSection: React.FC<{ onStart: (name: string, email: string) => void }> = ({ onStart }) => {
+export const InfoSection: React.FC<{ onStart: (name: string, email: string) => void; onGoogleLogin: () => void }> = ({ onStart, onGoogleLogin }) => {
   const [name, setName] = useState('');
   return (
     <div className="text-center py-10 flex flex-col items-center animate-in fade-in zoom-in">
@@ -501,22 +501,38 @@ export const InfoSection: React.FC<{ onStart: (name: string, email: string) => v
         <div className="absolute inset-0 bg-blue-600/20 mix-blend-overlay"></div>
       </div>
       <h2 className="text-3xl font-black text-slate-900 mb-2 uppercase tracking-tight">Learnendo AI Tutor</h2>
-      <div className="mb-12 space-y-1">
+      <div className="mb-8 space-y-1">
         <p className="text-slate-500 font-black text-xs uppercase tracking-widest">Mastering Day by Day</p>
         <p className="text-blue-600 font-black text-[10px] uppercase tracking-[0.2em]">Workbook 1</p>
-        <p className="text-slate-400 font-bold text-[8px] uppercase tracking-widest">A1 Proficiency</p>
       </div>
-      <form onSubmit={(e) => { e.preventDefault(); if(name.trim()) onStart(name, ''); }} className="w-full max-w-[320px] space-y-4">
-        <input 
-          placeholder="What is your name?" 
-          className="w-full p-5 border-4 border-slate-100 rounded-3xl bg-white font-black text-center text-xl focus:border-blue-500 outline-none transition-all shadow-sm" 
-          value={name} 
-          onChange={(e) => setName(e.target.value)} 
-        />
-        <button className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black text-xl shadow-[0_8px_0_0_#1e40af] active:translate-y-1 transition-all uppercase tracking-widest">
-          LET'S START
+
+      <div className="w-full max-w-[320px] space-y-4">
+        <button 
+          onClick={onGoogleLogin}
+          className="w-full py-4 bg-white text-slate-700 border-4 border-slate-100 rounded-3xl font-black flex items-center justify-center gap-3 shadow-sm hover:bg-slate-50 transition-all active:scale-95"
+        >
+          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+          LOGIN COM GOOGLE
         </button>
-      </form>
+
+        <div className="flex items-center gap-4 py-2">
+          <div className="flex-1 h-1 bg-slate-100 rounded-full" />
+          <span className="text-[10px] font-black text-slate-300 uppercase">Ou continue como convidado</span>
+          <div className="flex-1 h-1 bg-slate-100 rounded-full" />
+        </div>
+
+        <form onSubmit={(e) => { e.preventDefault(); if(name.trim()) onStart(name, ''); }} className="space-y-4">
+          <input 
+            placeholder="Qual é o seu nome?" 
+            className="w-full p-5 border-4 border-slate-100 rounded-3xl bg-white font-black text-center text-xl focus:border-blue-500 outline-none transition-all shadow-sm" 
+            value={name} 
+            onChange={(e) => setName(e.target.value)} 
+          />
+          <button className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black text-xl shadow-[0_8px_0_0_#1e40af] active:translate-y-1 transition-all uppercase tracking-widest">
+            COMEÇAR AGORA
+          </button>
+        </form>
+      </div>
     </div>
   );
 };

@@ -293,6 +293,18 @@ const App: React.FC = () => {
     return false;
   };
 
+  const handleGoogleLogin = async () => {
+    try {
+      const { signInWithGoogle } = await import('./services/firebase');
+      const user = await signInWithGoogle();
+      if (user && user.displayName) {
+        startLesson(user.displayName);
+      }
+    } catch (err) {
+      console.error("Google Login Error:", err);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-blue-50 pb-8 flex flex-col items-center">
       <div className="w-full max-w-sm px-4 pt-6">
@@ -300,7 +312,7 @@ const App: React.FC = () => {
           <Header lessonId={progress.currentLesson} progress={progress} />
         )}
         
-        {section === SectionType.INFO && <InfoSection onStart={startLesson} />}
+        {section === SectionType.INFO && <InfoSection onStart={startLesson} onGoogleLogin={handleGoogleLogin} />}
         {section === SectionType.PATH && (
           <>
             <LearningPathView 

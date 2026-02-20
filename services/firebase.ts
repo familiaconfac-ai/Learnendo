@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
@@ -17,8 +17,9 @@ const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const googleProvider = new GoogleAuthProvider();
 
-// Initialize Analytics conditionally (it only works in browser environments)
+// Initialize Analytics conditionally
 let analytics: any = null;
 if (typeof window !== 'undefined') {
   isSupported().then(supported => {
@@ -28,7 +29,17 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export { app, auth, db, analytics };
+export { app, auth, db, analytics, googleProvider };
+
+export async function signInWithGoogle() {
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error) {
+    console.error("Error signing in with Google", error);
+    throw error;
+  }
+}
 
 /**
  * Ensures the user is authenticated anonymously.
