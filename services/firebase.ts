@@ -52,6 +52,7 @@ export async function registerWithEmail(email: string, pass: string) {
 
 /**
  * Ensures the user is authenticated anonymously.
+ * If Anonymous Auth is disabled in Firebase Console, it will fail gracefully.
  */
 export async function ensureAnonAuth(): Promise<{ uid: string; isAnonymous: boolean }> {
   if (auth.currentUser) {
@@ -68,8 +69,14 @@ export async function ensureAnonAuth(): Promise<{ uid: string; isAnonymous: bool
           const cred = await signInAnonymously(auth);
           resolve({ uid: cred.user.uid, isAnonymous: true });
         } catch (err: any) {
-          console.error("Firebase Auth Error:", err);
-          reject(err);
+          if (err.code === 'auth/admin-restricted-operation') {
+            console.warn("Anonymous Auth is disabled in Firebase Console. Please enable it in Authentication > Sign-in method.");
+            // Resolve with a dummy state to allow the app to load the login screen
+            resolve({ uid: 'guest-' + Date.now(), isAnonymous: true });
+          } else {
+            console.error("Firebase Auth Error:", err);
+            reject(err);
+          }
         }
       }
     });
