@@ -6,36 +6,7 @@ import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS } from '../constants';
 const SUCCESS_SOUND = "https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3";
 const ERR_SOUND = "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3";
 
-const TRANSLATIONS: Record<string, string> = {
-  'Which letter has the same vocalic sound as that letter? /ei/': 'Qual letra tem o mesmo som vocálico que esta letra? /ei/',
-  'Which letter has the same vocalic sound as that letter? /i:/': 'Qual letra tem o mesmo som vocálico que esta letra? /i:/',
-  'Which letter has the same vocalic sound as that letter? /e/': 'Qual letra tem o mesmo som vocálico que esta letra? /e/',
-  'Which letter has the same vocalic sound as that letter? /ai/': 'Qual letra tem o mesmo som vocálico que esta letra? /ai/',
-  'Which letter has the same vocalic sound as that letter? /ju:/': 'Qual letra tem o mesmo som vocálico que esta letra? /ju:/',
-  'Which letter has the same vocalic sound as that letter? /oʊ/': 'Qual letra tem o mesmo som vocálico que esta letra? /oʊ/',
-  'Identify the color of the shirt:': 'Identifique a cor da camisa:',
-  'Identify the color of the car:': 'Identifique a cor do carro:',
-  'Identify the color of the sky:': 'Identifique a cor do céu:',
-  'Identify the color of the object:': 'Identifique a cor do objeto:',
-  'Identify the color of the phone:': 'Identifique a cor do telefone:',
-  'Identify the color of the glass:': 'Identifique a cor da taça:',
-  'What color is it?': 'Que cor é essa?',
-  'Math: What is four times two?': 'Matemática: Quanto é quatro veces dois?',
-  'Math: What is ten divided by two?': 'Matemática: Quanto é dez dividido por dois?',
-  'Math: What is two plus three?': 'Matemática: Quanto é dois mais três?',
-  'Math: What is ten plus five?': 'Matemática: Quanto é dez mais cinco?',
-  'Type in words what you hear:': 'Digite em palavras o que você ouve:',
-  'Listen and pick the correct number:': 'Ouça e escolha o número correto:',
-  'Say the result:': 'Diga o resultado:',
-  'Say the number:': 'Diga o número:',
-  'Which letter sounds like "A" (Family /ei/)?': 'Qual letra tem o som parecido com "A" (Família /ei/)?',
-  'Which letter sounds like "B" (Family /i:/)?': 'Qual letra tem o som parecido com "B" (Família /i:/)?',
-  'Which letter sounds like "F" (Family /e/)?': 'Qual letra tem o som parecido com "F" (Família /e/)?',
-  'Which letter sounds like "I" (Family /ai/)?': 'Qual letra tem o som parecido com "I" (Família /ai/)?',
-  'Which letter sounds like "U" (Family /ju:/)?': 'Qual letra tem o som parecido com "U" (Família /ju:/)?',
-  'Which letter sounds like "S" (Family /e/)?': 'Qual letra tem o som parecido com "S" (Família /e/)?',
-  'Which letter is in a group by itself (/oʊ/)?': 'Qual letra está em um grupo sozinha (/oʊ/)?'
-};
+const TRANSLATIONS: Record<string, string> = {};
 
 const COLOR_STYLE_MAP: Record<string, string> = {
   'Red': 'text-red-500',
@@ -488,8 +459,12 @@ export const ResultDashboard: React.FC<{
   );
 };
 
-export const InfoSection: React.FC<{ onStart: (name: string, email: string) => void; onGoogleLogin: () => void }> = ({ onStart, onGoogleLogin }) => {
+export const InfoSection: React.FC<{ onStart: (name: string, email: string) => void; onEmailLogin: (email: string, pass: string) => void }> = ({ onStart, onEmailLogin }) => {
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoginMode, setIsLoginMode] = useState(true);
+
   return (
     <div className="text-center py-10 flex flex-col items-center animate-in fade-in zoom-in">
       <div className="w-36 h-36 mb-10 bg-white rounded-3xl p-1 border-4 border-blue-100 shadow-2xl overflow-hidden relative group">
@@ -507,29 +482,53 @@ export const InfoSection: React.FC<{ onStart: (name: string, email: string) => v
       </div>
 
       <div className="w-full max-w-[320px] space-y-4">
-        <button 
-          onClick={onGoogleLogin}
-          className="w-full py-4 bg-white text-slate-700 border-4 border-slate-100 rounded-3xl font-black flex items-center justify-center gap-3 shadow-sm hover:bg-slate-50 transition-all active:scale-95"
-        >
-          <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
-          LOGIN COM GOOGLE
-        </button>
+        <div className="bg-white p-6 border-4 border-slate-100 rounded-[2.5rem] shadow-sm space-y-4">
+          <h3 className="text-sm font-black text-slate-800 uppercase tracking-tight">
+            {isLoginMode ? 'Sign In' : 'Register'}
+          </h3>
+          <input 
+            type="email"
+            placeholder="Email" 
+            className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 font-bold text-sm focus:border-blue-500 outline-none transition-all" 
+            value={email} 
+            onChange={(e) => setEmail(e.target.value)} 
+          />
+          <input 
+            type="password"
+            placeholder="Password" 
+            className="w-full p-4 border-2 border-slate-50 rounded-2xl bg-slate-50 font-bold text-sm focus:border-blue-500 outline-none transition-all" 
+            value={password} 
+            onChange={(e) => setPassword(e.target.value)} 
+          />
+          <button 
+            onClick={() => onEmailLogin(email, password)}
+            className="w-full py-4 bg-slate-800 text-white rounded-2xl font-black uppercase text-xs shadow-lg active:scale-95 transition-all"
+          >
+            {isLoginMode ? 'Login' : 'Sign Up'}
+          </button>
+          <button 
+            onClick={() => setIsLoginMode(!isLoginMode)}
+            className="text-[10px] font-black text-blue-500 uppercase tracking-widest hover:underline"
+          >
+            {isLoginMode ? "Don't have an account? Register" : "Already have an account? Login"}
+          </button>
+        </div>
 
         <div className="flex items-center gap-4 py-2">
           <div className="flex-1 h-1 bg-slate-100 rounded-full" />
-          <span className="text-[10px] font-black text-slate-300 uppercase">Ou continue como convidado</span>
+          <span className="text-[10px] font-black text-slate-300 uppercase">Or continue as guest</span>
           <div className="flex-1 h-1 bg-slate-100 rounded-full" />
         </div>
 
         <form onSubmit={(e) => { e.preventDefault(); if(name.trim()) onStart(name, ''); }} className="space-y-4">
           <input 
-            placeholder="Qual é o seu nome?" 
+            placeholder="What is your name?" 
             className="w-full p-5 border-4 border-slate-100 rounded-3xl bg-white font-black text-center text-xl focus:border-blue-500 outline-none transition-all shadow-sm" 
             value={name} 
             onChange={(e) => setName(e.target.value)} 
           />
           <button className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black text-xl shadow-[0_8px_0_0_#1e40af] active:translate-y-1 transition-all uppercase tracking-widest">
-            COMEÇAR AGORA
+            START NOW
           </button>
         </form>
       </div>

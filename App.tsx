@@ -293,15 +293,16 @@ const App: React.FC = () => {
     return false;
   };
 
-  const handleGoogleLogin = async () => {
+  const handleEmailLogin = async (email: string, pass: string) => {
     try {
-      const { signInWithGoogle } = await import('./services/firebase');
-      const user = await signInWithGoogle();
-      if (user && user.displayName) {
-        startLesson(user.displayName);
+      const { loginWithEmail } = await import('./services/firebase');
+      const user = await loginWithEmail(email, pass);
+      if (user && user.email) {
+        startLesson(user.email.split('@')[0]);
       }
-    } catch (err) {
-      console.error("Google Login Error:", err);
+    } catch (err: any) {
+      console.error("Login Error:", err);
+      alert(err.message || "Failed to login");
     }
   };
 
@@ -312,7 +313,7 @@ const App: React.FC = () => {
           <Header lessonId={progress.currentLesson} progress={progress} />
         )}
         
-        {section === SectionType.INFO && <InfoSection onStart={startLesson} onGoogleLogin={handleGoogleLogin} />}
+        {section === SectionType.INFO && <InfoSection onStart={startLesson} onEmailLogin={handleEmailLogin} />}
         {section === SectionType.PATH && (
           <>
             <LearningPathView 

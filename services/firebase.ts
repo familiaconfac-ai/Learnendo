@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
@@ -17,7 +17,6 @@ const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const googleProvider = new GoogleAuthProvider();
 
 // Initialize Analytics conditionally
 let analytics: any = null;
@@ -29,14 +28,24 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export { app, auth, db, analytics, googleProvider };
+export { app, auth, db, analytics };
 
-export async function signInWithGoogle() {
+export async function loginWithEmail(email: string, pass: string) {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
+    const result = await signInWithEmailAndPassword(auth, email, pass);
     return result.user;
   } catch (error) {
-    console.error("Error signing in with Google", error);
+    console.error("Error signing in with email", error);
+    throw error;
+  }
+}
+
+export async function registerWithEmail(email: string, pass: string) {
+  try {
+    const result = await createUserWithEmailAndPassword(auth, email, pass);
+    return result.user;
+  } catch (error) {
+    console.error("Error registering with email", error);
     throw error;
   }
 }
