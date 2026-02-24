@@ -87,15 +87,16 @@ export const LearningPathView: React.FC<{
     const max = islandWeights[idx] || 10;
     const locked = isModuleLocked(type);
     return {
-      type: type as PracticeModuleType,
-      icon: MODULE_ICONS[type] || 'fa-graduation-cap',
-      color: locked ? 'bg-slate-300' : ['bg-amber-400', 'bg-orange-400', 'bg-rose-400', 'bg-emerald-400', 'bg-teal-400', 'bg-indigo-400', 'bg-purple-500'][idx],
-      shadow: locked ? 'bg-slate-400' : ['bg-amber-600', 'bg-orange-600', 'bg-rose-600', 'bg-emerald-600', 'bg-teal-600', 'bg-indigo-600', 'bg-purple-700'][idx],
-      isMastered: score >= max,
-      score,
-      max,
-      locked
-    };
+  type: type as PracticeModuleType,
+  mascot: type === 'L1_TRACK1',
+  icon: MODULE_ICONS[type] || 'fa-graduation-cap',
+  color: locked ? 'bg-slate-300' : ['bg-amber-400', 'bg-orange-400', 'bg-red-400'][idx % 3],
+  shadow: locked ? 'bg-slate-400' : ['bg-amber-600', 'bg-orange-600', 'bg-red-600'][idx % 3],
+  isMastered: score >= max,
+  score,
+  max,
+  locked,
+};
   });
 
   if (lessonLocked) {
@@ -123,6 +124,19 @@ export const LearningPathView: React.FC<{
         const xPos = idx % 2 === 0 ? '-translate-x-12' : 'translate-x-12';
         return (
           <div key={mod.type} className={`mb-12 flex flex-col items-center ${xPos}`}>
+  <div className="relative">
+
+     {mod.mascot && (
+       <img
+         src="/mascot.png"
+         alt="Mascot"
+         className="absolute -right-12 top-1/2 -translate-y-1/2 w-20 h-20 drop-shadow-xl pointer-events-none"
+       />
+     )}
+
+     <div className={`absolute top-2 w-20 h-20 rounded-full ${mod.shadow} -z-10`} />
+
+     <button>
             <div className="relative">
                <div className={`absolute top-2 w-20 h-20 rounded-full ${mod.shadow} -z-10`} />
                <button 
