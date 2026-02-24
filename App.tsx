@@ -143,7 +143,16 @@ const App: React.FC = () => {
 
   const handleResult = (isCorrect: boolean, val: string) => {
     const item = activeItems[currentIdx];
-    const isFirstTry = !logs.some(l => l.question === item.instruction);
+    // Base id estável: remove sufixo de retry
+const baseId = (item.id || `${item.moduleType}_${currentIdx}`).split('-retry-')[0];
+
+// Primeira tentativa deve ser por baseId, não por instruction
+const isFirstTry = !attemptedBaseIds[baseId];
+
+// Marque como "tentado" assim que respondeu pela primeira vez
+if (isFirstTry) {
+  setAttemptedBaseIds(prev => ({ ...prev, [baseId]: true }));
+}
     
     setLogs(prev => [...prev, {
       question: item.instruction,
@@ -154,7 +163,7 @@ const App: React.FC = () => {
     }]);
 
     if (!isCorrect) {
-      setActiveItems(prev => [...prev, { ...item, id: `${item.id}-retry-${Date.now()}` }]);
+      setActiveItems(prev => [...prev, { ...item, id: `${baseId}-retry-${Date.now()}` }]);
       setCurrentIdx(prev => prev + 1);
       return; 
     }
