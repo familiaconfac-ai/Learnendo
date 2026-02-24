@@ -1,30 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog } from './types';
-import { PRACTICE_ITEMS, MODULE_NAMES, LESSON_CONFIGS } from './constants';
+import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog, QState } from './types';
+import { PRACTICE_ITEMS, LESSON_CONFIGS } from './constants';
 import { InfoSection, PracticeSection, ResultDashboard, Header, LearningPathView } from './components/UI';
 import { saveAssessmentResult } from './services/db';
 import { ensureAnonAuth, auth } from './services/firebase';
 
-const STORAGE_KEY = 'learnendo_v15_mastery';
+console.log('Firebase Auth Object:', auth);
+
+const STORAGE_KEY = 'learnendo_v16_mastery';
 const BYPASS_KEY = 'Martins';
-
-const getModuleCountsForLesson = (lessonId: number) => {
-  const config = LESSON_CONFIGS.find(l => l.id === lessonId);
-  if (!config) return [];
-  return config.modules.map(m => PRACTICE_ITEMS.filter(i => i.moduleType === m).length);
-};
-
-type QState = 'pending' | 'correct' | 'wrong';
 
 type ActivePracticeItem = PracticeItem & { __baseId: string };
 
 const App: React.FC = () => {
-  const [section, setSection] = useState(SectionType.INFO);
+  const [section, setSection] = useState<SectionType>(SectionType.INFO);
   const [student, setStudent] = useState({ name: '' });
-
-  const [authStatus, setAuthStatus] = useState<{ status: 'loading' | 'ok' | 'error'; uid?: string; message?: string }>({
-    status: 'loading'
-  });
+  const [authStatus, setAuthStatus] = useState<{ status: 'loading' | 'ok' | 'error'; uid?: string; message?: string }>({ status: 'loading' });
 
   const [progress, setProgress] = useState<UserProgress>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -35,26 +26,25 @@ const App: React.FC = () => {
       lessonData: {
         1: { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
       },
-      totalStars: 100, // começa com 100 (você pediu)
+      totalStars: 100,
       streakCount: 0,
       iceCount: 0,
       virtualDayOffset: 0,
       bypassActive: false,
       sentToTeacher: false
-    };
+    } as UserProgress;
   });
 
-  // === NEW MODEL STATE (per island run) ===
+  // === Island Run State (novo modelo) ===
   const [baseItems, setBaseItems] = useState<ActivePracticeItem[]>([]);
   const [currentBaseIndex, setCurrentBaseIndex] = useState(0);
-
   const [qState, setQState] = useState<Record<number, QState>>({});
   const [hadAnyMistake, setHadAnyMistake] = useState(false);
-
+  const [attemptedWrong, setAttemptedWrong] = useState<Record<number, boolean>>({}); // para descontar estrela 1x por questão
   const [logs, setLogs] = useState<AnswerLog[]>([]);
   const [activeModule, setActiveModule] = useState<PracticeModuleType | undefined>();
 
-  const isAdmin = student.name === BYPASS_KEY || (progress as any).bypassActive;
+  const isAdmin = student.name === BYPASS_KEY || progress.bypassActive;
 
   // Auth init
   useEffect(() => {
@@ -73,7 +63,7 @@ const App: React.FC = () => {
 
   const getTodayKey = (offset: number = 0) => {
     const d = new Date();
-    d.setDate(d.getDate() + ((progress as any).virtualDayOffset || 0) + offset);
+    d.setDate(d.getDate() + (progress.virtualDayOffset || 0) + offset);
     return d.toISOString().split('T')[0];
   };
 
@@ -81,204 +71,163 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
   }, [progress]);
 
-  // ===== helpers for new model =====
-  const totalItemsInModule = useMemo(() => {
-    if (!activeModule) return 0;
-    return PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length;
-  }, [activeModule]);
+  const moduleTotal = useMemo(() => baseItems.length, [baseItems.length]);
 
   const correctCount = useMemo(() => {
-    const values = Object.values(qState);
-    return values.filter(v => v === 'correct').length;
-  }, [qState]);
+    const total = baseItems.length;
+    let c = 0;
+    for (let i = 0; i < total; i++) if (qState[i] === 'correct') c++;
+    return c;
+  }, [qState, baseItems.length]);
 
   const progressPercent = useMemo(() => {
-    if (!totalItemsInModule) return 0;
-    return Math.round((correctCount / totalItemsInModule) * 100);
-  }, [correctCount, totalItemsInModule]);
-
-  const allCorrect = (state: Record<number, QState>, total: number) => {
-    for (let i = 0; i < total; i++) {
-      if (state[i] !== 'correct') return false;
-    }
-    return true;
-  };
-
-  const findNextUnfinishedFrom = (state: Record<number, QState>, total: number, start: number) => {
-    for (let i = start; i < total; i++) {
-      if (state[i] !== 'correct') return i;
-    }
-    for (let i = 0; i < total; i++) {
-      if (state[i] !== 'correct') return i;
-    }
-    return null;
-  };
+    if (!moduleTotal) return 0;
+    return Math.round((correctCount / moduleTotal) * 100);
+  }, [correctCount, moduleTotal]);
 
   // ====== start lesson ======
   const startLesson = (name: string) => {
     setStudent({ name });
-    if (name === BYPASS_KEY) {
-      setProgress((prev: any) => ({ ...prev, bypassActive: true }));
-    }
+    if (name === BYPASS_KEY) setProgress(prev => ({ ...prev, bypassActive: true }));
     setSection(SectionType.PATH);
   };
 
-  // ====== start island ======
+  // ====== start module/island ======
   const startModule = (type: PracticeModuleType) => {
     const items: ActivePracticeItem[] = PRACTICE_ITEMS
       .filter(i => i.moduleType === type)
       .map((item, idx) => ({
         ...item,
-        id: `${type}__${idx}`,        // render id estável
-        __baseId: `${type}__${idx}`   // id base estável
+        id: `${type}__${idx}`,
+        __baseId: `${type}__${idx}`
       }));
 
     const init: Record<number, QState> = {};
     for (let i = 0; i < items.length; i++) init[i] = 'pending';
 
     setBaseItems(items);
+    setActiveModule(type);
     setQState(init);
     setHadAnyMistake(false);
+    setAttemptedWrong({});
     setLogs([]);
-    setActiveModule(type);
-
-    // começa na 1ª pendente
     setCurrentBaseIndex(0);
-
     setSection(SectionType.PRACTICE);
   };
 
-  // ====== answer handling (new model) ======
+  // ====== core routing: next unfinished ======
+  const findNextUnfinished = (state: Record<number, QState>, total: number, from: number) => {
+    // 1) tenta ir para frente
+    for (let i = from + 1; i < total; i++) if (state[i] !== 'correct') return i;
+    // 2) chegou no fim → volta do começo
+    for (let i = 0; i <= from; i++) if (state[i] !== 'correct') return i;
+    return null; // tudo correct
+  };
+
   const handleResult = (isCorrect: boolean, val: string) => {
     const item = baseItems[currentBaseIndex];
     if (!item) return;
 
-    const baseId = item.__baseId;
-
     // log
-    setLogs((prev: any) => [...prev, {
-      question: item.instruction,
-      userAnswer: val,
-      correctAnswer: item.correctValue,
-      isCorrect,
-      questionId: baseId,
-      timestamp: Date.now()
-    }]);
+    setLogs(prev => [
+      ...prev,
+      {
+        question: item.instruction,
+        userAnswer: val,
+        correctAnswer: item.correctValue,
+        isCorrect,
+        isFirstTry: qState[currentBaseIndex] === 'pending'
+      } as any
+    ]);
 
     setQState(prev => {
       const next = { ...prev };
 
-      // se acertou: vira correct
       if (isCorrect) {
         next[currentBaseIndex] = 'correct';
       } else {
-        // se errou: marca wrong (e mantém wrong mesmo se errar de novo)
-        if (next[currentBaseIndex] !== 'wrong') {
-          next[currentBaseIndex] = 'wrong';
-
-          // perde estrela só na primeira vez que marcar wrong nessa questão
-          setProgress((p: any) => ({
-            ...p,
-            totalStars: Math.max(0, (p.totalStars ?? 100) - 1)
-          }));
-        }
+        // marca wrong
+        if (next[currentBaseIndex] !== 'wrong') next[currentBaseIndex] = 'wrong';
         setHadAnyMistake(true);
+
+        // desconta estrela 1x por questão (primeiro erro naquela questão)
+        setAttemptedWrong(wPrev => {
+          if (wPrev[currentBaseIndex]) return wPrev;
+          setProgress(p => ({ ...p, totalStars: Math.max(0, (p.totalStars ?? 100) - 1) }));
+          return { ...wPrev, [currentBaseIndex]: true };
+        });
       }
 
-      // decide próximo passo
       const total = baseItems.length;
 
       // terminou?
-      if (allCorrect(next, total)) {
-        finalizeIslandNewModel(next);
+      let done = true;
+      for (let i = 0; i < total; i++) {
+        if (next[i] !== 'correct') { done = false; break; }
+      }
+      if (done) {
+        finalizeIsland();
         return next;
       }
 
-      // vai para a próxima não concluída
-      const nextIdx = findNextUnfinishedFrom(next, total, currentBaseIndex + 1);
+      // próximo alvo (chegou no fim? volta na primeira errada/pendente)
+      const nextIdx = findNextUnfinished(next, total, currentBaseIndex);
       if (nextIdx !== null) setCurrentBaseIndex(nextIdx);
 
       return next;
     });
   };
 
-  // ====== finalize island (new model) ======
-  const finalizeIslandNewModel = (snapshot: Record<number, QState>) => {
+  const finalizeIsland = () => {
     const currentTrack = activeModule!;
-    const lessonId = (progress as any).currentLesson;
+    const lessonId = progress.currentLesson;
     const today = getTodayKey();
+    const perfectDiamond = !hadAnyMistake;
 
-    const total = baseItems.length;
-    const perfectDiamond = !hadAnyMistake; // nunca marcou wrong
+    setProgress(prev => {
+      const lessonData = { ...prev.lessonData };
+      if (!lessonData[lessonId]) {
+        lessonData[lessonId] = { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} };
+      }
 
-    setProgress((prev: any) => {
-      const currentData = prev.lessonData?.[lessonId] || {
-        diamond: 0,
-        islandScores: {},
-        islandCompletionDates: {},
-        islandDiamonds: {}
-      };
+      const currentData = lessonData[lessonId];
 
-      // ilha concluída = total (sem “conta frágil”)
-      const newScores = {
-        ...currentData.islandScores,
-        [currentTrack]: total
-      };
+      // ✅ Ilha concluída = total da ilha (não “21/25”)
+      const totalThisIsland = baseItems.length;
+      const newScores = { ...currentData.islandScores, [currentTrack]: totalThisIsland };
+      const newCompletionDates = { ...(currentData.islandCompletionDates || {}), [currentTrack]: today };
+      const newDiamonds = { ...(currentData.islandDiamonds || {}), [currentTrack]: perfectDiamond };
 
-      const newCompletionDates = {
-        ...currentData.islandCompletionDates,
-        [currentTrack]: today
-      };
-
-      const newIslandDiamonds = {
-        ...(currentData.islandDiamonds || {}),
-        [currentTrack]: perfectDiamond
-      };
-
-      // diamond do lesson como % real: soma concluídos / soma totais
+      // % do lesson (opcional)
       const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId);
       const totalLessonItems = lessonConfig
-        ? lessonConfig.modules.reduce((acc, m) => acc + PRACTICE_ITEMS.filter(i => i.moduleType === m).length, 0)
+        ? lessonConfig.modules.reduce((acc: number, m) => acc + PRACTICE_ITEMS.filter(i => i.moduleType === m).length, 0)
         : 0;
 
-      const totalCorrectAcrossIslands = Object.values(newScores).reduce((a: number, b: any) => a + (Number(b) || 0), 0);
+      const sum = (Object.values(newScores) as number[]).reduce((a, b) => a + (Number(b) || 0), 0);
+      const newDiamondPct = totalLessonItems > 0 ? Math.min(100, Math.round((sum / totalLessonItems) * 100)) : 0;
 
-      const newDiamond = totalLessonItems > 0
-        ? Math.min(100, Math.round((totalCorrectAcrossIslands / totalLessonItems) * 100))
-        : 0;
-
-      return {
-        ...prev,
-        lessonData: {
-          ...prev.lessonData,
-          [lessonId]: {
-            ...currentData,
-            islandScores: newScores,
-            islandCompletionDates: newCompletionDates,
-            islandDiamonds: newIslandDiamonds,
-            diamond: newDiamond
-          }
-        }
+      lessonData[lessonId] = {
+        ...currentData,
+        islandScores: newScores,
+        islandCompletionDates: newCompletionDates,
+        islandDiamonds: newDiamonds,
+        diamond: newDiamondPct
       };
+
+      return { ...prev, lessonData };
     });
 
     setSection(SectionType.PATH);
   };
 
-  // ====== PATH UI data ======
-  const getIslandProgressForUI = () => {
-    const lessonId = (progress as any).currentLesson;
-    const config = LESSON_CONFIGS.find(l => l.id === lessonId);
-    if (!config) return [];
-    const scores = (progress as any).lessonData?.[lessonId]?.islandScores || {};
-    return config.modules.map(m => scores[m] || 0);
-  };
-
-  // ====== LOCK RULES (perfect completion + next day) ======
+  // ====== LOCK RULES (COMBINADO) ======
+  // Próxima ilha abre se: anterior 100% (concluída) + dia seguinte.
+  // NÃO exige diamante.
   const isModuleLocked = (moduleType: PracticeModuleType) => {
     if (isAdmin) return false;
 
-    const lessonId = (progress as any).currentLesson;
+    const lessonId = progress.currentLesson;
     const config = LESSON_CONFIGS.find(l => l.id === lessonId);
     if (!config) return true;
 
@@ -286,14 +235,15 @@ const App: React.FC = () => {
     if (idx === 0) return false;
 
     const prevModule = config.modules[idx - 1];
-    const prevScore = (progress as any).lessonData?.[lessonId]?.islandScores?.[prevModule] || 0;
+
+    const prevScore = progress.lessonData[lessonId]?.islandScores?.[prevModule] || 0;
     const prevMax = PRACTICE_ITEMS.filter(i => i.moduleType === prevModule).length;
 
-    // critério 1: anterior concluída (score == total)
+    // Critério 1: 100% (concluiu a ilha)
     if (prevScore < prevMax) return true;
 
-    // critério 2: só dia seguinte
-    const completionDay = (progress as any).lessonData?.[lessonId]?.islandCompletionDates?.[prevModule];
+    // Critério 2: só dia seguinte
+    const completionDay = progress.lessonData[lessonId]?.islandCompletionDates?.[prevModule];
     if (completionDay === getTodayKey()) return true;
 
     return false;
@@ -302,7 +252,7 @@ const App: React.FC = () => {
   const isLessonLocked = (id: number) => {
     if (isAdmin || id === 1) return false;
 
-    const prev = (progress as any).lessonData?.[id - 1];
+    const prev = progress.lessonData[id - 1];
     if (!prev || prev.diamond < 100) return true;
 
     const lastMod = LESSON_CONFIGS.find(l => l.id === id - 1)?.modules.slice(-1)[0];
@@ -310,97 +260,96 @@ const App: React.FC = () => {
     return completionDay === getTodayKey();
   };
 
-  // ====== current item for PracticeSection ======
-  const currentItem = baseItems[currentBaseIndex];
+  const getIslandProgressForUI = () => {
+    const lessonId = progress.currentLesson;
+    const config = LESSON_CONFIGS.find(l => l.id === lessonId);
+    if (!config) return [];
+    const scores = progress.lessonData[lessonId]?.islandScores || {};
+    return config.modules.map(m => scores[m] || 0);
+  };
 
   return (
-    <>
-      {section !== SectionType.INFO && section !== SectionType.PRACTICE && (
-        <Header
-          studentName={student.name}
-          totalStars={(progress as any).totalStars ?? 0}
-          currentLesson={(progress as any).currentLesson}
-          onLogout={() => window.location.reload()}
-        />
-      )}
+    <div className="min-h-screen bg-blue-50 pb-8 flex flex-col items-center">
+      <div className="w-full max-w-sm px-4 pt-6">
+        {section !== SectionType.INFO && section !== SectionType.PRACTICE && (
+          <Header
+            studentName={student.name}
+            totalStars={progress.totalStars}
+            currentLesson={progress.currentLesson}
+            onLogout={() => window.location.reload()}
+          />
+        )}
 
-      {section === SectionType.INFO && (
-        <InfoSection onStart={startLesson} />
-      )}
+        {section === SectionType.INFO && <InfoSection onStart={startLesson} />}
 
-      {section === SectionType.PATH && (
-        <LearningPathView
-          currentLesson={(progress as any).currentLesson}
-          lessonData={(progress as any).lessonData}
-          getIslandProgress={getIslandProgressForUI}
-          isModuleLocked={isModuleLocked}
-          isLessonLocked={isLessonLocked}
-          onStartModule={startModule}
-          onNextLesson={() => {
-            const next = (progress as any).currentLesson + 1;
-            setProgress((prev: any) => ({
-              ...prev,
-              currentLesson: next,
-              lessonData: {
-                ...prev.lessonData,
-                [next]: prev.lessonData[next] || { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
-              }
-            }));
-          }}
-        />
-      )}
+        {section === SectionType.PATH && (
+          <LearningPathView
+            currentLesson={progress.currentLesson}
+            lessonData={progress.lessonData}
+            getIslandProgress={getIslandProgressForUI}
+            isModuleLocked={isModuleLocked}
+            isLessonLocked={isLessonLocked}
+            onStartModule={startModule}
+            onNextLesson={() => {
+              const next = progress.currentLesson + 1;
+              setProgress(prev => ({
+                ...prev,
+                currentLesson: next,
+                lessonData: {
+                  ...prev.lessonData,
+                  [next]: prev.lessonData[next] || { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
+                }
+              }));
+            }}
+          />
+        )}
 
-      {section === SectionType.PRACTICE && currentItem && (
-        <PracticeSection
-          item={currentItem}
-          // agora currentIndex é o índice real da questão base (0..N-1)
-          currentIndex={currentBaseIndex}
-          // totalItems é o total da ilha (N)
-          totalItems={baseItems.length}
-          onResult={handleResult}
-          // progress (0..100) baseado em quantas questões estão correct
-          progress={progressPercent}
-          totalItemsInModule={baseItems.length}
-          lessonId={(progress as any).currentLesson}
-          // Observação: se você quiser desenhar as "bolinhas" no PracticeSection,
-          // você vai precisar passar também qState e talvez hadAnyMistake:
-          // qState={qState}
-        />
-      )}
+        {section === SectionType.PRACTICE && baseItems[currentBaseIndex] && (
+          <PracticeSection
+            item={baseItems[currentBaseIndex]}
+            onResult={handleResult}
+            currentIndex={currentBaseIndex}
+            totalItemsInModule={baseItems.length}
+            qState={qState}
+            progress={progressPercent}
+            lessonId={progress.currentLesson}
+          />
+        )}
 
-      {section === SectionType.RESULTS && (
-        <ResultDashboard
-          lessonId={(progress as any).currentLesson}
-          diamond={(progress as any).lessonData?.[(progress as any).currentLesson]?.diamond || 0}
-          islandScores={(progress as any).lessonData?.[(progress as any).currentLesson]?.islandScores || {}}
-          onSendToTeacher={() => {
-            setProgress((prev: any) => ({ ...prev, sentToTeacher: true }));
-            saveAssessmentResult(progress as any);
-          }}
-          onNextLesson={() => {
-            const next = (progress as any).currentLesson + 1;
-            setProgress((prev: any) => ({
-              ...prev,
-              currentLesson: next,
-              lessonData: {
-                ...prev.lessonData,
-                [next]: prev.lessonData[next] || { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
-              }
-            }));
-            setSection(SectionType.PATH);
-          }}
-          onRestart={() => setSection(SectionType.PATH)}
-          isAdmin={isAdmin}
-          todayKey={getTodayKey()}
-        />
-      )}
-
-      <div style={{ position: 'fixed', bottom: 10, right: 10, fontSize: '12px', opacity: 0.5 }}>
-        {authStatus.status === 'ok'
-          ? `Auth: OK ${authStatus.uid?.substring(0, 8)}`
-          : `Auth: ${authStatus.status}`}
+        {section === SectionType.RESULTS && (
+          <ResultDashboard
+            lessonId={progress.currentLesson}
+            diamond={progress.lessonData[progress.currentLesson]?.diamond || 0}
+            islandScores={progress.lessonData[progress.currentLesson]?.islandScores || {}}
+            onSendToTeacher={() => {
+              setProgress(prev => ({ ...prev, sentToTeacher: true }));
+              saveAssessmentResult(progress);
+            }}
+            onNextLesson={() => {
+              const next = progress.currentLesson + 1;
+              setProgress(prev => ({
+                ...prev,
+                currentLesson: next,
+                lessonData: {
+                  ...prev.lessonData,
+                  [next]: prev.lessonData[next] || { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
+                }
+              }));
+              setSection(SectionType.PATH);
+            }}
+            onRestart={() => setSection(SectionType.PATH)}
+            isAdmin={isAdmin}
+            todayKey={getTodayKey()}
+          />
+        )}
       </div>
-    </>
+
+      <footer className="fixed bottom-0 left-0 right-0 bg-black/90 text-[8px] text-white/70 px-2 py-1 pointer-events-none z-[9999] font-mono text-center border-t border-white/10">
+        {authStatus.status === 'ok'
+          ? `Auth: OK uid=${authStatus.uid?.substring(0, 8)}`
+          : `Auth: ${authStatus.status}`}
+      </footer>
+    </div>
   );
 };
 
