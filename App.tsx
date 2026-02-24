@@ -12,7 +12,12 @@ console.log('Firebase Auth Object:', auth);
 const STORAGE_KEY = 'learnendo_v8_mastery';
 const BYPASS_KEY = 'Martins73';
 
-const ISLAND_WEIGHTS = [25, 15, 15, 10, 10, 10, 15];
+// Helper to get real item counts for a lesson's modules
+const getModuleWeights = (lessonId: number) => {
+  const config = LESSON_CONFIGS.find(l => l.id === lessonId);
+  if (!config) return [];
+  return config.modules.map(m => PRACTICE_ITEMS.filter(i => i.moduleType === m).length);
+};
 
 const App: React.FC = () => {
   const [section, setSection] = useState<SectionType>(SectionType.INFO);
@@ -172,11 +177,13 @@ const App: React.FC = () => {
     const lessonId = progress.currentLesson;
     const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId)!;
     const trackIndex = lessonConfig.modules.indexOf(currentTrack);
-    const weight = ISLAND_WEIGHTS[trackIndex] || 10;
+    
+    const currentWeights = getModuleWeights(lessonId);
+    const weight = currentWeights[trackIndex] || 10;
 
     const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === currentTrack).length;
-    const islandPercentage = firstTryCorrectCount / baseItemsCount;
-    const rawIslandScore = Math.round(islandPercentage * weight);
+    const isPerfect = firstTryCorrectCount === baseItemsCount;
+    const rawIslandScore = firstTryCorrectCount; // Score is the number of perfect hits
 
     setProgress(prev => {
       const lessonData = { ...prev.lessonData };
@@ -193,15 +200,13 @@ const App: React.FC = () => {
       const today = getTodayKey();
       let newStreak = prev.streakCount;
       
-      // Check if this specific island was just completed perfectly for the first time today
-      if (rawIslandScore >= weight) {
+      // Check if this specific island was just completed perfectly
+      if (isPerfect) {
          if (!lessonData[lessonId].islandCompletionDates) {
             lessonData[lessonId].islandCompletionDates = {};
          }
          if (!lessonData[lessonId].islandCompletionDates[currentTrack]) {
             lessonData[lessonId].islandCompletionDates[currentTrack] = today;
-            // Only increment streak if the whole lesson reaches 100%? 
-            // The user said "If the person gets 21 out of 25, it means they did not get 100%. On that island, so they have to do it again. Because then the next island will not open."
          }
       }
 
@@ -263,12 +268,14 @@ const App: React.FC = () => {
     
     const prevModule = lessonConfig.modules[trackIndex - 1];
     const prevScore = progress.lessonData[lessonId]?.islandScores[prevModule] || 0;
-    const prevMax = ISLAND_WEIGHTS[trackIndex - 1];
     
-    // Must have 100% on previous island
+    const currentWeights = getModuleWeights(lessonId);
+    const prevMax = currentWeights[trackIndex - 1];
+    
+    // Criterion (a): Must have 100% (perfect) on previous island
     if (prevScore < prevMax) return true;
     
-    // Must be a different day than when previous island was completed
+    // Criterion (b): Must be a different day than when previous island was completed
     const completionDate = progress.lessonData[lessonId]?.islandCompletionDates?.[prevModule];
     const today = getTodayKey();
     if (completionDate === today) return true;
@@ -286,28 +293,17 @@ const App: React.FC = () => {
     // Check if the last island of the previous lesson was completed today
     const lessonConfig = LESSON_CONFIGS.find(l => l.id === prevL)!;
     const lastModule = lessonConfig.modules[lessonConfig.modules.length - 1];
+    const prevWeights = getModuleWeights(prevL);
+    const lastModuleMax = prevWeights[prevWeights.length - 1];
+    const lastModuleScore = prevData.islandScores[lastModule] || 0;
+
+    // Must be perfect 100%
+    if (lastModuleScore < lastModuleMax) return true;
+
     const completionDay = prevData.islandCompletionDates?.[lastModule];
-    
     const today = getTodayKey();
     if (completionDay === today) return true;
     return false;
-  };
-
-  const handleAuthAction = async (email: string, pass: string, isLogin: boolean, fullName?: string) => {
-    try {
-      const { loginWithEmail, registerWithEmail } = await import('./services/firebase');
-      const user = isLogin 
-        ? await loginWithEmail(email, pass)
-        : await registerWithEmail(email, pass, fullName || '');
-        
-      if (user) {
-        const nameToUse = user.displayName || user.email?.split('@')[0] || 'Student';
-        startLesson(nameToUse);
-      }
-    } catch (err: any) {
-      console.error("Auth Error:", err);
-      alert(err.message || "Authentication failed");
-    }
   };
 
   return (
@@ -317,7 +313,7 @@ const App: React.FC = () => {
           <Header lessonId={progress.currentLesson} progress={progress} />
         )}
         
-        {section === SectionType.INFO && <InfoSection onStart={startLesson} onAuthAction={handleAuthAction} />}
+        {section === SectionType.INFO && <InfoSection onStart={startLesson} />}
         {section === SectionType.PATH && (
           <>
             <LearningPathView 
@@ -326,7 +322,7 @@ const App: React.FC = () => {
               onSelectModule={startModule}
               isLessonLocked={isLessonLocked}
               isModuleLocked={isModuleLocked}
-              islandWeights={ISLAND_WEIGHTS}
+              islandWeights={getModuleWeights(progress.currentLesson)}
             />
             {isAdmin && (
               <div className="fixed bottom-10 left-4 z-[200]">
@@ -344,8 +340,8 @@ const App: React.FC = () => {
           <PracticeSection 
             item={activeItems[currentIdx]} 
             onResult={handleResult} 
-            currentIdx={currentIdx} 
-            totalItems={activeItems.length}
+            currentIdx={firstTryCorrectCount} 
+            totalItems={PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length}
             lessonId={progress.currentLesson}
           />
         )}
