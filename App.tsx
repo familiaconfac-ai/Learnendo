@@ -14,7 +14,7 @@ import { ensureAnonAuth, auth } from './services/firebase';
 console.log('Firebase Auth Object:', auth);
 
 // Bump this to force a clean reset for testing
-const STORAGE_KEY = 'learnendo_v10_mastery';
+const STORAGE_KEY = 'learnendo_v11_mastery'; // Mudado para v11 para forçar reset
 const BYPASS_KEY = 'Martins';
 
 // Helper: total item counts (denominators) for each module in a given lesson.
@@ -37,10 +37,17 @@ const App: React.FC = () => {
 
   const [progress, setProgress] = useState<UserProgress>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : {
+    if (saved) {
+      return JSON.parse(saved);
+    }
+    return {
       currentLesson: 1,
       lessonData: {
-        1: { diamond: 0, islandScores: {} }
+        1: { 
+          diamond: 0, 
+          islandScores: {},
+          islandCompletionDates: {} 
+        }
       },
       totalStars: 0,
       streakCount: 0,
@@ -54,9 +61,6 @@ const App: React.FC = () => {
   const [activeItems, setActiveItems] = useState<ActivePracticeItem[]>([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [startTime, setStartTime] = useState(0);
-
-  // Perfect progress: counts ONLY first-try correct answers (no mistakes)
-  const [firstTryCorrectCount, setFirstTryCorrectCount] = useState(0);
 
   // Tracks whether each base question has been attempted already in this run (to detect first try)
   const [attemptedBaseIds, setAttemptedBaseIds] = useState<Record<string, boolean>>({});
@@ -94,7 +98,7 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
   }, [progress]);
 
-  // Streak/Ice logic (kept as-is)
+  // Streak/Ice logic
   useEffect(() => {
     const today = getTodayKey();
     if (progress.lastActiveDayKey === today) return;
@@ -111,7 +115,7 @@ const App: React.FC = () => {
 
         if (diffDays > 1) {
           newStreak = 0;
-          new (newIce) += (diffDays - 1);
+          newIce += (diffDays - 1);
         }
       }
 
@@ -137,8 +141,7 @@ const App: React.FC = () => {
 
   /**
    * Start a module (island).
-   * Critical: we generate a stable __baseId per question based on (moduleType + index),
-   * ignoring any existing item.id to avoid collisions that cause 1/25, 5/15, etc.
+   * Generate stable __baseId per question based on (moduleType + index)
    */
   const startModule = (type: PracticeModuleType) => {
     const baseItems: ActivePracticeItem[] = PRACTICE_ITEMS
@@ -148,13 +151,12 @@ const App: React.FC = () => {
         return {
           ...item,
           id: baseId,      // unique render id
-          __baseId: baseId // stable id for first-try tracking
+          __baseId: baseId // stable id for tracking
         } as ActivePracticeItem;
       });
 
     setActiveItems(baseItems);
     setCurrentIdx(0);
-    setFirstTryCorrectCount(0);
     setAttemptedBaseIds({});
     setLogs([]);
     setActiveModule(type);
@@ -172,10 +174,9 @@ const App: React.FC = () => {
   };
 
   /**
-   * Perfect logic:
-   * - First-try is tracked per __baseId (not instruction, not question text).
-   * - If the student answers wrong on first try, that baseId is marked attempted,
-   *   and even if they later fix it via retry, it will NOT count toward perfect.
+   * Handle answer result
+   * - Track first tries for stars
+   * - Track all correct answers for progress
    */
   const handleResult = (isCorrect: boolean, val: string) => {
     const item = activeItems[currentIdx];
@@ -183,17 +184,19 @@ const App: React.FC = () => {
 
     const isFirstTry = !attemptedBaseIds[baseId];
 
-    // Mark base as attempted at the first interaction with that base question
     if (isFirstTry) {
       setAttemptedBaseIds(prev => ({ ...prev, [baseId]: true }));
     }
 
+    // Add to logs with question ID for tracking
     setLogs(prev => [...prev, {
       question: item.instruction,
       userAnswer: val,
       correctAnswer: item.correctValue,
       isCorrect,
-      isFirstTry
+      isFirstTry,
+      questionId: baseId,
+      timestamp: Date.now()
     }]);
 
     if (!isCorrect) {
@@ -209,13 +212,13 @@ const App: React.FC = () => {
       return;
     }
 
-    // Correct answer
+    // Correct answer - give stars only on first try
     if (isFirstTry) {
-      setFirstTryCorrectCount(prev => prev + 1);
       const starPoints = calculateDifficultyStar(item.type);
       setProgress(prev => ({ ...prev, totalStars: prev.totalStars + starPoints }));
     }
 
+    // Move to next question or finish
     if (currentIdx < activeItems.length - 1) {
       setCurrentIdx(prev => prev + 1);
     } else {
@@ -223,6 +226,12 @@ const App: React.FC = () => {
     }
   };
 
+  /**
+   * Finalize island and update progress
+   * - Count unique correct answers for progress
+   * - Check if perfect (all questions answered correctly)
+   * - Update diamond percentage
+   */
   const finalizeIsland = () => {
     const currentTrack = activeModule!;
     const lessonId = progress.currentLesson;
@@ -232,41 +241,61 @@ const App: React.FC = () => {
     const moduleCounts = getModuleCountsForLesson(lessonId);
     const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === currentTrack).length;
 
-    // Perfect means first-try correct count equals total questions in this island
-    const isPerfect = firstTryCorrectCount === baseItemsCount;
+    // Count UNIQUE correct answers (each question only counts once)
+    const uniqueCorrectAnswers = new Set<string>();
+    
+    logs.forEach(log => {
+      if (log.isCorrect && log.questionId) {
+        uniqueCorrectAnswers.add(log.questionId);
+      }
+    });
+    
+    const correctUniqueCount = uniqueCorrectAnswers.size;
 
-    // We store the island score as number of perfect first-try hits (0..baseItemsCount)
-    const rawIslandScore = firstTryCorrectCount;
+    // Check if ALL questions were answered correctly at least once
+    const isPerfect = correctUniqueCount === baseItemsCount;
 
     setProgress(prev => {
       const lessonData = { ...prev.lessonData };
-      if (!lessonData[lessonId]) lessonData[lessonId] = { diamond: 0, islandScores: {} };
+      if (!lessonData[lessonId]) {
+        lessonData[lessonId] = { 
+          diamond: 0, 
+          islandScores: {},
+          islandCompletionDates: {} 
+        };
+      }
+
+      // Ensure islandCompletionDates exists
+      if (!lessonData[lessonId].islandCompletionDates) {
+        lessonData[lessonId].islandCompletionDates = {};
+      }
 
       const oldScores = { ...lessonData[lessonId].islandScores };
 
-      // Keep the best run for this island (max perfect hits achieved)
-      oldScores[currentTrack] = Math.max(oldScores[currentTrack] || 0, rawIslandScore);
+      // Store the number of unique correct answers (not first-try only)
+      oldScores[currentTrack] = Math.max(oldScores[currentTrack] || 0, correctUniqueCount);
 
-      // Completion dates: only set when perfect
       const today = getTodayKey();
 
+      // If perfect, record completion date (for cooldown)
       if (isPerfect) {
-        if (!lessonData[lessonId].islandCompletionDates) lessonData[lessonId].islandCompletionDates = {};
-        if (!lessonData[lessonId].islandCompletionDates[currentTrack]) {
-          lessonData[lessonId].islandCompletionDates[currentTrack] = today;
-        }
+        lessonData[lessonId].islandCompletionDates![currentTrack] = today;
       }
 
-      // Diamond must be a TRUE percentage across the entire lesson:
-      // sum(perfectHits) / sum(totalItems) * 100
+      // Calculate diamond percentage based on total correct answers across all islands
       const lessonTotalItems = moduleCounts.reduce((a, b) => a + b, 0);
-      const totalPerfect = (Object.values(oldScores) as number[]).reduce((a: number, b: number) => a + b, 0);
-      const diamondPct = lessonTotalItems > 0 ? Math.round((totalPerfect / lessonTotalItems) * 100) : 0;
+      
+      // Sum all island scores (unique correct answers per island)
+      const totalCorrect = Object.values(oldScores).reduce((a: number, b: number) => a + b, 0);
+      
+      const diamondPct = lessonTotalItems > 0 
+        ? Math.min(100, Math.round((totalCorrect / lessonTotalItems) * 100)) 
+        : 0;
 
       lessonData[lessonId] = {
         ...lessonData[lessonId],
         islandScores: oldScores,
-        diamond: Math.min(100, diamondPct)
+        diamond: diamondPct
       };
 
       return { ...prev, lessonData };
@@ -278,8 +307,17 @@ const App: React.FC = () => {
   const finishLesson = async () => {
     setSection(SectionType.RESULTS);
     const totalTime = (Date.now() - startTime) / 1000;
+    
+    // Count unique correct answers for score
+    const uniqueCorrect = new Set<string>();
+    logs.forEach(log => {
+      if (log.isCorrect && log.questionId) {
+        uniqueCorrect.add(log.questionId);
+      }
+    });
+    
     const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length;
-    const finalScore = baseItemsCount > 0 ? (firstTryCorrectCount / baseItemsCount) * 10 : 0;
+    const finalScore = baseItemsCount > 0 ? (uniqueCorrect.size / baseItemsCount) * 10 : 0;
 
     await saveAssessmentResult({
       studentName: student.name,
@@ -299,7 +337,11 @@ const App: React.FC = () => {
         currentLesson: nextL,
         lessonData: {
           ...prev.lessonData,
-          [nextL]: prev.lessonData[nextL] || { diamond: 0, islandScores: {} }
+          [nextL]: prev.lessonData[nextL] || { 
+            diamond: 0, 
+            islandScores: {},
+            islandCompletionDates: {} 
+          }
         },
         sentToTeacher: false
       }));
@@ -312,15 +354,18 @@ const App: React.FC = () => {
   };
 
   /**
-   * Unlock rule:
-   * - Must be perfect on previous island: islandScores[prevModule] === prevMax (count)
-   * - Must be a different day than completion date (cooldown)
+   * Check if module is locked
+   * Rules:
+   * 1. Must have perfect score on previous module (all questions answered correctly)
+   * 2. Must be a different day than completion date (cooldown)
    */
   const isModuleLocked = (moduleType: PracticeModuleType) => {
     if (isAdmin) return false;
 
     const lessonId = progress.currentLesson;
-    const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId)!;
+    const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId);
+    if (!lessonConfig) return true;
+    
     const trackIndex = lessonConfig.modules.indexOf(moduleType);
 
     if (trackIndex === 0) return false; // first island always open
@@ -331,10 +376,10 @@ const App: React.FC = () => {
     const moduleCounts = getModuleCountsForLesson(lessonId);
     const prevMax = moduleCounts[trackIndex - 1]; // total items in prev island
 
-    // Criterion (a): must be perfect
+    // Criterion 1: must have answered all questions correctly at least once
     if (prevScore < prevMax) return true;
 
-    // Criterion (b): only next day
+    // Criterion 2: must wait until next day
     const completionDate = progress.lessonData[lessonId]?.islandCompletionDates?.[prevModule];
     const today = getTodayKey();
     if (completionDate === today) return true;
@@ -342,6 +387,12 @@ const App: React.FC = () => {
     return false;
   };
 
+  /**
+   * Check if lesson is locked
+   * Rules:
+   * 1. Previous lesson must be 100% complete (diamond = 100)
+   * 2. Must wait until next day after completing last module
+   */
   const isLessonLocked = (lessonId: number) => {
     if (isAdmin) return false;
     if (lessonId === 1) return false;
@@ -354,7 +405,9 @@ const App: React.FC = () => {
     if (prevData.diamond < 100) return true;
 
     // Also enforce "next day" after last island perfect completion
-    const lessonConfig = LESSON_CONFIGS.find(l => l.id === prevL)!;
+    const lessonConfig = LESSON_CONFIGS.find(l => l.id === prevL);
+    if (!lessonConfig) return true;
+    
     const lastModule = lessonConfig.modules[lessonConfig.modules.length - 1];
 
     const completionDay = prevData.islandCompletionDates?.[lastModule];
@@ -364,8 +417,28 @@ const App: React.FC = () => {
     return false;
   };
 
-  // Denominator counts for UI island progress (X/Y). This fixes the “21/25 stuck” issue.
+  // Get denominator counts for UI island progress
   const islandCounts = getModuleCountsForLesson(progress.currentLesson);
+
+  // Calculate current progress for practice section
+  const getCurrentProgress = () => {
+    if (!activeModule) return 0;
+    
+    // Count unique correct answers so far in this session
+    const uniqueCorrectInSession = new Set<string>();
+    logs.forEach(log => {
+      if (log.isCorrect && log.questionId) {
+        uniqueCorrectInSession.add(log.questionId);
+      }
+    });
+    
+    return uniqueCorrectInSession.size;
+  };
+
+  const getTotalItemsForCurrentModule = () => {
+    if (!activeModule) return 0;
+    return PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length;
+  };
 
   return (
     <div className="min-h-screen bg-blue-50 pb-8 flex flex-col items-center">
@@ -404,9 +477,9 @@ const App: React.FC = () => {
           <PracticeSection
             item={activeItems[currentIdx]}
             onResult={handleResult}
-            // This shows perfect progress (first-try correct) out of total base items
-            currentIdx={firstTryCorrectCount}
-            totalItems={PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length}
+            // Show progress based on unique correct answers
+            currentIdx={getCurrentProgress()}
+            totalItems={getTotalItemsForCurrentModule()}
             lessonId={progress.currentLesson}
           />
         )}
@@ -422,7 +495,7 @@ const App: React.FC = () => {
             onRestart={() => setSection(SectionType.PATH)}
             isAdmin={isAdmin}
             todayKey={getTodayKey()}
-            lastCompletionDayKey={progress.lessonData[progress.currentLesson]?.lastCompletionDayKey}
+            lastCompletionDayKey={progress.lessonData[progress.currentLesson]?.islandCompletionDates?.[activeModule!]}
           />
         )}
       </div>
