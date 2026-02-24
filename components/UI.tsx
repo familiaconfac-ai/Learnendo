@@ -270,6 +270,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     if (feedback === 'wrong') {
        setShowFooter(false);
        setFeedback('none');
+       setUserInput('');
     }
   };
 
