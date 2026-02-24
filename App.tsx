@@ -11,12 +11,9 @@ import {
 import { saveAssessmentResult } from './services/db';
 import { ensureAnonAuth, auth } from './services/firebase';
 
-console.log('Firebase Auth Object:', auth);
-
-const STORAGE_KEY = 'learnendo_v13_mastery'; // Nova versão para reset
+const STORAGE_KEY = 'learnendo_v14_mastery'; // Versão atualizada para reset de lógica
 const BYPASS_KEY = 'Martins';
 
-// Helper: total item counts for each module
 const getModuleCountsForLesson = (lessonId: number) => {
   const config = LESSON_CONFIGS.find(l => l.id === lessonId);
   if (!config) return [];
@@ -34,17 +31,11 @@ const App: React.FC = () => {
 
   const [progress, setProgress] = useState<UserProgress>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
+    if (saved) return JSON.parse(saved);
     return {
       currentLesson: 1,
       lessonData: {
-        1: { 
-          diamond: 0, 
-          islandScores: {}, // { moduleType: quantidadeDeAcertosUnicos }
-          islandCompletionDates: {} 
-        }
+        1: { diamond: 0, islandScores: {}, islandCompletionDates: {} }
       },
       totalStars: 0,
       streakCount: 0,
@@ -64,7 +55,6 @@ const App: React.FC = () => {
 
   const isAdmin = student.name === BYPASS_KEY || progress.bypassActive;
 
-  // Initialize Anonymous Auth
   useEffect(() => {
     let mounted = true;
     const initAuth = async () => {
@@ -72,7 +62,6 @@ const App: React.FC = () => {
         const res = await ensureAnonAuth();
         if (mounted) setAuthStatus({ status: 'ok', uid: res.uid });
       } catch (err: any) {
-        console.error("Authentication failed:", err);
         if (mounted) setAuthStatus({ status: 'error', message: err.message || 'Auth failure' });
       }
     };
@@ -86,64 +75,25 @@ const App: React.FC = () => {
     return d.toISOString().split('T')[0];
   };
 
-  const getYesterdayKey = () => getTodayKey(-1);
-
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
   }, [progress]);
 
-  // Streak/Ice logic
-  useEffect(() => {
-    const today = getTodayKey();
-    if (progress.lastActiveDayKey === today) return;
-
-    setProgress(prev => {
-      const yesterday = getYesterdayKey();
-      let newStreak = prev.streakCount;
-      let newIce = prev.iceCount;
-
-      if (prev.lastActiveDayKey && prev.lastActiveDayKey !== yesterday) {
-        const lastDate = new Date(prev.lastActiveDayKey);
-        const todayDate = new Date(today);
-        const diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 3600 * 24));
-
-        if (diffDays > 1) {
-          newStreak = 0;
-          newIce += (diffDays - 1);
-        }
-      }
-
-      return {
-        ...prev,
-        streakCount: newStreak,
-        iceCount: newIce,
-        lastActiveDayKey: today
-      };
-    });
-  }, [progress.virtualDayOffset]);
-
   const startLesson = (name: string) => {
-    const isNowAdmin = name === BYPASS_KEY;
     setStudent({ name });
     setStartTime(Date.now());
-
-    if (isNowAdmin) {
-      setProgress(prev => ({ ...prev, bypassActive: true }));
-    }
+    if (name === BYPASS_KEY) setProgress(prev => ({ ...prev, bypassActive: true }));
     setSection(SectionType.PATH);
   };
 
   const startModule = (type: PracticeModuleType) => {
     const baseItems: ActivePracticeItem[] = PRACTICE_ITEMS
       .filter(i => i.moduleType === type)
-      .map((item, idx) => {
-        const baseId = `${type}__${idx + 1}`;
-        return {
-          ...item,
-          id: baseId,
-          __baseId: baseId
-        } as ActivePracticeItem;
-      });
+      .map((item, idx) => ({
+        ...item,
+        id: `${type}__${idx}`,
+        __baseId: `${type}__${idx}`
+      }));
 
     setActiveItems(baseItems);
     setCurrentIdx(0);
@@ -153,27 +103,13 @@ const App: React.FC = () => {
     setSection(SectionType.PRACTICE);
   };
 
-  const calculateDifficultyStar = (type: string) => {
-    switch (type) {
-      case 'speaking': return 10;
-      case 'writing': return 5;
-      case 'multiple-choice': return 2;
-      case 'identification': return 2;
-      default: return 3;
-    }
-  };
-
   const handleResult = (isCorrect: boolean, val: string) => {
     const item = activeItems[currentIdx];
     const baseId = item.__baseId;
-
     const isFirstTry = !attemptedBaseIds[baseId];
 
-    if (isFirstTry) {
-      setAttemptedBaseIds(prev => ({ ...prev, [baseId]: true }));
-    }
+    if (isFirstTry) setAttemptedBaseIds(prev => ({ ...prev, [baseId]: true }));
 
-    // CORREÇÃO: Sempre registrar o log, independente de ser primeira tentativa ou não
     setLogs(prev => [...prev, {
       question: item.instruction,
       userAnswer: val,
@@ -185,25 +121,21 @@ const App: React.FC = () => {
     }]);
 
     if (!isCorrect) {
-      // Se errou, adiciona de volta à fila
       const retry: ActivePracticeItem = {
         ...item,
         id: `${baseId}-retry-${Date.now()}`,
         __baseId: baseId
       };
-
       setActiveItems(prev => [...prev, retry]);
       setCurrentIdx(prev => prev + 1);
       return;
     }
 
-    // Se acertou e é primeira tentativa, ganha estrelas
     if (isFirstTry) {
-      const starPoints = calculateDifficultyStar(item.type);
-      setProgress(prev => ({ ...prev, totalStars: prev.totalStars + starPoints }));
+      const points = item.type === 'speaking' ? 10 : item.type === 'writing' ? 5 : 2;
+      setProgress(prev => ({ ...prev, totalStars: prev.totalStars + points }));
     }
 
-    // Avança para próxima questão
     if (currentIdx < activeItems.length - 1) {
       setCurrentIdx(prev => prev + 1);
     } else {
@@ -214,254 +146,100 @@ const App: React.FC = () => {
   const finalizeIsland = () => {
     const currentTrack = activeModule!;
     const lessonId = progress.currentLesson;
-    const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId)!;
-    
-    const moduleCounts = getModuleCountsForLesson(lessonId);
-    const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === currentTrack).length;
+    const totalItemsInModule = PRACTICE_ITEMS.filter(i => i.moduleType === currentTrack).length;
 
-    // CORREÇÃO CRÍTICA: Contar TODAS as respostas corretas ÚNICAS
-    // Não importa se foi na primeira tentativa ou não
     const uniqueCorrectAnswers = new Set<string>();
-    
-    logs.forEach(log => {
-      if (log.isCorrect && log.questionId) {
-        uniqueCorrectAnswers.add(log.questionId);
-      }
-    });
+    logs.forEach(log => { if (log.isCorrect && log.questionId) uniqueCorrectAnswers.add(log.questionId); });
     
     const correctUniqueCount = uniqueCorrectAnswers.size;
-    
-    // Verificar se todas as questões foram respondidas corretamente PELO MENOS UMA VEZ
-    const isPerfect = correctUniqueCount === baseItemsCount;
-
-    console.log(`Finalizando ilha ${currentTrack}: ${correctUniqueCount}/${baseItemsCount} acertos únicos`);
 
     setProgress(prev => {
-      const lessonData = { ...prev.lessonData };
-      if (!lessonData[lessonId]) {
-        lessonData[lessonId] = { 
-          diamond: 0, 
-          islandScores: {},
-          islandCompletionDates: {} 
-        };
-      }
+      const currentData = prev.lessonData[lessonId] || { diamond: 0, islandScores: {}, islandCompletionDates: {} };
+      const newScores = { ...currentData.islandScores, [currentTrack]: correctUniqueCount };
 
-      if (!lessonData[lessonId].islandCompletionDates) {
-        lessonData[lessonId].islandCompletionDates = {};
-      }
+      const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId);
+      const totalLessonItems = PRACTICE_ITEMS.filter(i => lessonConfig?.modules.includes(i.moduleType)).length;
+      const totalCorrect = Object.values(newScores).reduce((a: any, b: any) => a + b, 0);
+      const newDiamond = totalLessonItems > 0 ? Math.min(100, Math.round((totalCorrect / totalLessonItems) * 100)) : 0;
 
-      const oldScores = { ...lessonData[lessonId].islandScores };
-
-      // CORREÇÃO: Salvar o número de acertos ÚNICOS (não first-try)
-      // Isso vai dar o valor correto tipo 10/10 ou 15/15
-      oldScores[currentTrack] = Math.max(oldScores[currentTrack] || 0, correctUniqueCount);
-
-      const today = getTodayKey();
-
-      if (isPerfect) {
-        lessonData[lessonId].islandCompletionDates![currentTrack] = today;
-      }
-
-      // Calcular diamante baseado em acertos únicos TOTAIS
-      const lessonTotalItems = moduleCounts.reduce((a, b) => a + b, 0);
-      
-      // Soma TODOS os acertos únicos de todas as ilhas
-      const totalCorrect = Object.values(oldScores).reduce((a: number, b: number) => a + b, 0);
-      
-      const diamondPct = lessonTotalItems > 0 
-        ? Math.min(100, Math.round((totalCorrect / lessonTotalItems) * 100)) 
-        : 0;
-
-      lessonData[lessonId] = {
-        ...lessonData[lessonId],
-        islandScores: oldScores,
-        diamond: diamondPct
+      return {
+        ...prev,
+        lessonData: {
+          ...prev.lessonData,
+          [lessonId]: {
+            ...currentData,
+            islandScores: newScores,
+            diamond: newDiamond,
+            islandCompletionDates: {
+              ...currentData.islandCompletionDates,
+              ...(correctUniqueCount >= totalItemsInModule ? { [currentTrack]: getTodayKey() } : {})
+            }
+          }
+        }
       };
-
-      return { ...prev, lessonData };
     });
-
     setSection(SectionType.PATH);
   };
 
-  const finishLesson = async () => {
-    setSection(SectionType.RESULTS);
-    const totalTime = (Date.now() - startTime) / 1000;
-    
-    // Contar únicos para o score final
-    const uniqueCorrect = new Set<string>();
-    logs.forEach(log => {
-      if (log.isCorrect && log.questionId) {
-        uniqueCorrect.add(log.questionId);
-      }
-    });
-    
-    const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length;
-    const finalScore = baseItemsCount > 0 ? (uniqueCorrect.size / baseItemsCount) * 10 : 0;
-
-    await saveAssessmentResult({
-      studentName: student.name,
-      studentEmail: '',
-      lesson: `Lesson ${progress.currentLesson} Mastery`,
-      score: parseFloat(finalScore.toFixed(1)),
-      durationSeconds: Math.round(totalTime),
-      allAnswers: logs
-    });
-  };
-
-  const nextLessonAction = () => {
-    const nextL = progress.currentLesson + 1;
-    if (nextL <= 24) {
-      setProgress(prev => ({
-        ...prev,
-        currentLesson: nextL,
-        lessonData: {
-          ...prev.lessonData,
-          [nextL]: prev.lessonData[nextL] || { 
-            diamond: 0, 
-            islandScores: {},
-            islandCompletionDates: {} 
-          }
-        },
-        sentToTeacher: false
-      }));
-      setSection(SectionType.PATH);
-    }
-  };
-
-  const simulateNextDay = () => {
-    setProgress(prev => ({ ...prev, virtualDayOffset: prev.virtualDayOffset + 1 }));
+  const getIslandProgressForUI = () => {
+    const lessonId = progress.currentLesson;
+    const config = LESSON_CONFIGS.find(l => l.id === lessonId);
+    if (!config) return [];
+    const scores = progress.lessonData[lessonId]?.islandScores || {};
+    return config.modules.map(m => scores[m] || 0);
   };
 
   const isModuleLocked = (moduleType: PracticeModuleType) => {
     if (isAdmin) return false;
-
     const lessonId = progress.currentLesson;
-    const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId);
-    if (!lessonConfig) return true;
-    
-    const trackIndex = lessonConfig.modules.indexOf(moduleType);
+    const config = LESSON_CONFIGS.find(l => l.id === lessonId);
+    if (!config) return true;
+    const idx = config.modules.indexOf(moduleType);
+    if (idx === 0) return false;
 
-    if (trackIndex === 0) return false;
-
-    const prevModule = lessonConfig.modules[trackIndex - 1];
+    const prevModule = config.modules[idx - 1];
     const prevScore = progress.lessonData[lessonId]?.islandScores[prevModule] || 0;
-
-    const moduleCounts = getModuleCountsForLesson(lessonId);
-    const prevMax = moduleCounts[trackIndex - 1];
-
-    // CORREÇÃO: Só libera se tiver TODAS as questões respondidas corretamente
+    const prevMax = PRACTICE_ITEMS.filter(i => i.moduleType === prevModule).length;
+    
     if (prevScore < prevMax) return true;
-
-    const completionDate = progress.lessonData[lessonId]?.islandCompletionDates?.[prevModule];
-    const today = getTodayKey();
-    if (completionDate === today) return true;
-
-    return false;
+    return progress.lessonData[lessonId]?.islandCompletionDates?.[prevModule] === getTodayKey();
   };
 
-  const isLessonLocked = (lessonId: number) => {
-    if (isAdmin) return false;
-    if (lessonId === 1) return false;
-
-    const prevL = lessonId - 1;
-    const prevData = progress.lessonData[prevL];
-    if (!prevData) return true;
-
-    // Precisa ter 100% de diamante (que agora é baseado em acertos únicos)
-    if (prevData.diamond < 100) return true;
-
-    const lessonConfig = LESSON_CONFIGS.find(l => l.id === prevL);
-    if (!lessonConfig) return true;
-    
-    const lastModule = lessonConfig.modules[lessonConfig.modules.length - 1];
-
-    const completionDay = prevData.islandCompletionDates?.[lastModule];
-    const today = getTodayKey();
-    if (completionDay === today) return true;
-
-    return false;
-  };
-
-  // Obter contagens totais para cada ilha
-  const islandCounts = getModuleCountsForLesson(progress.currentLesson);
-
-  // CORREÇÃO: Função que retorna o progresso REAL de cada ilha
-  const getIslandProgressForUI = () => {
-    const lessonId = progress.currentLesson;
-    const scores = progress.lessonData[lessonId]?.islandScores || {};
-    
-    // Ordem correta dos módulos para esta lição
-    const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId);
-    if (!lessonConfig) return [];
-    
-    // Retorna array com os acertos únicos de cada módulo
-    return lessonConfig.modules.map(module => scores[module] || 0);
-  };
-
-  // Progresso atual na sessão de prática
-  const getCurrentProgress = () => {
-    if (!activeModule) return 0;
-    
-    const uniqueCorrectInSession = new Set<string>();
-    logs.forEach(log => {
-      if (log.isCorrect && log.questionId) {
-        uniqueCorrectInSession.add(log.questionId);
-      }
-    });
-    
-    return uniqueCorrectInSession.size;
-  };
-
-  const getTotalItemsForCurrentModule = () => {
-    if (!activeModule) return 0;
-    return PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length;
+  const isLessonLocked = (id: number) => {
+    if (isAdmin || id === 1) return false;
+    const prev = progress.lessonData[id - 1];
+    if (!prev || prev.diamond < 100) return true;
+    const lastMod = LESSON_CONFIGS.find(l => l.id === id - 1)?.modules.slice(-1)[0];
+    return prev.islandCompletionDates?.[lastMod!] === getTodayKey();
   };
 
   return (
     <div className="min-h-screen bg-blue-50 pb-8 flex flex-col items-center">
       <div className="w-full max-w-sm px-4 pt-6">
         {section !== SectionType.INFO && section !== SectionType.PRACTICE && (
-          <Header 
-            lessonId={progress.currentLesson} 
-            progress={progress} 
-          />
+          <Header lessonId={progress.currentLesson} progress={progress} />
         )}
 
         {section === SectionType.INFO && <InfoSection onStart={startLesson} />}
 
         {section === SectionType.PATH && (
-          <>
-            <LearningPathView
-              progress={progress}
-              moduleNames={MODULE_NAMES}
-              onSelectModule={startModule}
-              isLessonLocked={isLessonLocked}
-              isModuleLocked={isModuleLocked}
-              islandWeights={islandCounts}
-              // CORREÇÃO: Passando o progresso REAL (acertos únicos)
-              islandProgress={getIslandProgressForUI()}
-            />
-
-            {isAdmin && (
-              <div className="fixed bottom-10 left-4 z-[200]">
-                <button
-                  onClick={simulateNextDay}
-                  className="bg-slate-800 text-white text-[10px] font-black px-4 py-2 rounded-full shadow-lg border-2 border-slate-600 uppercase tracking-tighter active:scale-95"
-                >
-                  <i className="fas fa-clock mr-2"></i> Simulate Next Day (+{progress.virtualDayOffset})
-                </button>
-              </div>
-            )}
-          </>
+          <LearningPathView
+            progress={progress}
+            moduleNames={MODULE_NAMES}
+            onSelectModule={startModule}
+            isLessonLocked={isLessonLocked}
+            isModuleLocked={isModuleLocked}
+            islandWeights={getModuleCountsForLesson(progress.currentLesson)}
+            islandProgress={getIslandProgressForUI()}
+          />
         )}
 
         {section === SectionType.PRACTICE && activeItems[currentIdx] && (
           <PracticeSection
             item={activeItems[currentIdx]}
             onResult={handleResult}
-            currentIdx={getCurrentProgress()}
-            totalItems={getTotalItemsForCurrentModule()}
+            currentIdx={new Set(logs.filter(l => l.isCorrect).map(l => l.questionId)).size}
+            totalItems={PRACTICE_ITEMS.filter(i => i.moduleType === activeModule).length}
             lessonId={progress.currentLesson}
           />
         )}
@@ -473,19 +251,22 @@ const App: React.FC = () => {
             sentToTeacher={progress.sentToTeacher}
             currentLesson={progress.currentLesson}
             onWhatsApp={() => setProgress(prev => ({ ...prev, sentToTeacher: true }))}
-            onNextLesson={nextLessonAction}
+            onNextLesson={() => {
+              const next = progress.currentLesson + 1;
+              setProgress(prev => ({
+                ...prev, currentLesson: next,
+                lessonData: { ...prev.lessonData, [next]: prev.lessonData[next] || { diamond: 0, islandScores: {}, islandCompletionDates: {} } }
+              }));
+              setSection(SectionType.PATH);
+            }}
             onRestart={() => setSection(SectionType.PATH)}
             isAdmin={isAdmin}
             todayKey={getTodayKey()}
-            lastCompletionDayKey={progress.lessonData[progress.currentLesson]?.islandCompletionDates?.[activeModule!]}
           />
         )}
       </div>
-
-      <footer className="fixed bottom-0 left-0 right-0 bg-black/90 text-[8px] text-white/70 px-2 py-1 pointer-events-none z-[9999] font-mono text-center border-t border-white/10">
-        {authStatus.status === 'ok'
-          ? `Auth: OK uid=${authStatus.uid?.substring(0, 8)}`
-          : `Auth: ${authStatus.status === 'loading' ? 'LOADING...' : 'ERROR: ' + (authStatus.message || 'Unknown Failure')}`}
+      <footer className="fixed bottom-0 left-0 right-0 bg-black/90 text-[8px] text-white/70 px-2 py-1 text-center font-mono">
+        {authStatus.status === 'ok' ? `Auth: OK ${authStatus.uid?.substring(0,8)}` : `Auth: ${authStatus.status}`}
       </footer>
     </div>
   );
