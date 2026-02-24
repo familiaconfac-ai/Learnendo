@@ -18,37 +18,38 @@ const createItems = (lesson: number, track: number, items: Partial<PracticeItem>
   }));
 };
 
-// --- UNIT 1: THE ALPHABET AND NUMBERS ---
+// --- Unit 1: The Alphabet and Numbers ---
 
 const L1_TRACKS = [
   // Island 1: Alphabet Sound Groups (25 items)
   ...createItems(1, 1, [
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ei/', audioValue: 'A', options: ['H', 'B', 'F', 'L'], correctValue: 'H', isNewVocab: true },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'B', options: ['G', 'F', 'I', 'S'], correctValue: 'G' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /e/', audioValue: 'F', options: ['L', 'A', 'Q', 'O'], correctValue: 'L' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ai/', audioValue: 'I', options: ['Y', 'O', 'U', 'V'], correctValue: 'Y' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ju:/', audioValue: 'U', options: ['W', 'M', 'N', 'Z'], correctValue: 'W' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /e/', audioValue: 'S', options: ['X', 'J', 'K', 'R'], correctValue: 'X' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /oʊ/', audioValue: 'O', options: ['O', 'E', 'G', 'T'], correctValue: 'O' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ei/', audioValue: 'J', options: ['K', 'L', 'M', 'N'], correctValue: 'K' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'C', options: ['D', 'F', 'H', 'J'], correctValue: 'D' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'P', options: ['T', 'S', 'R', 'Q'], correctValue: 'T' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'V', options: ['E', 'A', 'I', 'O'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /e/', audioValue: 'M', options: ['N', 'P', 'Q', 'R'], correctValue: 'N' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ei/', audioValue: 'H', options: ['A', 'E', 'I', 'O'], correctValue: 'A' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ai/', audioValue: 'Y', options: ['I', 'E', 'A', 'U'], correctValue: 'I' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ju:/', audioValue: 'Q', options: ['U', 'O', 'A', 'E'], correctValue: 'U' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'Z', options: ['X', 'Y', 'W', 'V'], correctValue: 'V' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'G', options: ['B', 'A', 'F', 'L'], correctValue: 'B' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ei/', audioValue: 'K', options: ['J', 'L', 'M', 'N'], correctValue: 'J' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'D', options: ['C', 'F', 'H', 'J'], correctValue: 'C' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'T', options: ['P', 'S', 'R', 'Q'], correctValue: 'P' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /i:/', audioValue: 'E', options: ['V', 'A', 'I', 'O'], correctValue: 'V' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /e/', audioValue: 'N', options: ['M', 'P', 'Q', 'R'], correctValue: 'M' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ei/', audioValue: 'A', options: ['H', 'E', 'I', 'O'], correctValue: 'H' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ai/', audioValue: 'I', options: ['Y', 'E', 'A', 'U'], correctValue: 'Y' },
-    { type: 'multiple-choice', instruction: 'Which letter has the same vocalic sound as that letter? /ju:/', audioValue: 'U', options: ['Q', 'O', 'A', 'E'], correctValue: 'Q' }
-  ]),
+    
+    { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'A', options: ['H', 'B', 'F', 'L'], correctValue: 'H', isNewVocab: true },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'B', options: ['G', 'F', 'I', 'S'], correctValue: 'G' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'F', options: ['L', 'A', 'Q', 'O'], correctValue: 'L' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'I', options: ['Y', 'O', 'U', 'V'], correctValue: 'Y' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'U', options: ['W', 'M', 'N', 'Z'], correctValue: 'W' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'S', options: ['X', 'J', 'K', 'R'], correctValue: 'X' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'O', options: ['O', 'E', 'G', 'T'], correctValue: 'O' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'J', options: ['K', 'L', 'M', 'N'], correctValue: 'K' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'C', options: ['D', 'F', 'H', 'J'], correctValue: 'D' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'P', options: ['T', 'S', 'R', 'Q'], correctValue: 'T' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'V', options: ['E', 'A', 'I', 'O'], correctValue: 'E' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'M', options: ['N', 'P', 'Q', 'R'], correctValue: 'N' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'H', options: ['A', 'E', 'I', 'O'], correctValue: 'A' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'Y', options: ['I', 'E', 'A', 'U'], correctValue: 'I' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'Q', options: ['U', 'O', 'A', 'E'], correctValue: 'U' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'Z', options: ['X', 'Y', 'W', 'V'], correctValue: 'V' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'G', options: ['B', 'A', 'F', 'L'], correctValue: 'B' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'K', options: ['J', 'L', 'M', 'N'], correctValue: 'J' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'D', options: ['C', 'F', 'H', 'J'], correctValue: 'C' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'T', options: ['P', 'S', 'R', 'Q'], correctValue: 'P' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'E', options: ['V', 'A', 'I', 'O'], correctValue: 'V' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'N', options: ['M', 'P', 'Q', 'R'], correctValue: 'M' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'A', options: ['H', 'E', 'I', 'O'], correctValue: 'H' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'I', options: ['Y', 'E', 'A', 'U'], correctValue: 'Y' },
+  { type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'U', options: ['Q', 'O', 'A', 'E'], correctValue: 'Q' }
+]),
   // Island 2: Numbers 0-10 Cardinal (15 items)
   ...createItems(1, 2, [
     { type: 'identification', instruction: 'Listen and pick the correct number:', audioValue: 'Zero', options: ['0', '1', '6', '10'], correctValue: '0', isNewVocab: true },
