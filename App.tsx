@@ -1,5 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog, QState } from './types';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  SectionType,
+  PracticeItem,
+  PracticeModuleType,
+  UserProgress,
+  AnswerLog,
+  QState
+} from './types';
+
 import { PRACTICE_ITEMS, LESSON_CONFIGS } from './constants';
 import { InfoSection, PracticeSection, ResultDashboard, Header, LearningPathView } from './components/UI';
 import { saveAssessmentResult } from './services/db';
@@ -12,193 +20,151 @@ const BYPASS_KEY = 'Martins';
 
 type ActivePracticeItem = PracticeItem & { __baseId: string };
 
+const defaultProgress: UserProgress = {
+  currentLesson: 1,
+  lessonData: {
+    1: { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
+  },
+  totalStars: 100,
+  streakCount: 0,
+  iceCount: 0,
+  virtualDayOffset: 0,
+  bypassActive: false,
+  sentToTeacher: false
+} as UserProgress;
+
 const App: React.FC = () => {
   const [section, setSection] = useState<SectionType>(SectionType.INFO);
   const [student, setStudent] = useState({ name: '' });
-  const [authStatus, setAuthStatus] = useState<{ status: 'loading' | 'ok' | 'error'; uid?: string; message?: string }>({ status: 'loading' });
+  const [authStatus, setAuthStatus] = useState<{ status: 'loading' | 'ok' | 'error'; uid?: string; message?: string }>({
+    status: 'loading'
+  });
 
   const [progress, setProgress] = useState<UserProgress>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) return JSON.parse(saved);
+    if (!saved) return defaultProgress;
 
-    return {
-      currentLesson: 1,
-      lessonData: {
-        1: { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
-      },
-      totalStars: 100,
-      streakCount: 0,
-      iceCount: 0,
-      virtualDayOffset: 0,
-      bypassActive: false,
-      sentToTeacher: false
-    } as UserProgress;
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return defaultProgress;
+    }
   });
 
-  // === Island Run State (novo modelo) ===
+  // ====== Island run state ======
   const [baseItems, setBaseItems] = useState<ActivePracticeItem[]>([]);
   const [currentBaseIndex, setCurrentBaseIndex] = useState(0);
   const [qState, setQState] = useState<Record<number, QState>>({});
-  const [hadAnyMistake, setHadAnyMistake] = useState(false);
-  const [attemptedWrong, setAttemptedWrong] = useState<Record<number, boolean>>({}); // para descontar estrela 1x por questão
+  const [attemptedWrong, setAttemptedWrong] = useState<Record<number, boolean>>({});
   const [logs, setLogs] = useState<AnswerLog[]>([]);
   const [activeModule, setActiveModule] = useState<PracticeModuleType | undefined>();
 
+  // Ref para evitar bugs de estado “atrasado” (setState async)
+  const hadAnyMistakeRef = useRef(false);
+
   const isAdmin = student.name === BYPASS_KEY || progress.bypassActive;
 
-  // Auth init
+  // ====== Auth init ======
   useEffect(() => {
     let mounted = true;
+
     const initAuth = async () => {
       try {
         const res = await ensureAnonAuth();
         if (mounted) setAuthStatus({ status: 'ok', uid: res.uid });
       } catch (err: any) {
-        if (mounted) setAuthStatus({ status: 'error', message: err.message || 'Auth failure' });
+        if (mounted) setAuthStatus({ status: 'error', message: err?.message || 'Auth failure' });
       }
     };
+
     initAuth();
-    return () => { mounted = false; };
+    return () => {
+      mounted = false;
+    };
   }, []);
 
+  // ====== Persist progress ======
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+  }, [progress]);
+
+  // ====== Date helper ======
   const getTodayKey = (offset: number = 0) => {
     const d = new Date();
     d.setDate(d.getDate() + (progress.virtualDayOffset || 0) + offset);
     return d.toISOString().split('T')[0];
   };
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
-  }, [progress]);
-
-  const moduleTotal = useMemo(() => baseItems.length, [baseItems.length]);
+  // ====== Derived UI stats ======
+  const moduleTotal = baseItems.length;
 
   const correctCount = useMemo(() => {
-    const total = baseItems.length;
     let c = 0;
-    for (let i = 0; i < total; i++) if (qState[i] === 'correct') c++;
+    for (let i = 0; i < moduleTotal; i++) if (qState[i] === 'correct') c++;
     return c;
-  }, [qState, baseItems.length]);
+  }, [qState, moduleTotal]);
 
   const progressPercent = useMemo(() => {
     if (!moduleTotal) return 0;
     return Math.round((correctCount / moduleTotal) * 100);
   }, [correctCount, moduleTotal]);
 
-  // ====== start lesson ======
+  // ====== Start lesson ======
   const startLesson = (name: string) => {
     setStudent({ name });
     if (name === BYPASS_KEY) setProgress(prev => ({ ...prev, bypassActive: true }));
     setSection(SectionType.PATH);
   };
 
-  // ====== start module/island ======
+  // ====== Start module/island ======
   const startModule = (type: PracticeModuleType) => {
-    const items: ActivePracticeItem[] = PRACTICE_ITEMS
-      .filter(i => i.moduleType === type)
-      .map((item, idx) => ({
-        ...item,
-        id: `${type}__${idx}`,
-        __baseId: `${type}__${idx}`
-      }));
+    const items: ActivePracticeItem[] = PRACTICE_ITEMS.filter(i => i.moduleType === type).map((item, idx) => ({
+      ...item,
+      id: `${type}__${idx}`,
+      __baseId: `${type}__${idx}`
+    }));
 
-    const init: Record<number, QState> = {};
-    for (let i = 0; i < items.length; i++) init[i] = 'pending';
+    const initState: Record<number, QState> = {};
+    for (let i = 0; i < items.length; i++) initState[i] = 'pending';
+
+    hadAnyMistakeRef.current = false;
 
     setBaseItems(items);
     setActiveModule(type);
-    setQState(init);
-    setHadAnyMistake(false);
+    setQState(initState);
     setAttemptedWrong({});
     setLogs([]);
     setCurrentBaseIndex(0);
     setSection(SectionType.PRACTICE);
   };
 
-  // ====== core routing: next unfinished ======
+  // ====== Find next unfinished ======
   const findNextUnfinished = (state: Record<number, QState>, total: number, from: number) => {
-    // 1) tenta ir para frente
     for (let i = from + 1; i < total; i++) if (state[i] !== 'correct') return i;
-    // 2) chegou no fim → volta do começo
     for (let i = 0; i <= from; i++) if (state[i] !== 'correct') return i;
-    return null; // tudo correct
+    return null;
   };
 
-  const handleResult = (isCorrect: boolean, val: string) => {
-    const item = baseItems[currentBaseIndex];
-    if (!item) return;
-
-    // log
-    setLogs(prev => [
-      ...prev,
-      {
-        question: item.instruction,
-        userAnswer: val,
-        correctAnswer: item.correctValue,
-        isCorrect,
-        isFirstTry: qState[currentBaseIndex] === 'pending'
-      } as any
-    ]);
-
-    setQState(prev => {
-      const next = { ...prev };
-
-      if (isCorrect) {
-        next[currentBaseIndex] = 'correct';
-      } else {
-        // marca wrong
-        if (next[currentBaseIndex] !== 'wrong') next[currentBaseIndex] = 'wrong';
-        setHadAnyMistake(true);
-
-        // desconta estrela 1x por questão (primeiro erro naquela questão)
-        setAttemptedWrong(wPrev => {
-          if (wPrev[currentBaseIndex]) return wPrev;
-          setProgress(p => ({ ...p, totalStars: Math.max(0, (p.totalStars ?? 100) - 1) }));
-          return { ...wPrev, [currentBaseIndex]: true };
-        });
-      }
-
-      const total = baseItems.length;
-
-      // terminou?
-      let done = true;
-      for (let i = 0; i < total; i++) {
-        if (next[i] !== 'correct') { done = false; break; }
-      }
-      if (done) {
-        finalizeIsland();
-        return next;
-      }
-
-      // próximo alvo (chegou no fim? volta na primeira errada/pendente)
-      const nextIdx = findNextUnfinished(next, total, currentBaseIndex);
-      if (nextIdx !== null) setCurrentBaseIndex(nextIdx);
-
-      return next;
-    });
-  };
-
-  const finalizeIsland = () => {
+  // ====== Finalize island ======
+  const finalizeIsland = (perfectDiamond: boolean) => {
     const currentTrack = activeModule!;
     const lessonId = progress.currentLesson;
     const today = getTodayKey();
-    const perfectDiamond = !hadAnyMistake;
 
     setProgress(prev => {
       const lessonData = { ...prev.lessonData };
+
       if (!lessonData[lessonId]) {
         lessonData[lessonId] = { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} };
       }
 
       const currentData = lessonData[lessonId];
-
-      // ✅ Ilha concluída = total da ilha (não “21/25”)
       const totalThisIsland = baseItems.length;
+
       const newScores = { ...currentData.islandScores, [currentTrack]: totalThisIsland };
       const newCompletionDates = { ...(currentData.islandCompletionDates || {}), [currentTrack]: today };
       const newDiamonds = { ...(currentData.islandDiamonds || {}), [currentTrack]: perfectDiamond };
 
-      // % do lesson (opcional)
       const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId);
       const totalLessonItems = lessonConfig
         ? lessonConfig.modules.reduce((acc: number, m) => acc + PRACTICE_ITEMS.filter(i => i.moduleType === m).length, 0)
@@ -221,9 +187,66 @@ const App: React.FC = () => {
     setSection(SectionType.PATH);
   };
 
-  // ====== LOCK RULES (COMBINADO) ======
-  // Próxima ilha abre se: anterior 100% (concluída) + dia seguinte.
-  // NÃO exige diamante.
+  // ====== Handle answer ======
+  const handleResult = (isCorrect: boolean, val: string) => {
+    const item = baseItems[currentBaseIndex];
+    if (!item) return;
+
+    // log
+    setLogs(prev => [
+      ...prev,
+      {
+        question: item.instruction,
+        userAnswer: val,
+        correctAnswer: item.correctValue,
+        isCorrect,
+        isFirstTry: qState[currentBaseIndex] === 'pending'
+      } as any
+    ]);
+
+    setQState(prev => {
+      const next = { ...prev };
+
+      if (isCorrect) {
+        next[currentBaseIndex] = 'correct';
+      } else {
+        if (next[currentBaseIndex] !== 'wrong') next[currentBaseIndex] = 'wrong';
+
+        // Marca erro no ref (para não depender de setState async)
+        hadAnyMistakeRef.current = true;
+
+        // desconta estrela 1x por questão
+        setAttemptedWrong(wPrev => {
+          if (wPrev[currentBaseIndex]) return wPrev;
+          setProgress(p => ({ ...p, totalStars: Math.max(0, (p.totalStars ?? 100) - 1) }));
+          return { ...wPrev, [currentBaseIndex]: true };
+        });
+      }
+
+      // terminou?
+      const total = baseItems.length;
+      let done = true;
+      for (let i = 0; i < total; i++) {
+        if (next[i] !== 'correct') {
+          done = false;
+          break;
+        }
+      }
+
+      if (done) {
+        const perfectDiamond = !hadAnyMistakeRef.current;
+        finalizeIsland(perfectDiamond);
+        return next;
+      }
+
+      const nextIdx = findNextUnfinished(next, total, currentBaseIndex);
+      if (nextIdx !== null) setCurrentBaseIndex(nextIdx);
+
+      return next;
+    });
+  };
+
+  // ====== Lock rules ======
   const isModuleLocked = (moduleType: PracticeModuleType) => {
     if (isAdmin) return false;
 
@@ -239,10 +262,10 @@ const App: React.FC = () => {
     const prevScore = progress.lessonData[lessonId]?.islandScores?.[prevModule] || 0;
     const prevMax = PRACTICE_ITEMS.filter(i => i.moduleType === prevModule).length;
 
-    // Critério 1: 100% (concluiu a ilha)
+    // 1) 100% na ilha anterior
     if (prevScore < prevMax) return true;
 
-    // Critério 2: só dia seguinte
+    // 2) só dia seguinte
     const completionDay = progress.lessonData[lessonId]?.islandCompletionDates?.[prevModule];
     if (completionDay === getTodayKey()) return true;
 
@@ -345,9 +368,7 @@ const App: React.FC = () => {
       </div>
 
       <footer className="fixed bottom-0 left-0 right-0 bg-black/90 text-[8px] text-white/70 px-2 py-1 pointer-events-none z-[9999] font-mono text-center border-t border-white/10">
-        {authStatus.status === 'ok'
-          ? `Auth: OK uid=${authStatus.uid?.substring(0, 8)}`
-          : `Auth: ${authStatus.status}`}
+        {authStatus.status === 'ok' ? `Auth: OK uid=${authStatus.uid?.substring(0, 8)}` : `Auth: ${authStatus.status}`}
       </footer>
     </div>
   );
