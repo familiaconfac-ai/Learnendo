@@ -13,7 +13,7 @@ import { ensureAnonAuth, auth } from './services/firebase';
 
 console.log('Firebase Auth Object:', auth);
 
-const STORAGE_KEY = 'learnendo_v12_mastery'; // Versão atualizada
+const STORAGE_KEY = 'learnendo_v13_mastery'; // Nova versão para reset
 const BYPASS_KEY = 'Martins';
 
 // Helper: total item counts for each module
@@ -21,15 +21,6 @@ const getModuleCountsForLesson = (lessonId: number) => {
   const config = LESSON_CONFIGS.find(l => l.id === lessonId);
   if (!config) return [];
   return config.modules.map(m => PRACTICE_ITEMS.filter(i => i.moduleType === m).length);
-};
-
-// Helper: get current progress for each island based on unique correct answers
-const getIslandProgress = (lessonId: number, progress: UserProgress) => {
-  const lessonData = progress.lessonData[lessonId];
-  if (!lessonData || !lessonData.islandScores) {
-    return {};
-  }
-  return lessonData.islandScores;
 };
 
 type ActivePracticeItem = PracticeItem & {
@@ -51,7 +42,7 @@ const App: React.FC = () => {
       lessonData: {
         1: { 
           diamond: 0, 
-          islandScores: {}, // Vai armazenar { moduleType: numeroDeAcertosUnicos }
+          islandScores: {}, // { moduleType: quantidadeDeAcertosUnicos }
           islandCompletionDates: {} 
         }
       },
@@ -182,6 +173,7 @@ const App: React.FC = () => {
       setAttemptedBaseIds(prev => ({ ...prev, [baseId]: true }));
     }
 
+    // CORREÇÃO: Sempre registrar o log, independente de ser primeira tentativa ou não
     setLogs(prev => [...prev, {
       question: item.instruction,
       userAnswer: val,
@@ -193,6 +185,7 @@ const App: React.FC = () => {
     }]);
 
     if (!isCorrect) {
+      // Se errou, adiciona de volta à fila
       const retry: ActivePracticeItem = {
         ...item,
         id: `${baseId}-retry-${Date.now()}`,
@@ -204,11 +197,13 @@ const App: React.FC = () => {
       return;
     }
 
+    // Se acertou e é primeira tentativa, ganha estrelas
     if (isFirstTry) {
       const starPoints = calculateDifficultyStar(item.type);
       setProgress(prev => ({ ...prev, totalStars: prev.totalStars + starPoints }));
     }
 
+    // Avança para próxima questão
     if (currentIdx < activeItems.length - 1) {
       setCurrentIdx(prev => prev + 1);
     } else {
@@ -224,7 +219,8 @@ const App: React.FC = () => {
     const moduleCounts = getModuleCountsForLesson(lessonId);
     const baseItemsCount = PRACTICE_ITEMS.filter(i => i.moduleType === currentTrack).length;
 
-    // Contar respostas corretas ÚNICAS
+    // CORREÇÃO CRÍTICA: Contar TODAS as respostas corretas ÚNICAS
+    // Não importa se foi na primeira tentativa ou não
     const uniqueCorrectAnswers = new Set<string>();
     
     logs.forEach(log => {
@@ -234,7 +230,11 @@ const App: React.FC = () => {
     });
     
     const correctUniqueCount = uniqueCorrectAnswers.size;
+    
+    // Verificar se todas as questões foram respondidas corretamente PELO MENOS UMA VEZ
     const isPerfect = correctUniqueCount === baseItemsCount;
+
+    console.log(`Finalizando ilha ${currentTrack}: ${correctUniqueCount}/${baseItemsCount} acertos únicos`);
 
     setProgress(prev => {
       const lessonData = { ...prev.lessonData };
@@ -252,7 +252,8 @@ const App: React.FC = () => {
 
       const oldScores = { ...lessonData[lessonId].islandScores };
 
-      // IMPORTANTE: Salvar o número de acertos únicos (não first-try)
+      // CORREÇÃO: Salvar o número de acertos ÚNICOS (não first-try)
+      // Isso vai dar o valor correto tipo 10/10 ou 15/15
       oldScores[currentTrack] = Math.max(oldScores[currentTrack] || 0, correctUniqueCount);
 
       const today = getTodayKey();
@@ -261,10 +262,10 @@ const App: React.FC = () => {
         lessonData[lessonId].islandCompletionDates![currentTrack] = today;
       }
 
-      // Calcular diamante baseado em acertos únicos
+      // Calcular diamante baseado em acertos únicos TOTAIS
       const lessonTotalItems = moduleCounts.reduce((a, b) => a + b, 0);
       
-      // Soma todos os acertos únicos de todas as ilhas
+      // Soma TODOS os acertos únicos de todas as ilhas
       const totalCorrect = Object.values(oldScores).reduce((a: number, b: number) => a + b, 0);
       
       const diamondPct = lessonTotalItems > 0 
@@ -277,8 +278,6 @@ const App: React.FC = () => {
         diamond: diamondPct
       };
 
-      console.log(`Island ${currentTrack} finalizado: ${correctUniqueCount}/${baseItemsCount} acertos únicos`); // Debug
-
       return { ...prev, lessonData };
     });
 
@@ -289,6 +288,7 @@ const App: React.FC = () => {
     setSection(SectionType.RESULTS);
     const totalTime = (Date.now() - startTime) / 1000;
     
+    // Contar únicos para o score final
     const uniqueCorrect = new Set<string>();
     logs.forEach(log => {
       if (log.isCorrect && log.questionId) {
@@ -350,7 +350,7 @@ const App: React.FC = () => {
     const moduleCounts = getModuleCountsForLesson(lessonId);
     const prevMax = moduleCounts[trackIndex - 1];
 
-    // Precisa ter acertado todas as questões únicas da ilha anterior
+    // CORREÇÃO: Só libera se tiver TODAS as questões respondidas corretamente
     if (prevScore < prevMax) return true;
 
     const completionDate = progress.lessonData[lessonId]?.islandCompletionDates?.[prevModule];
@@ -368,6 +368,7 @@ const App: React.FC = () => {
     const prevData = progress.lessonData[prevL];
     if (!prevData) return true;
 
+    // Precisa ter 100% de diamante (que agora é baseado em acertos únicos)
     if (prevData.diamond < 100) return true;
 
     const lessonConfig = LESSON_CONFIGS.find(l => l.id === prevL);
@@ -385,18 +386,20 @@ const App: React.FC = () => {
   // Obter contagens totais para cada ilha
   const islandCounts = getModuleCountsForLesson(progress.currentLesson);
 
-  // Obter progresso atual para cada ilha (acertos únicos)
+  // CORREÇÃO: Função que retorna o progresso REAL de cada ilha
   const getIslandProgressForUI = () => {
     const lessonId = progress.currentLesson;
     const scores = progress.lessonData[lessonId]?.islandScores || {};
     
-    // Converter para array na ordem correta dos módulos
+    // Ordem correta dos módulos para esta lição
     const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId);
     if (!lessonConfig) return [];
     
+    // Retorna array com os acertos únicos de cada módulo
     return lessonConfig.modules.map(module => scores[module] || 0);
   };
 
+  // Progresso atual na sessão de prática
   const getCurrentProgress = () => {
     if (!activeModule) return 0;
     
@@ -436,7 +439,7 @@ const App: React.FC = () => {
               isLessonLocked={isLessonLocked}
               isModuleLocked={isModuleLocked}
               islandWeights={islandCounts}
-              // Passar o progresso real de cada ilha (acertos únicos)
+              // CORREÇÃO: Passando o progresso REAL (acertos únicos)
               islandProgress={getIslandProgressForUI()}
             />
 
