@@ -57,7 +57,7 @@ export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({
             <i className="fas fa-gem"></i> {currentDiamond}
           </div>
           <div className="flex items-center gap-1 text-amber-500 font-black text-xs">
-            <i className="fas fa-star"></i> {progress.totalStars}
+            <i className="fas fa-star"></i> {progress?.totalStars ?? 0}
           </div>
         </div>
       </div>
