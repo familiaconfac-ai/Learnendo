@@ -77,7 +77,7 @@ export const LearningPathView: React.FC<{
   islandWeights: number[];
 }> = ({ progress, onSelectModule, moduleNames, isLessonLocked, isModuleLocked, islandWeights }) => {
   const [selectedMod, setSelectedMod] = useState<PracticeModuleType | null>(null);
-  const currentLId = progress.currentLesson;
+  const currentLId = progress?.currentLesson;
   const lessonConfig = LESSON_CONFIGS.find(l => l.id === currentLId) || LESSON_CONFIGS[0];
   const lessonLocked = isLessonLocked(currentLId);
 
