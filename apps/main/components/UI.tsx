@@ -82,7 +82,8 @@ export const LearningPathView: React.FC<{
   const lessonLocked = isLessonLocked(currentLId);
 
   const modules = lessonConfig.modules.map((type, idx) => {
-    const score = progress.lessonData[currentLId]?.islandScores[type] || 0;
+    const score =
+  progress?.lessonData?.[currentLId]?.islandScores?.[type] || 0;
     const max = islandWeights[idx] || 10;
     const locked = isModuleLocked(type);
     return {
