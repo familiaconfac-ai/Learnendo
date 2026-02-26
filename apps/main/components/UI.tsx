@@ -48,10 +48,10 @@ export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 text-orange-500 font-black text-xs">
-            <i className="fas fa-fire"></i> {progress.streakCount}
+            <i className="fas fa-fire"></i> {progress?.streakCount ?? 0}
           </div>
           <div className="flex items-center gap-1 text-blue-400 font-black text-xs">
-            <i className="fas fa-snowflake"></i> {progress.iceCount}
+            <i className="fas fa-snowflake"></i> {progress?.streakCount ?? 0}
           </div>
           <div className="flex items-center gap-1 text-blue-600 font-black text-xs">
             <i className="fas fa-gem"></i> {currentDiamond}
