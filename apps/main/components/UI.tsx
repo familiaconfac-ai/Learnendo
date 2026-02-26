@@ -35,7 +35,7 @@ const shuffle = <T,>(array: T[]): T[] => {
 
 export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({ lessonId, progress }) => {
   const lessonName = LESSON_CONFIGS.find(l => l.id === lessonId)?.name || "English Training";
-  const currentDiamond = progress.lessonData[lessonId]?.diamond || 0;
+  const currentDiamond = progress?.lessonData?.[lessonId]?.diamond || 0;
 
   return (
     <header className="flex flex-col items-center mb-6 w-full max-w-sm mx-auto bg-white/80 backdrop-blur-md p-4 rounded-3xl shadow-sm border border-white">
