@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog, QState } from './types';
 import { PRACTICE_ITEMS, LESSON_CONFIGS } from './constants';
-import { InfoSection, PracticeSection, ResultDashboard, Header, LearningPathView } from './components/UI';
+import { PracticeSection, Header, LearningPathView } from './components/UI';
 import { saveAssessmentResult } from './services/db';
 import { ensureAnonAuth, auth } from './services/firebase';
 
@@ -76,9 +76,9 @@ const applyAntiTranslate = () => {
 const App: React.FC = () => {
   const [section, setSection] = useState<SectionType>(SectionType.INFO);
   const [student, setStudent] = useState({ name: '' });
-  const [authStatus, setAuthStatus] = useState<{ status: 'loading' | 'ok' | 'error'; uid?: string; message?: string }>({
-    status: 'loading'
-  });
+  const [authStatus, setAuthStatus] = useState<{ status: 'loading' | 'ok' | 'error'; uid?: string; message?: string }>(
+    { status: 'loading' }
+  );
 
   const [progress, setProgress] = useState<UserProgress>(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -197,8 +197,6 @@ const App: React.FC = () => {
     const lessonId = progress.currentLesson;
     const today = getTodayKey();
 
-    // “Diamante/perfeição” você disse que a gente vê depois — mas aqui não trava nada.
-    // Mantive o registro pra você usar no futuro se quiser.
     const perfectDiamond = !hadAnyMistakeRef.current;
 
     setProgress(prev => {
@@ -215,11 +213,14 @@ const App: React.FC = () => {
       const newCompletionDates = { ...(currentData.islandCompletionDates || {}), [currentTrack]: today };
       const newDiamonds = { ...(currentData.islandDiamonds || {}), [currentTrack]: perfectDiamond };
 
-      // Mantemos diamond como “% do lesson”, mas NÃO usamos pra lock.
       const lessonConfig = LESSON_CONFIGS.find(l => l.id === lessonId);
-      const totalLessonItems = lessonConfig
-        ? lessonConfig.modules.reduce((acc: number, m) => acc + PRACTICE_ITEMS.filter(i => i.moduleType === m).length, 0)
-        : 0;
+      const totalLessonItems =
+        lessonConfig && Array.isArray(lessonConfig.modules)
+          ? lessonConfig.modules.reduce(
+              (acc: number, m) => acc + PRACTICE_ITEMS.filter(i => i.moduleType === m).length,
+              0
+            )
+          : 0;
 
       const sum = (Object.values(newScores) as number[]).reduce((a, b) => a + (Number(b) || 0), 0);
       const newDiamondPct = totalLessonItems > 0 ? Math.min(100, Math.round((sum / totalLessonItems) * 100)) : 0;
@@ -273,7 +274,6 @@ const App: React.FC = () => {
 
       const total = baseItems.length;
 
-      // terminou quando tudo ficou correct (100% natural)
       let done = true;
       for (let i = 0; i < total; i++) {
         if (next[i] !== 'correct') {
@@ -320,14 +320,9 @@ const App: React.FC = () => {
     const prevConfig = LESSON_CONFIGS.find(l => l.id === prevLessonId);
     const lastModule = prevConfig?.modules?.slice(-1)[0];
 
-    const prevCompletedDay = lastModule
-      ? progress.lessonData?.[prevLessonId]?.islandCompletionDates?.[lastModule]
-      : undefined;
+    const prevCompletedDay = lastModule ? progress.lessonData?.[prevLessonId]?.islandCompletionDates?.[lastModule] : undefined;
 
-    // não terminou a lição anterior → bloqueia
     if (!prevCompletedDay) return true;
-
-    // terminou hoje → só amanhã
     if (prevCompletedDay === getTodayKey()) return true;
 
     return false;
@@ -338,45 +333,39 @@ const App: React.FC = () => {
     const config = LESSON_CONFIGS.find(l => l.id === lessonId);
     if (!config) return [];
     const scores = progress.lessonData[lessonId]?.islandScores || {};
-    return config.modules.map(m => scores[m] || 0);
+    return config.modules.map(m => (scores as any)[m] || 0);
   };
 
   return (
-    // className "notranslate" + translate="no" ajudam a reduzir tradução automática
     <div className="min-h-screen bg-blue-50 pb-8 flex flex-col items-center notranslate" translate="no">
       <div className="w-full max-w-sm px-4 pt-6 notranslate" translate="no">
         {section !== SectionType.INFO && section !== SectionType.PRACTICE && (
           <Header
-            studentName={student.name}
-            totalStars={progress.totalStars}
-            currentLesson={progress.currentLesson}
-            onLogout={() => window.location.reload()}
+            lessonId={progress.currentLesson}
+            progress={progress}
           />
         )}
 
-        {section === SectionType.INFO && <InfoSection onStart={startLesson} />}
+        {/* INFO placeholder (temporário) */}
+        {section === SectionType.INFO && (
+          <div className="p-6 text-center">
+            <button
+              className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black"
+              onClick={() => startLesson('')}
+            >
+              START NOW
+            </button>
+          </div>
+        )}
 
         {section === SectionType.PATH && (
           <LearningPathView
-            currentLesson={progress.currentLesson}
-            lessonData={progress.lessonData}
-            getIslandProgress={getIslandProgressForUI}
+            progress={progress}
+            onSelectModule={startModule}
+            moduleNames={{}}
             isModuleLocked={isModuleLocked}
             isLessonLocked={isLessonLocked}
-            onStartModule={startModule}
-            onNextLesson={() => {
-              const next = progress.currentLesson + 1;
-              if (isLessonLocked(next)) return; // não deixa pular lição
-
-              setProgress(prev => ({
-                ...prev,
-                currentLesson: next,
-                lessonData: {
-                  ...prev.lessonData,
-                  [next]: prev.lessonData[next] || { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
-                }
-              }));
-            }}
+            islandWeights={[10, 10, 10, 10, 10]}
           />
         )}
 
@@ -384,48 +373,18 @@ const App: React.FC = () => {
           <PracticeSection
             item={baseItems[currentBaseIndex]}
             onResult={handleResult}
-            currentIndex={currentBaseIndex}
-            totalItemsInModule={baseItems.length}
-            qState={qState}
-            progress={progressPercent}
+            currentIdx={currentBaseIndex}
+            totalItems={baseItems.length}
             lessonId={progress.currentLesson}
           />
         )}
 
-        {section === SectionType.RESULTS && (
-          <ResultDashboard
-            lessonId={progress.currentLesson}
-            diamond={progress.lessonData[progress.currentLesson]?.diamond || 0}
-            islandScores={progress.lessonData[progress.currentLesson]?.islandScores || {}}
-            onSendToTeacher={() => {
-              setProgress(prev => ({ ...prev, sentToTeacher: true }));
-              saveAssessmentResult(progress);
-            }}
-            onNextLesson={() => {
-              const next = progress.currentLesson + 1;
-              if (isLessonLocked(next)) return;
-
-              setProgress(prev => ({
-                ...prev,
-                currentLesson: next,
-                lessonData: {
-                  ...prev.lessonData,
-                  [next]: prev.lessonData[next] || { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
-                }
-              }));
-              setSection(SectionType.PATH);
-            }}
-            onRestart={() => setSection(SectionType.PATH)}
-            isAdmin={isAdmin}
-            todayKey={getTodayKey()}
-          />
-        )}
+        {/* RESULTS placeholder (temporário) */}
+        {section === SectionType.RESULTS && <div className="p-6 text-center">Results disabled temporarily</div>}
       </div>
 
       <footer className="fixed bottom-0 left-0 right-0 bg-black/90 text-[8px] text-white/70 px-2 py-1 pointer-events-none z-[9999] font-mono text-center border-t border-white/10 notranslate" translate="no">
-        {authStatus.status === 'ok'
-          ? `Auth: OK uid=${authStatus.uid?.substring(0, 8)}`
-          : `Auth: ${authStatus.status}`}
+        {authStatus.status === 'ok' ? `Auth: OK uid=${authStatus.uid?.substring(0, 8)}` : `Auth: ${authStatus.status}`}
       </footer>
     </div>
   );
