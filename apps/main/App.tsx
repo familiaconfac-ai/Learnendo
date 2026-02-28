@@ -15,41 +15,78 @@ const BYPASS_KEY = 'Martins';
 
 type ActivePracticeItem = PracticeItem & { __baseId: string };
 
-// ====== Helpers to harden progress shape and remove persisted bypass ======
-const makeDefaultProgress = (): UserProgress =>
-  ({
-    currentLesson: 1,
-    lessonData: {
-      1: { diamond: 0, islandScores: {}, islandCompletionDates: {}, islandDiamonds: {} }
-    },
-    totalStars: 100,
-    streakCount: 0,
-    iceCount: 0,
-    virtualDayOffset: 0,
-    // IMPORTANT: bypassActive exists in old data; we keep field but ALWAYS force false on load/save.
-    bypassActive: false,
-    sentToTeacher: false
-  } as UserProgress);
+// result data captured when an island is finished
+interface LastResult {
+  lessonId: string;
+  islandIndex: number;
+  totalStars: number;
+  diamondPercent: number | null;
+  streakCount: number;
+  iceCount: number;
+  completedAt: string; // ISO date string
+}
 
+// ====== DEFAULT_PROGRESS and sanitizeProgress ======
+const DEFAULT_PROGRESS: UserProgress = {
+  currentLesson: 1,
+  // lessonData keyed by lesson id. Each lesson entry ensures the expected shape.
+  lessonData: {},
+  totalStars: 100,
+  streakCount: 0,
+  iceCount: 0,
+  virtualDayOffset: 0,
+  // keep optional fields present but neutral
+  bypassActive: false,
+  sentToTeacher: false,
+};
+
+/**
+ * sanitizeProgress(raw)
+ * - Returns a fully shaped UserProgress object.
+ * - If `raw` is null/undefined returns `DEFAULT_PROGRESS`.
+ * - Ensures `lessonData` exists and that each lesson entry contains
+ *   `diamond`, `islandScores` (object), `islandCompletionDates` (object) and `islandDiamonds` (object).
+ */
 const sanitizeProgress = (raw: any): UserProgress => {
-  const base = makeDefaultProgress();
+  if (!raw) return DEFAULT_PROGRESS;
 
-  const p: UserProgress = {
-    ...base,
-    ...raw,
-    lessonData: raw?.lessonData && typeof raw.lessonData === 'object' ? raw.lessonData : base.lessonData
-  } as UserProgress;
+  const safe: any = { ...DEFAULT_PROGRESS, ...raw };
 
-  // Force-disable bypass persistence (prevents “unlock everything” across users/devices)
-  (p as any).bypassActive = false;
+  // Ensure numeric top-level fields
+  if (typeof safe.currentLesson !== 'number' || !Number.isFinite(safe.currentLesson) || safe.currentLesson < 1) safe.currentLesson = DEFAULT_PROGRESS.currentLesson;
+  if (typeof safe.totalStars !== 'number' || !Number.isFinite(safe.totalStars) || safe.totalStars < 0) safe.totalStars = DEFAULT_PROGRESS.totalStars;
+  if (typeof safe.streakCount !== 'number' || !Number.isFinite(safe.streakCount) || safe.streakCount < 0) safe.streakCount = DEFAULT_PROGRESS.streakCount;
+  if (typeof safe.iceCount !== 'number' || !Number.isFinite(safe.iceCount) || safe.iceCount < 0) safe.iceCount = DEFAULT_PROGRESS.iceCount;
+  if (typeof safe.virtualDayOffset !== 'number' || !Number.isFinite(safe.virtualDayOffset)) safe.virtualDayOffset = DEFAULT_PROGRESS.virtualDayOffset;
 
-  if (!p.lessonData || typeof p.lessonData !== 'object') p.lessonData = base.lessonData;
+  // Force-disable persisted bypass (security)
+  safe.bypassActive = false;
 
-  if (typeof p.currentLesson !== 'number' || p.currentLesson < 1) p.currentLesson = 1;
+  // Normalize lessonData to an object
+  if (!safe.lessonData || typeof safe.lessonData !== 'object' || Array.isArray(safe.lessonData)) {
+    safe.lessonData = {};
+  }
 
-  if (typeof p.totalStars !== 'number') p.totalStars = 100;
+  // For each lesson entry, ensure expected sub-objects exist
+  Object.keys(safe.lessonData).forEach((lid) => {
+    const entry = safe.lessonData[lid] || {};
+    const normalized: any = {};
 
-  return p;
+    normalized.diamond = typeof entry.diamond === 'number' && Number.isFinite(entry.diamond) ? entry.diamond : 0;
+
+    // islandScores stored as object mapping trackId -> number
+    normalized.islandScores = entry.islandScores && typeof entry.islandScores === 'object' && !Array.isArray(entry.islandScores) ? entry.islandScores : {};
+
+    // islandCompletionDates stored as object mapping trackId -> ISO date string
+    normalized.islandCompletionDates = entry.islandCompletionDates && typeof entry.islandCompletionDates === 'object' && !Array.isArray(entry.islandCompletionDates) ? entry.islandCompletionDates : {};
+
+    // islandDiamonds stored as object mapping trackId -> boolean
+    normalized.islandDiamonds = entry.islandDiamonds && typeof entry.islandDiamonds === 'object' && !Array.isArray(entry.islandDiamonds) ? entry.islandDiamonds : {};
+
+    safe.lessonData[lid] = normalized;
+  });
+
+  return safe as UserProgress;
 };
 
 // ====== “Anti-translate” utilities ======
@@ -81,14 +118,12 @@ const App: React.FC = () => {
   );
 
   const [progress, setProgress] = useState<UserProgress>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return makeDefaultProgress();
-    try {
-      return sanitizeProgress(JSON.parse(saved));
-    } catch {
-      return makeDefaultProgress();
-    }
+    const stored = localStorage.getItem(STORAGE_KEY);
+    const parsed = stored ? JSON.parse(stored) : null;
+    return sanitizeProgress(parsed);
   });
+
+  const [lastResult, setLastResult] = useState<LastResult | null>(null);
 
   // ====== Island Run State ======
   const [baseItems, setBaseItems] = useState<ActivePracticeItem[]>([]);
@@ -142,6 +177,13 @@ const App: React.FC = () => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(safe));
   }, [progress]);
 
+  // redirect if result view is active but we have no lastResult
+  useEffect(() => {
+    if (section === SectionType.RESULT && !lastResult) {
+      setSection(SectionType.PATH);
+    }
+  }, [section, lastResult]);
+
   // ====== Derived UI stats ======
   const moduleTotal = useMemo(() => baseItems.length, [baseItems.length]);
 
@@ -193,12 +235,18 @@ const App: React.FC = () => {
   };
 
   const finalizeIsland = () => {
+    console.log("FINALIZE ISLAND CALLED");
     const currentTrack = activeModule!;
     const lessonId = progress.currentLesson;
     const today = getTodayKey();
 
+    // compute islandIndex as existing number of islands completed so far
+    const existingScores = progress.lessonData[lessonId]?.islandScores || {};
+    const islandIndex = Object.keys(existingScores).length;
+
     const perfectDiamond = !hadAnyMistakeRef.current;
 
+    // calculate diamond percent inside setter for accurate value
     setProgress(prev => {
       const lessonData = { ...prev.lessonData };
 
@@ -233,10 +281,38 @@ const App: React.FC = () => {
         diamond: newDiamondPct
       };
 
+      // we can set lastResult here too or after setProgress call; we'll set after returning new progress
       return { ...prev, lessonData };
     });
 
-    setSection(SectionType.PATH);
+    // capture last result using the current progress values (before new update)
+    setLastResult({
+      lessonId: String(lessonId),
+      islandIndex,
+      totalStars: progress.totalStars ?? 0,
+      diamondPercent: null, // will compute below if needed
+      streakCount: progress.streakCount || 0,
+      iceCount: progress.iceCount || 0,
+      completedAt: today
+    });
+
+    // compute diamond percentage again based on updated data if possible
+    const lessonConfig2 = LESSON_CONFIGS.find(l => l.id === lessonId);
+    if (lessonConfig2) {
+      const scoreSum = Object.values(existingScores).reduce((a, b) => a + (Number(b) || 0), 0) + baseItems.length;
+      const totalLessonItems2 =
+        lessonConfig2 && Array.isArray(lessonConfig2.modules)
+          ? lessonConfig2.modules.reduce(
+              (acc: number, m) => acc + PRACTICE_ITEMS.filter(i => i.moduleType === m).length,
+              0
+            )
+          : 0;
+      const pct = totalLessonItems2 > 0 ? Math.min(100, Math.round((scoreSum / totalLessonItems2) * 100)) : 0;
+      setLastResult(r => r ? { ...r, diamondPercent: pct } : r);
+    }
+
+    console.log("SETTING SECTION TO RESULT");
+    setSection(SectionType.RESULT);
   };
 
   const handleResult = (isCorrect: boolean, val: string) => {
@@ -379,8 +455,23 @@ const App: React.FC = () => {
           />
         )}
 
-        {/* RESULTS placeholder (temporário) */}
-        {section === SectionType.RESULTS && <div className="p-6 text-center">Results disabled temporarily</div>}
+        {/* RESULTS screen */}
+        {section === SectionType.RESULT && (
+          <div className="p-6 text-center space-y-4">
+            <h2 className="text-2xl font-black text-slate-800 uppercase">Island Complete!</h2>
+            <p className="text-lg">Stars: {lastResult?.totalStars ?? progress.totalStars}</p>
+            <p className="text-lg">Diamond: {lastResult?.diamondPercent != null ? `${lastResult.diamondPercent}%` : 'N/A'}</p>
+            <p className="text-lg">Streak: {lastResult?.streakCount ?? progress.streakCount}</p>
+            <p className="text-lg">Ice: {lastResult?.iceCount ?? progress.iceCount}</p>
+            <div className="flex flex-col gap-3 mt-4">
+              <button onClick={() => setSection(SectionType.PATH)} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1">Back to Path</button>
+              {/* Optional retry: simply re-enter practice using existing activeModule and baseItems */}
+              {activeModule && (
+                <button onClick={() => setSection(SectionType.PRACTICE)} className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase">Retry Island</button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <footer className="fixed bottom-0 left-0 right-0 bg-black/90 text-[8px] text-white/70 px-2 py-1 pointer-events-none z-[9999] font-mono text-center border-t border-white/10 notranslate" translate="no">
