@@ -33,38 +33,47 @@ const shuffle = <T,>(array: T[]): T[] => {
   return result;
 };
 
-export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({ lessonId, progress }) => {
-  const lessonName = LESSON_CONFIGS.find(l => l.id === lessonId)?.name || "English Training";
-  const currentDiamond = progress.lessonData[lessonId]?.diamond || 0;
+export const Header: React.FC<{
+  studentName: string;
+  totalStars: number;
+  currentLesson: number;
+  onLogout: () => void;
+}> = ({ studentName, totalStars, currentLesson, onLogout }) => {
+
+  const lessonName =
+    LESSON_CONFIGS.find(l => l.id === currentLesson)?.name ||
+    "English Training";
 
   return (
     <header className="flex flex-col items-center mb-6 w-full max-w-sm mx-auto bg-white/80 backdrop-blur-md p-4 rounded-3xl shadow-sm border border-white">
+
       <div className="flex items-center justify-between w-full mb-3">
+
         <div className="flex items-center gap-1.5">
           <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-[0_3px_0_0_#1e40af]">
             <i className="fas fa-bolt text-[10px]"></i>
           </div>
-          <h1 className="text-sm font-black text-blue-900 uppercase tracking-tighter">Learnendo</h1>
+
+          <h1 className="text-sm font-black text-blue-900 uppercase tracking-tighter">
+            Learnendo
+          </h1>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 text-orange-500 font-black text-xs">
-            <i className="fas fa-fire"></i> {progress.streakCount}
-          </div>
-          <div className="flex items-center gap-1 text-blue-400 font-black text-xs">
-            <i className="fas fa-snowflake"></i> {progress.iceCount}
-          </div>
-          <div className="flex items-center gap-1 text-blue-600 font-black text-xs">
-            <i className="fas fa-gem"></i> {currentDiamond}
-          </div>
-          <div className="flex items-center gap-1 text-amber-500 font-black text-xs">
-            <i className="fas fa-star"></i> {progress.totalStars}
-          </div>
+
+        <div className="flex items-center gap-1 text-amber-500 font-black text-xs">
+          <i className="fas fa-star"></i> {totalStars}
         </div>
+
       </div>
+
       <div className="w-full text-center border-t border-slate-100 pt-2">
-        <p className="text-slate-500 font-bold text-[10px] uppercase tracking-wider">Lesson {lessonId}: {lessonName}</p>
+        <p className="text-slate-500 font-bold text-[10px] uppercase tracking-wider">
+          Lesson {currentLesson}: {lessonName}
+        </p>
       </div>
+
     </header>
+  );
+};
   );
 };
 
