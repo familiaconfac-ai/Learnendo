@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS } from '../constants';
 
@@ -72,8 +73,6 @@ export const Header: React.FC<{
       </div>
 
     </header>
-  );
-};
   );
 };
 
@@ -530,7 +529,7 @@ export const InfoSection: React.FC<{
       <h2 className="text-3xl font-black text-slate-900 mb-2 uppercase tracking-tight">Learnendo AI Tutor</h2>
       <div className="mb-8 space-y-1">
         <p className="text-slate-500 font-black text-xs uppercase tracking-widest">Mastering Day by Day</p>
-        <p className="text-blue-600 font-black text-[10px] uppercase tracking-[0.2em]">Workbook 1</p>
+        <p className="text-blue-600 font-black text-[10px] uppercase tracking-[0.2em]">Workbook {WORKBOOK_NUMBER}</p>
       </div>
 
       <div className="w-full max-w-[320px] space-y-4">

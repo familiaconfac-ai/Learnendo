@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS } from '../constants';
 
@@ -530,7 +531,7 @@ export const InfoSection: React.FC<{
       <h2 className="text-3xl font-black text-slate-900 mb-2 uppercase tracking-tight">Learnendo AI Tutor</h2>
       <div className="mb-8 space-y-1">
         <p className="text-slate-500 font-black text-xs uppercase tracking-widest">Mastering Day by Day</p>
-        <p className="text-blue-600 font-black text-[10px] uppercase tracking-[0.2em]">Workbook 1</p>
+        <p className="text-blue-600 font-black text-[10px] uppercase tracking-[0.2em]">Workbook {WORKBOOK_NUMBER}</p>
       </div>
 
       <div className="w-full max-w-[320px] space-y-4">
@@ -585,22 +586,6 @@ export const InfoSection: React.FC<{
           <span className="text-[10px] font-black text-slate-300 uppercase">Or continue as guest</span>
           <div className="flex-1 h-1 bg-slate-100 rounded-full" />
         </div>
-
-        <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) onStart(name); }} className="space-y-4">
-          <input
-            placeholder="What is your name?"
-            className="w-full p-5 border-4 border-slate-100 rounded-3xl bg-white font-black text-center text-xl focus:border-blue-500 outline-none transition-all shadow-sm"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button className="w-full py-5 bg-blue-600 text-white rounded-3xl font-black text-xl shadow-[0_8px_0_0_#1e40af] active:translate-y-1 transition-all uppercase tracking-widest">
-            START NOW
-          </button>
-        </form>
-      </div>
-    </div>
-  );
-};
 
         <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) onStart(name); }} className="space-y-4">
           <input

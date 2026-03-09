@@ -1,6 +1,9 @@
 
 import { PracticeItem } from './types';
 
+// workbook number used in UI labels
+export const WORKBOOK_NUMBER = 5;
+
 const createItems = (lesson: number, track: number, items: Partial<PracticeItem>[]): PracticeItem[] => {
   const moduleType = `L${lesson}_TRACK${track}`;
   return items.map((it, idx) => ({

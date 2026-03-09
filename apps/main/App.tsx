@@ -299,7 +299,7 @@ const App: React.FC = () => {
     // compute diamond percentage again based on updated data if possible
     const lessonConfig2 = LESSON_CONFIGS.find(l => l.id === lessonId);
     if (lessonConfig2) {
-      const scoreSum = Object.values(existingScores).reduce((a, b) => a + (Number(b) || 0), 0) + baseItems.length;
+      const scoreSum = (Object.values(existingScores) as number[]).reduce((a, b) => a + (Number(b) || 0), 0) + baseItems.length;
       const totalLessonItems2 =
         lessonConfig2 && Array.isArray(lessonConfig2.modules)
           ? lessonConfig2.modules.reduce(
