@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog, QState } from './types';
 import { PRACTICE_ITEMS, LESSON_CONFIGS } from './constants';
-import { PracticeSection, Header, LearningPathView } from './components/UI';
+import { PracticeSection, Header, LearningPathView, InfoSection } from './components/UI';
 import { saveAssessmentResult } from './services/db';
 import { ensureAnonAuth, auth } from './services/firebase';
 
@@ -422,16 +422,14 @@ const App: React.FC = () => {
           />
         )}
 
-        {/* INFO placeholder (temporário) */}
+        {/* INFO section with auth and guest login */}
         {section === SectionType.INFO && (
-          <div className="p-6 text-center">
-            <button
-              className="px-6 py-3 bg-blue-600 text-white rounded-xl font-black"
-              onClick={() => startLesson('')}
-            >
-              START NOW
-            </button>
-          </div>
+          <InfoSection
+            onStart={startLesson}
+            onAuthAction={(email, pass, isLogin, fullName) => {
+              console.log("Auth action", email, pass, isLogin, fullName);
+            }}
+          />
         )}
 
         {section === SectionType.PATH && (

@@ -477,7 +477,7 @@ export const ResultDashboard: React.FC<{
 };
 
 export const InfoSection: React.FC<{
-  onStart: (name: string, email: string) => void;
+  onStart: (name: string) => void;
   onAuthAction: (email: string, pass: string, isLogin: boolean, fullName?: string) => void
 }> = ({ onStart, onAuthAction }) => {
   const [name, setName] = useState('');
@@ -577,7 +577,7 @@ export const InfoSection: React.FC<{
           <div className="flex-1 h-1 bg-slate-100 rounded-full" />
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) onStart(name, ''); }} className="space-y-4">
+        <form onSubmit={(e) => { e.preventDefault(); if (name.trim()) onStart(name); }} className="space-y-4">
           <input
             placeholder="What is your name?"
             className="w-full p-5 border-4 border-slate-100 rounded-3xl bg-white font-black text-center text-xl focus:border-blue-500 outline-none transition-all shadow-sm"

@@ -8,6 +8,8 @@ export enum SectionType {
   RESULTS = 'RESULTS'  // kept for compatibility (unused)
 }
 
+export type QState = 'pending' | 'correct' | 'wrong';
+
 export type PracticeModuleType = string;
 
 export interface PracticeItem {
