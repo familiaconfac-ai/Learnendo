@@ -354,7 +354,14 @@ const App: React.FC = () => {
           />
         )}
 
-        {section === SectionType.INFO && <InfoSection onStart={startLesson} />}
+        {section === SectionType.INFO && (
+  <InfoSection
+    onStart={startLesson}
+    onAuthAction={(email, pass, isLogin, fullName) => {
+      console.log("Auth action", email, pass, isLogin, fullName);
+    }}
+  />
+)}
 
         {section === SectionType.PATH && (
           <LearningPathView
