@@ -4,7 +4,8 @@ export enum SectionType {
   INFO = 'INFO',
   PATH = 'PATH',
   PRACTICE = 'PRACTICE',
-  RESULTS = 'RESULTS'
+  RESULT = 'RESULT',   // new singular variant for the results screen
+  RESULTS = 'RESULTS'  // kept for compatibility (unused)
 }
 
 export type PracticeModuleType = string;

@@ -474,9 +474,7 @@ const App: React.FC = () => {
         )}
       </div>
 
-      <footer className="fixed bottom-0 left-0 right-0 bg-black/90 text-[8px] text-white/70 px-2 py-1 pointer-events-none z-[9999] font-mono text-center border-t border-white/10 notranslate" translate="no">
-        {authStatus.status === 'ok' ? `Auth: OK uid=${authStatus.uid?.substring(0, 8)}` : `Auth: ${authStatus.status}`}
-      </footer>
+      
     </div>
   );
 };
