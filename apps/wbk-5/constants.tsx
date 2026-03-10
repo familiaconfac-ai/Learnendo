@@ -220,8 +220,6 @@ const L2_TRACKS = [
   ]),
   // Island 5 – Articles practice
   ...createItems(2, 5, [
-  // Island 5 – Articles practice
-  ...createItems(2, 5, [
     { type: 'multiple-choice', instruction:'It is ___ apple', options:['a','an'], correctValue:'an', audioValue:"It's an apple.", isNewVocab:true },
     { type: 'multiple-choice', instruction:'It is ___ kite', options:['a','an'], correctValue:'a', audioValue:"It's a kite." },
     { type: 'multiple-choice', instruction:'He has ___ orange', options:['a','an'], correctValue:'an', audioValue:"He has an orange." },

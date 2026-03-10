@@ -113,7 +113,7 @@ export const LearningPathView: React.FC<{
         <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter mb-2">Lesson Locked</h2>
         <p className="text-slate-500 font-bold text-sm max-w-[240px]">Master 100% of the previous lesson and wait until tomorrow to unlock this path.</p>
         <button
-          onClick={() => { }}
+          onClick={onBack}
           className="mt-8 px-8 py-4 bg-slate-800 text-white rounded-2xl font-black uppercase shadow-lg text-xs"
         >
           Back to Training
