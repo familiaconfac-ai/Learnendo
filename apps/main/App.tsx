@@ -483,27 +483,24 @@ const App: React.FC = () => {
                 <h2 className="text-xl font-bold text-slate-800 mb-4">Unit 1</h2>
                 <div className="space-y-2">
                   {LESSON_CONFIGS.slice(0, 6).map(lesson => {
-                    const diamond = progress.lessonData[lesson.id]?.diamond || 0;
-                    let state: 'active' | 'available_tomorrow' | 'locked_content' | 'completed' = 'locked_content';
+                    let state: 'completed' | 'active' | 'available' | 'locked_content';
                     if (isAdmin) {
                       state = 'active';
+                    } else if (lesson.id < progress.currentLesson) {
+                      state = 'completed';
+                    } else if (lesson.id === progress.currentLesson) {
+                      state = 'active';
+                    } else if (lesson.id === progress.currentLesson + 1) {
+                      state = 'available';
                     } else {
-                      if (diamond === 100) {
-                        state = 'completed';
-                      } else if (lesson.id < progress.currentLesson) {
-                        state = 'completed';
-                      } else if (lesson.id === progress.currentLesson) {
-                        state = isLessonLocked(lesson.id) ? 'available_tomorrow' : 'active';
-                      } else if (lesson.id === progress.currentLesson + 1) {
-                        state = isLessonLocked(lesson.id) ? 'available_tomorrow' : 'active';
-                      }
+                      state = 'locked_content';
                     }
-                    const clickable = state === 'active';
+                    const clickable = state !== 'locked_content';
                     const className = `p-4 rounded-lg border flex items-center justify-between ${
-                      state === 'active' ? 'bg-green-100 cursor-pointer hover:bg-blue-50' :
-                      state === 'available_tomorrow' ? 'bg-gray-100 opacity-50' :
-                      state === 'locked_content' ? 'bg-gray-200 opacity-40 grayscale' :
-                      'bg-yellow-100'
+                      state === 'completed' ? 'bg-yellow-100 cursor-pointer hover:bg-yellow-200' :
+                      state === 'active' ? 'bg-green-100 cursor-pointer hover:bg-green-200' :
+                      state === 'available' ? 'bg-blue-100 cursor-pointer hover:bg-blue-200' :
+                      'bg-gray-200 opacity-40 grayscale cursor-not-allowed'
                     }`;
                     return (
                       <div
@@ -534,27 +531,24 @@ const App: React.FC = () => {
                 <h2 className="text-xl font-bold text-slate-800 mb-4">Unit 2</h2>
                 <div className="space-y-2">
                   {LESSON_CONFIGS.slice(6, 12).map(lesson => {
-                    const diamond = progress.lessonData[lesson.id]?.diamond || 0;
-                    let state: 'active' | 'available_tomorrow' | 'locked_content' | 'completed' = 'locked_content';
+                    let state: 'completed' | 'active' | 'available' | 'locked_content';
                     if (isAdmin) {
                       state = 'active';
+                    } else if (lesson.id < progress.currentLesson) {
+                      state = 'completed';
+                    } else if (lesson.id === progress.currentLesson) {
+                      state = 'active';
+                    } else if (lesson.id === progress.currentLesson + 1) {
+                      state = 'available';
                     } else {
-                      if (diamond === 100) {
-                        state = 'completed';
-                      } else if (lesson.id < progress.currentLesson) {
-                        state = 'completed';
-                      } else if (lesson.id === progress.currentLesson) {
-                        state = isLessonLocked(lesson.id) ? 'available_tomorrow' : 'active';
-                      } else if (lesson.id === progress.currentLesson + 1) {
-                        state = isLessonLocked(lesson.id) ? 'available_tomorrow' : 'active';
-                      }
+                      state = 'locked_content';
                     }
-                    const clickable = state === 'active';
+                    const clickable = state !== 'locked_content';
                     const className = `p-4 rounded-lg border flex items-center justify-between ${
-                      state === 'active' ? 'bg-green-100 cursor-pointer hover:bg-blue-50' :
-                      state === 'available_tomorrow' ? 'bg-gray-100 opacity-50' :
-                      state === 'locked_content' ? 'bg-gray-200 opacity-40 grayscale' :
-                      'bg-yellow-100'
+                      state === 'completed' ? 'bg-yellow-100 cursor-pointer hover:bg-yellow-200' :
+                      state === 'active' ? 'bg-green-100 cursor-pointer hover:bg-green-200' :
+                      state === 'available' ? 'bg-blue-100 cursor-pointer hover:bg-blue-200' :
+                      'bg-gray-200 opacity-40 grayscale cursor-not-allowed'
                     }`;
                     return (
                       <div
