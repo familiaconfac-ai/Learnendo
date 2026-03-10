@@ -220,16 +220,18 @@ const L2_TRACKS = [
   ]),
   // Island 5 – Articles practice
   ...createItems(2, 5, [
-    { type: 'multiple-choice', instruction:'It is ___ apple', options:['a','an'], correctValue:'an', audioValue:'apple', isNewVocab:true },
-    { type: 'multiple-choice', instruction:'It is ___ kite', options:['a','an'], correctValue:'a', audioValue:'kite' },
-    { type: 'multiple-choice', instruction:'He has ___ orange', options:['a','an'], correctValue:'an', audioValue:'orange' },
-    { type: 'multiple-choice', instruction:'She takes ___ sun', options:['a','an'], correctValue:'a', audioValue:'sun' },
-    { type: 'multiple-choice', instruction:'We read ___ book', options:['a','an'], correctValue:'a', audioValue:'book' },
-    { type: 'multiple-choice', instruction:'I eat ___ apple', options:['a','an'], correctValue:'an', audioValue:'apple' },
-    { type: 'multiple-choice', instruction:'They fly ___ kite', options:['a','an'], correctValue:'a', audioValue:'kite' },
-    { type: 'multiple-choice', instruction:'He found ___ rock', options:['a','an'], correctValue:'a', audioValue:'rock' },
-    { type: 'multiple-choice', instruction:'She wears ___ hat', options:['a','an'], correctValue:'a', audioValue:'hat' },
-    { type: 'multiple-choice', instruction:'It is ___ orange in the box', options:['a','an'], correctValue:'an', audioValue:'orange' }
+  // Island 5 – Articles practice
+  ...createItems(2, 5, [
+    { type: 'multiple-choice', instruction:'It is ___ apple', options:['a','an'], correctValue:'an', audioValue:"It's an apple.", isNewVocab:true },
+    { type: 'multiple-choice', instruction:'It is ___ kite', options:['a','an'], correctValue:'a', audioValue:"It's a kite." },
+    { type: 'multiple-choice', instruction:'He has ___ orange', options:['a','an'], correctValue:'an', audioValue:"He has an orange." },
+    { type: 'multiple-choice', instruction:'She takes ___ sun', options:['a','an'], correctValue:'a', audioValue:"She takes a sun." },
+    { type: 'multiple-choice', instruction:'We read ___ book', options:['a','an'], correctValue:'a', audioValue:"We read a book." },
+    { type: 'multiple-choice', instruction:'I eat ___ apple', options:['a','an'], correctValue:'an', audioValue:"I eat an apple." },
+    { type: 'multiple-choice', instruction:'They fly ___ kite', options:['a','an'], correctValue:'a', audioValue:"They fly a kite." },
+    { type: 'multiple-choice', instruction:'He found ___ rock', options:['a','an'], correctValue:'a', audioValue:"He found a rock." },
+    { type: 'multiple-choice', instruction:'She wears ___ hat', options:['a','an'], correctValue:'a', audioValue:"She wears a hat." },
+    { type: 'multiple-choice', instruction:'It is ___ orange in the box', options:['a','an'], correctValue:'an', audioValue:"It's an orange in the box." }
   ]),
   // Island 6 – Speaking practice
   ...createItems(2, 6, [

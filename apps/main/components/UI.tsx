@@ -312,6 +312,27 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       }
     };
 
+    // ✅ Handle ENTER key
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (showFooter) {
+          // If feedback is showing, trigger CONTINUE/GOT IT
+          if (feedback === 'correct') {
+            onResult(true, userInput || selectedOption || '');
+          } else {
+            setFeedback('none');
+            setShowFooter(false);
+          }
+        } else {
+          // If no feedback, trigger CHECK
+          if (isMultipleChoice ? selectedOption : userInput.trim()) {
+            handleCheck();
+          }
+        }
+      }
+    };
+
     const handleOptionClick = (opt: string) => {
       if (showFooter && feedback === 'correct') return;
       setSelectedOption(opt);
@@ -367,15 +388,26 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           </div>
 
           <div className="flex flex-col items-center gap-6">
+            {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
               {item.audioValue && (
-                <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] text-2xl active:translate-y-1 transition-all flex items-center justify-center">
+                <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] text-2xl active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
                   <i className="fa-solid fa-volume-high"></i>
                 </button>
               )}
               {item.audioValue && (
-                <button onClick={() => speak(item.audioValue, 0.40)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] text-3xl active:translate-y-1 transition-all flex items-center justify-center">
+                <button onClick={() => speak(item.audioValue, 0.7)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] text-3xl active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
                   <i className="fa-solid fa-turtle text-white drop-shadow-md"></i>
+                </button>
+              )}
+              {item.type === 'speaking' && (
+                <button 
+                  onClick={handleSTT}
+                  disabled={showFooter && feedback === 'correct'}
+                  className={`w-14 h-14 rounded-2xl text-2xl active:translate-y-1 transition-all flex items-center justify-center ${isListening ? 'bg-red-500 text-white animate-pulse shadow-[0_4px_0_0_#b91c1c]' : 'bg-red-500 text-white shadow-[0_4px_0_0_#991b1b] hover:bg-red-600'}`}
+                  title="Tap to speak"
+                >
+                  <i className="fas fa-microphone"></i>
                 </button>
               )}
             </div>
@@ -397,22 +429,14 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               </div>
             ) : item.type === 'speaking' ? (
               <div className="w-full flex flex-col gap-4">
-                {/* Microphone button for speaking exercises */}
-                <button 
-                  onClick={handleSTT}
-                  disabled={showFooter && feedback === 'correct'}
-                  className={`w-full py-4 rounded-2xl font-black uppercase flex items-center justify-center gap-3 transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : showFooter && feedback === 'correct' ? 'bg-slate-100 text-slate-300' : 'bg-slate-100 text-slate-600 hover:bg-blue-100'}`}
-                >
-                  <i className={`fas fa-microphone text-lg`}></i>
-                  {isListening ? 'LISTENING...' : 'TAP TO SPEAK'}
-                </button>
-                {/* Auto-growing textarea for speaking exercises */}
+                {/* Auto-growing textarea for speaking exercises - moved below buttons */}
                 <textarea
                   ref={textareaRef}
                   disabled={showFooter && feedback === 'correct'}
                   className={`w-full px-4 py-3 border-4 rounded-3xl text-center text-lg font-black focus:border-blue-500 outline-none bg-white transition-all resize-none overflow-hidden min-h-16 max-h-32 ${feedback === 'wrong' ? 'border-red-200 text-red-600' : 'border-slate-100 text-slate-800 shadow-sm'}`}
                   value={userInput}
                   onChange={handleTextareaChange}
+                  onKeyDown={handleKeyDown}
                   placeholder="Say something or type..."
                   style={{ height: 'auto' }}
                 />
@@ -428,6 +452,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                     setUserInput(e.target.value);
                     if (feedback === 'wrong') { setFeedback('none'); setShowFooter(false); }
                   }}
+                  onKeyDown={handleKeyDown}
                   placeholder="..."
                 />
               </div>
@@ -473,11 +498,11 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               </div>
             ) : (
               <div className="flex gap-3">
-                {/* ✅ Back button inside islands */}
+                {/* ✅ Back button with yellow color */}
                 {onBack && (
                   <button
                     onClick={onBack}
-                    className="flex-1 py-4 bg-slate-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#334155] active:translate-y-1 transition-all"
+                    className="flex-1 py-4 bg-yellow-500 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#b45309] active:translate-y-1 transition-all hover:bg-yellow-600"
                   >
                     ← BACK
                   </button>
