@@ -426,13 +426,13 @@ const App: React.FC = () => {
         {section === SectionType.INFO && (
           <InfoSection
             onStart={startLesson}
-            onAuthAction={async (email, pass, isRegister, fullName) => {
+            onAuthAction={async (email, pass, isLogin, fullName) => {
 
-  console.log("Auth action", email, pass, isRegister, fullName);
+  console.log("Auth action", email, pass, isLogin, fullName);
 
   try {
 
-   if (isRegister) {
+   if (!isLogin) {
   const user = await registerWithEmail(email, pass, fullName);
   console.log("Register success:", user);
 } else {
