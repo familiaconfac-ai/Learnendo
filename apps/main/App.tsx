@@ -500,7 +500,7 @@ const App: React.FC = () => {
                     }
                     const clickable = state === 'active';
                     const className = `p-4 rounded-lg border flex items-center justify-between ${
-                      state === 'active' ? 'bg-white cursor-pointer hover:bg-blue-50' :
+                      state === 'active' ? 'bg-green-100 cursor-pointer hover:bg-blue-50' :
                       state === 'available_tomorrow' ? 'bg-gray-100 opacity-50' :
                       state === 'locked_content' ? 'bg-gray-200 opacity-40 grayscale' :
                       'bg-yellow-100'
@@ -551,7 +551,7 @@ const App: React.FC = () => {
                     }
                     const clickable = state === 'active';
                     const className = `p-4 rounded-lg border flex items-center justify-between ${
-                      state === 'active' ? 'bg-white cursor-pointer hover:bg-blue-50' :
+                      state === 'active' ? 'bg-green-100 cursor-pointer hover:bg-blue-50' :
                       state === 'available_tomorrow' ? 'bg-gray-100 opacity-50' :
                       state === 'locked_content' ? 'bg-gray-200 opacity-40 grayscale' :
                       'bg-yellow-100'
@@ -602,6 +602,7 @@ const App: React.FC = () => {
             currentIdx={currentBaseIndex}
             totalItems={baseItems.length}
             lessonId={progress.currentLesson}
+            onBack={() => setSection(SectionType.PATH)}
           />
         )}
 

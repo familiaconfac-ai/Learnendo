@@ -400,11 +400,10 @@ const App: React.FC = () => {
           <PracticeSection
             item={baseItems[currentBaseIndex]}
             onResult={handleResult}
-            currentIndex={currentBaseIndex}
-            totalItemsInModule={baseItems.length}
-            qState={qState}
-            progress={progressPercent}
+            currentIdx={currentBaseIndex}
+            totalItems={baseItems.length}
             lessonId={progress.currentLesson}
+            onBack={() => setSection(SectionType.PATH)}
           />
         )}
 

@@ -133,7 +133,7 @@ export const LearningPathView: React.FC<{
         const xPos = idx % 2 === 0 ? '-translate-x-12' : 'translate-x-12';
 
         return (
-          <div key={mod.type} className={`mb-16 flex flex-col items-center ${xPos}`}>
+          <div key={mod.type} className={`mb-12 flex flex-col items-center ${xPos}`}>
             <div className="relative">
               {mod.mascot && mod.max > 0 && (
                 mascotError ? (
@@ -209,8 +209,8 @@ export const LearningPathView: React.FC<{
   );
 };
 
-export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; }> =
-  ({ item, onResult, currentIdx, totalItems, lessonId }) => {
+export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; }> =
+  ({ item, onResult, currentIdx, totalItems, lessonId, onBack }) => {
     const [userInput, setUserInput] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [feedback, setFeedback] = useState<'none' | 'correct' | 'wrong'>('none');
@@ -218,6 +218,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const [showHint, setShowHint] = useState(false);
     const [praiseText, setPraiseText] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
+    const textareaRef = useRef<HTMLTextAreaElement>(null);
 
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
@@ -237,10 +238,29 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
       if (item.audioValue && item.type !== 'speaking') {
         speak(item.audioValue);
+      } else if (item.audioValue && item.type === 'speaking') {
+        // ✅ Auto-play audio for speaking exercises
+        setTimeout(() => speak(item.audioValue), 500);
       }
 
-      setTimeout(() => inputRef.current?.focus(), 200);
+      setTimeout(() => {
+        if (item.type === 'speaking') {
+          textareaRef.current?.focus();
+        } else {
+          inputRef.current?.focus();
+        }
+      }, 200);
     }, [item.id]);
+
+    // Auto-grow textarea
+    const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      setUserInput(e.target.value);
+      if (feedback === 'wrong') { setFeedback('none'); setShowFooter(false); }
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+      }
+    };
 
     const speak = (text: string, rate = 1) => {
       if (!text) return;
@@ -329,7 +349,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
         <div className="flex-1 w-full max-w-sm px-6 flex flex-col justify-center pb-40">
           <div className="relative group mb-8 cursor-help" onClick={() => setShowHint(!showHint)}>
-            <h2 className="text-base font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600">
+            <h2 className="text-sm font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600 max-w-full break-words">
               {item.instruction}
             </h2>
             {translation && showHint && (
@@ -368,8 +388,30 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                   </button>
                 ))}
               </div>
+            ) : item.type === 'speaking' ? (
+              <div className="w-full flex flex-col gap-4">
+                {/* Microphone button for speaking exercises */}
+                <button 
+                  onClick={handleSTT}
+                  disabled={showFooter && feedback === 'correct'}
+                  className={`w-full py-4 rounded-2xl font-black uppercase flex items-center justify-center gap-3 transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : showFooter && feedback === 'correct' ? 'bg-slate-100 text-slate-300' : 'bg-slate-100 text-slate-600 hover:bg-blue-100'}`}
+                >
+                  <i className={`fas fa-microphone text-lg`}></i>
+                  {isListening ? 'LISTENING...' : 'TAP TO SPEAK'}
+                </button>
+                {/* Auto-growing textarea for speaking exercises */}
+                <textarea
+                  ref={textareaRef}
+                  disabled={showFooter && feedback === 'correct'}
+                  className={`w-full px-4 py-3 border-4 rounded-3xl text-center text-lg font-black focus:border-blue-500 outline-none bg-white transition-all resize-none overflow-hidden min-h-16 max-h-32 ${feedback === 'wrong' ? 'border-red-200 text-red-600' : 'border-slate-100 text-slate-800 shadow-sm'}`}
+                  value={userInput}
+                  onChange={handleTextareaChange}
+                  placeholder="Say something or type..."
+                  style={{ height: 'auto' }}
+                />
+              </div>
             ) : (
-              <div className="w-full relative group">
+              <div className="w-full">
                 <input
                   ref={inputRef}
                   disabled={showFooter && feedback === 'correct'}
@@ -381,11 +423,6 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                   }}
                   placeholder="..."
                 />
-                {item.type === 'speaking' && !showFooter && (
-                  <button onClick={handleSTT} className={`absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full flex items-center justify-center transition-all ${isListening ? 'bg-red-500 animate-pulse text-white' : 'bg-slate-100 text-slate-400 hover:text-blue-500'}`}>
-                    <i className="fas fa-microphone"></i>
-                  </button>
-                )}
               </div>
             )}
           </div>
@@ -394,39 +431,58 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         <div className={`fixed bottom-0 left-0 right-0 p-6 flex flex-col items-center border-t-4 transition-all ${feedback === 'correct' ? 'bg-green-100 border-green-200' : feedback === 'wrong' ? 'bg-red-100 border-red-200' : 'bg-white border-slate-100'}`}>
           <div className="w-full max-sm:max-w-xs max-w-sm">
             {showFooter ? (
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex flex-col">
-                  <div className={`font-black uppercase text-lg tracking-widest animate-in slide-in-from-left-2 ${feedback === 'correct' ? 'text-green-700' : 'text-red-700'}`}>
-                    {praiseText}
-                  </div>
-                  {feedback === 'wrong' && (
-                    <div className="text-red-700 font-bold text-xs mt-1 animate-in fade-in">
-                      The correct answer is: <span className="font-black text-sm uppercase underline decoration-2">{item.correctValue}</span>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex flex-col flex-1">
+                    <div className={`font-black uppercase text-lg tracking-widest animate-in slide-in-from-left-2 ${feedback === 'correct' ? 'text-green-700' : 'text-red-700'}`}>
+                      {praiseText}
                     </div>
-                  )}
+                    {feedback === 'wrong' && (
+                      <div className="text-red-700 font-bold text-xs mt-1 animate-in fade-in">
+                        The correct answer is: <span className="font-black text-sm uppercase underline decoration-2">{item.correctValue}</span>
+                      </div>
+                    )}
+                    {/* ✅ Show translation after correct answer */}
+                    {feedback === 'correct' && translation && (
+                      <div className="text-green-700 font-bold text-xs mt-2 animate-in fade-in italic">
+                        Translation: {translation}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      if (feedback === 'correct') {
+                        onResult(true, userInput || selectedOption || '');
+                      } else {
+                        setFeedback('none');
+                        setShowFooter(false);
+                      }
+                    }}
+                    className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0`}
+                  >
+                    {feedback === 'correct' ? 'CONTINUE' : 'GOT IT'}
+                  </button>
                 </div>
-                <button
-                  onClick={() => {
-                    if (feedback === 'correct') {
-                      onResult(true, userInput || selectedOption || '');
-                    } else {
-                      setFeedback('none');
-                      setShowFooter(false);
-                    }
-                  }}
-                  className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0`}
-                >
-                  {feedback === 'correct' ? 'CONTINUE' : 'GOT IT'}
-                </button>
               </div>
             ) : (
-              <button
-                disabled={isMultipleChoice ? !selectedOption : !userInput.trim()}
-                onClick={() => handleCheck()}
-                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0"
-              >
-                CHECK
-              </button>
+              <div className="flex gap-3">
+                {/* ✅ Back button inside islands */}
+                {onBack && (
+                  <button
+                    onClick={onBack}
+                    className="flex-1 py-4 bg-slate-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#334155] active:translate-y-1 transition-all"
+                  >
+                    ← BACK
+                  </button>
+                )}
+                <button
+                  disabled={isMultipleChoice ? !selectedOption : !userInput.trim()}
+                  onClick={() => handleCheck()}
+                  className={`${onBack ? 'flex-1' : 'w-full'} py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0`}
+                >
+                  CHECK
+                </button>
+              </div>
             )}
           </div>
         </div>
