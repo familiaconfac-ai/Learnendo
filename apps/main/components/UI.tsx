@@ -25,6 +25,44 @@ const NUMBER_MAP: Record<string, string> = {
   'one hundred': '100', 'one thousand': '1000'
 };
 
+const TIME_NORMALIZE_MAP: Record<string, string> = {
+  '7:00': 'seven o clock', '7 o clock': 'seven o clock', 'seven oclock': 'seven o clock', '7 oclock': 'seven o clock',
+  '7:30': 'seven thirty', '7 thirty': 'seven thirty', 'seven 30': 'seven thirty',
+  '8:00': 'eight o clock', '8 o clock': 'eight o clock', 'eight oclock': 'eight o clock', '8 oclock': 'eight o clock',
+  '9:00': 'nine o clock', '9 o clock': 'nine o clock', 'nine oclock': 'nine o clock', '9 oclock': 'nine o clock',
+  '12:00': 'twelve o clock', '12 o clock': 'twelve o clock', 'twelve oclock': 'twelve o clock', '12 oclock': 'twelve o clock',
+  '6:30': 'six thirty', '6 thirty': 'six thirty', 'six 30': 'six thirty',
+  '5:00': 'five o clock', '5 o clock': 'five o clock', 'five oclock': 'five o clock', '5 oclock': 'five o clock',
+  '3:00': 'three o clock', '3 o clock': 'three o clock', 'three oclock': 'three o clock', '3 oclock': 'three o clock'
+};
+
+const normalizeAnswer = (answer: string): string => {
+  let normalized = answer.toLowerCase().trim().replace(/[.,!?;:]/g, "");
+
+  // Convert written numbers to digits
+  Object.entries(NUMBER_MAP).forEach(([word, digit]) => {
+    normalized = normalized.replace(new RegExp(`\\b${word}\\b`, 'g'), digit);
+  });
+
+  // Normalize time expressions
+  Object.entries(TIME_NORMALIZE_MAP).forEach(([time, normalizedTime]) => {
+    normalized = normalized.replace(new RegExp(time.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), normalizedTime);
+  });
+
+  // Handle common time variations
+  normalized = normalized
+    .replace(/\b(\d+):(\d+)\b/g, (match, hour, minute) => {
+      if (minute === '00') return `${NUMBER_MAP[hour] || hour} o clock`;
+      return `${NUMBER_MAP[hour] || hour} ${NUMBER_MAP[minute] || minute}`;
+    })
+    .replace(/\b(\d+)\s*o'?clock\b/g, (match, hour) => `${NUMBER_MAP[hour] || hour} o clock`)
+    .replace(/\b(\d+)\s*thirty\b/g, (match, hour) => `${NUMBER_MAP[hour] || hour} thirty`)
+    .replace(/\bseven\s*thirty\b/g, 'seven thirty')
+    .replace(/\bsix\s*thirty\b/g, 'six thirty');
+
+  return normalized;
+};
+
 const shuffle = <T,>(array: T[]): T[] => {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i--) {
@@ -290,8 +328,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     };
 
     const handleCheck = () => {
-      const response = (userInput || selectedOption || '').trim().toLowerCase().replace(/[.,!?;:]/g, "");
-      const cleanTarget = item.correctValue.toLowerCase().replace(/[.,!?;:]/g, "");
+      const response = normalizeAnswer(userInput || selectedOption || '');
+      const cleanTarget = normalizeAnswer(item.correctValue);
 
       const isCorrect = (response === cleanTarget) ||
         (NUMBER_MAP[response] === cleanTarget) ||
@@ -355,6 +393,22 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           </div>
         );
       }
+
+      // Check if this is reading text (contains newlines and translations)
+      const isReadingText = item.displayValue && item.displayValue.includes('\n') && item.displayValue.includes('(');
+
+      if (isReadingText) {
+        return (
+          <div className="w-full max-w-sm mx-auto mb-4">
+            <div className="max-h-[220px] overflow-y-auto bg-slate-50 p-4 rounded-2xl border-2 border-slate-200 shadow-inner">
+              <div className={`text-lg font-bold text-center transition-colors duration-500 whitespace-pre-line ${item.isNewVocab && !showFooter ? 'text-blue-500' : 'text-slate-800'}`}>
+                {item.displayValue}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className={`text-5xl font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 ${item.isNewVocab && !showFooter ? 'text-blue-500' : 'text-blue-900'}`}>
           {item.displayValue}
@@ -377,9 +431,15 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
         <div className="flex-1 w-full max-w-sm px-6 flex flex-col justify-center pb-40">
           <div className="relative group mb-8 cursor-help" onClick={() => setShowHint(!showHint)}>
-            <h2 className="text-sm font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600 max-w-full break-words">
-              {item.instruction}
-            </h2>
+            {item.type === 'speaking' && item.instruction.toLowerCase().includes('listen and answer') ? (
+              <h2 className="text-sm font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600 max-w-full break-words" style={{ fontSize: 'clamp(16px, 2.5vw, 22px)', wordBreak: 'break-word' }}>
+                Listen and Answer
+              </h2>
+            ) : (
+              <h2 className="text-sm font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600 max-w-full break-words" style={{ fontSize: 'clamp(16px, 2.5vw, 22px)', wordBreak: 'break-word' }}>
+                {item.instruction}
+              </h2>
+            )}
             {translation && showHint && (
               <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-3 py-1.5 rounded-lg whitespace-nowrap z-10 animate-in fade-in slide-in-from-top-1 font-bold">
                 {translation}
