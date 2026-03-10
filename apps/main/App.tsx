@@ -5,7 +5,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog, QState } from './types';
 import { PRACTICE_ITEMS, LESSON_CONFIGS, MODULE_NAMES } from './constants';
 import { PracticeSection, Header, LearningPathView, InfoSection } from './components/UI';
-import { saveAssessmentResult } from './services/db';
+import { 
+  saveAssessmentResult, 
+  createSession, 
+  finishSession, 
+  createStudentProfile, 
+  trackAnswer,
+  recordLessonCompletion 
+} from './services/db';
 import { ensureAnonAuth, auth, loginWithEmail, registerWithEmail } from './services/firebase';
 
 console.log('Firebase Auth Object:', auth);
@@ -116,6 +123,8 @@ const App: React.FC = () => {
   const [authStatus, setAuthStatus] = useState<{ status: 'loading' | 'ok' | 'error'; uid?: string; message?: string }>(
     { status: 'loading' }
   );
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionStartTime] = useState<number>(Date.now());
 
   const [progress, setProgress] = useState<UserProgress>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -150,7 +159,13 @@ const App: React.FC = () => {
     const initAuth = async () => {
       try {
         const res = await ensureAnonAuth();
-        if (mounted) setAuthStatus({ status: 'ok', uid: res.uid });
+        if (mounted) {
+          setAuthStatus({ status: 'ok', uid: res.uid });
+          // Create student profile and session for analytics
+          await createStudentProfile(res.uid, `${res.uid}@learnendo.app`, 'Guest');
+          const sid = await createSession(res.uid);
+          if (sid) setSessionId(sid);
+        }
       } catch (err: any) {
         if (mounted) setAuthStatus({ status: 'error', message: err?.message || 'Auth failure' });
       }
@@ -166,6 +181,19 @@ const App: React.FC = () => {
   useEffect(() => {
     applyAntiTranslate();
   }, []);
+
+  // ====== Session tracking on unload ======
+  useEffect(() => {
+    const handleBeforeUnload = async () => {
+      if (sessionId && authStatus.uid) {
+        const durationSeconds = Math.round((Date.now() - sessionStartTime) / 1000);
+        await finishSession(authStatus.uid, sessionId, durationSeconds);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [sessionId, authStatus.uid, sessionStartTime]);
 
   // ====== Date helper ======
   const getTodayKey = (offset: number = 0) => {
@@ -322,6 +350,25 @@ const App: React.FC = () => {
       setLastResult(r => r ? { ...r, diamondPercent: pct } : r);
     }
 
+    // Track lesson completion to Firebase analytics
+    if (authStatus.uid) {
+      const config = LESSON_CONFIGS.find(l => l.id === lessonId);
+      const completedIslands = config?.modules || [];
+      const durationSeconds = Math.round((Date.now() - sessionStartTime) / 1000);
+      const correctCount = Object.values(existingScores as any).reduce((a: number, b: any) => a + (Number(b) || 0), 0) + baseItems.length;
+      const totalAnswers = logs.length + baseItems.length;
+
+      recordLessonCompletion(authStatus.uid, lessonId, {
+        completedIslands: completedIslands.map(String),
+        diamondPercent: lessonConfig2 ? Math.min(100, Math.round(((Object.values(existingScores as any).reduce((a: number, b: any) => a + (Number(b) || 0), 0) + baseItems.length) / (
+          lessonConfig2.modules.reduce((acc: number, m) => acc + PRACTICE_ITEMS.filter(i => i.moduleType === m).length, 0)
+        )) * 100)) : 0,
+        timeSpentSeconds: durationSeconds,
+        totalCorrect: logs.filter(l => l.isCorrect).length,
+        totalAnswers: logs.length
+      }).catch(err => console.error("Failed to record lesson completion:", err));
+    }
+
     console.log("SETTING SECTION TO RESULT");
     setSection(SectionType.RESULT);
   };
@@ -329,6 +376,9 @@ const App: React.FC = () => {
   const handleResult = (isCorrect: boolean, val: string) => {
     const item = baseItems[currentBaseIndex];
     if (!item) return;
+
+    const lessonId = progress.currentLesson;
+    const responseTime = Date.now() - sessionStartTime;
 
     setLogs(prev => [
       ...prev,
@@ -340,6 +390,19 @@ const App: React.FC = () => {
         isFirstTry: qState[currentBaseIndex] === 'pending'
       } as any
     ]);
+
+    // Track answer to Firebase analytics (async, non-blocking)
+    if (authStatus.uid && activeModule) {
+      trackAnswer(
+        authStatus.uid,
+        lessonId,
+        activeModule,
+        item.id,
+        val,
+        item.correctValue,
+        responseTime
+      ).catch(err => console.error("Failed to track answer:", err));
+    }
 
     setQState(prev => {
       const next = { ...prev };
@@ -381,6 +444,16 @@ const App: React.FC = () => {
   };
 
   // ====== LOCK RULES ======
+  // Helper: Check if a lesson is 100% mastered (all islands completed)
+  const isLessonMastered = (lessonId: number): boolean => {
+    const config = LESSON_CONFIGS.find(l => l.id === lessonId);
+    if (!config || !Array.isArray(config.modules)) return false;
+    
+    const scores = progress.lessonData[lessonId]?.islandScores || {};
+    // All islands must have a score > 0 to be considered mastered
+    return config.modules.every(m => (scores as any)[m] && (scores as any)[m] > 0);
+  };
+
   // 1) Ilhas: sequência simples (pode fazer todas no mesmo dia)
   const isModuleLocked = (moduleType: PracticeModuleType) => {
     if (isAdmin) return false;
@@ -404,13 +477,19 @@ const App: React.FC = () => {
     if (id === 1) return false;
 
     const prevLessonId = id - 1;
+    
+    // First check: previous lesson must be 100% mastered (all islands completed)
+    if (!isLessonMastered(prevLessonId)) return true;
+    
+    // Second check: daily limit - can only unlock one lesson per day
     const prevConfig = LESSON_CONFIGS.find(l => l.id === prevLessonId);
-    const lastModule = prevConfig?.modules?.slice(-1)[0];
+    if (!prevConfig?.modules) return true;
+    
+    const lastModule = prevConfig.modules[prevConfig.modules.length - 1];
+    const prevCompletedDay = progress.lessonData[prevLessonId]?.islandCompletionDates?.[lastModule];
 
-    const prevCompletedDay = lastModule ? progress.lessonData?.[prevLessonId]?.islandCompletionDates?.[lastModule] : undefined;
-
-    if (!prevCompletedDay) return true;
-    if (prevCompletedDay === getTodayKey()) return true;
+    // If previous lesson was completed today, lock this lesson until tomorrow
+    if (prevCompletedDay && prevCompletedDay === getTodayKey()) return true;
 
     return false;
   };
@@ -457,6 +536,13 @@ const App: React.FC = () => {
       name: fullName?.trim() || email
     });
 
+    // Create or update student profile and session for analytics
+    if (authStatus.uid) {
+      await createStudentProfile(authStatus.uid, email, fullName);
+      const sid = await createSession(authStatus.uid);
+      if (sid) setSessionId(sid);
+    }
+
     setSection(SectionType.PATH);
 
   } catch (error) {
@@ -483,14 +569,15 @@ const App: React.FC = () => {
                 <h2 className="text-xl font-bold text-slate-800 mb-4">Unit 1</h2>
                 <div className="space-y-2">
                   {LESSON_CONFIGS.slice(0, 6).map(lesson => {
+                    const locked = isLessonLocked(lesson.id);
                     let state: 'completed' | 'active' | 'available' | 'locked_content';
                     if (isAdmin) {
                       state = 'active';
-                    } else if (lesson.id < progress.currentLesson) {
+                    } else if (isLessonMastered(lesson.id)) {
                       state = 'completed';
-                    } else if (lesson.id === progress.currentLesson) {
+                    } else if (lesson.id === progress.currentLesson && !locked) {
                       state = 'active';
-                    } else if (lesson.id === progress.currentLesson + 1) {
+                    } else if (!locked && (lesson.id === 1 || isLessonMastered(lesson.id - 1))) {
                       state = 'available';
                     } else {
                       state = 'locked_content';
@@ -508,7 +595,7 @@ const App: React.FC = () => {
                         ref={lesson.id === progress.currentLesson ? currentLessonRef : null}
                         className={className}
                         onClick={() => {
-                          if (clickable) {
+                          if (clickable && !isLessonLocked(lesson.id)) {
                             setSelectedLessonId(lesson.id);
                             setProgress(prev => ({ ...prev, currentLesson: lesson.id }));
                           }
@@ -531,14 +618,15 @@ const App: React.FC = () => {
                 <h2 className="text-xl font-bold text-slate-800 mb-4">Unit 2</h2>
                 <div className="space-y-2">
                   {LESSON_CONFIGS.slice(6, 12).map(lesson => {
+                    const locked = isLessonLocked(lesson.id);
                     let state: 'completed' | 'active' | 'available' | 'locked_content';
                     if (isAdmin) {
                       state = 'active';
-                    } else if (lesson.id < progress.currentLesson) {
+                    } else if (isLessonMastered(lesson.id)) {
                       state = 'completed';
-                    } else if (lesson.id === progress.currentLesson) {
+                    } else if (lesson.id === progress.currentLesson && !locked) {
                       state = 'active';
-                    } else if (lesson.id === progress.currentLesson + 1) {
+                    } else if (!locked && (lesson.id === 1 || isLessonMastered(lesson.id - 1))) {
                       state = 'available';
                     } else {
                       state = 'locked_content';
@@ -556,7 +644,7 @@ const App: React.FC = () => {
                         ref={lesson.id === progress.currentLesson ? currentLessonRef : null}
                         className={className}
                         onClick={() => {
-                          if (clickable) {
+                          if (clickable && !isLessonLocked(lesson.id)) {
                             setSelectedLessonId(lesson.id);
                             setProgress(prev => ({ ...prev, currentLesson: lesson.id }));
                           }
