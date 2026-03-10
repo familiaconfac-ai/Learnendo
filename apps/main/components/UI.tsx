@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
-import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS } from '../constants';
+import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
 
 const SUCCESS_SOUND = "https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3";
 const ERR_SOUND = "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3";
@@ -35,7 +35,6 @@ const shuffle = <T,>(array: T[]): T[] => {
 };
 
 export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({ lessonId, progress }) => {
-  const lessonName = LESSON_CONFIGS.find(l => l.id === lessonId)?.name || "English Training";
   const currentDiamond = progress?.lessonData?.[lessonId]?.diamond || 0;
 
   return (
@@ -63,7 +62,7 @@ export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({
         </div>
       </div>
       <div className="w-full text-center border-t border-slate-100 pt-2">
-        <p className="text-slate-500 font-bold text-[10px] uppercase tracking-wider">Lesson {lessonId}: {lessonName}</p>
+        <p className="text-slate-500 font-bold text-[10px] uppercase tracking-wider">Workbook 1: Units 1 and 2</p>
       </div>
     </header>
   );
@@ -76,8 +75,10 @@ export const LearningPathView: React.FC<{
   isLessonLocked: (id: number) => boolean;
   isModuleLocked: (type: PracticeModuleType) => boolean;
   islandWeights: number[];
-}> = ({ progress, onSelectModule, moduleNames, isLessonLocked, isModuleLocked, islandWeights }) => {
+  onBack?: () => void;
+}> = ({ progress, onSelectModule, moduleNames, isLessonLocked, isModuleLocked, islandWeights, onBack }) => {
   const [selectedMod, setSelectedMod] = useState<PracticeModuleType | null>(null);
+  const [mascotError, setMascotError] = useState(false);
   const currentLId = progress?.currentLesson;
 
   const lessonConfig =
@@ -88,7 +89,7 @@ export const LearningPathView: React.FC<{
 
   const modules = (lessonConfig?.modules || []).map((type, idx) => {
     const score = progress?.lessonData?.[currentLId]?.islandScores?.[type] || 0;
-    const max = islandWeights[idx] || 10;
+    const max = PRACTICE_ITEMS.filter(i => i.moduleType === type).length;
     const locked = isModuleLocked(type);
     return {
       type: type as PracticeModuleType,
@@ -123,47 +124,63 @@ export const LearningPathView: React.FC<{
 
   return (
     <div className="flex flex-col items-center py-10 relative">
+      {onBack && (
+        <button onClick={onBack} className="mb-4 w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1">
+          Back to Lessons
+        </button>
+      )}
       <div className="absolute top-0 bottom-0 w-2 bg-slate-200 rounded-full left-1/2 -translate-x-1/2 -z-10" />
 
       {modules.map((mod, idx) => {
         const xPos = idx % 2 === 0 ? '-translate-x-12' : 'translate-x-12';
 
         return (
-          <div key={mod.type} className={`mb-12 flex flex-col items-center ${xPos}`}>
+          <div key={mod.type} className={`mb-16 flex flex-col items-center ${xPos}`}>
             <div className="relative">
-              {mod.mascot && (
-                <img
-                  src="/mascot.png"
-                  alt="Mascot"
-                  className="absolute -right-12 top-1/2 -translate-y-1/2 w-20 h-20 drop-shadow-xl pointer-events-none"
-                />
+              {mod.mascot && mod.max > 0 && (
+                mascotError ? (
+                  <div className="absolute -right-12 top-1/2 -translate-y-1/2 w-20 h-20 bg-blue-500 rounded-full flex items-center justify-center text-white text-2xl drop-shadow-xl">
+                    <i className="fas fa-graduation-cap"></i>
+                  </div>
+                ) : (
+                  <img
+                    src="/assets/mascot.png"
+                    alt="Mascot"
+                    onError={() => setMascotError(true)}
+                    className="absolute -right-12 top-1/2 -translate-y-1/2 w-20 h-20 drop-shadow-xl pointer-events-none"
+                  />
+                )
               )}
 
-              <div className={`absolute top-2 w-20 h-20 rounded-full ${mod.shadow} -z-10`} />
+              {mod.max === 0 ? (
+                <div className="w-20 h-20 rounded-full bg-gray-300 flex items-center justify-center text-xs text-gray-600 font-bold">
+                  Content coming soon
+                </div>
+              ) : (
+                <>
+                  <div className={`absolute top-2 w-20 h-20 rounded-full ${mod.shadow} -z-10`} />
 
-              <button
-                onClick={() => !mod.locked && setSelectedMod(mod.type)}
-                disabled={mod.locked}
-                className={`relative w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl transition-all ${mod.color} shadow-[inset_0_-8px_0_rgba(0,0,0,0.15)] active:translate-y-1 ${mod.locked ? 'cursor-not-allowed opacity-80' : ''}`}
-              >
-                <i className={`fas ${mod.locked ? 'fa-lock' : mod.icon}`}></i>
+                  <button
+                    onClick={() => !mod.locked && setSelectedMod(mod.type)}
+                    disabled={mod.locked}
+                    className={`relative w-20 h-20 rounded-full flex items-center justify-center text-white text-3xl transition-all hover:scale-105 ${mod.color} shadow-[inset_0_-8px_0_rgba(0,0,0,0.15)] active:translate-y-1 ${mod.locked ? 'cursor-not-allowed opacity-80' : ''} ${mod.isMastered ? 'scale-110 animate-pulse shadow-lg shadow-blue-500' : ''}`}
+                  >
+                    <i className={`fas ${mod.locked ? 'fa-lock' : mod.icon}`}></i>
 
-                {mod.isMastered && (
-                  <div className="absolute -bottom-1 -right-1 bg-blue-600 w-8 h-8 rounded-full border-4 border-white flex items-center justify-center text-[10px] text-white">
-                    <i className="fas fa-gem"></i>
-                  </div>
-                )}
-              </button>
+                    {mod.isMastered && (
+                      <div className="absolute -bottom-1 -right-1 bg-blue-600 w-8 h-8 rounded-full border-4 border-white flex items-center justify-center text-[10px] text-white">
+                        <i className="fas fa-gem"></i>
+                      </div>
+                    )}
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="mt-4 flex flex-col items-center">
               <p className="text-[10px] font-black uppercase tracking-wider text-center max-w-[90px] leading-tight text-slate-800">
                 {moduleNames[mod.type] || "Tracking"}
               </p>
-              <div className="mt-1 flex gap-1 items-center bg-white px-2 py-0.5 rounded-full border border-slate-100 shadow-sm">
-                <i className="fas fa-gem text-[8px] text-blue-500"></i>
-                <span className="text-[9px] font-black text-slate-600">{mod.score}/{mod.max}</span>
-              </div>
             </div>
           </div>
         );

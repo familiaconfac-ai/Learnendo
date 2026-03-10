@@ -9,7 +9,7 @@ import { PracticeItem } from './types';
 export const WORKBOOK_NUMBER = 1;
 
 const createItems = (lesson: number, track: number, items: Partial<PracticeItem>[]): PracticeItem[] => {
-  const moduleType = `L${lesson}_TRACK${track}`;
+  const moduleType = `L${lesson}_I${track}`;
   return items.map((it, idx) => ({
     id: `${moduleType}-${idx}`,
     lessonId: lesson,
@@ -24,6 +24,10 @@ const createItems = (lesson: number, track: number, items: Partial<PracticeItem>
     isNewVocab: it.isNewVocab
   }));
 };
+// TODO: future enhancement - automatically generate L{n}_TRACKS arrays by
+// parsing a lesson PDF. The `createItems` helper keeps the format simple for
+// scripts to emit. See similar tooling in the build scripts when working on
+// Lesson 3 and beyond.
 
 // --- Unit 1: The Alphabet and Numbers ---
 
@@ -152,128 +156,125 @@ const L1_TRACKS = [
   ])
 ];
 
-// Lesson 2: The Five Vowels
+// Lesson 2: Vowels and Early Reader
 const L2_TRACKS = [
-  // Island 1: Explain vowels and short/long sounds (25 items)
+  // Island 1 – Short vs Long Vowels (approx 25 items)
   ...createItems(2, 1, [
-    { type: 'multiple-choice', instruction: 'Is the vowel in "cat" short or long?', audioValue: 'cat', options: ['Short', 'Long'], correctValue: 'Short', isNewVocab: true },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "cake" short or long?', audioValue: 'cake', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "bed" short or long?', audioValue: 'bed', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "he" short or long?', audioValue: 'he', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "sit" short or long?', audioValue: 'sit', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "bike" short or long?', audioValue: 'bike', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "hot" short or long?', audioValue: 'hot', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "note" short or long?', audioValue: 'note', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "cup" short or long?', audioValue: 'cup', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "cute" short or long?', audioValue: 'cute', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "hat" short or long?', audioValue: 'hat', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "make" short or long?', audioValue: 'make', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "red" short or long?', audioValue: 'red', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "me" short or long?', audioValue: 'me', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "bit" short or long?', audioValue: 'bit', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "like" short or long?', audioValue: 'like', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "pot" short or long?', audioValue: 'pot', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "home" short or long?', audioValue: 'home', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "hut" short or long?', audioValue: 'hut', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "rule" short or long?', audioValue: 'rule', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "mat" short or long?', audioValue: 'mat', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "lake" short or long?', audioValue: 'lake', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "peg" short or long?', audioValue: 'peg', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "see" short or long?', audioValue: 'see', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "dog" short or long?', audioValue: 'dog', options: ['Short', 'Long'], correctValue: 'Short' }
+    { type: 'multiple-choice', instruction: 'Listen and choose the vowel sound you hear.', audioValue: 'cat', options: ['/æ/','/e/','/aɪ/','/oʊ/'], correctValue: '/æ/', isNewVocab: true },
+    { type: 'multiple-choice', instruction: 'Listen and choose the vowel sound you hear.', audioValue: 'bed', options: ['/æ/','/e/','/ɪ/','/ʌ/'], correctValue: '/e/' },
+    { type: 'multiple-choice', instruction: 'Listen and choose the vowel sound you hear.', audioValue: 'bike', options: ['/aɪ/','/eɪ/','/oʊ/','/iː/'], correctValue: '/aɪ/' },
+    { type: 'multiple-choice', instruction: 'Listen and choose the vowel sound you hear.', audioValue: 'note', options: ['/ɒ/','/oʊ/','/uː/','/ə/'], correctValue: '/oʊ/' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "cake" short or long?', audioValue: 'cake', options: ['Short','Long'], correctValue: 'Long' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "cup" short or long?', audioValue: 'cup', options: ['Short','Long'], correctValue: 'Short' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "hat" short or long?', audioValue: 'hat', options: ['Short','Long'], correctValue: 'Short' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "me" short or long?', audioValue: 'me', options: ['Short','Long'], correctValue: 'Long' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "pot" short or long?', audioValue: 'pot', options: ['Short','Long'], correctValue: 'Short' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "rule" short or long?', audioValue: 'rule', options: ['Short','Long'], correctValue: 'Long' },
+    { type: 'multiple-choice', instruction: 'Which sound is /æ/?', audioValue: 'cat', options: ['cat','cake','bike','note'], correctValue: 'cat' },
+    { type: 'multiple-choice', instruction: 'Which sound is /e/?', audioValue: 'bed', options: ['bed','made','bite','not'], correctValue: 'bed' },
+    { type: 'multiple-choice', instruction: 'Which sound is /aɪ/?', audioValue: 'bike', options: ['bit','bite','bet','bat'], correctValue: 'bite' },
+    { type: 'multiple-choice', instruction: 'Which sound is /oʊ/?', audioValue: 'note', options: ['not','note','nut','net'], correctValue: 'note' },
+    { type: 'multiple-choice', instruction: 'Listen and choose the vowel sound you hear.', audioValue: 'sun', options: ['/ʌ/','/æ/','/iː/','/oʊ/'], correctValue: '/ʌ/' },
+    { type: 'multiple-choice', instruction: 'Listen and choose the vowel sound you hear.', audioValue: 'tree', options: ['/iː/','/eɪ/','/aɪ/','/uː/'], correctValue: '/iː/' },
+    { type: 'multiple-choice', instruction: 'Listen and choose the vowel sound you hear.', audioValue: 'apple', options: ['/æ/','/e/','/aɪ/','/oʊ/'], correctValue: '/æ/' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "home" short or long?', audioValue: 'home', options: ['Short','Long'], correctValue: 'Long' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "log" short or long?', audioValue: 'log', options: ['Short','Long'], correctValue: 'Short' },
+    { type: 'multiple-choice', instruction: 'Is the vowel in "cute" short or long?', audioValue: 'cute', options: ['Short','Long'], correctValue: 'Long' },
+    { type: 'multiple-choice', instruction: 'Which sound is /ʌ/?', audioValue: 'cup', options: ['cup','cape','cop','cup'], correctValue: 'cup' },
+    { type: 'multiple-choice', instruction: 'Which sound is /iː/?', audioValue: 'me', options: ['me','may','my','mow'], correctValue: 'me' },
+    { type: 'multiple-choice', instruction: 'Which sound is /aɪ/?', audioValue: 'time', options: ['tie','take','tome','tom'], correctValue: 'tie' },
+    { type: 'multiple-choice', instruction: 'Which sound is /oʊ/?', audioValue: 'road', options: ['rod','road','red','rid'], correctValue: 'road' }
   ]),
-  // Island 2: Identify the vowel in simple words (15 items)
+  // Island 2 – Letter Name vs Vowel Sound (dialogue style)
   ...createItems(2, 2, [
-    { type: 'multiple-choice', instruction: 'Which vowel is in "cat"?', audioValue: 'cat', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'A', isNewVocab: true },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "bed"?', audioValue: 'bed', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "sit"?', audioValue: 'sit', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'I' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "hot"?', audioValue: 'hot', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'O' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "cup"?', audioValue: 'cup', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'U' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "cake"?', audioValue: 'cake', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'A' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "he"?', audioValue: 'he', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "bike"?', audioValue: 'bike', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'I' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "note"?', audioValue: 'note', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'O' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "cute"?', audioValue: 'cute', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'U' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "hat"?', audioValue: 'hat', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'A' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "red"?', audioValue: 'red', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "pig"?', audioValue: 'pig', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'I' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "log"?', audioValue: 'log', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'O' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "bug"?', audioValue: 'bug', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'U' }
+    { type: 'multiple-choice', instruction: 'Teacher: What vowel sound is in "cat"?', audioValue: 'cat', options: ['/æ/','/e/','/aɪ/','/oʊ/'], correctValue: '/æ/', isNewVocab: true },
+    { type: 'multiple-choice', instruction: 'Teacher: What is the letter name?', audioValue: 'A', options: ['A','E','I','O','U'], correctValue: 'A' },
+    { type: 'multiple-choice', instruction: 'Teacher: What vowel sound is in "bed"?', audioValue: 'bed', options: ['/æ/','/e/','/ɪ/','/ʌ/'], correctValue: '/e/' },
+    { type: 'multiple-choice', instruction: 'Teacher: What is the letter name?', audioValue: 'E', options: ['A','E','I','O','U'], correctValue: 'E' },
+    { type: 'multiple-choice', instruction: 'Teacher: What vowel sound is in "bike"?', audioValue: 'bike', options: ['/aɪ/','/eɪ/','/oʊ/','/iː/'], correctValue: '/aɪ/' },
+    { type: 'multiple-choice', instruction: 'Teacher: What is the letter name?', audioValue: 'I', options: ['A','E','I','O','U'], correctValue: 'I' },
+    { type: 'multiple-choice', instruction: 'Teacher: What vowel sound is in "note"?', audioValue: 'note', options: ['/oʊ/','/ɒ/','/uː/','/ə/'], correctValue: '/oʊ/' },
+    { type: 'multiple-choice', instruction: 'Teacher: What is the letter name?', audioValue: 'O', options: ['A','E','I','O','U'], correctValue: 'O' },
+    { type: 'multiple-choice', instruction: 'Teacher: What vowel sound is in "sun"?', audioValue: 'sun', options: ['/ʌ/','/æ/','/iː/','/oʊ/'], correctValue: '/ʌ/' },
+    { type: 'multiple-choice', instruction: 'Teacher: What is the letter name?', audioValue: 'U', options: ['A','E','I','O','U'], correctValue: 'U' },
+    { type: 'multiple-choice', instruction: 'Teacher: What vowel sound is in "apple"?', audioValue: 'apple', options: ['/æ/','/e/','/aɪ/','/oʊ/'], correctValue: '/æ/' },
+    { type: 'multiple-choice', instruction: 'Teacher: What is the letter name?', audioValue: 'A', options: ['A','E','I','O','U'], correctValue: 'A' },
+    { type: 'multiple-choice', instruction: 'Teacher: What vowel sound is in "tree"?', audioValue: 'tree', options: ['/iː/','/ɪ/','/eɪ/','/aɪ/'], correctValue: '/iː/' },
+    { type: 'multiple-choice', instruction: 'Teacher: What is the letter name?', audioValue: 'E', options: ['A','E','I','O','U'], correctValue: 'E' }
   ]),
-  // Island 3: Identify short vs long vowel sounds (10 items)
+  // Island 3 – What is this? (picture recognition)
   ...createItems(2, 3, [
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'cat', options: ['Short', 'Long'], correctValue: 'Short', isNewVocab: true },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'cake', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'bed', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'he', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'sit', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'bike', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'hot', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'note', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'cup', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'cute', options: ['Short', 'Long'], correctValue: 'Long' }
+    { type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-sun', audioValue: 'sun', options: ['sun','moon','star','cloud'], correctValue: 'sun', isNewVocab: true },
+    { type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-shoe-prints', audioValue: 'toes', options: ['toes','fingers','nose','eyes'], correctValue: 'toes' },
+    { type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-mountain', audioValue: 'rock', options: ['rock','stone','sand','water'], correctValue: 'rock' },
+    { type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-tree', audioValue: 'tree', options: ['tree','bush','flower','grass'], correctValue: 'tree' },
+    { type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-apple-whole', audioValue: 'apple', options: ['apple','orange','banana','grape'], correctValue: 'apple' },
+    { type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-kite', audioValue: 'kite', options: ['kite','ball','plane','bird'], correctValue: 'kite' },
+    { type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-orange', audioValue: 'orange', options: ['orange','apple','lemon','grape'], correctValue: 'orange' },
+    { type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-water', audioValue: 'water', options: ['water','juice','milk','soda'], correctValue: 'water' },
+    { type: 'writing', instruction: 'Spell the word you see:', displayValue: 'sun', audioValue: 'sun', correctValue: 'sun' },
+    { type: 'writing', instruction: 'Spell the word you see:', displayValue: 'toes', audioValue: 'toes', correctValue: 'toes' },
+    { type: 'writing', instruction: 'Spell the word you see:', displayValue: 'rock', audioValue: 'rock', correctValue: 'rock' },
+    { type: 'writing', instruction: 'Spell the word you see:', displayValue: 'apple', audioValue: 'apple', correctValue: 'apple' },
+    { type: 'writing', instruction: 'Spell the word you see:', displayValue: 'tree', audioValue: 'tree', correctValue: 'tree' },
+    { type: 'writing', instruction: 'Spell the word you see:', displayValue: 'kite', audioValue: 'kite', correctValue: 'kite' },
+    { type: 'writing', instruction: 'Spell the word you see:', displayValue: 'orange', audioValue: 'orange', correctValue: 'orange' },
+    { type: 'writing', instruction: 'Spell the word you see:', displayValue: 'water', audioValue: 'water', correctValue: 'water' }
   ]),
-  // Island 4: Object recognition (10 items)
+  // Island 4 – Vowel identification in words
   ...createItems(2, 4, [
-    { type: 'multiple-choice', instruction: 'What object is this?', displayValue: 'fa-sun', audioValue: 'sun', options: ['sun', 'moon', 'star', 'cloud'], correctValue: 'sun', isNewVocab: true },
-    { type: 'multiple-choice', instruction: 'What object is this?', displayValue: 'fa-hand-point-up', audioValue: 'toes', options: ['toes', 'fingers', 'nose', 'eyes'], correctValue: 'toes' },
-    { type: 'multiple-choice', instruction: 'What object is this?', displayValue: 'fa-cube', audioValue: 'rock', options: ['rock', 'stone', 'sand', 'water'], correctValue: 'rock' },
-    { type: 'multiple-choice', instruction: 'What object is this?', displayValue: 'fa-apple-whole', audioValue: 'apple', options: ['apple', 'orange', 'banana', 'grape'], correctValue: 'apple' },
-    { type: 'multiple-choice', instruction: 'What object is this?', displayValue: 'fa-tree', audioValue: 'tree', options: ['tree', 'bush', 'flower', 'grass'], correctValue: 'tree' },
-    { type: 'multiple-choice', instruction: 'What object is this?', displayValue: 'fa-kite', audioValue: 'kite', options: ['kite', 'ball', 'plane', 'bird'], correctValue: 'kite' },
-    { type: 'writing', instruction: 'Spell the word you hear:', audioValue: 'sun', correctValue: 'sun' },
-    { type: 'writing', instruction: 'Spell the word you hear:', audioValue: 'toes', correctValue: 'toes' },
-    { type: 'writing', instruction: 'Spell the word you hear:', audioValue: 'rock', correctValue: 'rock' },
-    { type: 'writing', instruction: 'Spell the word you hear:', audioValue: 'apple', correctValue: 'apple' }
+    { type: 'multiple-choice', instruction: 'What vowel is in "rock"?', audioValue: 'rock', options: ['A','E','I','O','U'], correctValue: 'O', isNewVocab: true },
+    { type: 'multiple-choice', instruction:'What is the vowel sound in "kite"?', audioValue:'kite', options:['Short','Long'], correctValue:'Long' },
+    { type: 'multiple-choice', instruction:'What vowel is in "sun"?', audioValue:'sun', options:['A','E','I','O','U'], correctValue:'U' },
+    { type: 'multiple-choice', instruction:'What is the vowel sound in "bed"?', audioValue:'bed', options:['Short','Long'], correctValue:'Short' },
+    { type: 'multiple-choice', instruction:'What vowel is in "apple"?', audioValue:'apple', options:['A','E','I','O','U'], correctValue:'A' },
+    { type: 'multiple-choice', instruction:'What is the vowel sound in "tree"?', audioValue:'tree', options:['Short','Long'], correctValue:'Long' },
+    { type: 'multiple-choice', instruction:'What vowel is in "home"?', audioValue:'home', options:['A','E','I','O','U'], correctValue:'O' },
+    { type: 'multiple-choice', instruction:'What is the vowel sound in "log"?', audioValue:'log', options:['Short','Long'], correctValue:'Short' },
+    { type: 'multiple-choice', instruction:'What vowel is in "cake"?', audioValue:'cake', options:['A','E','I','O','U'], correctValue:'A' },
+    { type: 'multiple-choice', instruction:'What is the vowel sound in "cute"?', audioValue:'cute', options:['Short','Long'], correctValue:'Long' }
   ]),
-  // Island 5: Mixed vowel practice (10 items)
+  // Island 5 – Articles practice
   ...createItems(2, 5, [
-    { type: 'multiple-choice', instruction: 'Which vowel is in "tree"?', audioValue: 'tree', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E', isNewVocab: true },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "pig" short or long?', audioValue: 'pig', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "tube"?', audioValue: 'tube', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'U' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'fine', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "log"?', audioValue: 'log', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'O' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "bag" short or long?', audioValue: 'bag', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "pea"?', audioValue: 'pea', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'rope', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "dig"?', audioValue: 'dig', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'I' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "game" short or long?', audioValue: 'game', options: ['Short', 'Long'], correctValue: 'Long' }
+    { type: 'multiple-choice', instruction:'It is ___ apple', options:['a','an'], correctValue:'an', audioValue:'apple', isNewVocab:true },
+    { type: 'multiple-choice', instruction:'It is ___ kite', options:['a','an'], correctValue:'a', audioValue:'kite' },
+    { type: 'multiple-choice', instruction:'He has ___ orange', options:['a','an'], correctValue:'an', audioValue:'orange' },
+    { type: 'multiple-choice', instruction:'She sees ___ sun', options:['a','an'], correctValue:'a', audioValue:'sun' },
+    { type: 'multiple-choice', instruction:'We read ___ book', options:['a','an'], correctValue:'a', audioValue:'book' },
+    { type: 'multiple-choice', instruction:'I eat ___ apple', options:['a','an'], correctValue:'an', audioValue:'apple' },
+    { type: 'multiple-choice', instruction:'They fly ___ kite', options:['a','an'], correctValue:'a', audioValue:'kite' },
+    { type: 'multiple-choice', instruction:'He found ___ rock', options:['a','an'], correctValue:'a', audioValue:'rock' },
+    { type: 'multiple-choice', instruction:'She wears ___ hat', options:['a','an'], correctValue:'a', audioValue:'hat' },
+    { type: 'multiple-choice', instruction:'It is ___ orange in the box', options:['a','an'], correctValue:'an', audioValue:'orange' }
   ]),
-  // Island 6: Review exercises (15 items)
+  // Island 6 – Reading comprehension and dialogue
   ...createItems(2, 6, [
-    { type: 'multiple-choice', instruction: 'Is the vowel in "rat" short or long?', audioValue: 'rat', options: ['Short', 'Long'], correctValue: 'Short', isNewVocab: true },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "take"?', audioValue: 'take', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'A' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'wed', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "be"?', audioValue: 'be', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "hike" short or long?', audioValue: 'hike', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "cone"?', audioValue: 'cone', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'O' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'cut', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "mute"?', audioValue: 'mute', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'U' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "leg" short or long?', audioValue: 'leg', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "time"?', audioValue: 'time', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'I' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'soap', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "same"?', audioValue: 'same', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'A' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "jog" short or long?', audioValue: 'jog', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "three"?', audioValue: 'three', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'suit', options: ['Short', 'Long'], correctValue: 'Long' }
+    { type: 'multiple-choice', instruction:'Read the passage below before answering the questions.', displayValue:'A Day in Nature\nThe sun is shining. A boy plays with a kite near a tree. He eats an apple and drinks water. He steps on a rock and wiggles his toes in the grass.', options:['I read the text'], correctValue:'I read the text' },
+    { type: 'multiple-choice', instruction:'Is it a sunny day?', options:['Yes','No'], correctValue:'Yes' },
+    { type: 'multiple-choice', instruction:'What color is the kite?', options:['red','blue','green','yellow'], correctValue:'blue' },
+    { type: 'multiple-choice', instruction:'Where is the boy?', options:['in a tree','on a rock','near a tree','under a rock'], correctValue:'near a tree' },
+    { type: 'multiple-choice', instruction:'Is the fruit an orange?', options:['Yes','No'], correctValue:'No' },
+    { type: 'multiple-choice', instruction:'Teacher: What is the weather like?', options:['It is sunny.','It is rainy.','It is snowy.','It is windy.'], correctValue:'It is sunny.' },
+    { type: 'multiple-choice', instruction:'Teacher: What does he eat?', options:['He eats a banana.','He eats an apple.','He eats a sandwich.','He eats an orange.'], correctValue:'He eats an apple.' },
+    { type: 'multiple-choice', instruction:'Teacher: What does he drink?', options:['He drinks juice.','He drinks water.','He drinks milk.','He drinks soda.'], correctValue:'He drinks water.' }
   ]),
   // Island 7: Final mastery exercises (15 items)
   ...createItems(2, 7, [
-    { type: 'multiple-choice', instruction: 'Which vowel is in "cat"?', audioValue: 'cat', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'A' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "cake" short or long?', audioValue: 'cake', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "bed"?', audioValue: 'bed', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'he', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "sit"?', audioValue: 'sit', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'I' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "bike" short or long?', audioValue: 'bike', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "hot"?', audioValue: 'hot', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'O' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'note', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "cup"?', audioValue: 'cup', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'U' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "cute" short or long?', audioValue: 'cute', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "tree"?', audioValue: 'tree', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'E' },
-    { type: 'multiple-choice', instruction: 'Is the vowel in "pig" short or long?', audioValue: 'pig', options: ['Short', 'Long'], correctValue: 'Short' },
-    { type: 'multiple-choice', instruction: 'Which vowel is in "home"?', audioValue: 'home', options: ['A', 'E', 'I', 'O', 'U'], correctValue: 'O' },
-    { type: 'multiple-choice', instruction: 'Is the vowel sound short or long?', audioValue: 'rule', options: ['Short', 'Long'], correctValue: 'Long' },
-    { type: 'speaking', instruction: 'Pronounce correctly: cat', displayValue: 'cat', audioValue: 'cat', correctValue: 'cat' }
+    { type: 'multiple-choice', instruction:'Which vowel is in "cat"?', audioValue:'cat', options:['A','E','I','O','U'], correctValue:'A' },
+    { type: 'multiple-choice', instruction:'Is the vowel in "cake" short or long?', audioValue:'cake', options:['Short','Long'], correctValue:'Long' },
+    { type: 'multiple-choice', instruction:'Which vowel is in "bed"?', audioValue:'bed', options:['A','E','I','O','U'], correctValue:'E' },
+    { type: 'multiple-choice', instruction:'Is the vowel sound short or long?', audioValue:'he', options:['Short','Long'], correctValue:'Long' },
+    { type: 'multiple-choice', instruction:'Which vowel is in "sit"?', audioValue:'sit', options:['A','E','I','O','U'], correctValue:'I' },
+    { type: 'multiple-choice', instruction:'Is the vowel in "bike" short or long?', audioValue:'bike', options:['Short','Long'], correctValue:'Long' },
+    { type: 'multiple-choice', instruction:'Which vowel is in "hot"?', audioValue:'hot', options:['A','E','I','O','U'], correctValue:'O' },
+    { type: 'multiple-choice', instruction:'Is the vowel sound short or long?', audioValue:'note', options:['Short','Long'], correctValue:'Long' },
+    { type: 'multiple-choice', instruction:'Which vowel is in "cup"?', audioValue:'cup', options:['A','E','I','O','U'], correctValue:'U' },
+    { type: 'multiple-choice', instruction:'Is the vowel in "cute" short or long?', audioValue:'cute', options:['Short','Long'], correctValue:'Long' },
+    { type: 'multiple-choice', instruction:'Which vowel is in "tree"?', audioValue:'tree', options:['A','E','I','O','U'], correctValue:'E' },
+    { type: 'multiple-choice', instruction:'Is the vowel in "pig" short or long?', audioValue:'pig', options:['Short','Long'], correctValue:'Short' },
+    { type: 'multiple-choice', instruction:'Which vowel is in "home"?', audioValue:'home', options:['A','E','I','O','U'], correctValue:'O' },
+    { type: 'multiple-choice', instruction:'Is the vowel sound short or long?', audioValue:'rule', options:['Short','Long'], correctValue:'Long' },
+    { type: 'speaking', instruction:'Pronounce correctly: cat', displayValue:'cat', audioValue:'cat', correctValue:'cat' }
   ])
 ];
 
@@ -282,65 +283,66 @@ export const PRACTICE_ITEMS: PracticeItem[] = [
 ];
 
 export const MODULE_NAMES: Record<string, string> = {
-  'L1_TRACK1': 'The Alphabet groups',
-  'L1_TRACK2': 'Numbers 0-10 Cardinal',
-  'L1_TRACK3': 'Numbers 11-20 Cardinal',
-  'L1_TRACK4': 'Basic Colors',
-  'L1_TRACK5': 'Secondary Colors',
-  'L1_TRACK6': 'Math Practice',
-  'L1_TRACK7': 'Unit 1 Mastery',
-  'L2_TRACK1': 'Vowels Introduction',
-  'L2_TRACK2': 'Identify Vowels in Words',
-  'L2_TRACK3': 'Short vs Long Vowels',
-  'L2_TRACK4': 'Vocabulary Practice',
-  'L2_TRACK5': 'Mixed Vowel Practice',
-  'L2_TRACK6': 'Vowel Review',
-  'L2_TRACK7': 'Unit 2 Mastery'
+  'L1_I1': 'The Alphabet groups',
+  'L1_I2': 'Numbers 0-10 Cardinal',
+  'L1_I3': 'Numbers 11-20 Cardinal',
+  'L1_I4': 'Basic Colors',
+  'L1_I5': 'Secondary Colors',
+  'L1_I6': 'Math Practice',
+  'L1_I7': 'Unit 1 Mastery',
+  'L2_I1': 'Short vs Long Vowels',
+  'L2_I2': 'Letter vs Sound Dialogue',
+  'L2_I3': 'Picture Vocabulary',
+  'L2_I4': 'Vowel Identification',
+  'L2_I5': 'Articles a/an',
+  'L2_I6': 'Reading & Dialogue',
+  'L2_I7': 'Unit 2 Mastery'
 };
 
 export const MODULE_ICONS: Record<string, string> = {
-  'L1_TRACK1': 'fa-font',
-  'L1_TRACK2': 'fa-list-ol',
-  'L1_TRACK3': 'fa-sort-numeric-up',
-  'L1_TRACK4': 'fa-palette',
-  'L1_TRACK5': 'fa-palette',
-  'L1_TRACK6': 'fa-calculator',
-  'L1_TRACK7': 'fa-award',
-  'L2_TRACK1': 'fa-ear-listen',
-  'L2_TRACK2': 'fa-search',
-  'L2_TRACK3': 'fa-volume-up',
-  'L2_TRACK4': 'fa-apple-whole',
-  'L2_TRACK5': 'fa-random',
-  'L2_TRACK6': 'fa-book-open',
-  'L2_TRACK7': 'fa-award'
+  'L1_I1': 'fa-font',
+  'L1_I2': 'fa-list-ol',
+  'L1_I3': 'fa-sort-numeric-up',
+  'L1_I4': 'fa-palette',
+  'L1_I5': 'fa-palette',
+  'L1_I6': 'fa-calculator',
+  'L1_I7': 'fa-award',
+  'L2_I1': 'fa-volume-up',
+  'L2_I2': 'fa-comments',
+  'L2_I3': 'fa-image',
+  'L2_I4': 'fa-search',
+  'L2_I5': 'fa-file-alt',
+  'L2_I6': 'fa-book-open',
+  'L2_I7': 'fa-award'
 };
 
 export const GRAMMAR_GUIDES: Record<string, string[]> = {
-  'L1_TRACK1': [
+  'L1_I1': [
     'Phonetic Families: Patterns in English sounds help us hear letters correctly.',
     'Group /i:/: B, C, D, E, G, P, T, V.',
     'Group /ei/: A, H, J, K.'
   ],
-  'L1_TRACK2': [
+  'L1_I2': [
     'Cardinal Numbers: Used for counting (0, 1, 2, 3...).',
     'Careful with Three (3) vs Tree and Eight (8) vs H!'
   ],
-  'L1_TRACK3': [
+  'L1_I3': [
     'Cardinal Numbers 11-20: Focus on the "teen" endings (13-19).',
     'Review letters alongside numbers to master A1 basics.'
   ],
-  'L1_TRACK4': ['Colors describe objects.', 'Identify colors without visual aids for better mastery.'],
-  'L1_TRACK5': ['Expand your vocabulary with adjectives and objects.', 'Focus on recalling the name of the color.'],
-  'L2_TRACK1': ['Vowels: A E I O U', 'Short vowels: cat /æ/, bed /e/, sit /ɪ/, hot /ɑː/, cup /ʌ/', 'Long vowels: cake /eɪ/, he /iː/, bike /aɪ/, note /oʊ/, cute /juː/'],
-  'L2_TRACK2': ['Identify the vowel in simple words.', 'Listen carefully to the sound.'],
-  'L2_TRACK3': ['Short vowels are quick sounds.', 'Long vowels sound like the letter name.'],
-  'L2_TRACK4': ['Practice vocabulary: sun, toes, rock, apple, tree, kite.', 'Spell simple vowel-based words.'],
-  'L2_TRACK5': ['Mixed practice with vowels.', 'Combine identification and sounds.'],
-  'L2_TRACK6': ['Review all vowel concepts.', 'Master short and long sounds.'],
-  'L2_TRACK7': ['Final mastery of Unit 2.', 'Apply all learned skills.']
+  'L1_I4': ['Colors describe objects.', 'Identify colors without visual aids for better mastery.'],
+  'L1_I5': ['Expand your vocabulary with adjectives and objects.', 'Focus on recalling the name of the color.'],
+  'L2_I1': ['Practice listening: short vs long vowel sounds.', 'Match words like cat /æ/ and cake /eɪ/.'],
+  'L2_I2': ['Answer teacher questions about vowel sounds and letter names.', 'Pairs of questions reinforce both skills.'],
+  'L2_I3': ['Recognize vocabulary pictures: sun, toes, rock, tree, apple, kite, orange, water.', 'Spell the words you see.'],
+  'L2_I4': ['Name the vowel in a word or say if it is short/long.', 'Focus on words from the lesson.'],
+  'L2_I5': ['Choose “a” or “an” in simple sentences.', 'Articles before words beginning with vowel sounds.'],
+  'L2_I6': ['Read a short passage and answer questions.', 'Practice simple dialogue responses.'],
+  'L2_I7': ['Final mastery of Unit 2.', 'Apply all learned skills.']
 };
 
-export const LESSON_CONFIGS = [
-  { id: 1, name: "The Alphabet and Numbers", modules: ['L1_TRACK1', 'L1_TRACK2', 'L1_TRACK3', 'L1_TRACK4', 'L1_TRACK5', 'L1_TRACK6', 'L1_TRACK7'] },
-  { id: 2, name: "The Five Vowels", modules: ['L2_TRACK1', 'L2_TRACK2', 'L2_TRACK3', 'L2_TRACK4', 'L2_TRACK5', 'L2_TRACK6', 'L2_TRACK7'] }
-];
+export const LESSON_CONFIGS = Array.from({ length: 12 }, (_, i) => ({
+  id: i + 1,
+  title: i === 0 ? "The Alphabet and Numbers" : i === 1 ? "The Five Vowels" : `Lesson ${i + 1}`,
+  modules: Array.from({ length: 7 }, (_, j) => `L${i+1}_I${j+1}`)
+}));

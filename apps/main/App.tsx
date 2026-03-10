@@ -3,7 +3,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog, QState } from './types';
-import { PRACTICE_ITEMS, LESSON_CONFIGS } from './constants';
+import { PRACTICE_ITEMS, LESSON_CONFIGS, MODULE_NAMES } from './constants';
 import { PracticeSection, Header, LearningPathView, InfoSection } from './components/UI';
 import { saveAssessmentResult } from './services/db';
 import { ensureAnonAuth, auth, loginWithEmail, registerWithEmail } from './services/firebase';
@@ -132,6 +132,10 @@ const App: React.FC = () => {
   const [attemptedWrong, setAttemptedWrong] = useState<Record<number, boolean>>({});
   const [logs, setLogs] = useState<AnswerLog[]>([]);
   const [activeModule, setActiveModule] = useState<PracticeModuleType | undefined>();
+  const [selectedLessonId, setSelectedLessonId] = useState<number | null>(null);
+  const [isEndOfLesson, setIsEndOfLesson] = useState(false);
+  const [isEndOfCourse, setIsEndOfCourse] = useState(false);
+  const currentLessonRef = useRef<HTMLDivElement>(null);
 
   // Use ref to avoid async-state timing issues
   const hadAnyMistakeRef = useRef(false);
@@ -183,6 +187,13 @@ const App: React.FC = () => {
       setSection(SectionType.PATH);
     }
   }, [section, lastResult]);
+
+  // scroll to current lesson
+  useEffect(() => {
+    if (selectedLessonId === null && currentLessonRef.current) {
+      currentLessonRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [selectedLessonId]);
 
   // ====== Derived UI stats ======
   const moduleTotal = useMemo(() => baseItems.length, [baseItems.length]);
@@ -466,14 +477,122 @@ const App: React.FC = () => {
         )}
 
         {section === SectionType.PATH && (
-          <LearningPathView
-            progress={progress}
-            onSelectModule={startModule}
-            moduleNames={{}}
-            isModuleLocked={isModuleLocked}
-            isLessonLocked={isLessonLocked}
-            islandWeights={[10, 10, 10, 10, 10]}
-          />
+          selectedLessonId === null ? (
+            <div className="space-y-6 max-h-screen overflow-y-auto">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800 mb-4">Unit 1</h2>
+                <div className="space-y-2">
+                  {LESSON_CONFIGS.slice(0, 6).map(lesson => {
+                    const diamond = progress.lessonData[lesson.id]?.diamond || 0;
+                    let state: 'active' | 'available_tomorrow' | 'locked_content' | 'completed' = 'locked_content';
+                    if (isAdmin) {
+                      state = 'active';
+                    } else {
+                      if (diamond === 100) {
+                        state = 'completed';
+                      } else if (lesson.id < progress.currentLesson) {
+                        state = 'completed';
+                      } else if (lesson.id === progress.currentLesson) {
+                        state = isLessonLocked(lesson.id) ? 'available_tomorrow' : 'active';
+                      } else if (lesson.id === progress.currentLesson + 1) {
+                        state = isLessonLocked(lesson.id) ? 'available_tomorrow' : 'active';
+                      }
+                    }
+                    const clickable = state === 'active';
+                    const className = `p-4 rounded-lg border flex items-center justify-between ${
+                      state === 'active' ? 'bg-white cursor-pointer hover:bg-blue-50' :
+                      state === 'available_tomorrow' ? 'bg-gray-100 opacity-50' :
+                      state === 'locked_content' ? 'bg-gray-200 opacity-40 grayscale' :
+                      'bg-yellow-100'
+                    }`;
+                    return (
+                      <div
+                        key={lesson.id}
+                        ref={lesson.id === progress.currentLesson ? currentLessonRef : null}
+                        className={className}
+                        onClick={() => {
+                          if (clickable) {
+                            setSelectedLessonId(lesson.id);
+                            setProgress(prev => ({ ...prev, currentLesson: lesson.id }));
+                          }
+                        }}
+                      >
+                        <div>
+                          <h3 className="text-lg font-bold">{lesson.title}</h3>
+                          <p>Lesson {lesson.id}</p>
+                        </div>
+                        <div className="text-2xl">
+                          {state === 'locked_content' && <i className="fas fa-lock"></i>}
+                          {state === 'completed' && <i className="fas fa-star text-yellow-500"></i>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-800 mb-4">Unit 2</h2>
+                <div className="space-y-2">
+                  {LESSON_CONFIGS.slice(6, 12).map(lesson => {
+                    const diamond = progress.lessonData[lesson.id]?.diamond || 0;
+                    let state: 'active' | 'available_tomorrow' | 'locked_content' | 'completed' = 'locked_content';
+                    if (isAdmin) {
+                      state = 'active';
+                    } else {
+                      if (diamond === 100) {
+                        state = 'completed';
+                      } else if (lesson.id < progress.currentLesson) {
+                        state = 'completed';
+                      } else if (lesson.id === progress.currentLesson) {
+                        state = isLessonLocked(lesson.id) ? 'available_tomorrow' : 'active';
+                      } else if (lesson.id === progress.currentLesson + 1) {
+                        state = isLessonLocked(lesson.id) ? 'available_tomorrow' : 'active';
+                      }
+                    }
+                    const clickable = state === 'active';
+                    const className = `p-4 rounded-lg border flex items-center justify-between ${
+                      state === 'active' ? 'bg-white cursor-pointer hover:bg-blue-50' :
+                      state === 'available_tomorrow' ? 'bg-gray-100 opacity-50' :
+                      state === 'locked_content' ? 'bg-gray-200 opacity-40 grayscale' :
+                      'bg-yellow-100'
+                    }`;
+                    return (
+                      <div
+                        key={lesson.id}
+                        ref={lesson.id === progress.currentLesson ? currentLessonRef : null}
+                        className={className}
+                        onClick={() => {
+                          if (clickable) {
+                            setSelectedLessonId(lesson.id);
+                            setProgress(prev => ({ ...prev, currentLesson: lesson.id }));
+                          }
+                        }}
+                      >
+                        <div>
+                          <h3 className="text-lg font-bold">{lesson.title}</h3>
+                          <p>Lesson {lesson.id}</p>
+                        </div>
+                        <div className="text-2xl">
+                          {state === 'locked_content' && <i className="fas fa-lock"></i>}
+                          {state === 'completed' && <i className="fas fa-star text-yellow-500"></i>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <LearningPathView
+              progress={progress}
+              onSelectModule={startModule}
+              moduleNames={MODULE_NAMES}
+              isModuleLocked={isModuleLocked}
+              isLessonLocked={isLessonLocked}
+              islandWeights={[]}
+              onBack={() => setSelectedLessonId(null)}
+            />
+          )
         )}
 
         {section === SectionType.PRACTICE && baseItems[currentBaseIndex] && (
@@ -489,13 +608,47 @@ const App: React.FC = () => {
         {/* RESULTS screen */}
         {section === SectionType.RESULT && (
           <div className="p-6 text-center space-y-4">
-            <h2 className="text-2xl font-black text-slate-800 uppercase">Island Complete!</h2>
-            <p className="text-lg">Stars: {lastResult?.totalStars ?? progress.totalStars}</p>
-            <p className="text-lg">Diamond: {lastResult?.diamondPercent != null ? `${lastResult.diamondPercent}%` : 'N/A'}</p>
-            <p className="text-lg">Streak: {lastResult?.streakCount ?? progress.streakCount}</p>
-            <p className="text-lg">Ice: {lastResult?.iceCount ?? progress.iceCount}</p>
+            {(() => {
+              const lessonConfig = LESSON_CONFIGS.find(l => l.id === progress.currentLesson);
+              const allModules = lessonConfig?.modules || [];
+              const scores = progress.lessonData[progress.currentLesson]?.islandScores || {};
+              const allCompleted = allModules.every(m => (scores[m] || 0) > 0);
+              const isEndOfLessonLocal = allCompleted && progress.currentLesson < 12;
+              const isEndOfCourseLocal = allCompleted && progress.currentLesson === 12;
+              if (isEndOfLessonLocal) {
+                return (
+                  <>
+                    <h2 className="text-3xl font-black text-slate-800 uppercase">GREAT WORK!</h2>
+                    <p className="text-lg">You completed Lesson {progress.currentLesson}.</p>
+                    <p className="text-lg">Stars: {lastResult?.totalStars ?? progress.totalStars}</p>
+                    <p className="text-lg">Diamond: {lastResult?.diamondPercent != null ? `${lastResult.diamondPercent}%` : 'N/A'}</p>
+                    <p className="text-lg">Streak: {lastResult?.streakCount ?? progress.streakCount}</p>
+                    <p className="text-sm text-slate-500">Come back tomorrow to unlock the next lesson.</p>
+                  </>
+                );
+              } else if (isEndOfCourseLocal) {
+                return (
+                  <>
+                    <h2 className="text-3xl font-black text-slate-800 uppercase">CONGRATULATIONS!</h2>
+                    <p className="text-lg">You completed Workbook 1.</p>
+                    <p className="text-lg">Total Stars: {progress.totalStars}</p>
+                    <p className="text-lg">Total Diamonds: {Object.values(progress.lessonData).reduce((sum: number, l: any) => sum + (l.diamond || 0), 0)}%</p>
+                  </>
+                );
+              } else {
+                return (
+                  <>
+                    <h2 className="text-2xl font-black text-slate-800 uppercase">Island Complete!</h2>
+                    <p className="text-lg">Stars: {lastResult?.totalStars ?? progress.totalStars}</p>
+                    <p className="text-lg">Diamond: {lastResult?.diamondPercent != null ? `${lastResult.diamondPercent}%` : 'N/A'}</p>
+                    <p className="text-lg">Streak: {lastResult?.streakCount ?? progress.streakCount}</p>
+                    <p className="text-lg">Ice: {lastResult?.iceCount ?? progress.iceCount}</p>
+                  </>
+                );
+              }
+            })()}
             <div className="flex flex-col gap-3 mt-4">
-              <button onClick={() => setSection(SectionType.PATH)} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1">Back to Path</button>
+              <button onClick={() => { setSection(SectionType.PATH); setSelectedLessonId(null); setIsEndOfLesson(false); setIsEndOfCourse(false); }} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_6px_0_0_#1e40af] active:translate-y-1">Back to Path</button>
               {/* Optional retry: simply re-enter practice using existing activeModule and baseItems */}
               {activeModule && (
                 <button onClick={() => setSection(SectionType.PRACTICE)} className="w-full py-4 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase">Retry Island</button>
