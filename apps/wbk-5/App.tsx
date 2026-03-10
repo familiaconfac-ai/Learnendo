@@ -6,7 +6,7 @@ import { SectionType, PracticeItem, PracticeModuleType, UserProgress, AnswerLog,
 import { PRACTICE_ITEMS, LESSON_CONFIGS } from './constants';
 import { InfoSection, PracticeSection, ResultDashboard, Header, LearningPathView } from './components/UI';
 import { saveAssessmentResult } from './services/db';
-import { ensureAnonAuth, auth } from './services/firebase';
+import { ensureAnonAuth, auth, loginWithEmail, registerWithEmail } from './services/firebase';
 
 console.log('Firebase Auth Object:', auth);
 
@@ -357,8 +357,17 @@ const App: React.FC = () => {
         {section === SectionType.INFO && (
   <InfoSection
     onStart={startLesson}
-    onAuthAction={(email, pass, isLogin, fullName) => {
-      console.log("Auth action", email, pass, isLogin, fullName);
+    onAuthAction={async (email, pass, isLogin, fullName) => {
+      console.log("Auth action", email, pass, !isLogin, fullName);
+      try {
+        if (isLogin) {
+          await loginWithEmail(email, pass);
+        } else {
+          await registerWithEmail(email, pass, fullName);
+        }
+      } catch (error) {
+        console.error("Firebase login error:", error.code, error.message);
+      }
     }}
   />
 )}
