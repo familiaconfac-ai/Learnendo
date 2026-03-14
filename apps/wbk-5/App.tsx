@@ -124,7 +124,7 @@ const App: React.FC = () => {
           setAuthStatus({ status: 'ok', uid: res.uid });
           // Create student profile and session for analytics
           await createStudentProfile(res.uid, `${res.uid}@learnendo.app`, 'Guest');
-          const sid = await createSession(res.uid);
+          const sid = await createSession(res.uid, progress.currentLesson);
           if (sid) setSessionId(sid);
         }
       } catch (err: any) {
@@ -437,18 +437,19 @@ const App: React.FC = () => {
     onAuthAction={async (email, pass, isLogin, fullName) => {
       console.log("Auth action", email, pass, !isLogin, fullName);
       try {
+        let currentUser;
         if (isLogin) {
-          await loginWithEmail(email, pass);
+          currentUser = await loginWithEmail(email, pass);
         } else {
-          await registerWithEmail(email, pass, fullName);
+          currentUser = await registerWithEmail(email, pass, fullName);
         }
 
+        setAuthStatus({ status: 'ok', uid: currentUser.uid });
+
         // Create or update student profile and session for analytics
-        if (authStatus.uid) {
-          await createStudentProfile(authStatus.uid, email, fullName);
-          const sid = await createSession(authStatus.uid);
-          if (sid) setSessionId(sid);
-        }
+        await createStudentProfile(currentUser.uid, email, fullName);
+        const sid = await createSession(currentUser.uid, progress.currentLesson);
+        if (sid) setSessionId(sid);
 
         setStudent({
           name: fullName?.trim() || email
