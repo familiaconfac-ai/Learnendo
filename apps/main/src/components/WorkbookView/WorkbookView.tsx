@@ -62,9 +62,10 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
             const status = getLessonStatus(index);
             const isLocked = status === 'locked';
             const isCompleted = status === 'completed';
-            const lessonNumber = Number.isFinite(getLessonNumberFromId(lesson.id))
-              ? getLessonNumberFromId(lesson.id)
-              : index + 1;
+            const lessonNumber = index + 1;
+            const cleanTitle = lesson.title
+              .replace(/^Lesson\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
+              .trim();
             const isCurrent = lessonNumber === currentLessonNumber && !isCompleted;
 
             // Stagger: left → center → right → center to create a curved path feel
@@ -99,6 +100,9 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                   isLocked ? 'text-slate-400' : 'text-slate-600'
                 }`}>
                   {`Lesson ${lessonNumber}`}
+                  {cleanTitle && cleanTitle !== lesson.title && (
+                    <span className="block text-[10px] leading-snug mt-0.5 opacity-80">{cleanTitle}</span>
+                  )}
                 </p>
               </div>
             );
