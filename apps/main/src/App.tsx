@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { User, onAuthStateChanged } from 'firebase/auth';
 import { Course, Day, UserProgress, SectionType } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
 import { BottomNavigation } from './components/BottomNavigation';
+import { LoginScreen } from './components/LoginScreen';
 import { PlacementTest } from './components/PlacementTest';
 import { WorkbookView } from './components/WorkbookView';
 import { LessonView } from './components/LessonView';
@@ -11,6 +13,8 @@ import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
+import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
+import { createStudentProfile } from './services/db';
 
 const App: React.FC = () => {
   const [progress, setProgress] = useState<UserProgress>({
@@ -29,18 +33,41 @@ const App: React.FC = () => {
   const [currentWorkbook, setCurrentWorkbook] = useState<any>(null);
   const [isWorkbookLoading, setIsWorkbookLoading] = useState(false);
   const [currentDay, setCurrentDay] = useState<Day | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
   useEffect(() => {
-    try {
-      const loadedProgress = ProgressEngine.loadProgress('user1');
-      if (loadedProgress) {
-        setProgress(loadedProgress);
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      const authenticatedUser = firebaseUser && !firebaseUser.isAnonymous ? firebaseUser : null;
+      setUser(authenticatedUser);
+      setAuthLoading(false);
+
+      if (!authenticatedUser) {
+        setCurrentCourseId(null);
+        setCurrentSection(SectionType.COURSES);
+        setProgress((prev) => ({
+          ...prev,
+          userId: 'user1',
+          completedActivities: [],
+        }));
+        return;
       }
-    } catch {
-      // Keep default progress so first render always succeeds.
-    }
+
+      try {
+        const loadedProgress = ProgressEngine.loadProgress(authenticatedUser.uid);
+        if (loadedProgress) {
+          setProgress(loadedProgress);
+        } else {
+          setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid }));
+        }
+      } catch {
+        setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid }));
+      }
+    });
+
+    return unsubscribe;
   }, []);
 
   useEffect(() => {
@@ -110,6 +137,19 @@ const App: React.FC = () => {
       // Do not block rendering when persistence fails.
     }
     setCurrentSection(SectionType.DASHBOARD);
+  };
+
+  const handleLogin = async (email: string, password: string) => {
+    const user = await loginWithEmail(email, password);
+    await createStudentProfile(user.uid, user.email || email, user.displayName || undefined);
+    setMenuOpen(false);
+  };
+
+  const handleRegister = async (email: string, password: string) => {
+    const fullName = email.split('@')[0];
+    const user = await registerWithEmail(email, password, fullName);
+    await createStudentProfile(user.uid, user.email || email, user.displayName || fullName);
+    setMenuOpen(false);
   };
 
   const handleDayComplete = (dayId: string, score: number) => {
@@ -214,10 +254,30 @@ const App: React.FC = () => {
     }
   };
 
+  if (authLoading) {
+    return null;
+  }
+
+  if (!user) {
+    return (
+      <LoginScreen
+        menuOpen={menuOpen}
+        onToggleMenu={toggleMenu}
+        onLogin={handleLogin}
+        onRegister={handleRegister}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <header className="top-bar">
-        <button onClick={toggleMenu} className="hamburger">☰</button>
+        <button
+          onClick={toggleMenu}
+          className="absolute top-4 left-4 cursor-pointer rounded-2xl bg-white p-[10px] text-[28px] text-slate-700 shadow-sm active:scale-95"
+        >
+          ☰
+        </button>
         <h1>Learnendo</h1>
       </header>
       {menuOpen && (
