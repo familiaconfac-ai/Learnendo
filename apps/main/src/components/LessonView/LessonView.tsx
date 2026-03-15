@@ -4,15 +4,19 @@ import { Day, Lesson, UserProgress } from '../../types';
 interface LessonViewProps {
   lesson: Lesson;
   progress: UserProgress;
+  isAdmin?: boolean;
   onStartDay: (day: Day) => void;
   onBack: () => void;
 }
 
-export const LessonView: React.FC<LessonViewProps> = ({ lesson, progress, onStartDay, onBack }) => {
+export const LessonView: React.FC<LessonViewProps> = ({ lesson, progress, isAdmin = false, onStartDay, onBack }) => {
   const completed = progress.completedActivities || [];
 
   const getDayStatus = (dayId: string, index: number): 'completed' | 'in-progress' | 'locked' => {
     if (completed.includes(dayId)) return 'completed';
+
+    if (isAdmin) return 'in-progress';
+
     // First day is always accessible
     if (index === 0) return 'in-progress';
     // Unlock this day only when the previous day is done

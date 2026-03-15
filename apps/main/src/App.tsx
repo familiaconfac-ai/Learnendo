@@ -35,6 +35,7 @@ const App: React.FC = () => {
   const [currentDay, setCurrentDay] = useState<Day | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
@@ -139,6 +140,23 @@ const App: React.FC = () => {
     setCurrentSection(SectionType.DASHBOARD);
   };
 
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Learnendo',
+          text: "I'm learning English with Learnendo!",
+          url: window.location.href,
+        });
+      } catch {
+        // Ignore cancellation.
+      }
+      return;
+    }
+
+    alert('Sharing not supported on this device');
+  };
+
   const handleLogin = async (email: string, password: string) => {
     const user = await loginWithEmail(email, password);
     await createStudentProfile(user.uid, user.email || email, user.displayName || undefined);
@@ -179,6 +197,7 @@ const App: React.FC = () => {
           <CoursesView
             courses={COURSES}
             currentCourseId={currentCourseId}
+            onLogoClick={() => setCurrentSection(SectionType.DASHBOARD)}
             onSelectCourse={(id) => {
               setCurrentCourseId(id);
               setCurrentSection(SectionType.DASHBOARD);
@@ -192,6 +211,7 @@ const App: React.FC = () => {
           <Dashboard
             progress={progress}
             currentCourse={activeCourse}
+            isAdmin={isAdmin}
             onNavigate={handleNavigate}
           />
         );
@@ -212,6 +232,7 @@ const App: React.FC = () => {
               setCurrentDay(day);
               setCurrentSection(SectionType.PRACTICE);
             }}
+            isAdmin={isAdmin}
             onBack={() => handleNavigate(SectionType.DASHBOARD)}
           />
         );
@@ -222,6 +243,7 @@ const App: React.FC = () => {
           <LessonView
             lesson={lesson}
             progress={progress}
+            isAdmin={isAdmin}
             onStartDay={(day: Day) => {
               setCurrentDay(day);
               setCurrentSection(SectionType.PRACTICE);
@@ -230,6 +252,13 @@ const App: React.FC = () => {
           />
         );
       }
+      case SectionType.SETTINGS:
+      case SectionType.HELP:
+        return (
+          <div className="min-h-screen bg-blue-50 flex items-center justify-center px-6 text-center">
+            <p className="text-slate-700 font-semibold">This feature is under construction</p>
+          </div>
+        );
       case SectionType.PRACTICE: {
         if (!currentDay) return <Dashboard progress={progress} currentCourse={COURSES.find(c => c.id === currentCourseId) ?? null} onNavigate={handleNavigate} />;
         return (
@@ -280,17 +309,23 @@ const App: React.FC = () => {
         </button>
       </header>
       {menuOpen && (
-        <nav className="hamburger-menu">
-          <button onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
-          <button onClick={() => { setCurrentSection(SectionType.DASHBOARD); setMenuOpen(false); }}>Dashboard</button>
-          <button onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
-          <button onClick={() => { setCurrentSection(SectionType.PRONUNCIATION); setMenuOpen(false); }}>Pronunciation Practice</button>
-          <button onClick={() => { /* logout */ }}>Settings</button>
-          <button onClick={() => { /* logout */ }}>Logout</button>
-        </nav>
+        <div className="fixed inset-0 z-[1000]" onClick={() => setMenuOpen(false)}>
+          <aside
+            className="h-full w-[220px] bg-white shadow-[2px_0_8px_rgba(0,0,0,0.2)] p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-2 mt-6">
+              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.DASHBOARD); setMenuOpen(false); }}>Dashboard</button>
+              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
+              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
+              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
+              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
+            </div>
+          </aside>
+        </div>
       )}
       {renderSection()}
-      <BottomNavigation currentSection={currentSection} onNavigate={handleNavigate} />
+      <BottomNavigation currentSection={currentSection} onNavigate={handleNavigate} onShare={handleShare} />
     </div>
   );
 };

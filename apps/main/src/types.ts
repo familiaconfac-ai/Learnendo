@@ -56,6 +56,8 @@ export enum SectionType {
   PLACEMENT_TEST = 'PLACEMENT_TEST',
   PRONUNCIATION = 'PRONUNCIATION',
   SHARE = 'SHARE',
+  SETTINGS = 'SETTINGS',
+  HELP = 'HELP',
 }
 
 export interface AnswerLog {

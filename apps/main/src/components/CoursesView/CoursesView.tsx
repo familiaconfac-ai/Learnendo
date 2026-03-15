@@ -5,6 +5,7 @@ interface CoursesViewProps {
   courses: Course[];
   currentCourseId: string | null;
   onSelectCourse: (courseId: string) => void;
+  onLogoClick?: () => void;
 }
 
 type CategoryKey = 'modern' | 'biblical' | 'track';
@@ -19,6 +20,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
   courses,
   currentCourseId,
   onSelectCourse,
+  onLogoClick,
 }) => {
   const categories: CategoryKey[] = ['modern', 'biblical', 'track'];
 
@@ -28,12 +30,14 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
 
         {/* Header */}
         <div className="text-center mb-8">
-          <img
-            src="/learnendo-logo-transp.png"
-            alt="Learnendo Logo"
-            className="mx-auto"
-            style={{ width: '160px', marginBottom: '12px' }}
-          />
+          <button type="button" onClick={onLogoClick} className="mx-auto block cursor-pointer">
+            <img
+              src="/learnendo-logo-transp.png"
+              alt="Learnendo Logo"
+              className="mx-auto"
+              style={{ width: '160px', marginBottom: '12px' }}
+            />
+          </button>
           <p className="text-slate-500 font-semibold text-sm mt-1">Choose your language</p>
         </div>
 

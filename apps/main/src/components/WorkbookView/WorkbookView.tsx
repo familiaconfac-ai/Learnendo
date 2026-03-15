@@ -7,15 +7,18 @@ interface WorkbookViewProps {
   progress: UserProgress;
   onSelectLesson: (lessonId: string) => void;
   onStartFirstDay: (day: Day, lessonId: string) => void;
+  isAdmin?: boolean;
   onBack: () => void;
 }
 
-export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons, progress, onSelectLesson, onStartFirstDay, onBack }) => {
+export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons, progress, onSelectLesson, onStartFirstDay, isAdmin = false, onBack }) => {
   const completed = progress.completedActivities || [];
 
   const getLessonStatus = (lesson: Lesson, index: number): 'completed' | 'in-progress' | 'locked' => {
     const allDaysComplete = lesson.days.every(d => completed.includes(d.id));
     if (allDaysComplete) return 'completed';
+
+    if (isAdmin) return 'in-progress';
 
     // First lesson is always accessible
     if (index === 0) return 'in-progress';

@@ -3,9 +3,10 @@ import React from 'react';
 interface BottomNavigationProps {
   currentSection: string;
   onNavigate: (section: string) => void;
+  onShare: () => void;
 }
 
-export const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentSection, onNavigate }) => {
+export const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentSection, onNavigate, onShare }) => {
   return (
     <div className="bottom-navigation fixed bottom-0 w-full bg-white border-t flex justify-around items-center py-2 px-1">
       <button
@@ -30,7 +31,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentSecti
         Pronounce
       </button>
       <button
-        onClick={() => onNavigate('SHARE')}
+        onClick={onShare}
         className={`flex flex-col items-center gap-0.5 px-2 text-xs ${currentSection === 'SHARE' ? 'text-blue-500' : 'text-slate-500'}`}
       >
         <span className="text-lg">🔗</span>
