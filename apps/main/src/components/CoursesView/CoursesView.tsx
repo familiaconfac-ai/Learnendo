@@ -1,5 +1,4 @@
 import React from 'react';
-import learnendoLogo from '../../assets/learnendo-logo.png';
 import { Course } from '../../types';
 
 interface CoursesViewProps {
@@ -30,10 +29,10 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
         {/* Header */}
         <div className="text-center mb-8">
           <img
-            src={learnendoLogo}
-            alt="Learnendo"
-            className="mx-auto mb-2.5"
-            style={{ width: 140 }}
+            src="/learnendo-logo-transp.png"
+            alt="Learnendo Logo"
+            className="mx-auto"
+            style={{ width: '160px', marginBottom: '10px' }}
           />
           <h1 className="text-3xl font-black text-blue-900 tracking-tight">Learnendo</h1>
           <p className="text-slate-500 font-semibold text-sm mt-1">Choose your language</p>

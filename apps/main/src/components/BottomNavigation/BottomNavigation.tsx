@@ -16,8 +16,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentSecti
         Home
       </button>
       <button
-        onClick={() => onNavigate('LESSON')}
-        className={`flex flex-col items-center gap-0.5 px-2 text-xs ${currentSection === 'LESSON' ? 'text-blue-500' : 'text-slate-500'}`}
+        onClick={() => onNavigate('WORKBOOK')}
+        className={`flex flex-col items-center gap-0.5 px-2 text-xs ${currentSection === 'WORKBOOK' ? 'text-blue-500' : 'text-slate-500'}`}
       >
         <span className="text-lg">🦉</span>
         Learn
@@ -37,12 +37,12 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentSecti
         Share
       </button>
       <a
-        href="https://wa.me/5517991010930?text=Hello%20Professor!%20I%20am%20using%20the%20Learnendo%20app%20and%20I%20would%20like%20to%20know%20about%20private%20lessons."
+        href="https://wa.me/5517991010930?text=Hello%20Professor!%20I%20am%20using%20the%20Learnendo%20app%20and%20would%20like%20to%20know%20about%20private%20lessons."
         target="_blank"
         rel="noopener noreferrer"
-        className="flex flex-col items-center gap-0.5 px-2 text-xs text-green-600"
+        className="flex flex-col items-center gap-0.5 px-2 text-xs text-slate-500"
       >
-        <span className="text-lg">💬</span>
+        <img src="/whatsapp-icon.png" width="26" height="26" alt="WhatsApp" />
         Teacher
       </a>
     </div>

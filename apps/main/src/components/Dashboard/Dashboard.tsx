@@ -50,20 +50,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress, currentCourse, o
           ))}
         </div>
       </div>
-
-      {/* WhatsApp contact button */}
-      <div className="mt-6">
-        <a
-          href="https://wa.me/5517991010930?text=Hello%20Professor!%20I%20am%20using%20the%20Learnendo%20app%20and%20I%20would%20like%20to%20know%20about%20private%20lessons."
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center justify-center gap-2 w-full rounded-xl py-3 px-4 font-semibold text-white text-sm shadow-sm active:scale-[0.98] transition-transform"
-          style={{ background: '#25D366' }}
-        >
-          <span className="text-base">💬</span>
-          Talk to the teacher
-        </a>
-      </div>
     </div>
   );
 };

@@ -127,9 +127,9 @@ const App: React.FC = () => {
     } catch {
       // Persistence failure should not block navigation.
     }
-    // Return to the lesson view so the player can see the updated state.
+    // Return to the workbook island map after finishing practice.
     setCurrentDay(null);
-    setCurrentSection(SectionType.LESSON);
+    setCurrentSection(SectionType.WORKBOOK);
   };
 
   const renderSection = () => {
@@ -167,6 +167,11 @@ const App: React.FC = () => {
             lessons={currentWorkbook.lessons || []}
             progress={progress}
             onSelectLesson={(lessonId) => handleNavigate(SectionType.LESSON, { lessonId })}
+            onStartFirstDay={(day, lessonId) => {
+              setCurrentLessonId(lessonId);
+              setCurrentDay(day);
+              setCurrentSection(SectionType.PRACTICE);
+            }}
             onBack={() => handleNavigate(SectionType.DASHBOARD)}
           />
         );
@@ -195,7 +200,7 @@ const App: React.FC = () => {
             onComplete={handleDayComplete}
             onBack={() => {
               setCurrentDay(null);
-              setCurrentSection(SectionType.LESSON);
+              setCurrentSection(SectionType.WORKBOOK);
             }}
           />
         );
