@@ -54,7 +54,24 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
     <div className="workbook-view min-h-screen bg-blue-50 pb-32">
       <div className="max-w-[420px] mx-auto px-4 pt-6">
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold" aria-label="Back">←</button>
-        <h1 className="text-xl font-bold mb-8 text-center text-blue-900">Workbook {workbookId}</h1>
+        <h1 className="text-xl font-bold mb-4 text-center text-blue-900">Workbook {workbookId}</h1>
+
+        {/* Workbook island — gold anchor */}
+        <div className="flex flex-col items-center mb-4">
+          <div
+            className="relative w-[90px] h-[90px] rounded-full overflow-hidden border-2 border-[#b8962e] shadow-[0_5px_0_0_#8f6e20] flex items-center justify-center font-bold text-white"
+            style={{ background: 'linear-gradient(135deg, #D4AF37, #F7E27C)' }}
+          >
+            <img
+              src={`/islands/workbook/workbook${workbookId}.png`}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover opacity-50 rounded-full"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+            <span className="relative z-10 text-2xl select-none" aria-hidden="true">★</span>
+          </div>
+          <p className="text-center text-xs mt-2 font-semibold text-amber-700">Workbook {workbookId}</p>
+        </div>
 
         {/* Island path */}
         <div className="flex flex-col items-center gap-8">
@@ -86,7 +103,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                     onSelectLesson(lesson.id);
                   }}
                   disabled={isLocked}
-                  className={`w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
+                  className={`relative overflow-hidden w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
                     isLocked
                       ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
                       : isCompleted
@@ -94,7 +111,17 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                       : 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
                   }${isCurrent ? ' animate-pulse' : ''}`}
                 >
-                  {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
+                  {!isLocked && (
+                    <img
+                      src={`/islands/lessons/lesson${lessonNumber}.png`}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-cover opacity-25 rounded-full"
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  )}
+                  <span className="relative z-10">
+                    {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
+                  </span>
                 </button>
                 <p className={`text-center text-xs mt-2 max-w-[90px] leading-tight ${
                   isLocked ? 'text-slate-400' : 'text-slate-600'
