@@ -278,7 +278,6 @@ const App: React.FC = () => {
         >
           ☰
         </button>
-        <h1>Learnendo</h1>
       </header>
       {menuOpen && (
         <nav className="hamburger-menu">
