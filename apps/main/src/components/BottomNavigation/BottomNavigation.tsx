@@ -42,7 +42,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentSecti
         rel="noopener noreferrer"
         className="flex flex-col items-center gap-0.5 px-2 text-xs text-slate-500"
       >
-        <img src="/whatsapp-icon.png" width="26" height="26" alt="WhatsApp" />
+        <img src="/whatsapp-icon.png" width="28" height="28" alt="WhatsApp" />
         Teacher
       </a>
     </div>
