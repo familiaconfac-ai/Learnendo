@@ -53,8 +53,25 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
   return (
     <div className="workbook-view min-h-screen bg-blue-50 pb-32">
       <div className="max-w-[420px] mx-auto px-4 pt-6">
-        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold">← Back</button>
-        <h1 className="text-xl font-bold mb-8 text-center text-blue-900">Workbook {workbookId}</h1>
+        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold" aria-label="Back">←</button>
+        <h1 className="text-xl font-bold mb-4 text-center text-blue-900">Workbook {workbookId}</h1>
+
+        {/* Workbook island — gold anchor */}
+        <div className="flex flex-col items-center mb-4">
+          <div
+            className="relative w-[90px] h-[90px] rounded-full overflow-hidden border-2 border-[#b8962e] shadow-[0_5px_0_0_#8f6e20] flex items-center justify-center font-bold text-white"
+            style={{ background: 'linear-gradient(135deg, #D4AF37, #F7E27C)' }}
+          >
+            <img
+              src={`/islands/workbook/workbook${workbookId}.png`}
+              alt=""
+              className="absolute inset-0 w-full h-full object-cover opacity-50 rounded-full"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            />
+            <span className="relative z-10 text-2xl select-none" aria-hidden="true">★</span>
+          </div>
+          <p className="text-center text-xs mt-2 font-semibold text-amber-700">Workbook {workbookId}</p>
+        </div>
 
         {/* Island path */}
         <div className="flex flex-col items-center gap-8">
@@ -62,9 +79,10 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
             const status = getLessonStatus(index);
             const isLocked = status === 'locked';
             const isCompleted = status === 'completed';
-            const lessonNumber = Number.isFinite(getLessonNumberFromId(lesson.id))
-              ? getLessonNumberFromId(lesson.id)
-              : index + 1;
+            const lessonNumber = index + 1;
+            const cleanTitle = lesson.title
+              .replace(/^Lesson\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
+              .trim();
             const isCurrent = lessonNumber === currentLessonNumber && !isCompleted;
 
             // Stagger: left → center → right → center to create a curved path feel
@@ -85,20 +103,46 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                     onSelectLesson(lesson.id);
                   }}
                   disabled={isLocked}
-                  className={`w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
-                    isLocked
-                      ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
-                      : isCompleted
-                      ? 'bg-green-400 text-white shadow-[0_4px_0_0_#16a34a]'
-                      : 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
-                  }${isCurrent ? ' animate-pulse' : ''}`}
+                  className={lessonNumber === 1 && !isLocked && !isCompleted
+                    ? `relative flex items-center justify-center transition-transform active:scale-95`
+                    : `relative overflow-hidden w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
+                        isLocked
+                          ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
+                          : isCompleted
+                          ? 'bg-green-400 text-white shadow-[0_4px_0_0_#16a34a]'
+                          : 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
+                      }${isCurrent ? ' animate-pulse' : ''}`
+                  }
                 >
-                  {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
+                  {lessonNumber === 1 && !isLocked && !isCompleted ? (
+                    <img
+                      src="/islands/ilhaLesson1.png"
+                      alt="Alphabet Island"
+                      style={{ width: "180px", height: "180px", objectFit: "contain", marginBottom: "10px" }}
+                    />
+                  ) : (
+                    <>
+                      {!isLocked && (
+                        <img
+                          src={`/islands/lessons/lesson${lessonNumber}.png`}
+                          alt=""
+                          className="absolute inset-0 w-full h-full object-cover opacity-25 rounded-full"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      )}
+                      <span className="relative z-10">
+                        {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
+                      </span>
+                    </>
+                  )}
                 </button>
                 <p className={`text-center text-xs mt-2 max-w-[90px] leading-tight ${
                   isLocked ? 'text-slate-400' : 'text-slate-600'
                 }`}>
                   {`Lesson ${lessonNumber}`}
+                  {cleanTitle && cleanTitle !== lesson.title && (
+                    <span className="block text-[10px] leading-snug mt-0.5 opacity-80">{cleanTitle}</span>
+                  )}
                 </p>
               </div>
             );

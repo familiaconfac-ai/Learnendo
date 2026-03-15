@@ -103,25 +103,38 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                     onSelectLesson(lesson.id);
                   }}
                   disabled={isLocked}
-                  className={`relative overflow-hidden w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
-                    isLocked
-                      ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
-                      : isCompleted
-                      ? 'bg-green-400 text-white shadow-[0_4px_0_0_#16a34a]'
-                      : 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
-                  }${isCurrent ? ' animate-pulse' : ''}`}
+                  className={lessonNumber === 1 && !isLocked && !isCompleted
+                    ? `relative flex items-center justify-center transition-transform active:scale-95`
+                    : `relative overflow-hidden w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
+                        isLocked
+                          ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
+                          : isCompleted
+                          ? 'bg-green-400 text-white shadow-[0_4px_0_0_#16a34a]'
+                          : 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
+                      }${isCurrent ? ' animate-pulse' : ''}`
+                  }
                 >
-                  {!isLocked && (
+                  {lessonNumber === 1 && !isLocked && !isCompleted ? (
                     <img
-                      src={`/islands/lessons/lesson${lessonNumber}.png`}
-                      alt=""
-                      className="absolute inset-0 w-full h-full object-cover opacity-25 rounded-full"
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      src="/islands/ilhaLesson1.png"
+                      alt="Alphabet Island"
+                      style={{ width: "180px", height: "180px", objectFit: "contain", marginBottom: "10px" }}
                     />
+                  ) : (
+                    <>
+                      {!isLocked && (
+                        <img
+                          src={`/islands/lessons/lesson${lessonNumber}.png`}
+                          alt=""
+                          className="absolute inset-0 w-full h-full object-cover opacity-25 rounded-full"
+                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      )}
+                      <span className="relative z-10">
+                        {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
+                      </span>
+                    </>
                   )}
-                  <span className="relative z-10">
-                    {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
-                  </span>
                 </button>
                 <p className={`text-center text-xs mt-2 max-w-[90px] leading-tight ${
                   isLocked ? 'text-slate-400' : 'text-slate-600'
