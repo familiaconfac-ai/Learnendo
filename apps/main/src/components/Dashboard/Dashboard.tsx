@@ -1,22 +1,39 @@
 import React from 'react';
-import { UserProgress } from '../../types';
+import { Course, UserProgress, SectionType } from '../../types';
 
 interface DashboardProps {
   progress: UserProgress;
-  onNavigate: (section: string, params?: any) => void;
+  currentCourse?: Course | null;
+  onNavigate: (section: SectionType, params?: any) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ progress, onNavigate }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ progress, currentCourse, onNavigate }) => {
   const workbooks = [1, 2, 3, 4, 5, 6, 7, 8];
 
   return (
     <div className="dashboard p-4">
+      {/* Course banner */}
+      {currentCourse && (
+        <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-4">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">{currentCourse.flag}</span>
+            <span className="font-bold text-blue-900">{currentCourse.title}</span>
+          </div>
+          <button
+            className="text-xs font-semibold text-blue-600 hover:text-blue-800 active:scale-95"
+            onClick={() => onNavigate(SectionType.COURSES)}
+          >
+            Switch Course
+          </button>
+        </div>
+      )}
+
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
       <button 
         className="bg-blue-500 text-white px-4 py-2 rounded mb-4"
-        onClick={() => onNavigate('LESSON', { workbook: progress.currentWorkbook, lesson: progress.currentLesson, day: progress.currentDay })}
+        onClick={() => onNavigate(SectionType.WORKBOOK, { workbookId: progress.currentWorkbook })}
       >
-        Continue Learning - Workbook {progress.currentWorkbook}, Lesson {progress.currentLesson}, Day {progress.currentDay}
+        Continue Learning - Workbook {progress.currentWorkbook}, Lesson {progress.currentLesson}
       </button>
       <div>
         <h2 className="text-xl mb-2">Workbooks</h2>
@@ -25,13 +42,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress, onNavigate }) =>
             <button 
               key={wb} 
               className={`p-2 border rounded ${wb <= progress.currentWorkbook ? 'bg-green-200' : wb === progress.currentWorkbook ? 'bg-blue-200' : 'bg-gray-200'}`}
-              onClick={() => onNavigate('WORKBOOK', { id: wb })}
+              onClick={() => onNavigate(SectionType.WORKBOOK, { workbookId: wb })}
               disabled={wb > progress.currentWorkbook}
             >
               Workbook {wb} {wb < progress.currentWorkbook ? '✔' : wb === progress.currentWorkbook ? '→' : '🔒'}
             </button>
           ))}
         </div>
+      </div>
+
+      {/* WhatsApp contact button */}
+      <div className="mt-6">
+        <a
+          href="https://wa.me/5517991010930?text=Hello%20Professor!%20I%20am%20using%20the%20Learnendo%20app%20and%20I%20would%20like%20to%20know%20about%20private%20lessons."
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-2 w-full rounded-xl py-3 px-4 font-semibold text-white text-sm shadow-sm active:scale-[0.98] transition-transform"
+          style={{ background: '#25D366' }}
+        >
+          <span className="text-base">💬</span>
+          Talk to the teacher
+        </a>
       </div>
     </div>
   );

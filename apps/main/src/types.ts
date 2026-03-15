@@ -1,3 +1,11 @@
+export interface Course {
+  id: string;
+  title: string;
+  flag: string;
+  category: 'modern' | 'biblical' | 'track';
+  description?: string;
+}
+
 export interface Exercise {
   id: string;
   type: 'speaking' | 'multiple-choice' | 'writing' | 'identification' | 'dialogue';
@@ -30,6 +38,7 @@ export interface Workbook {
 
 export interface UserProgress {
   userId: string;
+  currentCourseId?: string;
   currentWorkbook: number;
   currentLesson: number;
   currentDay: number;
@@ -39,9 +48,11 @@ export interface UserProgress {
 }
 
 export enum SectionType {
+  COURSES = 'COURSES',
   DASHBOARD = 'DASHBOARD',
   WORKBOOK = 'WORKBOOK',
   LESSON = 'LESSON',
+  PRACTICE = 'PRACTICE',
   PLACEMENT_TEST = 'PLACEMENT_TEST',
   PRONUNCIATION = 'PRONUNCIATION',
   SHARE = 'SHARE',
