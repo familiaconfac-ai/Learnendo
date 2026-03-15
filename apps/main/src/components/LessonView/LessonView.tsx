@@ -53,7 +53,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   return (
     <div className="lesson-view min-h-screen bg-blue-50 pb-32">
       <div className="max-w-[420px] mx-auto px-4 pt-6">
-        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold">← Back</button>
+        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold" aria-label="Back">←</button>
         <h1 className="text-2xl font-bold mb-2 text-center text-blue-900">Lesson {lessonNumber}</h1>
         <p className="text-center text-sm text-slate-500 mb-8">Day Islands</p>
 

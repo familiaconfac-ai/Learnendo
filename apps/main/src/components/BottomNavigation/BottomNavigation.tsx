@@ -2,7 +2,7 @@ import React from 'react';
 
 interface BottomNavigationProps {
   currentSection: string;
-  onNavigate: (section: string) => void;
+  onNavigate: (section: string, params?: any) => void;
   onShare: () => void;
 }
 
@@ -10,15 +10,15 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentSecti
   return (
     <div className="bottom-navigation fixed bottom-0 w-full bg-white border-t flex justify-around items-center py-2 px-1">
       <button
-        onClick={() => onNavigate('DASHBOARD')}
-        className={`flex flex-col items-center gap-0.5 px-2 text-xs ${currentSection === 'DASHBOARD' ? 'text-blue-500' : 'text-slate-500'}`}
+        onClick={() => onNavigate('COURSES')}
+        className={`flex flex-col items-center gap-0.5 px-2 text-xs ${currentSection === 'COURSES' ? 'text-blue-500' : 'text-slate-500'}`}
       >
         <span className="text-lg">🏠</span>
         Home
       </button>
       <button
-        onClick={() => onNavigate('WORKBOOK')}
-        className={`flex flex-col items-center gap-0.5 px-2 text-xs ${currentSection === 'WORKBOOK' ? 'text-blue-500' : 'text-slate-500'}`}
+        onClick={() => onNavigate('WORKBOOK', { resumeCurrentDay: true })}
+        className={`flex flex-col items-center gap-0.5 px-2 text-xs ${currentSection === 'WORKBOOK' || currentSection === 'LESSON' || currentSection === 'PRACTICE' ? 'text-blue-500' : 'text-slate-500'}`}
       >
         <span className="text-lg">🦉</span>
         Learn

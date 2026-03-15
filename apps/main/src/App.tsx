@@ -9,6 +9,7 @@ import { PlacementTest } from './components/PlacementTest';
 import { WorkbookView } from './components/WorkbookView';
 import { LessonView } from './components/LessonView';
 import { ExercisePractice } from './components/ExercisePractice';
+import { PronunciationTrainer } from './components/PronunciationTrainer/PronunciationTrainer';
 import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
@@ -192,6 +193,24 @@ const App: React.FC = () => {
     if (section === SectionType.WORKBOOK) {
       const workbookId = Number(params?.workbookId || progress.currentWorkbook || 1);
       setCurrentWorkbookId(workbookId);
+
+      if (params?.resumeCurrentDay && currentWorkbook?.lessons?.length) {
+        const lessonIndex = Math.max(0, (progress.currentLesson || 1) - 1);
+        const lesson = currentWorkbook.lessons[lessonIndex];
+        if (lesson) {
+          setCurrentLessonId(lesson.id);
+          const nextDay = lesson.days?.find((day: Day) => !progress.completedActivities.includes(day.id));
+          if (nextDay) {
+            setCurrentDay(nextDay);
+            setCurrentSection(SectionType.PRACTICE);
+            return;
+          }
+          setCurrentDay(null);
+          setCurrentSection(SectionType.LESSON);
+          return;
+        }
+      }
+
       setCurrentSection(SectionType.WORKBOOK);
       return;
     }
@@ -425,7 +444,7 @@ const App: React.FC = () => {
         );
       }
       case SectionType.PRONUNCIATION:
-        return <div>Pronunciation Practice Placeholder</div>;
+        return <PronunciationTrainer onFinish={() => handleNavigate(SectionType.COURSES)} />;
       case SectionType.SHARE:
         return <div>Share App Placeholder</div>;
       default:
