@@ -1,35 +1,54 @@
 import React from 'react';
-import { Day, Lesson, UserProgress } from '../../types';
+import { Lesson, UserProgress } from '../../types';
 
 interface WorkbookViewProps {
   workbookId: number;
   lessons: Lesson[];
   progress: UserProgress;
   onSelectLesson: (lessonId: string) => void;
-  onStartFirstDay: (day: Day, lessonId: string) => void;
   isAdmin?: boolean;
   onBack: () => void;
 }
 
-export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons, progress, onSelectLesson, onStartFirstDay, isAdmin = false, onBack }) => {
-  const completed = progress.completedActivities || [];
+const LESSON_TEST_PREFIX = 'lesson_test_passed_';
 
-  const getLessonStatus = (lesson: Lesson, index: number): 'completed' | 'in-progress' | 'locked' => {
-    const allDaysComplete = lesson.days.every(d => completed.includes(d.id));
-    if (allDaysComplete) return 'completed';
+const getLessonNumberFromId = (lessonId: string) => {
+  const match = lessonId.match(/(\d+)/);
+  return match ? Number(match[1]) : NaN;
+};
+
+export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons, progress, onSelectLesson, isAdmin = false, onBack }) => {
+  const completed = progress.completedActivities || [];
+  const totalIslands = workbookId === 1 ? 12 : Math.max(lessons.length, 1);
+  const islandSlots = Array.from({ length: totalIslands }, (_, index) => {
+    const lesson = lessons[index];
+    if (lesson) return lesson;
+    return {
+      id: `lesson${index + 1}`,
+      title: `Lesson ${index + 1}`,
+      days: [],
+    } as Lesson;
+  });
+
+  const completedLessonSet = new Set(
+    completed
+      .filter((activityId) => activityId.startsWith(LESSON_TEST_PREFIX))
+      .map((activityId) => Number(activityId.replace(LESSON_TEST_PREFIX, '')))
+      .filter((value) => Number.isFinite(value)),
+  );
+  const currentLessonNumber = Math.min(Math.max(progress.currentLesson || 1, 1), totalIslands);
+
+  const getLessonStatus = (index: number): 'completed' | 'in-progress' | 'locked' => {
+    const lessonNumber = index + 1;
+    if (completedLessonSet.has(lessonNumber)) return 'completed';
 
     if (isAdmin) return 'in-progress';
-
-    // First lesson is always accessible
-    if (index === 0) return 'in-progress';
-
-    // Unlock this lesson only when every day in the previous lesson is done
-    const prevLesson = lessons[index - 1];
-    const prevAllDone = prevLesson.days.every(d => completed.includes(d.id));
-    return prevAllDone ? 'in-progress' : 'locked';
+    if (lessonNumber === 1) return 'in-progress';
+    if (completedLessonSet.has(lessonNumber - 1)) return 'in-progress';
+    return 'locked';
   };
 
-  const firstUnlockedIndex = lessons.findIndex((lesson, index) => getLessonStatus(lesson, index) === 'in-progress');
+  const firstUnlockedIndex = islandSlots.findIndex((_, index) => getLessonStatus(index) === 'in-progress');
 
   return (
     <div className="workbook-view min-h-screen bg-blue-50 pb-32">
@@ -39,10 +58,14 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
 
         {/* Island path */}
         <div className="flex flex-col items-center gap-8">
-          {lessons.map((lesson, index) => {
-            const status = getLessonStatus(lesson, index);
+          {islandSlots.map((lesson, index) => {
+            const status = getLessonStatus(index);
             const isLocked = status === 'locked';
             const isCompleted = status === 'completed';
+            const lessonNumber = Number.isFinite(getLessonNumberFromId(lesson.id))
+              ? getLessonNumberFromId(lesson.id)
+              : index + 1;
+            const isCurrent = lessonNumber === currentLessonNumber && !isCompleted;
 
             // Stagger: left → center → right → center to create a curved path feel
             const offsetClass = (['ml-[-60px]', 'ml-0', 'ml-[60px]', 'ml-0'] as const)[index % 4];
@@ -59,8 +82,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                 <button
                   onClick={() => {
                     if (isLocked) return;
-                    const nextDay = lesson.days.find(d => !completed.includes(d.id)) ?? lesson.days[0];
-                    if (nextDay) onStartFirstDay(nextDay, lesson.id);
+                    onSelectLesson(lesson.id);
                   }}
                   disabled={isLocked}
                   className={`w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
@@ -69,14 +91,14 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                       : isCompleted
                       ? 'bg-green-400 text-white shadow-[0_4px_0_0_#16a34a]'
                       : 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
-                  }${index === firstUnlockedIndex ? ' animate-pulse' : ''}`}
+                  }${isCurrent ? ' animate-pulse' : ''}`}
                 >
-                  {isCompleted ? '✓' : isLocked ? '🔒' : index + 1}
+                  {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
                 </button>
                 <p className={`text-center text-xs mt-2 max-w-[90px] leading-tight ${
                   isLocked ? 'text-slate-400' : 'text-slate-600'
                 }`}>
-                  {lesson.title}
+                  {`Lesson ${lessonNumber}`}
                 </p>
               </div>
             );

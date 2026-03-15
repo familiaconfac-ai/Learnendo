@@ -1,3 +1,11 @@
+export interface Course {
+  id: string;
+  title: string;
+  flag: string;
+  category: 'modern' | 'biblical' | 'track';
+  description?: string;
+}
+
 export interface Exercise {
   id: string;
   type: 'speaking' | 'multiple-choice' | 'writing' | 'identification' | 'dialogue';
@@ -30,6 +38,7 @@ export interface Workbook {
 
 export interface UserProgress {
   userId: string;
+  currentCourseId?: string;
   currentWorkbook: number;
   currentLesson: number;
   currentDay: number;
@@ -39,15 +48,17 @@ export interface UserProgress {
 }
 
 export enum SectionType {
+  COURSES = 'COURSES',
   DASHBOARD = 'DASHBOARD',
   WORKBOOK = 'WORKBOOK',
   LESSON = 'LESSON',
+  PRACTICE = 'PRACTICE',
   PLACEMENT_TEST = 'PLACEMENT_TEST',
   PRONUNCIATION = 'PRONUNCIATION',
   SHARE = 'SHARE',
+  SETTINGS = 'SETTINGS',
+  HELP = 'HELP',
 }
-
-export type QState = 'pending' | 'correct' | 'wrong';
 
 export interface AnswerLog {
   question: string;
@@ -55,4 +66,50 @@ export interface AnswerLog {
   correctAnswer: string;
   isCorrect: boolean;
   isFirstTry: boolean;
+}
+
+// Old types for compatibility
+export enum OldSectionType {
+  INFO = 'INFO',
+  PATH = 'PATH',
+  PRACTICE = 'PRACTICE',
+  RESULT = 'RESULT',
+  RESULTS = 'RESULTS'
+}
+
+export type OldQState = 'pending' | 'correct' | 'wrong';
+
+export type PracticeModuleType = string;
+
+export interface PracticeItem {
+  id: string;
+  moduleType: PracticeModuleType;
+  lessonId: number;
+  type: 'speaking' | 'multiple-choice' | 'writing' | 'identification' | 'dialogue';
+  instruction: string;
+  displayValue?: string;
+  audioValue: string;
+  options?: string[];
+  correctValue: string;
+  character?: 'teacher' | 'student';
+  isNewVocab?: boolean;
+}
+
+export interface OldUserProgress {
+  currentLesson: number;
+  lessonData: {
+    [lessonId: number]: {
+      diamond: number;
+      islandScores: { [trackId: string]: number };
+      islandCompletionDates?: { [trackId: string]: string };
+      lastCompletionDayKey?: string;
+    }
+  };
+  totalStars: number;
+  streakCount: number;
+  iceCount: number;
+  lastActiveDayKey?: string;
+  virtualDayOffset: number;
+  bypassActive?: boolean;
+  sentToTeacher?: boolean;
 }

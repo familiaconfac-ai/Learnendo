@@ -13,22 +13,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ progress, currentCourse, i
 
   return (
     <div className="dashboard p-4">
-      {/* Course banner */}
-      {currentCourse && (
-        <div className="flex items-center justify-between bg-blue-50 border border-blue-100 rounded-xl px-4 py-3 mb-4">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">{currentCourse.flag}</span>
-            <span className="font-bold text-blue-900">{currentCourse.title}</span>
-          </div>
-          <button
-            className="text-xs font-semibold text-blue-600 hover:text-blue-800 active:scale-95"
-            onClick={() => onNavigate(SectionType.COURSES)}
-          >
-            Switch Course
-          </button>
-        </div>
-      )}
-
       <h1 className="text-2xl font-bold mb-4">Dashboard</h1>
       <button 
         className="bg-blue-500 text-white px-4 py-2 rounded mb-4"
