@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { User, onAuthStateChanged } from 'firebase/auth';
+import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { Course, Day, UserProgress, SectionType } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
@@ -30,8 +30,6 @@ const COURSE_SELECTOR_OPTIONS = [
   { id: 'greek_koine', label: 'Greek', flag: '🇬🇷' },
   { id: 'hebrew_biblical', label: 'Hebrew', flag: '🇮🇱' },
 ] as const;
-
-const getTodayKey = (date: Date) => date.toISOString().slice(0, 10);
 
 const getLessonNumberFromId = (lessonId: string | null | undefined) => {
   if (!lessonId) return NaN;
@@ -72,8 +70,6 @@ const App: React.FC = () => {
     .filter((value) => Number.isFinite(value));
   const completedLessonSet = new Set(completedLessonNumbers);
   const completedLessonCount = completedLessonSet.size;
-  const todayKey = getTodayKey(new Date());
-  const completedToday = getTodayKey(new Date(progress.lastCompletedDate || new Date().toISOString())) === todayKey;
   const streak = Number((progress as any).streakCount ?? completedLessonCount);
   const freeze = Number((progress as any).iceCount ?? 0);
   const diamonds = Number((progress as any).diamonds ?? completedLessonCount * 10);
@@ -288,7 +284,6 @@ const App: React.FC = () => {
     if (lessonNumber <= 1) return true;
     if (lessonNumber <= completedLessonCount) return true;
     if (lessonNumber > completedLessonCount + 1) return false;
-    if (completedToday && completedLessonCount >= 1 && lessonNumber === completedLessonCount + 1) return false;
     return true;
   };
 
@@ -352,6 +347,12 @@ const App: React.FC = () => {
     const fullName = email.split('@')[0];
     const user = await registerWithEmail(email, password, fullName);
     await createStudentProfile(user.uid, user.email || email, user.displayName || fullName);
+    setMenuOpen(false);
+  };
+
+  const handleLogout = async () => {
+    closeActiveSession();
+    await signOut(auth);
     setMenuOpen(false);
   };
 
@@ -664,6 +665,7 @@ const App: React.FC = () => {
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 font-medium transition-colors" onClick={handleLogout}>Logout</button>
             </div>
           </div>
         </div>
