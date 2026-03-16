@@ -386,7 +386,7 @@ const App: React.FC = () => {
           // Keep UI responsive even if persistence fails.
         }
 
-        setCurrentLessonId(lessonId);
+        setCurrentLessonId(null);
         setCurrentSection(SectionType.WORKBOOK);
         return;
       }
