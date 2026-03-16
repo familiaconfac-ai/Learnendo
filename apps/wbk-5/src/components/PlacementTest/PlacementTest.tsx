@@ -16,15 +16,47 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
   const currentQuestion = PLACEMENT_TEST_QUESTIONS[currentQuestionIndex];
   const progress = Math.round(((currentQuestionIndex + 1) / PLACEMENT_TEST_QUESTIONS.length) * 100);
 
+  const getEnglishVoice = (): SpeechSynthesisVoice | null => {
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length === 0) return null;
+
+    // Priority 1: en-US
+    const enUs = voices.find(v => v.lang.startsWith('en-US'));
+    if (enUs) return enUs;
+
+    // Priority 2: en-GB
+    const enGb = voices.find(v => v.lang.startsWith('en-GB'));
+    if (enGb) return enGb;
+
+    // Priority 3: any English voice
+    const anyEn = voices.find(v => v.lang.startsWith('en'));
+    if (anyEn) return anyEn;
+
+    // Fallback: first voice available
+    return voices[0] || null;
+  };
+
   const playAudio = (text: string) => {
     if ('speechSynthesis' in window) {
       speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
+
+      // Select English voice with priority
+      const englishVoice = getEnglishVoice();
+      if (englishVoice) {
+        utterance.voice = englishVoice;
+        utterance.lang = englishVoice.lang;
+      } else {
+        // Fallback if no voice found
+        utterance.lang = 'en-US';
+      }
+
       utterance.rate = 0.9;
       utterance.pitch = 1;
       utterance.volume = 1;
       setIsPlayingAudio(true);
       utterance.onend = () => setIsPlayingAudio(false);
+      utterance.onerror = () => setIsPlayingAudio(false);
       speechSynthesis.speak(utterance);
     }
   };
