@@ -46,12 +46,12 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
   const firstUnlockedIndex = islandSlots.findIndex((_, index) => getLessonStatus(index) === 'in-progress');
 
   return (
-    <div className="workbook-view min-h-screen bg-blue-50 pb-32">
-      <div className="max-w-[420px] mx-auto px-4 pt-6">
-        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold" aria-label="Back">←</button>
+    <div className="workbook-view min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
+      <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
+        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">←</button>
 
         {/* Workbook island */}
-        <div className="flex flex-col items-center mb-4">
+        <div className="flex flex-col items-center mb-6 sm:mb-8">
           <img
             src={`/islands/workbook${workbookId}.gif`}
             alt={`Workbook ${workbookId}`}
@@ -61,7 +61,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
         </div>
 
         {/* Island path */}
-        <div className="flex flex-col items-center gap-8">
+        <div className="flex flex-col items-center gap-6 sm:gap-8">
           {islandSlots.map((lesson, index) => {
             const status = getLessonStatus(index);
             const isLocked = status === 'locked';
@@ -75,7 +75,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
             const lessonLabel = cleanTitle ? `Lesson ${lessonNumber} - ${cleanTitle}` : `Lesson ${lessonNumber}`;
 
             // Stagger: left → center → right → center to create a curved path feel
-            const offsetClass = (['ml-[-60px]', 'ml-0', 'ml-[60px]', 'ml-0'] as const)[index % 4];
+            const offsetClass = (['ml-[-50px] sm:ml-[-60px]', 'ml-0', 'ml-[50px] sm:ml-[60px]', 'ml-0'] as const)[index % 4];
 
             return (
               <div key={lesson.id} className={`relative ${offsetClass}`}>

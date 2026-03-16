@@ -51,19 +51,19 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const testUnlocked = (isAdmin || firstSixComplete) && !!daySeven;
 
   return (
-    <div className="lesson-view min-h-screen bg-blue-50 pb-32">
-      <div className="max-w-[420px] mx-auto px-4 pt-6">
-        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold" aria-label="Back">Back</button>
-        <h1 className="text-2xl font-bold mb-2 text-center text-blue-900">Lesson {lessonNumber}</h1>
-        <p className="text-center text-sm text-slate-500 mb-8">Day Islands</p>
+    <div className="lesson-view min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
+      <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
+        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">Back</button>
+        <h1 className="text-xl sm:text-2xl font-bold mb-2 text-center text-blue-900">Lesson {lessonNumber}</h1>
+        <p className="text-center text-xs sm:text-sm text-slate-500 mb-6 sm:mb-8">Day Islands</p>
 
-        <div className="flex flex-col items-center gap-6">
+        <div className="flex flex-col items-center gap-4 sm:gap-6">
           {firstSixDays.map((day, index) => {
             const status = getDayStatus(day?.id || null, index);
             const isLocked = status === 'locked';
             const isCompleted = status === 'completed';
             const dayNumber = index + 1;
-            const offsetClass = (['ml-[-50px]', 'ml-0', 'ml-[50px]', 'ml-0'] as const)[index % 4];
+            const offsetClass = (['ml-[-40px] sm:ml-[-50px]', 'ml-0', 'ml-[40px] sm:ml-[50px]', 'ml-0'] as const)[index % 4];
 
             return (
               <div key={day?.id || `day-slot-${dayNumber}`} className={`relative ${offsetClass}`}>

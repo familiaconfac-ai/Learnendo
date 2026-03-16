@@ -25,20 +25,20 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
   const categories: CategoryKey[] = ['modern', 'biblical', 'track'];
 
   return (
-    <div className="min-h-screen bg-blue-50 pb-24">
-      <div className="max-w-[420px] mx-auto px-4 pt-10">
+    <div className="min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
+      <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-8 sm:pt-10">
 
         {/* Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 sm:mb-8">
           <button type="button" onClick={onLogoClick} className="mx-auto block cursor-pointer">
             <img
               src="/learnendo-logo-transp.png"
               alt="Learnendo Logo"
               className="mx-auto"
-              style={{ width: '160px', marginBottom: '12px' }}
+              style={{ width: 'min(160px, 80vw)', marginBottom: '8px' }}
             />
           </button>
-          <p className="text-slate-500 font-semibold text-sm mt-1">Choose your language</p>
+          <p className="text-slate-500 font-semibold text-xs sm:text-sm mt-1">Choose your language</p>
         </div>
 
         {/* Category sections */}

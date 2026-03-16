@@ -458,12 +458,12 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="app">
+    <div className="app overflow-x-hidden">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-[520px] items-center justify-between gap-2 px-3 py-2">
+        <div className="mx-auto flex w-full max-w-full items-center justify-between gap-1 sm:gap-2 px-2 sm:px-3 py-2 overflow-x-auto">
           <button
             type="button"
-            className="flex h-10 items-center rounded-xl bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-700 shadow-sm active:scale-95"
+            className="flex h-10 items-center rounded-lg sm:rounded-xl bg-slate-50 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-slate-700 shadow-sm active:scale-95 flex-shrink-0"
             onClick={() => {
               setCurrentDay(null);
               setCurrentLessonId(null);
@@ -474,11 +474,11 @@ const App: React.FC = () => {
             <span>Home</span>
           </button>
 
-          <div className="relative">
+          <div className="relative flex-shrink-0">
             <button
               type="button"
               onClick={() => setCourseMenuOpen((open) => !open)}
-              className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-2xl shadow-sm active:scale-95"
+              className="flex h-10 w-10 items-center justify-center rounded-lg sm:rounded-xl bg-slate-50 text-xl sm:text-2xl shadow-sm active:scale-95"
               aria-label="Open language selector"
               aria-expanded={courseMenuOpen}
             >
@@ -492,7 +492,7 @@ const App: React.FC = () => {
                   aria-label="Close language selector"
                   onClick={() => setCourseMenuOpen(false)}
                 />
-                <div className="absolute left-0 top-12 z-40 w-52 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+                <div className="absolute right-0 sm:left-0 top-12 z-40 w-48 sm:w-52 overflow-hidden rounded-xl sm:rounded-2xl border border-slate-200 bg-white shadow-xl">
                   {COURSE_SELECTOR_OPTIONS.map((courseOption) => {
                     const selected = courseOption.id === activeCourseId;
                     return (
@@ -522,7 +522,7 @@ const App: React.FC = () => {
             )}
           </div>
 
-          <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700">
+          <div className="hidden sm:flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">
             <span className="rounded-lg bg-slate-100 px-2 py-1">🔥 {streak}</span>
             <span className="rounded-lg bg-slate-100 px-2 py-1">❄ {freeze}</span>
             <span className="rounded-lg bg-slate-100 px-2 py-1">💎 {diamonds}</span>
@@ -531,7 +531,7 @@ const App: React.FC = () => {
 
           <button
             onClick={toggleMenu}
-            className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-50 text-[26px] leading-none text-slate-700 shadow-sm active:scale-95"
+            className="flex h-10 w-10 items-center justify-center rounded-lg sm:rounded-xl bg-slate-50 text-[22px] sm:text-[26px] leading-none text-slate-700 shadow-sm active:scale-95 flex-shrink-0"
             aria-label="Open menu"
           >
             ☰
@@ -539,19 +539,19 @@ const App: React.FC = () => {
         </div>
       </header>
       {menuOpen && (
-        <div className="fixed inset-0 z-[1000]" onClick={() => setMenuOpen(false)}>
-          <aside
-            className="h-full w-[220px] bg-white shadow-[2px_0_8px_rgba(0,0,0,0.2)] p-5"
+        <div className="fixed inset-0 z-[1000] bg-black/30 backdrop-blur-sm flex items-center justify-center" onClick={() => setMenuOpen(false)}>
+          <div
+            className="bg-white rounded-3xl shadow-2xl p-6 w-11/12 max-w-sm mx-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="space-y-2 mt-6">
-              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
-              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
-              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
-              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
-              <button className="block w-full text-left px-3 py-2 rounded-lg hover:bg-slate-100" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
+            <div className="space-y-2">
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
             </div>
-          </aside>
+          </div>
         </div>
       )}
       <main className="pt-[68px]">{renderSection()}</main>
