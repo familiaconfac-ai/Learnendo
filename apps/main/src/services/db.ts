@@ -105,11 +105,30 @@ export async function updateLastActive(uid: string): Promise<void> {
 
   try {
     const userDocRef = doc(db, "users", uid);
-    await updateDoc(userDocRef, {
+    await setDoc(userDocRef, {
+      uid,
       lastActive: serverTimestamp(),
-    });
+    }, { merge: true });
   } catch (e) {
     console.error("Error updating lastActive:", e);
+  }
+}
+
+export async function recordDailyAccess(uid: string): Promise<void> {
+  if (!db) return;
+
+  try {
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const dailyAccessRef = doc(db, `users/${uid}/dailyAccess/${dayKey}`);
+
+    await setDoc(dailyAccessRef, {
+      uid,
+      date: dayKey,
+      lastAccessAt: serverTimestamp(),
+      accessCount: increment(1),
+    }, { merge: true });
+  } catch (e) {
+    console.error("Error recording daily access:", e);
   }
 }
 

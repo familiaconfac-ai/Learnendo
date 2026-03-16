@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { Course, Day, UserProgress, SectionType } from './types';
 import { Dashboard } from './components/Dashboard';
@@ -15,7 +15,7 @@ import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
-import { createStudentProfile } from './services/db';
+import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
@@ -78,16 +78,27 @@ const App: React.FC = () => {
   const freeze = Number((progress as any).iceCount ?? 0);
   const diamonds = Number((progress as any).diamonds ?? completedLessonCount * 10);
   const stars = Number((progress as any).totalStars ?? (progress.completedActivities || []).length);
+  const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
+  const closeActiveSession = () => {
+    const activeSession = activeSessionRef.current;
+    if (!activeSession) return;
+
+    const durationSeconds = Math.max(1, Math.round((Date.now() - activeSession.startedAt) / 1000));
+    activeSessionRef.current = null;
+    void finishSession(activeSession.uid, activeSession.sessionId, durationSeconds);
+  };
+
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       const authenticatedUser = firebaseUser && !firebaseUser.isAnonymous ? firebaseUser : null;
       setUser(authenticatedUser);
       setAuthLoading(false);
 
       if (!authenticatedUser) {
+        closeActiveSession();
         setCurrentCourseId(null);
         setCurrentSection(SectionType.COURSES);
         setCurrentWorkbookId(null);
@@ -119,9 +130,59 @@ const App: React.FC = () => {
         setCurrentWorkbookId(1);
         setCurrentSection(SectionType.WORKBOOK);
       }
+
+      try {
+        await updateLastActive(authenticatedUser.uid);
+        await recordDailyAccess(authenticatedUser.uid);
+
+        const existingSession = activeSessionRef.current;
+        if (!existingSession || existingSession.uid !== authenticatedUser.uid) {
+          closeActiveSession();
+          const sessionId = await createSession(
+            authenticatedUser.uid,
+            progress.currentLesson,
+            typeof navigator !== 'undefined' ? navigator.userAgent : undefined
+          );
+
+          if (sessionId) {
+            activeSessionRef.current = {
+              uid: authenticatedUser.uid,
+              sessionId,
+              startedAt: Date.now(),
+            };
+          }
+        }
+      } catch (error) {
+        console.warn('[App] Failed to track auth activity:', error);
+      }
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      closeActiveSession();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      void updateLastActive(user.uid);
+      void recordDailyAccess(user.uid);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      closeActiveSession();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
   useEffect(() => {
