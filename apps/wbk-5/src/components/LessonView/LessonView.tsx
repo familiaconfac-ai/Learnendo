@@ -49,6 +49,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const firstUnlockedIndex = firstSixDays.findIndex((day, index) => getDayStatus(day?.id || null, index) === 'in-progress');
   const firstSixComplete = firstSixDays.every((day) => day && completed.includes(day.id));
   const testUnlocked = (isAdmin || firstSixComplete) && !!daySeven;
+  const lessonFullyCompleted = hasPassedTest && !isAdmin;
 
   return (
     <div className="lesson-view min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
@@ -76,10 +77,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 )}
                 <button
                   onClick={() => {
-                    if (isLocked || !day) return;
+                    if (isLocked || lessonFullyCompleted || !day) return;
                     onStartDay(day);
                   }}
-                  disabled={isLocked}
+                  disabled={isLocked || lessonFullyCompleted}
                   className={`relative overflow-hidden w-[72px] h-[72px] rounded-full flex items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
                     isLocked
                       ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
@@ -108,10 +109,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
           <div className="relative ml-0">
             <button
               onClick={() => {
-                if (!testUnlocked || !daySeven) return;
+                if (!testUnlocked || hasPassedTest || !daySeven) return;
                 onStartWeeklyTest(daySeven);
               }}
-              disabled={!testUnlocked}
+              disabled={!testUnlocked || hasPassedTest}
               className={`relative overflow-hidden w-[78px] h-[78px] rounded-full flex items-center justify-center text-center font-bold text-xs transition-transform active:scale-95 ${
                 !testUnlocked
                   ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
@@ -123,14 +124,14 @@ export const LessonView: React.FC<LessonViewProps> = ({
               <img
                 src="/islands/days/day7.png"
                 alt="Day 7"
-                className={`absolute inset-0 w-full h-full object-cover rounded-full ${!testUnlocked ? 'opacity-10' : 'opacity-30'}`}
+                className={`absolute inset-0 w-full h-full object-cover rounded-full ${!testUnlocked || hasPassedTest ? 'opacity-10' : 'opacity-30'}`}
                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
               />
               <span className="relative z-10">
                 {hasPassedTest ? 'Done' : 'Test'}
               </span>
             </button>
-            <p className={`text-center text-xs mt-2 leading-tight ${!testUnlocked ? 'text-slate-400' : 'text-slate-700'}`}>
+            <p className={`text-center text-xs mt-2 leading-tight ${!testUnlocked || hasPassedTest ? 'text-slate-400' : 'text-slate-700'}`}>
               Day 7 (Final Test)
             </p>
           </div>
@@ -158,3 +159,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
     </div>
   );
 };
+
+
+
+

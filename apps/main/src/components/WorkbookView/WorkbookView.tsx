@@ -31,8 +31,6 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
       .map((activityId) => Number(activityId.replace(LESSON_TEST_PREFIX, '')))
       .filter((value) => Number.isFinite(value)),
   );
-  const currentLessonNumber = Math.min(Math.max(progress.currentLesson || 1, 1), totalIslands);
-
   const getLessonStatus = (index: number): 'completed' | 'in-progress' | 'locked' => {
     const lessonNumber = index + 1;
     if (completedLessonSet.has(lessonNumber)) return 'completed';
@@ -71,7 +69,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
               .replace(/^Workbook\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .replace(/^Lesson\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .trim();
-            const isCurrent = lessonNumber === currentLessonNumber && !isCompleted;
+            const isCurrent = status === 'in-progress' && index === firstUnlockedIndex;
             const lessonLabel = cleanTitle ? `Lesson ${lessonNumber} - ${cleanTitle}` : `Lesson ${lessonNumber}`;
 
             // Stagger: left → center → right → center to create a curved path feel

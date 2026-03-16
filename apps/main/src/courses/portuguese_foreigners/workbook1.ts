@@ -1,6 +1,4 @@
-// Portuguese for Foreigners — Workbook 1 placeholder.
-export const workbook1 = {
-  id: 'pt_for_wb1',
-  title: 'Portuguese for Foreigners Workbook 1',
-  lessons: [] as any[],
-};
+import { buildReplicatedWorkbook1 } from '../shared/replicatedWorkbook1';
+
+export const workbook1 = buildReplicatedWorkbook1('pt');
+
