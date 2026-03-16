@@ -387,3 +387,337 @@ export async function saveAssessmentResult(record: Omit<AssessmentRecord, 'times
     return null;
   }
 }
+
+// ===== WEEKLY/DAILY PROGRESS TRACKING =====
+
+export interface DailyProgressData {
+  dayId: string;
+  dayNumber: number;
+  scheduledDate: string; // ISO date
+  completedDate?: string; // ISO date
+  completedOnTime: boolean;
+  status: 'pending' | 'completed_on_time' | 'completed_late';
+  diamondEarned: boolean;
+  fireEarned: boolean;
+  iceEarned: boolean;
+}
+
+export interface WeeklyProgressData {
+  weekId: string;
+  workbookId: number;
+  lessonId: number;
+  weekStartDate: string; // ISO date
+  weekEndDate?: string;
+  days: DailyProgressData[];
+  totalDaysCompleted: number;
+  fireCount: number;
+  iceCount: number;
+  diamondsEarned: number;
+  starsEarned: number;
+  completed: boolean;
+  completedAt?: any;
+}
+
+export interface PlacementTestRecord {
+  testId: string;
+  userId: string;
+  fullName: string;
+  whatsapp: string;
+  score: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  estimatedLevel: string;
+  timestamp: any;
+  isAnonymous: boolean;
+}
+
+export interface WeekCompletionResult {
+  diamondsEarned: number;
+  fireCount: number;
+  iceCount: number;
+  starsEarned: number;
+  weekNumber: number;
+}
+
+/**
+ * Generate a week ID from workbook and lesson
+ */
+function generateWeekId(workbookId: number, lessonId: number): string {
+  return `workbook_${workbookId}_lesson_${lessonId}`;
+}
+
+/**
+ * Get the scheduled date for a day based on week start and day number
+ */
+function getScheduledDate(weekStartDate: string, dayNumber: number): string {
+  const date = new Date(weekStartDate);
+  date.setDate(date.getDate() + (dayNumber - 1));
+  return date.toISOString().split('T')[0];
+}
+
+/**
+ * Create a new weekly progress record
+ */
+export async function createWeeklyProgress(
+  uid: string,
+  workbookId: number,
+  lessonId: number,
+  weekStartDate: string
+): Promise<WeeklyProgressData | null> {
+  if (!db) {
+    console.warn("Firestore not initialized, skipping weekly progress creation.");
+    return null;
+  }
+
+  try {
+    const weekId = generateWeekId(workbookId, lessonId);
+    
+    // Initialize 7 days
+    const days: DailyProgressData[] = Array.from({ length: 7 }, (_, i) => ({
+      dayId: `day_${i + 1}`,
+      dayNumber: i + 1,
+      scheduledDate: getScheduledDate(weekStartDate, i + 1),
+      completedOnTime: false,
+      status: 'pending',
+      diamondEarned: false,
+      fireEarned: false,
+      iceEarned: false,
+    }));
+
+    const weekData: WeeklyProgressData = {
+      weekId,
+      workbookId,
+      lessonId,
+      weekStartDate,
+      days,
+      totalDaysCompleted: 0,
+      fireCount: 0,
+      iceCount: 0,
+      diamondsEarned: 0,
+      starsEarned: 0,
+      completed: false,
+    };
+
+    const weekDocRef = doc(db, `users/${uid}/weeklyProgress/${weekId}`);
+    await setDoc(weekDocRef, weekData);
+    console.log("Weekly progress created. Week:", weekId);
+    return weekData;
+  } catch (e) {
+    console.error("Error creating weekly progress:", e);
+    return null;
+  }
+}
+
+/**
+ * Get current weekly progress
+ */
+export async function getWeeklyProgress(uid: string, weekId: string): Promise<WeeklyProgressData | null> {
+  if (!db) return null;
+
+  try {
+    const weekDocRef = doc(db, `users/${uid}/weeklyProgress/${weekId}`);
+    const weekSnap = await getDoc(weekDocRef);
+    return weekSnap.exists() ? (weekSnap.data() as WeeklyProgressData) : null;
+  } catch (e) {
+    console.error("Error getting weekly progress:", e);
+    return null;
+  }
+}
+
+/**
+ * Record daily progress and calculate fire/ice/diamond points
+ */
+export async function recordDailyProgress(
+  uid: string,
+  weekId: string,
+  dayNumber: number,
+  completedDate: string
+): Promise<{ isDayComplete: boolean; fireEarned: boolean; iceEarned: boolean; isWeekComplete: boolean }> {
+  if (!db) {
+    return { isDayComplete: false, fireEarned: false, iceEarned: false, isWeekComplete: false };
+  }
+
+  try {
+    const weekData = await getWeeklyProgress(uid, weekId);
+    if (!weekData) {
+      console.warn("Weekly progress not found:", weekId);
+      return { isDayComplete: false, fireEarned: false, iceEarned: false, isWeekComplete: false };
+    }
+
+    const dayIndex = dayNumber - 1;
+    if (dayIndex < 0 || dayIndex >= weekData.days.length) {
+      console.warn("Invalid day number:", dayNumber);
+      return { isDayComplete: false, fireEarned: false, iceEarned: false, isWeekComplete: false };
+    }
+
+    const day = weekData.days[dayIndex];
+    const scheduledDate = day.scheduledDate;
+    const completedDateObj = new Date(completedDate).toISOString().split('T')[0];
+    const scheduledDateObj = new Date(scheduledDate).toISOString().split('T')[0];
+
+    // Determine if on time or late
+    const isOnTime = completedDateObj === scheduledDateObj;
+    const fireEarned = isOnTime;
+    const iceEarned = !isOnTime && !day.iceEarned;
+
+    // Update day record
+    const updatedDay: DailyProgressData = {
+      ...day,
+      completedDate: completedDate,
+      completedOnTime: isOnTime,
+      status: isOnTime ? 'completed_on_time' : 'completed_late',
+      diamondEarned: true,
+      fireEarned: fireEarned,
+      iceEarned: iceEarned,
+    };
+
+    // Calculate new totals
+    const diamondsEarned = weekData.days.filter((d, idx) => idx < dayIndex ? d.diamondEarned : d.diamondEarned || (idx === dayIndex)).length;
+    const fireCount = weekData.days.filter((d, idx) => idx < dayIndex ? d.fireEarned : (idx === dayIndex && fireEarned)).length;
+    const iceCount = weekData.days.filter((d, idx) => idx < dayIndex ? d.iceEarned : (idx === dayIndex && iceEarned)).length;
+
+    const updatedDays = [...weekData.days];
+    updatedDays[dayIndex] = updatedDay;
+
+    const starsEarned = diamondsEarned + fireCount;
+    const isWeekComplete = diamondsEarned === 7;
+
+    const updatedWeekData: WeeklyProgressData = {
+      ...weekData,
+      days: updatedDays,
+      totalDaysCompleted: diamondsEarned,
+      fireCount,
+      iceCount,
+      diamondsEarned,
+      starsEarned,
+      completed: isWeekComplete,
+      completedAt: isWeekComplete ? serverTimestamp() : undefined,
+    };
+
+    const weekDocRef = doc(db, `users/${uid}/weeklyProgress/${weekId}`);
+    await setDoc(weekDocRef, updatedWeekData);
+
+    // Update total user stats
+    await updateUserTotalProgress(uid, {
+      diamondsEarned: fireEarned ? 1 : 0,
+      fireEarned: fireEarned ? 1 : 0,
+      iceEarned: iceEarned ? 1 : 0,
+    });
+
+    console.log(`Day ${dayNumber} recorded. Fire: ${fireEarned}, Ice: ${iceEarned}, Week complete: ${isWeekComplete}`);
+
+    return {
+      isDayComplete: true,
+      fireEarned,
+      iceEarned,
+      isWeekComplete,
+    };
+  } catch (e) {
+    console.error("Error recording daily progress:", e);
+    return { isDayComplete: false, fireEarned: false, iceEarned: false, isWeekComplete: false };
+  }
+}
+
+/**
+ * Update user's total progress stats
+ */
+export async function updateUserTotalProgress(
+  uid: string,
+  increment_values: { diamondsEarned?: number; fireEarned?: number; iceEarned?: number }
+): Promise<void> {
+  if (!db) return;
+
+  try {
+    const userDocRef = doc(db, "users", uid);
+    const updates: any = { lastUpdated: serverTimestamp() };
+
+    if (increment_values.diamondsEarned) {
+      updates.totalDiamonds = increment(increment_values.diamondsEarned);
+    }
+    if (increment_values.fireEarned) {
+      updates.totalFire = increment(increment_values.fireEarned);
+    }
+    if (increment_values.iceEarned) {
+      updates.totalIce = increment(increment_values.iceEarned);
+    }
+
+    await updateDoc(userDocRef, updates);
+  } catch (e) {
+    console.error("Error updating user total progress:", e);
+  }
+}
+
+/**
+ * Save placement test result
+ */
+export async function savePlacementTestResult(
+  uid: string,
+  fullName: string,
+  whatsapp: string,
+  score: number,
+  correctAnswers: number,
+  totalQuestions: number,
+  estimatedLevel: string,
+  isAnonymous: boolean = true
+): Promise<string | null> {
+  if (!db) {
+    console.warn("Firestore not initialized, skipping placement test save.");
+    return null;
+  }
+
+  try {
+    const testId = `placement_${uid}_${Date.now()}`;
+    const record: PlacementTestRecord = {
+      testId,
+      userId: uid,
+      fullName,
+      whatsapp,
+      score,
+      correctAnswers,
+      totalQuestions,
+      estimatedLevel,
+      timestamp: serverTimestamp(),
+      isAnonymous,
+    };
+
+    const testDocRef = doc(db, `placementTests/${testId}`);
+    await setDoc(testDocRef, record);
+
+    // Also update user profile with score
+    const userDocRef = doc(db, "users", uid);
+    await updateDoc(userDocRef, {
+      placementScore: score,
+      placementLevel: estimatedLevel,
+      placementCompletedAt: serverTimestamp(),
+    });
+
+    console.log("Placement test saved. ID:", testId, "Level:", estimatedLevel);
+    return testId;
+  } catch (e) {
+    console.error("Error saving placement test:", e);
+    return null;
+  }
+}
+
+/**
+ * Get final week completion result
+ */
+export async function getWeekCompletionResult(uid: string, weekId: string): Promise<WeekCompletionResult | null> {
+  if (!db) return null;
+
+  try {
+    const weekData = await getWeeklyProgress(uid, weekId);
+    if (!weekData) return null;
+
+    return {
+      diamondsEarned: weekData.diamondsEarned,
+      fireCount: weekData.fireCount,
+      iceCount: weekData.iceCount,
+      starsEarned: weekData.starsEarned,
+      weekNumber: parseInt(weekId.split('_')[3] || '1'),
+    };
+  } catch (e) {
+    console.error("Error getting week completion result:", e);
+    return null;
+  }
+}
