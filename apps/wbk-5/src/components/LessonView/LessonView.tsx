@@ -43,7 +43,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
 
     if (index === 0) return 'in-progress';
     const prevDay = firstSixDays[index - 1];
-    return prevDay ? completed.includes(prevDay.id) ? 'in-progress' : 'locked' : 'locked';
+    return prevDay ? (completed.includes(prevDay.id) ? 'in-progress' : 'locked') : 'locked';
   };
 
   const firstUnlockedIndex = firstSixDays.findIndex((day, index) => getDayStatus(day?.id || null, index) === 'in-progress');
@@ -53,19 +53,19 @@ export const LessonView: React.FC<LessonViewProps> = ({
   return (
     <div className="lesson-view min-h-screen bg-blue-50 pb-32">
       <div className="max-w-[420px] mx-auto px-4 pt-6">
-        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold">← Back</button>
+        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold" aria-label="Back">Back</button>
         <h1 className="text-2xl font-bold mb-2 text-center text-blue-900">Lesson {lessonNumber}</h1>
         <p className="text-center text-sm text-slate-500 mb-8">Day Islands</p>
 
         <div className="flex flex-col items-center gap-6">
           {firstSixDays.map((day, index) => {
             const status = getDayStatus(day?.id || null, index);
-          const isLocked = status === 'locked';
-          const isCompleted = status === 'completed';
+            const isLocked = status === 'locked';
+            const isCompleted = status === 'completed';
             const dayNumber = index + 1;
             const offsetClass = (['ml-[-50px]', 'ml-0', 'ml-[50px]', 'ml-0'] as const)[index % 4];
 
-          return (
+            return (
               <div key={day?.id || `day-slot-${dayNumber}`} className={`relative ${offsetClass}`}>
                 {index === firstUnlockedIndex && (
                   <img
@@ -80,7 +80,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                     onStartDay(day);
                   }}
                   disabled={isLocked}
-                  className={`w-[70px] h-[70px] rounded-full flex items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
+                  className={`relative overflow-hidden w-[72px] h-[72px] rounded-full flex items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
                     isLocked
                       ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
                       : isCompleted
@@ -88,13 +88,21 @@ export const LessonView: React.FC<LessonViewProps> = ({
                       : 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
                   }`}
                 >
-                  {isCompleted ? '✓' : isLocked ? '🔒' : dayNumber}
+                  <img
+                    src={`/islands/days/day${dayNumber}.png`}
+                    alt={`Day ${dayNumber}`}
+                    className={`absolute inset-0 w-full h-full object-cover rounded-full ${isLocked ? 'opacity-10' : 'opacity-30'}`}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <span className="relative z-10">
+                    {isCompleted ? 'Done' : isLocked ? 'Lock' : dayNumber}
+                  </span>
                 </button>
                 <p className={`text-center text-xs mt-2 leading-tight ${isLocked ? 'text-slate-400' : 'text-slate-600'}`}>
                   {`Day ${dayNumber}`}
                 </p>
               </div>
-          );
+            );
           })}
 
           <div className="relative ml-0">
@@ -104,7 +112,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 onStartWeeklyTest(daySeven);
               }}
               disabled={!testUnlocked}
-              className={`w-[90px] h-[90px] rounded-full flex items-center justify-center text-center font-bold text-xs transition-transform active:scale-95 ${
+              className={`relative overflow-hidden w-[78px] h-[78px] rounded-full flex items-center justify-center text-center font-bold text-xs transition-transform active:scale-95 ${
                 !testUnlocked
                   ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
                   : hasPassedTest
@@ -112,7 +120,15 @@ export const LessonView: React.FC<LessonViewProps> = ({
                   : 'bg-amber-500 text-white shadow-[0_4px_0_0_#b45309]'
               }`}
             >
-              {hasPassedTest ? 'Lesson Complete' : 'Day 7 Test'}
+              <img
+                src="/islands/days/day7.png"
+                alt="Day 7"
+                className={`absolute inset-0 w-full h-full object-cover rounded-full ${!testUnlocked ? 'opacity-10' : 'opacity-30'}`}
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+              />
+              <span className="relative z-10">
+                {hasPassedTest ? 'Done' : 'Test'}
+              </span>
             </button>
             <p className={`text-center text-xs mt-2 leading-tight ${!testUnlocked ? 'text-slate-400' : 'text-slate-700'}`}>
               Day 7 (Final Test)

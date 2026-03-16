@@ -113,3 +113,40 @@ export interface OldUserProgress {
   bypassActive?: boolean;
   sentToTeacher?: boolean;
 }
+
+export type LessonLanguageCode = 'en' | 'pt' | 'es' | 'el' | 'he';
+
+export interface LessonLanguageContent {
+  title: string;
+  subtitle?: string;
+  vocabularyNew?: string[];
+  description?: string;
+}
+
+export interface ScalableLessonPractice {
+  quiz?: Exercise[];
+  flashcards?: string[];
+  matching?: Exercise[];
+  fillBlanks?: Exercise[];
+  speaking?: Exercise[];
+  listening?: Exercise[];
+  audioReview?: string[];
+  extraPractice?: Exercise[];
+}
+
+export interface ScalableLesson {
+  id: string;
+  unit: number;
+  workbook: number;
+  image: string;
+  dayImages: string[];
+  vocabularyNew: string[];
+  languages: Record<LessonLanguageCode, LessonLanguageContent>;
+  practice: ScalableLessonPractice;
+}
+
+export interface ScalableWorkbook {
+  id: number;
+  title: string;
+  lessons: ScalableLesson[];
+}

@@ -12,11 +12,6 @@ interface WorkbookViewProps {
 
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
 
-const getLessonNumberFromId = (lessonId: string) => {
-  const match = lessonId.match(/(\d+)/);
-  return match ? Number(match[1]) : NaN;
-};
-
 export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons, progress, onSelectLesson, isAdmin = false, onBack }) => {
   const completed = progress.completedActivities || [];
   const totalIslands = workbookId === 1 ? 12 : Math.max(lessons.length, 1);
@@ -56,21 +51,14 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold" aria-label="Back">←</button>
         <h1 className="text-xl font-bold mb-4 text-center text-blue-900">Workbook {workbookId}</h1>
 
-        {/* Workbook island — gold anchor */}
+        {/* Workbook island */}
         <div className="flex flex-col items-center mb-4">
-          <div
-            className="relative w-[90px] h-[90px] rounded-full overflow-hidden border-2 border-[#b8962e] shadow-[0_5px_0_0_#8f6e20] flex items-center justify-center font-bold text-white"
-            style={{ background: 'linear-gradient(135deg, #D4AF37, #F7E27C)' }}
-          >
-            <img
-              src={`/islands/workbook/workbook${workbookId}.png`}
-              alt=""
-              className="absolute inset-0 w-full h-full object-cover opacity-50 rounded-full"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-            />
-            <span className="relative z-10 text-2xl select-none" aria-hidden="true">★</span>
-          </div>
-          <p className="text-center text-xs mt-2 font-semibold text-amber-700">Workbook {workbookId}</p>
+          <img
+            src={`/islands/workbook${workbookId}.gif`}
+            alt={`Workbook ${workbookId}`}
+            style={{ width: '108px' }}
+            className="w-[108px] h-[108px] object-contain"
+          />
         </div>
 
         {/* Island path */}
@@ -81,9 +69,11 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
             const isCompleted = status === 'completed';
             const lessonNumber = index + 1;
             const cleanTitle = lesson.title
+              .replace(/^Workbook\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .replace(/^Lesson\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .trim();
             const isCurrent = lessonNumber === currentLessonNumber && !isCompleted;
+            const lessonLabel = cleanTitle ? `Lesson ${lessonNumber} - ${cleanTitle}` : `Lesson ${lessonNumber}`;
 
             // Stagger: left → center → right → center to create a curved path feel
             const offsetClass = (['ml-[-60px]', 'ml-0', 'ml-[60px]', 'ml-0'] as const)[index % 4];
@@ -103,46 +93,28 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                     onSelectLesson(lesson.id);
                   }}
                   disabled={isLocked}
-                  className={lessonNumber === 1 && !isLocked && !isCompleted
-                    ? `relative flex items-center justify-center transition-transform active:scale-95`
-                    : `relative overflow-hidden w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
+                  className={`relative overflow-hidden w-[70px] h-[70px] rounded-full flex flex-col items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
                         isLocked
                           ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
                           : isCompleted
                           ? 'bg-green-400 text-white shadow-[0_4px_0_0_#16a34a]'
                           : 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
-                      }${isCurrent ? ' animate-pulse' : ''}`
-                  }
+                      }${isCurrent ? ' animate-pulse' : ''}`}
                 >
-                  {lessonNumber === 1 && !isLocked && !isCompleted ? (
-                    <img
-                      src="/islands/ilhaLesson1.png"
-                      alt="Alphabet Island"
-                      style={{ width: "180px", height: "180px", objectFit: "contain", marginBottom: "10px" }}
-                    />
-                  ) : (
-                    <>
-                      {!isLocked && (
-                        <img
-                          src={`/islands/lessons/lesson${lessonNumber}.png`}
-                          alt=""
-                          className="absolute inset-0 w-full h-full object-cover opacity-25 rounded-full"
-                          onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      )}
-                      <span className="relative z-10">
-                        {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
-                      </span>
-                    </>
-                  )}
+                  <img
+                    src={`/islands/lessons/lesson${lessonNumber}.png`}
+                    alt={`Lesson ${lessonNumber}`}
+                    className={`absolute inset-0 w-full h-full object-cover ${isLocked ? 'opacity-10' : 'opacity-30'} rounded-full`}
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <span className="relative z-10">
+                    {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
+                  </span>
                 </button>
-                <p className={`text-center text-xs mt-2 max-w-[90px] leading-tight ${
+                <p className={`text-center text-xs mt-2 max-w-[140px] leading-tight ${
                   isLocked ? 'text-slate-400' : 'text-slate-600'
                 }`}>
-                  {`Lesson ${lessonNumber}`}
-                  {cleanTitle && cleanTitle !== lesson.title && (
-                    <span className="block text-[10px] leading-snug mt-0.5 opacity-80">{cleanTitle}</span>
-                  )}
+                  {lessonLabel}
                 </p>
               </div>
             );

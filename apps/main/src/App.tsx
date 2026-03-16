@@ -482,16 +482,15 @@ const App: React.FC = () => {
         <div className="mx-auto flex w-full max-w-[520px] items-center justify-between gap-2 px-3 py-2">
           <button
             type="button"
-            className="flex items-center rounded-xl px-2 py-1 active:scale-95"
+            className="flex h-10 items-center rounded-xl bg-slate-50 px-3 py-1 text-sm font-semibold text-slate-700 shadow-sm active:scale-95"
             onClick={() => {
               setCurrentDay(null);
               setCurrentLessonId(null);
-              setCurrentWorkbookId(progress.currentWorkbook || 1);
-              setCurrentSection(SectionType.WORKBOOK);
+              setCurrentSection(SectionType.COURSES);
             }}
-            aria-label="Go to lesson islands"
+            aria-label="Go to language selection"
           >
-            <img src="/learnendo-logo-transp.png" alt="Learnendo" className="logo-header h-[44px] w-[44px] object-contain" />
+            <span>Home</span>
           </button>
 
           <div className="relative">
