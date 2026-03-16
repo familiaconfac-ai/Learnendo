@@ -49,7 +49,6 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
     <div className="workbook-view min-h-screen bg-blue-50 pb-32">
       <div className="max-w-[420px] mx-auto px-4 pt-6">
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold" aria-label="Back">←</button>
-        <h1 className="text-xl font-bold mb-4 text-center text-blue-900">Workbook {workbookId}</h1>
 
         {/* Workbook island */}
         <div className="flex flex-col items-center mb-4">
@@ -102,7 +101,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                       }${isCurrent ? ' animate-pulse' : ''}`}
                 >
                   <img
-                    src={`/islands/lessons/lesson${lessonNumber}.png`}
+                    src={`/islands/ilhaLesson1.png`}
                     alt={`Lesson ${lessonNumber}`}
                     className={`absolute inset-0 w-full h-full object-cover ${isLocked ? 'opacity-10' : 'opacity-30'} rounded-full`}
                     onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
