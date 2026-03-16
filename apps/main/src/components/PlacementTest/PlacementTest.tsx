@@ -127,7 +127,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
     }
 
     setTestCompleted(true);
-    onComplete(percentage);
+    // NOTE: do NOT call onComplete() here — the result screen handles navigation
   };
 
   if (testCompleted) {

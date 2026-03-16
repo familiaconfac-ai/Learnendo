@@ -523,7 +523,8 @@ const App: React.FC = () => {
             }}
             aria-label="Go to language selection"
           >
-            <span>Home</span>
+            <span className="text-base leading-none">🏠</span>
+            <span className="ml-1">Home</span>
           </button>
 
           <div className="relative flex-shrink-0">
@@ -574,11 +575,11 @@ const App: React.FC = () => {
             )}
           </div>
 
-          <div className="hidden sm:flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">
-            <span className="rounded-lg bg-slate-100 px-2 py-1">🔥 {streak}</span>
-            <span className="rounded-lg bg-slate-100 px-2 py-1">❄ {freeze}</span>
-            <span className="rounded-lg bg-slate-100 px-2 py-1">💎 {diamonds}</span>
-            <span className="rounded-lg bg-slate-100 px-2 py-1">⭐ {stars}</span>
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {streak}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {freeze}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {diamonds}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">⭐ {stars}</span>
           </div>
 
           <button
