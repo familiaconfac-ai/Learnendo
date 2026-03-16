@@ -6,6 +6,8 @@ interface PlacementTestProps {
 }
 
 export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
+  const [studentName, setStudentName] = useState('');
+  const [studentWhatsApp, setStudentWhatsApp] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<(number | null)[]>(new Array(PLACEMENT_TEST_QUESTIONS.length).fill(null));
   const [testStarted, setTestStarted] = useState(false);
@@ -115,6 +117,19 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
     const { level, percentage } = classifyLevel(correctCount, PLACEMENT_TEST_QUESTIONS.length);
     const levelInfo = CEFR_LEVELS[level as keyof typeof CEFR_LEVELS];
 
+    const handleContactTeacher = () => {
+      const message = `Hello! I have just completed the Placement Test.
+My name is ${studentName}.
+My WhatsApp number is ${studentWhatsApp}.
+My score was ${correctCount}/${PLACEMENT_TEST_QUESTIONS.length}.
+My estimated level was ${level}.
+I would like to receive feedback about my result.`;
+
+      const encodedMessage = encodeURIComponent(message);
+      const teacherWhatsAppUrl = `https://wa.me/5517991010930?text=${encodedMessage}`;
+      window.open(teacherWhatsAppUrl, '_blank');
+    };
+
     return (
       <div className="min-h-screen bg-gradient-to-b from-blue-100 to-blue-50 pb-28 w-full overflow-x-hidden flex items-center justify-center px-4 py-8">
         <div className="max-w-md w-full">
@@ -141,12 +156,22 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
               <p className="text-sm text-amber-800">{levelInfo.recommendation}</p>
             </div>
 
-            <button
-              onClick={() => onComplete(percentage)}
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
-            >
-              Start Learning
-            </button>
+            <div className="space-y-3">
+              <button
+                onClick={handleContactTeacher}
+                className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
+              >
+                <i className="fab fa-whatsapp text-xl"></i>
+                Contact Teacher on WhatsApp
+              </button>
+
+              <button
+                onClick={() => onComplete(percentage)}
+                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
+              >
+                Start Learning
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -154,11 +179,13 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
   }
 
   if (!testStarted) {
+    const isFormValid = studentName.trim() !== '' && studentWhatsApp.trim() !== '';
+
     return (
       <div className="min-h-screen bg-gradient-to-b from-blue-100 to-blue-50 pb-28 w-full overflow-x-hidden flex items-center justify-center px-4 py-8">
         <div className="max-w-md w-full">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center">
-            <div className="mb-6">
+          <div className="bg-white rounded-3xl shadow-2xl p-8">
+            <div className="mb-6 text-center">
               <div className="text-6xl mb-4">📝</div>
               <h1 className="text-3xl font-bold text-blue-900 mb-2">Placement Test</h1>
               <p className="text-slate-500 text-sm">Discover your English level</p>
@@ -174,13 +201,39 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
               </ul>
             </div>
 
-            <p className="text-xs text-slate-500 mb-6">You will be classified from Beginner to C2 level based on your answers.</p>
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">Your Full Name *</label>
+                <input
+                  type="text"
+                  value={studentName}
+                  onChange={(e) => setStudentName(e.target.value)}
+                  placeholder="Enter your full name"
+                  className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">WhatsApp Number *</label>
+                <input
+                  type="tel"
+                  value={studentWhatsApp}
+                  onChange={(e) => setStudentWhatsApp(e.target.value.replace(/\D/g, ''))}
+                  placeholder="55 11 99999-9999"
+                  className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                />
+                <p className="text-xs text-slate-500 mt-1">We'll use this to send you your results</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-6 text-center">You will be classified from Beginner to C2 level based on your answers.</p>
 
             <button
               onClick={() => setTestStarted(true)}
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
+              disabled={!isFormValid}
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
             >
-              Start Test
+              {isFormValid ? 'Start Test' : 'Fill in name and WhatsApp'}
             </button>
           </div>
         </div>
