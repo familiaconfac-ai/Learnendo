@@ -15,6 +15,9 @@ import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
 import { createStudentProfile } from './services/db';
+import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
+import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
+import { WeekCompletionResult } from './services/db';
 
 const DEFAULT_COURSE_ID = 'english';
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
@@ -58,6 +61,7 @@ const App: React.FC = () => {
   const [lessonTestScores, setLessonTestScores] = useState<Record<number, number>>({});
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
   const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
   const activeCourse = COURSES.find((course) => course.id === activeCourseId) ?? null;
@@ -271,7 +275,7 @@ const App: React.FC = () => {
     setMenuOpen(false);
   };
 
-  const handleDayComplete = (dayId: string, score: number) => {
+  const handleDayComplete = async (dayId: string, score: number) => {
     console.log(`[App] Day "${dayId}" completed. Score: ${score}%`);
 
     if (activeWeeklyTest) {
@@ -324,6 +328,35 @@ const App: React.FC = () => {
     } catch {
       // Persistence failure should not block navigation.
     }
+
+    // Firebase: Track day completion and check for week completion
+    if (user?.uid && currentLessonId) {
+      try {
+        const lessonNumber = getLessonNumberFromId(currentLessonId);
+        const dayMatch = dayId.match(/d(\d+)/);
+        const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
+
+        if (!isNaN(lessonNumber) && !isNaN(dayNumber)) {
+          const result = await completeDayAndGetResult(
+            user.uid,
+            progress.currentWorkbook,
+            lessonNumber,
+            dayNumber
+          );
+
+          console.log('[App] Firebase day completion result:', result);
+
+          // Show week completion popup if week is complete
+          if (result.weekComplete && result.weekResult) {
+            setWeekCompletionResult(result.weekResult);
+          }
+        }
+      } catch (error) {
+        console.warn('[App] Firebase day tracking failed:', error);
+        // Continue UI flow even if Firebase fails
+      }
+    }
+
     // Return to day islands after finishing day practice.
     setCurrentDay(null);
     setCurrentSection(SectionType.LESSON);
@@ -555,6 +588,12 @@ const App: React.FC = () => {
         </div>
       )}
       <main className="pt-[68px]">{renderSection()}</main>
+      {weekCompletionResult && (
+        <WeekCompletionPopup
+          result={weekCompletionResult}
+          onClose={() => setWeekCompletionResult(null)}
+        />
+      )}
       <BottomNavigation currentSection={currentSection} onNavigate={handleNavigate} onShare={handleShare} />
     </div>
   );

@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion } from '../../data/placementTestQuestions';
+import { auth } from '../../services/firebase';
+import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
 
 interface PlacementTestProps {
   onComplete: (score: number) => void;
@@ -94,7 +96,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
     }
   };
 
-  const handleCompleteTest = (finalAnswers: (number | null)[]) => {
+  const handleCompleteTest = async (finalAnswers: (number | null)[]) => {
     const correctCount = finalAnswers.reduce((count, answer, index) => {
       if (answer === PLACEMENT_TEST_QUESTIONS[index].correctAnswerIndex) {
         return count + 1;
@@ -102,7 +104,28 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
       return count;
     }, 0);
 
-    const { percentage } = classifyLevel(correctCount, PLACEMENT_TEST_QUESTIONS.length);
+    const { percentage, level } = classifyLevel(correctCount, PLACEMENT_TEST_QUESTIONS.length);
+    
+    // Save to Firebase
+    if (auth.currentUser) {
+      try {
+        await saveStudentPlacementTest(
+          auth.currentUser.uid,
+          studentName,
+          studentWhatsApp,
+          percentage,
+          correctCount,
+          PLACEMENT_TEST_QUESTIONS.length,
+          level,
+          auth.currentUser.isAnonymous
+        );
+        console.log('[PlacementTest] Result saved to Firebase');
+      } catch (error) {
+        console.warn('[PlacementTest] Firebase save failed:', error);
+        // Continue showing results even if Firebase fails
+      }
+    }
+
     setTestCompleted(true);
     onComplete(percentage);
   };
