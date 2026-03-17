@@ -119,11 +119,19 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
           level,
           auth.currentUser.isAnonymous
         );
-        console.log('[PlacementTest] Result saved to Firebase');
+        console.log('[PlacementTest] ✅ Result saved to Firebase', {
+          uid: auth.currentUser.uid,
+          name: studentName,
+          level,
+          percentage,
+          isAnonymous: auth.currentUser.isAnonymous
+        });
       } catch (error) {
-        console.warn('[PlacementTest] Firebase save failed:', error);
+        console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);
         // Continue showing results even if Firebase fails
       }
+    } else {
+      console.warn('[PlacementTest] ⚠️ auth.currentUser not available - cannot save to Firebase');
     }
 
     setTestCompleted(true);

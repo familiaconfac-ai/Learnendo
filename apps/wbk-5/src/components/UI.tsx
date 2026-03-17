@@ -182,7 +182,7 @@ export const LearningPathView: React.FC<{
                   </div>
                 ) : (
                   <img
-                    src="/assets/mascot.png"
+                    src="/mascot.png"
                     alt="Mascot"
                     onError={() => setMascotError(true)}
                     className="absolute -right-12 top-1/2 -translate-y-1/2 w-20 h-20 drop-shadow-xl pointer-events-none"
