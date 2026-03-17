@@ -22,6 +22,7 @@ import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/week
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
 import { calculateScore, ScoreResult } from './engine/scoringEngine';
+import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 
 const DEFAULT_COURSE_ID = 'english';
 const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
@@ -113,6 +114,7 @@ const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
   const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
   const [showConversionModal, setShowConversionModal] = useState(false);
+  const [showResultAnimation, setShowResultAnimation] = useState(false);
   const [conversionReason, setConversionReason] = useState<string | undefined>();
   const [conversionSuccess, setConversionSuccess] = useState(false);
   const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
@@ -514,6 +516,7 @@ const App: React.FC = () => {
 
         setCurrentLessonId(null);
         setCurrentSection(SectionType.WORKBOOK);
+        setShowResultAnimation(true);
         return;
       }
 
@@ -827,6 +830,15 @@ const App: React.FC = () => {
         <WeekCompletionPopup
           result={weekCompletionResult}
           onClose={() => setWeekCompletionResult(null)}
+        />
+      )}
+      {showResultAnimation && (
+        <ResultAnimation
+          streak={score?.streak ?? streak}
+          freeze={score?.freeze ?? freeze}
+          diamonds={score?.diamonds ?? diamonds}
+          stars={score?.stars ?? stars}
+          onClose={() => setShowResultAnimation(false)}
         />
       )}
       {user && user.isAnonymous && (
