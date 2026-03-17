@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion } from '../../data/placementTestQuestions';
-import { auth } from '../../services/firebase';
+import { auth, ensureAnonAuth } from '../../services/firebase';
 import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
 
 interface PlacementTestProps {
@@ -106,32 +106,45 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
 
     const { percentage, level } = classifyLevel(correctCount, PLACEMENT_TEST_QUESTIONS.length);
     
+    // Ensure user is authenticated before saving to Firebase
+    let currentUser = auth.currentUser;
+    if (!currentUser) {
+      try {
+        console.log('[PlacementTest] 🔐 Attempting anonymous authentication...');
+        await ensureAnonAuth();
+        currentUser = auth.currentUser;
+        console.log('[PlacementTest] 🔐 Anonymous authentication successful');
+      } catch (authError) {
+        console.warn('[PlacementTest] ⚠️ Anonymous authentication failed:', authError);
+      }
+    }
+    
     // Save to Firebase
-    if (auth.currentUser) {
+    if (currentUser) {
       try {
         await saveStudentPlacementTest(
-          auth.currentUser.uid,
+          currentUser.uid,
           studentName,
           studentWhatsApp,
           percentage,
           correctCount,
           PLACEMENT_TEST_QUESTIONS.length,
           level,
-          auth.currentUser.isAnonymous
+          currentUser.isAnonymous
         );
         console.log('[PlacementTest] ✅ Result saved to Firebase', {
-          uid: auth.currentUser.uid,
+          uid: currentUser.uid,
           name: studentName,
           level,
           percentage,
-          isAnonymous: auth.currentUser.isAnonymous
+          isAnonymous: currentUser.isAnonymous
         });
       } catch (error) {
         console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);
         // Continue showing results even if Firebase fails
       }
     } else {
-      console.warn('[PlacementTest] ⚠️ auth.currentUser not available - cannot save to Firebase');
+      console.warn('[PlacementTest] ⚠️ User not authenticated - cannot save to Firebase. Results visible locally.');
     }
 
     setTestCompleted(true);
