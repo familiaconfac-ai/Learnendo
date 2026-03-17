@@ -610,6 +610,18 @@ export async function recordLessonCompletion(
   }
 }
 
+// ===== SESSION COUNT =====
+
+export async function getSessionCount(uid: string): Promise<number> {
+  if (!db) return 0;
+  try {
+    const snap = await getDocs(collection(db, 'users', uid, 'sessions'));
+    return snap.size;
+  } catch {
+    return 0;
+  }
+}
+
 // ===== LEGACY ASSESSMENT SAVE =====
 
 export async function saveAssessmentResult(record: Omit<AssessmentRecord, 'timestamp'>) {

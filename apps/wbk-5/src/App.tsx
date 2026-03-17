@@ -17,7 +17,7 @@ import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
-import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser } from './services/db';
+import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
@@ -127,6 +127,7 @@ const App: React.FC = () => {
   const freeze = Number((progress as any).iceCount ?? 0);
   const diamonds = Number((progress as any).diamonds ?? completedLessonCount * 10);
   const stars = Number((progress as any).totalStars ?? (progress.completedActivities || []).length);
+  const [sessionCount, setSessionCount] = useState<number>(0);
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
@@ -286,6 +287,11 @@ const App: React.FC = () => {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    getSessionCount(user.uid).then(setSessionCount).catch(() => {});
+  }, [user?.uid]);
 
   useEffect(() => {
     if (!user) return;
@@ -537,6 +543,14 @@ const App: React.FC = () => {
           if (result.weekComplete && result.weekResult) {
             setWeekCompletionResult(result.weekResult);
           }
+
+          await recordLessonCompletion(user.uid, lessonNumber, {
+            completedIslands: [dayId],
+            diamondPercent: score,
+            timeSpentSeconds: 0,
+            totalCorrect: Math.round(score),
+            totalAnswers: 100,
+          });
         }
       } catch (error) {
         console.warn('[App] Firebase day tracking failed:', error);
@@ -759,7 +773,7 @@ const App: React.FC = () => {
             <span className="rounded-lg bg-blue-100 text-blue-700 px-1.5 py-1" title="Current Language">
               {language.toUpperCase()}
             </span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {streak}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {sessionCount || streak}</span>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {freeze}</span>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {diamonds}</span>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">⭐ {stars}</span>

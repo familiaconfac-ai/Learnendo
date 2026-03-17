@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion } from '../../data/placementTestQuestions';
 import { LessonLanguageCode } from '../../types';
-import { auth, ensureAnonAuth } from '../../services/firebase';
+import { auth, db, ensureAnonAuth } from '../../services/firebase';
 import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
 import { savePlacementTestResultForUser } from '../../services/db';
+import { doc, updateDoc } from 'firebase/firestore';
 
 interface PlacementTestProps {
   currentLanguage?: LessonLanguageCode;
@@ -169,6 +170,11 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
         percentage,
         isAnonymous: authUser.isAnonymous
       });
+
+      // Update user root doc with latest placement score
+      if (db) {
+        await updateDoc(doc(db, 'users', authUser.uid), { placementScore: percentage }).catch(() => {});
+      }
     } catch (error) {
       console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);
       // Continue showing results even if Firebase fails
