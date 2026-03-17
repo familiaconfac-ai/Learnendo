@@ -107,44 +107,53 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
     const { percentage, level } = classifyLevel(correctCount, PLACEMENT_TEST_QUESTIONS.length);
     
     // Ensure user is authenticated before saving to Firebase
-    let currentUser = auth.currentUser;
-    if (!currentUser) {
+    let authUser = auth.currentUser;
+    if (!authUser) {
       try {
         console.log('[PlacementTest] 🔐 Attempting anonymous authentication...');
         await ensureAnonAuth();
-        currentUser = auth.currentUser;
-        console.log('[PlacementTest] 🔐 Anonymous authentication successful');
+        authUser = auth.currentUser;  // Get the real user that was just authenticated
+        if (!authUser) {
+          throw new Error('Authentication failed: auth.currentUser is still null after ensureAnonAuth()');
+        }
+        console.log('[PlacementTest] 🔐 Anonymous authentication successful:', authUser.uid);
       } catch (authError) {
-        console.warn('[PlacementTest] ⚠️ Anonymous authentication failed:', authError);
+        console.error('[PlacementTest] ❌ Authentication failed:', authError);
+        setTestCompleted(true);  // Show result screen even if auth fails
+        return;  // Do NOT attempt Firestore write without authenticated user
       }
     }
     
-    // Save to Firebase
-    if (currentUser) {
-      try {
-        await saveStudentPlacementTest(
-          currentUser.uid,
-          studentName,
-          studentWhatsApp,
-          percentage,
-          correctCount,
-          PLACEMENT_TEST_QUESTIONS.length,
-          level,
-          currentUser.isAnonymous
-        );
-        console.log('[PlacementTest] ✅ Result saved to Firebase', {
-          uid: currentUser.uid,
-          name: studentName,
-          level,
-          percentage,
-          isAnonymous: currentUser.isAnonymous
-        });
-      } catch (error) {
-        console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);
-        // Continue showing results even if Firebase fails
-      }
-    } else {
-      console.warn('[PlacementTest] ⚠️ User not authenticated - cannot save to Firebase. Results visible locally.');
+    // Safety check: ensure user is authenticated before any Firestore write
+    if (!authUser) {
+      console.error('[PlacementTest] ❌ User not authenticated - cannot save to Firebase');
+      setTestCompleted(true);  // Show result screen locally
+      return;
+    }
+    
+    // Save to Firebase with guaranteed authenticated user
+    try {
+      console.log('[PlacementTest] Saving to Firebase with uid:', authUser.uid);
+      await saveStudentPlacementTest(
+        authUser.uid,
+        studentName,
+        studentWhatsApp,
+        percentage,
+        correctCount,
+        PLACEMENT_TEST_QUESTIONS.length,
+        level,
+        authUser.isAnonymous
+      );
+      console.log('[PlacementTest] ✅ Result saved to Firebase', {
+        uid: authUser.uid,
+        name: studentName,
+        level,
+        percentage,
+        isAnonymous: authUser.isAnonymous
+      });
+    } catch (error) {
+      console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);
+      // Continue showing results even if Firebase fails
     }
 
     setTestCompleted(true);

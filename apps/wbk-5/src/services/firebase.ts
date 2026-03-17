@@ -58,33 +58,45 @@ export async function registerWithEmail(email: string, pass: string, fullName: s
 
 /**
  * Ensures the user is authenticated anonymously.
- * If Anonymous Auth is disabled in Firebase Console, it will fail gracefully.
+ * ALWAYS returns a real Firebase Auth user or throws an error.
+ * Eliminates any fallback that creates fake/mock users.
  */
 export async function ensureAnonAuth(): Promise<{ uid: string; isAnonymous: boolean }> {
+  // If already authenticated, return immediately
   if (auth.currentUser) {
+    console.log('[Firebase] User already authenticated:', auth.currentUser.uid);
     return { uid: auth.currentUser.uid, isAnonymous: auth.currentUser.isAnonymous };
   }
 
-  return new Promise((resolve, reject) => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+  // Wait for auth state to settle
+  console.log('[Firebase] Waiting for auth state to settle...');
+  await new Promise<void>((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, () => {
       unsubscribe();
-      if (user) {
-        resolve({ uid: user.uid, isAnonymous: user.isAnonymous });
-      } else {
-        try {
-          const cred = await signInAnonymously(auth);
-          resolve({ uid: cred.user.uid, isAnonymous: true });
-        } catch (err: any) {
-          if (err.code === 'auth/admin-restricted-operation') {
-            console.warn("Anonymous Auth is disabled in Firebase Console. Please enable it in Authentication > Sign-in method.");
-            // Resolve with a dummy state to allow the app to load the login screen
-            resolve({ uid: 'guest-' + Date.now(), isAnonymous: true });
-          } else {
-            console.error("Firebase Auth Error:", err);
-            reject(err);
-          }
-        }
-      }
+      resolve();
     });
   });
+
+  // If user exists after settling, return it
+  if (auth.currentUser) {
+    console.log('[Firebase] Auth state settled, user found:', auth.currentUser.uid);
+    return { uid: auth.currentUser.uid, isAnonymous: auth.currentUser.isAnonymous };
+  }
+
+  // Otherwise, attempt anonymous sign-in
+  console.log('[Firebase] No user found, attempting anonymous sign-in...');
+  try {
+    const cred = await signInAnonymously(auth);
+    console.log('[Firebase] Anonymous sign-in successful:', cred.user.uid);
+    return { uid: cred.user.uid, isAnonymous: true };
+  } catch (err: any) {
+    if (err.code === 'auth/admin-restricted-operation') {
+      const msg = 'Anonymous Auth is disabled in Firebase Console. Please enable it in Authentication > Sign-in method.';
+      console.error('[Firebase]', msg);
+      throw new Error(msg);
+    } else {
+      console.error('[Firebase] Auth Error:', err);
+      throw err;
+    }
+  }
 }
