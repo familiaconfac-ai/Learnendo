@@ -17,10 +17,11 @@ import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
-import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount } from './services/db';
+import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getUserActivityData } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
+import { calculateScore, ScoreResult } from './engine/scoringEngine';
 
 const DEFAULT_COURSE_ID = 'english';
 const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
@@ -128,6 +129,7 @@ const App: React.FC = () => {
   const diamonds = Number((progress as any).diamonds ?? completedLessonCount * 10);
   const stars = Number((progress as any).totalStars ?? (progress.completedActivities || []).length);
   const [sessionCount, setSessionCount] = useState<number>(0);
+  const [score, setScore] = useState<ScoreResult | null>(null);
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
@@ -291,6 +293,18 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!user?.uid) return;
     getSessionCount(user.uid).then(setSessionCount).catch(() => {});
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user) return;
+    const uid = user.uid;
+    const creationTime = user.metadata?.creationTime;
+    const startDate = creationTime ? new Date(creationTime) : new Date();
+    getUserActivityData(uid)
+      .then(({ sessionDates, lessonCompletions }) => {
+        setScore(calculateScore({ sessionDates, lessonCompletions, startDate }));
+      })
+      .catch(() => {});
   }, [user?.uid]);
 
   useEffect(() => {
@@ -773,10 +787,10 @@ const App: React.FC = () => {
             <span className="rounded-lg bg-blue-100 text-blue-700 px-1.5 py-1" title="Current Language">
               {language.toUpperCase()}
             </span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {sessionCount || streak}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {freeze}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {diamonds}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">⭐ {stars}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {score?.streak ?? (sessionCount || streak)}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {score?.freeze ?? freeze}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {score?.diamonds ?? diamonds}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">⭐ {score?.stars ?? stars}</span>
           </div>
 
           <button

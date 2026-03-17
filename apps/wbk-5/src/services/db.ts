@@ -622,6 +622,40 @@ export async function getSessionCount(uid: string): Promise<number> {
   }
 }
 
+// ===== SCORING DATA =====
+
+export interface UserActivityData {
+  sessionDates: Date[];
+  lessonCompletions: { date: Date; score?: number }[];
+}
+
+export async function getUserActivityData(uid: string): Promise<UserActivityData> {
+  if (!db) return { sessionDates: [], lessonCompletions: [] };
+  try {
+    const [sessionsSnap, lessonsSnap] = await Promise.all([
+      getDocs(collection(db, 'users', uid, 'sessions')),
+      getDocs(collection(db, 'users', uid, 'lessonProgress')),
+    ]);
+
+    const sessionDates: Date[] = sessionsSnap.docs
+      .map(d => d.data().loginAt?.toDate?.() as Date | undefined)
+      .filter((d): d is Date => d instanceof Date);
+
+    const lessonCompletions: { date: Date; score?: number }[] = lessonsSnap.docs
+      .flatMap(d => {
+        const data = d.data();
+        const date: Date | undefined = data.completedAt?.toDate?.() ?? data.lastUpdated?.toDate?.();
+        if (!(date instanceof Date)) return [];
+        const score: number | undefined = data.diamondPercent ?? data.score;
+        return [{ date, score }];
+      });
+
+    return { sessionDates, lessonCompletions };
+  } catch {
+    return { sessionDates: [], lessonCompletions: [] };
+  }
+}
+
 // ===== LEGACY ASSESSMENT SAVE =====
 
 export async function saveAssessmentResult(record: Omit<AssessmentRecord, 'timestamp'>) {
