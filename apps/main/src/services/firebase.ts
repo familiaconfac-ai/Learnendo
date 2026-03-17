@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserLocalPersistence, linkWithCredential, EmailAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
@@ -97,6 +97,74 @@ export async function ensureAnonAuth(): Promise<{ uid: string; isAnonymous: bool
     } else {
       console.error('[Firebase] Auth Error:', err);
       throw err;
+    }
+  }
+}
+
+/**
+ * convertAnonymousToUser
+ * Converts an anonymous Firebase user to a registered user with email/password.
+ * 
+ * IMPORTANT:
+ * - User MUST be currently logged in as anonymous
+ * - The UID stays the same (no data loss)
+ * - Email must not be already registered in Firebase
+ * - After conversion, update Firestore profile with email
+ * 
+ * @param email - Email address for the new account
+ * @param password - Password for the new account (min 6 chars)
+ * @returns The updated user with new email
+ */
+export async function convertAnonymousToUser(email: string, password: string) {
+  const currentUser = auth.currentUser;
+
+  if (!currentUser) {
+    throw new Error('[Firebase] No user logged in. Cannot convert.');
+  }
+
+  if (!currentUser.isAnonymous) {
+    throw new Error('[Firebase] User is not anonymous. Conversion not needed.');
+  }
+
+  if (password.length < 6) {
+    throw new Error('[Firebase] Password must be at least 6 characters.');
+  }
+
+  try {
+    console.log('[Firebase] Converting anonymous user to registered:', currentUser.uid);
+
+    // Create email credential
+    const credential = EmailAuthProvider.credential(email, password);
+
+    // Link the credential to the current anonymous account
+    // This preserves the UID and all associated data
+    const result = await linkWithCredential(currentUser, credential);
+
+    console.log('[Firebase] ✅ Conversion successful. Email:', email, 'UID:', result.user.uid);
+
+    return {
+      uid: result.user.uid,
+      email: result.user.email,
+      isAnonymous: result.user.isAnonymous,
+      displayName: result.user.displayName,
+    };
+  } catch (error: any) {
+    // Handle common conversion errors
+    if (error.code === 'auth/email-already-in-use') {
+      const msg = 'This email is already registered. Please use a different email.';
+      console.error('[Firebase]', msg);
+      throw new Error(msg);
+    } else if (error.code === 'auth/weak-password') {
+      const msg = 'Password is too weak. Please use a stronger password.';
+      console.error('[Firebase]', msg);
+      throw new Error(msg);
+    } else if (error.code === 'auth/account-exists-with-different-credential') {
+      const msg = 'This email is associated with a different login method.';
+      console.error('[Firebase]', msg);
+      throw new Error(msg);
+    } else {
+      console.error('[Firebase] Conversion Error:', error);
+      throw error;
     }
   }
 }

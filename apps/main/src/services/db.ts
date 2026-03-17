@@ -44,8 +44,10 @@ import type { User } from "firebase/auth";
  * createOrUpdateUserProfile
  * Creates or updates user document at /users/{uid}
  * Requires real Firebase Auth user
+ * @param user - Firebase Auth user object
+ * @param emailOverride - Optional email to use instead of user.email
  */
-export async function createOrUpdateUserProfile(user: User): Promise<void> {
+export async function createOrUpdateUserProfile(user: User, emailOverride?: string): Promise<void> {
   if (!user?.uid) {
     throw new Error('[DB] createOrUpdateUserProfile: user.uid is required');
   }
@@ -56,16 +58,19 @@ export async function createOrUpdateUserProfile(user: User): Promise<void> {
 
   try {
     const userDoc = doc(db, 'users', user.uid);
+    const emailToUse = emailOverride || user.email || null;
+    
     await setDoc(userDoc, {
       uid: user.uid,
       name: user.displayName || 'User',
-      email: user.email || null,
+      email: emailToUse,
       isAnonymous: user.isAnonymous,
+      wasAnonymous: user.isAnonymous === false && user.email ? true : false, // Track if converted from anonymous
       createdAt: serverTimestamp(),
       lastLoginAt: serverTimestamp(),
     }, { merge: true });
 
-    console.log('[DB] User profile created/updated:', user.uid);
+    console.log('[DB] User profile created/updated:', user.uid, { email: emailToUse });
   } catch (error) {
     console.error('[DB] Error creating user profile:', error);
     throw error;

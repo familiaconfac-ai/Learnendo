@@ -11,6 +11,7 @@ import { LessonView } from './components/LessonView';
 import { ExercisePractice } from './components/ExercisePractice';
 import { PronunciationTrainer } from './components/PronunciationTrainer/PronunciationTrainer';
 import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
+import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
 import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
@@ -62,6 +63,9 @@ const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
+  const [showConversionModal, setShowConversionModal] = useState(false);
+  const [conversionReason, setConversionReason] = useState<string | undefined>();
+  const [conversionSuccess, setConversionSuccess] = useState(false);
   const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
   const activeCourse = COURSES.find((course) => course.id === activeCourseId) ?? null;
@@ -78,6 +82,11 @@ const App: React.FC = () => {
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
+
+  const triggerConversion = (reason?: string) => {
+    setConversionReason(reason);
+    setShowConversionModal(true);
+  };
 
   const closeActiveSession = () => {
     const activeSession = activeSessionRef.current;
@@ -511,7 +520,7 @@ const App: React.FC = () => {
         );
       }
       case SectionType.PLACEMENT_TEST:
-        return <PlacementTest onComplete={handlePlacementComplete} />;
+        return <PlacementTest onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
       case SectionType.WORKBOOK:
         if (isWorkbookLoading) return <div className="px-4 py-6">Loading workbook...</div>;
         if (!currentWorkbook) return <div className="px-4 py-6">Workbook unavailable for this course.</div>;
@@ -727,6 +736,24 @@ const App: React.FC = () => {
           result={weekCompletionResult}
           onClose={() => setWeekCompletionResult(null)}
         />
+      )}
+      {user && user.isAnonymous && (
+        <ConversionModal
+          user={user}
+          isOpen={showConversionModal}
+          onSuccess={() => {
+            setShowConversionModal(false);
+            setConversionSuccess(true);
+            setTimeout(() => setConversionSuccess(false), 3000);
+          }}
+          onCancel={() => setShowConversionModal(false)}
+          reason={conversionReason}
+        />
+      )}
+      {conversionSuccess && (
+        <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg z-[998] animate-pulse">
+          ✅ Account created successfully! Your progress is saved.
+        </div>
       )}
       <BottomNavigation currentSection={currentSection} onNavigate={handleNavigate} onShare={handleShare} />
     </div>

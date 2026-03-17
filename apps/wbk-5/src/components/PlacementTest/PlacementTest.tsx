@@ -6,9 +6,10 @@ import { savePlacementTestResultForUser } from '../../services/db';
 
 interface PlacementTestProps {
   onComplete: (score: number) => void;
+  onTriggerConversion?: (reason?: string) => void;
 }
 
-export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
+export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete, onTriggerConversion }) => {
   const [studentName, setStudentName] = useState('');
   const [studentWhatsApp, setStudentWhatsApp] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -232,6 +233,15 @@ I would like to receive feedback about my result.`;
                 <i className="fab fa-whatsapp text-xl"></i>
                 Contact Teacher on WhatsApp
               </button>
+
+              {auth.currentUser?.isAnonymous && (
+                <button
+                  onClick={() => onTriggerConversion?.('Create an account to save your placement test score and progress.')}
+                  className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
+                >
+                  📧 Create Account
+                </button>
+              )}
 
               <button
                 onClick={() => onComplete(percentage)}
