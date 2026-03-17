@@ -1,9 +1,11 @@
 import React from 'react';
-import { Course } from '../../types';
+import { Course, LessonLanguageCode } from '../../types';
 
 interface CoursesViewProps {
   courses: Course[];
   currentCourseId: string | null;
+  currentLanguage?: LessonLanguageCode;
+  onLanguageChange?: (language: LessonLanguageCode) => void;
   onSelectCourse: (courseId: string) => void;
   onLogoClick?: () => void;
 }
@@ -19,6 +21,8 @@ const CATEGORY_LABELS: Record<CategoryKey, string> = {
 export const CoursesView: React.FC<CoursesViewProps> = ({
   courses,
   currentCourseId,
+  currentLanguage,
+  onLanguageChange,
   onSelectCourse,
   onLogoClick,
 }) => {

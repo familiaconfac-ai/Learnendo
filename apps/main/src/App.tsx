@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { Course, Day, UserProgress, SectionType } from './types';
+import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
 import { BottomNavigation } from './components/BottomNavigation';
@@ -23,7 +23,28 @@ import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekComple
 import { WeekCompletionResult } from './services/db';
 
 const DEFAULT_COURSE_ID = 'english';
+const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
+const LANGUAGE_STORAGE_KEY = 'learnendo_user_language';
+
+// Map courses to language codes
+const COURSE_TO_LANGUAGE: Record<string, LessonLanguageCode> = {
+  'english': 'en',
+  'portuguese_foreigners': 'pt',
+  'portuguese_native': 'pt',
+  'spanish': 'es',
+  'greek_koine': 'el',
+  'hebrew_biblical': 'he',
+};
+
+// Map language codes to course IDs
+const LANGUAGE_TO_COURSE: Record<LessonLanguageCode, string> = {
+  'en': 'english',
+  'pt': 'portuguese_foreigners',
+  'es': 'spanish',
+  'el': 'greek_koine',
+  'he': 'hebrew_biblical',
+};
 
 const COURSE_SELECTOR_OPTIONS = [
   { id: 'english', label: 'English', flag: '🇺🇸' },
@@ -40,6 +61,33 @@ const getLessonNumberFromId = (lessonId: string | null | undefined) => {
 };
 
 const App: React.FC = () => {
+  // ===== LANGUAGE STATE =====
+  const [language, setLanguageState] = useState<LessonLanguageCode>(() => {
+    // Load from localStorage on initial render
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY) as LessonLanguageCode | null;
+      if (stored && ['en', 'pt', 'es', 'el', 'he'].includes(stored)) {
+        return stored;
+      }
+    }
+    return DEFAULT_LANGUAGE;
+  });
+
+  // Update localStorage and course when language changes
+  const setLanguage = useCallback((newLanguage: LessonLanguageCode) => {
+    console.log('[App] Language changed:', newLanguage);
+    setLanguageState(newLanguage);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, newLanguage);
+    }
+    // Auto-switch course to match language
+    const courseForLanguage = LANGUAGE_TO_COURSE[newLanguage];
+    if (courseForLanguage) {
+      setCurrentCourseId(courseForLanguage);
+    }
+  }, []);
+
+  // ===== APP STATE =====
   const [progress, setProgress] = useState<UserProgress>({
     userId: 'user1',
     currentWorkbook: 1,
@@ -82,6 +130,15 @@ const App: React.FC = () => {
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
+
+  // Sync language with course selection
+  const handleCourseChange = useCallback((courseId: string) => {
+    setCurrentCourseId(courseId);
+    const languageForCourse = COURSE_TO_LANGUAGE[courseId];
+    if (languageForCourse && languageForCourse !== language) {
+      setLanguage(languageForCourse);
+    }
+  }, [language, setLanguage]);
 
   const triggerConversion = (reason?: string) => {
     setConversionReason(reason);
@@ -499,9 +556,11 @@ const App: React.FC = () => {
           <CoursesView
             courses={COURSES}
             currentCourseId={currentCourseId}
+            currentLanguage={language}
+            onLanguageChange={setLanguage}
             onLogoClick={() => handleNavigate(SectionType.WORKBOOK)}
             onSelectCourse={(id) => {
-              setCurrentCourseId(id);
+              handleCourseChange(id);
               setCurrentWorkbookId(1);
               setCurrentLessonId(null);
               setCurrentDay(null);
@@ -520,7 +579,7 @@ const App: React.FC = () => {
         );
       }
       case SectionType.PLACEMENT_TEST:
-        return <PlacementTest onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
+        return <PlacementTest currentLanguage={language} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
       case SectionType.WORKBOOK:
         if (isWorkbookLoading) return <div className="px-4 py-6">Loading workbook...</div>;
         if (!currentWorkbook) return <div className="px-4 py-6">Workbook unavailable for this course.</div>;
@@ -550,6 +609,7 @@ const App: React.FC = () => {
             lesson={lesson}
             lessonNumber={lessonNumber}
             progress={progress}
+            currentLanguage={language}
             isAdmin={isAdmin}
             testCompleted={lessonTestCompleted[lessonNumber] || false}
             testScore={lessonTestScores[lessonNumber]}
@@ -577,6 +637,7 @@ const App: React.FC = () => {
           <ExercisePractice
             day={currentDay}
             lessonId={currentLessonId || ''}
+            currentLanguage={language}
             progress={progress}
             onComplete={handleDayComplete}
             onBack={() => {
@@ -672,7 +733,7 @@ const App: React.FC = () => {
                         key={courseOption.id}
                         type="button"
                         onClick={() => {
-                          setCurrentCourseId(courseOption.id);
+                          handleCourseChange(courseOption.id);
                           setCurrentWorkbookId(1);
                           setCurrentWorkbook(null);
                           setCurrentLessonId(null);
@@ -695,6 +756,9 @@ const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">
+            <span className="rounded-lg bg-blue-100 text-blue-700 px-1.5 py-1" title="Current Language">
+              {language.toUpperCase()}
+            </span>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {streak}</span>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {freeze}</span>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {diamonds}</span>

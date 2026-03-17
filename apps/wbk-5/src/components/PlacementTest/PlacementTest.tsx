@@ -1,15 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion } from '../../data/placementTestQuestions';
+import { LessonLanguageCode } from '../../types';
 import { auth, ensureAnonAuth } from '../../services/firebase';
 import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
 import { savePlacementTestResultForUser } from '../../services/db';
 
 interface PlacementTestProps {
+  currentLanguage?: LessonLanguageCode;
   onComplete: (score: number) => void;
   onTriggerConversion?: (reason?: string) => void;
 }
 
-export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete, onTriggerConversion }) => {
+export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 'en', onComplete, onTriggerConversion }) => {
   const [studentName, setStudentName] = useState('');
   const [studentWhatsApp, setStudentWhatsApp] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);

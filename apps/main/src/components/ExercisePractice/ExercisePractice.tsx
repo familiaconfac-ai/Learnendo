@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Day, UserProgress } from '../../types';
+import { Day, UserProgress, LessonLanguageCode } from '../../types';
 
 // PracticeSection lives in UI.tsx and expects the legacy PracticeItem shape.
 // We adapt Exercise → PracticeItem here so no changes are needed in UI.tsx.
@@ -8,6 +8,7 @@ import { PracticeSection } from '../UI';
 interface ExercisePracticeProps {
   day: Day;
   lessonId: string;
+  currentLanguage?: LessonLanguageCode;
   progress: UserProgress;
   onComplete: (dayId: string, score: number) => void;
   onBack: () => void;
@@ -16,6 +17,7 @@ interface ExercisePracticeProps {
 export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   day,
   lessonId,
+  currentLanguage = 'en',
   onComplete,
   onBack,
 }) => {

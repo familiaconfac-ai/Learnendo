@@ -1,10 +1,11 @@
 import React from 'react';
-import { Day, Lesson, UserProgress } from '../../types';
+import { Day, Lesson, UserProgress, LessonLanguageCode } from '../../types';
 
 interface LessonViewProps {
   lesson: Lesson;
   lessonNumber: number;
   progress: UserProgress;
+  currentLanguage?: LessonLanguageCode;
   isAdmin?: boolean;
   onStartDay: (day: Day) => void;
   onStartWeeklyTest: (day: Day) => void;
@@ -20,6 +21,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   lesson,
   lessonNumber,
   progress,
+  currentLanguage = 'en',
   isAdmin = false,
   onStartDay,
   onStartWeeklyTest,
