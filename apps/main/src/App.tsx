@@ -89,7 +89,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      const authenticatedUser = firebaseUser && !firebaseUser.isAnonymous ? firebaseUser : null;
+      // Accept both anonymous and email-authenticated users
+      const authenticatedUser = firebaseUser;
       setUser(authenticatedUser);
       setAuthLoading(false);
 
