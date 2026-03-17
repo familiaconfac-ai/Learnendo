@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp, addDoc, collection } from 'firebase/firestore';
 import { Course, Day, UserProgress, SectionType } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
@@ -14,7 +15,7 @@ import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
-import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
+import { auth, loginWithEmail, registerWithEmail, db } from './services/firebase';
 import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
@@ -126,6 +127,26 @@ const App: React.FC = () => {
         setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid, currentWorkbook: 1, currentLesson: 1 }));
         setCurrentWorkbookId(1);
         setCurrentSection(SectionType.WORKBOOK);
+      }
+
+      try {
+        // Create or update user document
+        await setDoc(doc(db, 'users', authenticatedUser.uid), {
+          uid: authenticatedUser.uid,
+          email: authenticatedUser.email || null,
+          isAnonymous: authenticatedUser.isAnonymous,
+          lastLogin: serverTimestamp()
+        }, { merge: true });
+
+        // Create session entry
+        await addDoc(collection(db, 'sessions'), {
+          uid: authenticatedUser.uid,
+          loginAt: serverTimestamp()
+        });
+
+        console.log('Firestore tracking OK');
+      } catch (error) {
+        console.error('Firestore tracking error:', error);
       }
 
       try {
