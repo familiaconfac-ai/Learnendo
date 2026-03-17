@@ -1,7 +1,207 @@
 
 import { collection, addDoc, serverTimestamp, doc, setDoc, updateDoc, getDoc, query, where, getDocs, increment } from "firebase/firestore";
 import { db } from "./firebase";
+import { auth } from "./firebase";
 import { AnswerLog, UserProgress } from "../types";
+import type { User } from "firebase/auth";
+
+// ==========================================
+// PRODUCTION-READY FIRESTORE ARCHITECTURE
+// ==========================================
+
+/**
+ * STRUCTURE:
+ * /users/{uid}
+ *   - name: string
+ *   - email: string | null
+ *   - isAnonymous: boolean
+ *   - createdAt: serverTimestamp
+ *   - lastLoginAt: serverTimestamp
+ *
+ * /users/{uid}/sessions/{sessionId}
+ *   - loginAt: serverTimestamp
+ *   - device: string
+ *   - appVersion: string
+ *
+ * /users/{uid}/placementTests/{testId}
+ *   - score: number
+ *   - percentage: number
+ *   - level: string
+ *   - answers: number[]
+ *   - createdAt: serverTimestamp
+ *
+ * /users/{uid}/progress/{lessonId}
+ *   - lessonId: string
+ *   - completed: boolean
+ *   - score: number
+ *   - attempts: number
+ *   - lastAccessedAt: serverTimestamp
+ */
+
+// ===== CORE HELPER FUNCTIONS =====
+
+/**
+ * createOrUpdateUserProfile
+ * Creates or updates user document at /users/{uid}
+ * Requires real Firebase Auth user
+ */
+export async function createOrUpdateUserProfile(user: User): Promise<void> {
+  if (!user?.uid) {
+    throw new Error('[DB] createOrUpdateUserProfile: user.uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized');
+    return;
+  }
+
+  try {
+    const userDoc = doc(db, 'users', user.uid);
+    await setDoc(userDoc, {
+      uid: user.uid,
+      name: user.displayName || 'User',
+      email: user.email || null,
+      isAnonymous: user.isAnonymous,
+      createdAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
+    }, { merge: true });
+
+    console.log('[DB] User profile created/updated:', user.uid);
+  } catch (error) {
+    console.error('[DB] Error creating user profile:', error);
+    throw error;
+  }
+}
+
+/**
+ * createSession
+ * Creates session document at /users/{uid}/sessions/{sessionId}
+ * Requires authenticated user
+ */
+export async function createSessionForUser(
+  user: User,
+  device?: string,
+  appVersion?: string
+): Promise<string | null> {
+  if (!user?.uid) {
+    throw new Error('[DB] createSessionForUser: user.uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized');
+    return null;
+  }
+
+  try {
+    const sessionRef = await addDoc(
+      collection(db, `users/${user.uid}/sessions`),
+      {
+        loginAt: serverTimestamp(),
+        device: device || navigator.userAgent,
+        appVersion: appVersion || '1.0',
+      }
+    );
+
+    console.log('[DB] Session created:', sessionRef.id, 'for user:', user.uid);
+    return sessionRef.id;
+  } catch (error) {
+    console.error('[DB] Error creating session:', error);
+    throw error;
+  }
+}
+
+/**
+ * savePlacementTestResultForUser
+ * Saves placement test result at /users/{uid}/placementTests/{testId}
+ * Requires authenticated user
+ */
+export interface PlacementTestData {
+  score: number;
+  percentage: number;
+  level: string;
+  answers: number[];
+  correctAnswers: number;
+  totalQuestions: number;
+  whatsapp?: string;
+  fullName?: string;
+}
+
+export async function savePlacementTestResultForUser(
+  user: User,
+  testData: PlacementTestData
+): Promise<string | null> {
+  if (!user?.uid) {
+    throw new Error('[DB] savePlacementTestResultForUser: user.uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized');
+    return null;
+  }
+
+  try {
+    const testId = `placement_${Date.now()}`;
+    const testRef = doc(db, `users/${user.uid}/placementTests/${testId}`);
+
+    await setDoc(testRef, {
+      testId,
+      score: testData.score,
+      percentage: testData.percentage,
+      level: testData.level,
+      answers: testData.answers,
+      correctAnswers: testData.correctAnswers,
+      totalQuestions: testData.totalQuestions,
+      whatsapp: testData.whatsapp || null,
+      fullName: testData.fullName || user.displayName || null,
+      createdAt: serverTimestamp(),
+    });
+
+    console.log('[DB] Placement test saved:', testId, 'for user:', user.uid);
+    return testId;
+  } catch (error) {
+    console.error('[DB] Error saving placement test:', error);
+    throw error;
+  }
+}
+
+/**
+ * updateLessonProgress
+ * Updates lesson progress at /users/{uid}/progress/{lessonId}
+ * Requires authenticated user
+ */
+export interface UpdateLessonProgressData {
+  lessonId: string;
+  completed: boolean;
+  score: number;
+  attempts: number;
+}
+
+export async function updateLessonProgress(
+  user: User,
+  lessonData: UpdateLessonProgressData
+): Promise<void> {
+  if (!user?.uid) {
+    throw new Error('[DB] updateLessonProgress: user.uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized');
+    return;
+  }
+
+  try {
+    const progressRef = doc(db, `users/${user.uid}/progress/${lessonData.lessonId}`);
+
+    await setDoc(progressRef, {
+      lessonId: lessonData.lessonId,
+      completed: lessonData.completed,
+      score: lessonData.score,
+      attempts: lessonData.attempts,
+      lastAccessedAt: serverTimestamp(),
+    }, { merge: true });
+
+    console.log('[DB] Lesson progress updated:', lessonData.lessonId, 'for user:', user.uid);
+  } catch (error) {
+    console.error('[DB] Error updating lesson progress:', error);
+    throw error;
+  }
+}
 
 export interface AssessmentRecord {
   studentName: string;

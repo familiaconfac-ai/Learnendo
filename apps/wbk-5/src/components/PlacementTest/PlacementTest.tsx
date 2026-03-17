@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion } from '../../data/placementTestQuestions';
 import { auth, ensureAnonAuth } from '../../services/firebase';
 import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
+import { savePlacementTestResultForUser } from '../../services/db';
 
 interface PlacementTestProps {
   onComplete: (score: number) => void;
@@ -134,6 +135,20 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ onComplete }) => {
     // Save to Firebase with guaranteed authenticated user
     try {
       console.log('[PlacementTest] Saving to Firebase with uid:', authUser.uid);
+      
+      // Save to new structured architecture
+      await savePlacementTestResultForUser(authUser, {
+        score: percentage,
+        percentage,
+        level,
+        answers: finalAnswers.filter((a): a is number => a !== null),
+        correctAnswers: correctCount,
+        totalQuestions: PLACEMENT_TEST_QUESTIONS.length,
+        fullName: studentName,
+        whatsapp: studentWhatsApp,
+      });
+      
+      // Also save to legacy structure for backward compatibility
       await saveStudentPlacementTest(
         authUser.uid,
         studentName,
