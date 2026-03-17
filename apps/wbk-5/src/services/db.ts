@@ -301,7 +301,14 @@ export async function createStudentProfile(uid: string, email: string, displayNa
 }
 
 export async function updateLastActive(uid: string): Promise<void> {
-  if (!db) return;
+  if (!uid) {
+    console.error('[DB] updateLastActive: uid is required');
+    throw new Error('uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized, skipping lastActive update');
+    return;
+  }
 
   try {
     const userDocRef = doc(db, "users", uid);
@@ -309,13 +316,22 @@ export async function updateLastActive(uid: string): Promise<void> {
       uid,
       lastActive: serverTimestamp(),
     }, { merge: true });
+    console.log('[DB] ✅ Last active updated:', uid);
   } catch (e) {
-    console.error("Error updating lastActive:", e);
+    console.error('[DB] ❌ Error updating lastActive:', e);
+    throw e;  // Re-throw to notify caller
   }
 }
 
 export async function recordDailyAccess(uid: string): Promise<void> {
-  if (!db) return;
+  if (!uid) {
+    console.error('[DB] recordDailyAccess: uid is required');
+    throw new Error('uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized, skipping daily access record');
+    return;
+  }
 
   try {
     const dayKey = new Date().toISOString().slice(0, 10);
@@ -327,8 +343,11 @@ export async function recordDailyAccess(uid: string): Promise<void> {
       lastAccessAt: serverTimestamp(),
       accessCount: increment(1),
     }, { merge: true });
+
+    console.log('[DB] ✅ Daily access recorded:', { uid, date: dayKey });
   } catch (e) {
-    console.error("Error recording daily access:", e);
+    console.error('[DB] ❌ Error recording daily access:', e);
+    throw e;  // Re-throw to notify caller
   }
 }
 

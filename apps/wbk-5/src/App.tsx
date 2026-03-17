@@ -89,12 +89,13 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // ========== STEP 1: ENSURE AUTHENTICATION ==========
       // Accept both anonymous and email-authenticated users
-      const authenticatedUser = firebaseUser;
-      setUser(authenticatedUser);
-      setAuthLoading(false);
-
+      let authenticatedUser = firebaseUser;
+      
+      // If no user is authenticated, we need to check if this is acceptable
       if (!authenticatedUser) {
+        setAuthLoading(false);
         closeActiveSession();
         setCurrentCourseId(null);
         setCurrentSection(SectionType.COURSES);
@@ -109,9 +110,42 @@ const App: React.FC = () => {
           userId: 'user1',
           completedActivities: [],
         }));
+        setUser(null);
         return;
       }
 
+      setUser(authenticatedUser);
+      setAuthLoading(false);
+
+      // ========== STEP 2: TRACK ALL AUTHENTICATED USERS ==========
+      // This runs for EVERY authenticated user (including restricted)
+      // Tracking happens BEFORE any permission/content logic
+      console.log('[App] User authenticated:', authenticatedUser.uid, {
+        email: authenticatedUser.email,
+        isAnonymous: authenticatedUser.isAnonymous
+      });
+
+      try {
+        // Create or update user profile in Firestore
+        console.log('[App] Recording user profile...');
+        await createOrUpdateUserProfile(authenticatedUser);
+        
+        // Create session entry
+        console.log('[App] Creating session...');
+        const sessionId = await createSessionForUser(authenticatedUser);
+        
+        // Record daily access
+        console.log('[App] Recording daily access...');
+        await updateLastActive(authenticatedUser.uid);
+        await recordDailyAccess(authenticatedUser.uid);
+
+        console.log('[App] ✅ Firestore tracking complete for:', authenticatedUser.uid);
+      } catch (trackingError) {
+        console.error('[App] ❌ Firestore tracking error:', trackingError);
+        // Do NOT return - continue even if tracking fails
+      }
+
+      // ========== STEP 3: LOAD PROGRESS & CONTENT ==========
       try {
         const loadedProgress = ProgressEngine.loadProgress(authenticatedUser.uid);
         if (loadedProgress) {
@@ -122,27 +156,16 @@ const App: React.FC = () => {
           setCurrentWorkbookId(1);
         }
         setCurrentSection(SectionType.WORKBOOK);
-      } catch {
+      } catch (progressError) {
+        console.warn('[App] Progress load error:', progressError);
         setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid, currentWorkbook: 1, currentLesson: 1 }));
         setCurrentWorkbookId(1);
         setCurrentSection(SectionType.WORKBOOK);
       }
 
+      // ========== STEP 4: SESSION MANAGEMENT ==========
+      // Create/manage session reference for tracking activity
       try {
-        // Create or update user profile in Firestore
-        await createOrUpdateUserProfile(authenticatedUser);
-        
-        // Create session entry
-        const sessionId = await createSessionForUser(authenticatedUser);
-        console.log('[App] Firestore tracking initialized');
-      } catch (error) {
-        console.error('[App] Firestore tracking error:', error);
-      }
-
-      try {
-        await updateLastActive(authenticatedUser.uid);
-        await recordDailyAccess(authenticatedUser.uid);
-
         const existingSession = activeSessionRef.current;
         if (!existingSession || existingSession.uid !== authenticatedUser.uid) {
           closeActiveSession();
@@ -160,9 +183,13 @@ const App: React.FC = () => {
             };
           }
         }
-      } catch (error) {
-        console.warn('[App] Failed to track auth activity:', error);
+      } catch (sessionError) {
+        console.warn('[App] Session management error:', sessionError);
       }
+
+      // ========== STEP 5: PERMISSION & RESTRICTION LOGIC ==========
+      // Apply any permission checks or restrictions AFTER tracking
+      // (Add permission checks here if needed)
     });
 
     return () => {
