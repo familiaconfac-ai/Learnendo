@@ -58,6 +58,7 @@ export enum SectionType {
   SHARE = 'SHARE',
   SETTINGS = 'SETTINGS',
   HELP = 'HELP',
+  TEACHER_DASHBOARD = 'TEACHER_DASHBOARD',
 }
 
 export interface AnswerLog {

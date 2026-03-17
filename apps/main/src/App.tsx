@@ -10,6 +10,7 @@ import { WorkbookView } from './components/WorkbookView';
 import { LessonView } from './components/LessonView';
 import { ExercisePractice } from './components/ExercisePractice';
 import { PronunciationTrainer } from './components/PronunciationTrainer/PronunciationTrainer';
+import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
 import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
@@ -579,6 +580,14 @@ const App: React.FC = () => {
       }
       case SectionType.PRONUNCIATION:
         return <PronunciationTrainer onFinish={() => handleNavigate(SectionType.COURSES)} />;
+      case SectionType.TEACHER_DASHBOARD:
+        return user && isAdmin ? (
+          <TeacherDashboard user={user} />
+        ) : (
+          <div className="min-h-screen bg-blue-50 flex items-center justify-center px-6 text-center">
+            <p className="text-slate-700 font-semibold">Access denied. Teacher dashboard is for authorized users only.</p>
+          </div>
+        );
       case SectionType.SHARE:
         return <div>Share App Placeholder</div>;
       default:
@@ -702,6 +711,9 @@ const App: React.FC = () => {
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
+              {isAdmin && (
+                <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>
+              )}
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 font-medium transition-colors" onClick={handleLogout}>Logout</button>
