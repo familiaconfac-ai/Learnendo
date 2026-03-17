@@ -1,5 +1,6 @@
 import React from 'react';
 import { Day, Lesson, UserProgress, LessonLanguageCode } from '../../types';
+import { canAccessDay } from '../../engine/unlockEngine';
 
 interface LessonViewProps {
   lesson: Lesson;
@@ -37,15 +38,16 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const testMarker = `${LESSON_TEST_PREFIX}${lessonNumber}`;
   const hasPassedTest = testPassed || completed.includes(testMarker);
 
+  // 1-based list of day positions that are already completed within this lesson
+  const completedDays = firstSixDays
+    .map((day, i) => (day && completed.includes(day.id) ? i + 1 : null))
+    .filter((n): n is number => n !== null);
+
   const getDayStatus = (dayId: string | null, index: number): 'completed' | 'in-progress' | 'locked' => {
     if (!dayId) return 'locked';
     if (completed.includes(dayId)) return 'completed';
-
     if (isAdmin) return 'in-progress';
-
-    if (index === 0) return 'in-progress';
-    const prevDay = firstSixDays[index - 1];
-    return prevDay ? (completed.includes(prevDay.id) ? 'in-progress' : 'locked') : 'locked';
+    return canAccessDay(index + 1, completedDays) ? 'in-progress' : 'locked';
   };
 
   const firstUnlockedIndex = firstSixDays.findIndex((day, index) => getDayStatus(day?.id || null, index) === 'in-progress');

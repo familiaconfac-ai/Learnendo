@@ -8,6 +8,7 @@ import {
   WeekCompletionResult,
   DailyProgressData,
 } from '../services/db';
+import { canAccessDay as pureCanAccessDay } from './unlockEngine';
 
 /**
  * Initialize or get weekly progress for current lesson
@@ -195,8 +196,8 @@ export async function saveStudentPlacementTest(
 }
 
 /**
- * Check if student is allowed to access a day today
- * (max 1 new day per calendar day)
+ * Check if student is allowed to access a day.
+ * Uses pure progress-based sequential unlock — no date comparisons.
  */
 export async function canAccessDay(
   uid: string,
@@ -208,25 +209,14 @@ export async function canAccessDay(
   const week = await getWeeklyProgress(uid, weekId);
 
   if (!week) {
-    // New week: allow day 1 only
+    // New week: only day 1 is accessible
     return dayNumber === 1;
   }
 
-  // Check how many days were completed today
-  const today = new Date().toISOString().split('T')[0];
-  const completedToday = week.days.filter(
-    (d) => d.completedDate && d.completedDate.split('T')[0] === today
-  ).length;
+  // Derive completed day numbers from Firestore week record
+  const completedDays = week.days
+    .filter((d) => d.status !== 'pending')
+    .map((d) => d.dayNumber);
 
-  // Only 1 new day per calendar day
-  if (completedToday > 0 && dayNumber > week.totalDaysCompleted + 1) {
-    return false;
-  }
-
-  // Allow any previously skipped days to be attempted (catchup)
-  if (dayNumber <= week.totalDaysCompleted + 1) {
-    return true;
-  }
-
-  return false;
+  return pureCanAccessDay(dayNumber, completedDays);
 }
