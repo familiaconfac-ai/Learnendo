@@ -1,21 +1,34 @@
 /**
  * courseProgressEngine.ts
  *
- * Scalable progress tracking for the language learning app.
+ * Architecture overview
+ * ─────────────────────
+ * One Firestore document per course + book is stored at:
  *
- * Firestore layout (NEW — does NOT replace existing weeklyProgress):
+ *   users/{uid}/courseProgress/{courseId}_{bookNumber}
  *
- *   users/{uid}/courseProgress/{language}_{workbook}
- *     startedAt, lastUpdated, language, workbook
- *     lessons: [
- *       { lessonId, unlockedAt, days: [{ dayNumber, unlockedAt, completedAt, completed, score, diamond, fire, ice }] }
- *     ]
+ * Each document has a `lessons` map keyed by the string lesson number
+ * ("1".."12").  A single course therefore has at most
+ * 8 books × 12 lessons × 7 days = 672 day entries spread across 8 documents —
+ * well within Firestore's 1 MB per-document limit.
  *
- *   groups/{groupId}
- *     resetDay, startDay, name
+ * Schema:
+ *   { courseId, bookNumber, createdAt: "YYYY-MM-DD", updatedAt: Timestamp,
+ *     lessons: {
+ *       [lessonId: string]: {
+ *         startedAt: "YYYY-MM-DD",   // immutable; set once when lesson opens
+ *         days: [
+ *           { day, unlockedAt, completed, completedAt?, score? }
+ *         ]
+ *       }
+ *     }
+ *   }
  *
- *   users/{uid}/meta
- *     group, currentLanguage, currentWorkbook, currentLesson, currentDay
+ * Related collections:
+ *   groups/{groupId}          — class schedule config
+ *   users/{uid}/meta/status   — user group assignment
+ *
+ * TODO: Remove weeklyProgress reads after full migration to courseProgress.
  */
 
 import {
@@ -31,51 +44,53 @@ import {
 import { db } from '../services/firebase';
 
 // ─────────────────────────────────────────────────────────────
-// Types
+// Domain types
 // ─────────────────────────────────────────────────────────────
 
+/** A single day’s progress record within a lesson. */
+export interface DayEntry {
+  day: number;           // 1–7
+  unlockedAt: string;    // YYYY-MM-DD (local date, deterministic)
+  completed: boolean;
+  completedAt?: string;  // ISO timestamp recorded at completion
+  score?: number;        // 0–100 exercise score
+}
+
+/** A single lesson’s progress, stored as a value in CourseProgressDoc.lessons. */
+export interface LessonProgress {
+  startedAt: string;   // YYYY-MM-DD (local date, immutable once set)
+  days: DayEntry[];    // Always length 7
+}
+
+/** Full document at users/{uid}/courseProgress/{courseId}_{bookNumber}. */
+export interface CourseProgressDoc {
+  courseId: string;
+  bookNumber: number;
+  createdAt: string;   // YYYY-MM-DD (local date)
+  updatedAt: any;      // Firestore Timestamp — for display/ordering only, never for logic
+  /** Map keyed by string lesson number: "1" … "12" */
+  lessons: Record<string, LessonProgress>;
+}
+
+/** Aggregated stats for one lesson, computed by rebuildLessonStats(). */
+export interface LessonStats {
+  fire: number;          // days completed on their unlock date
+  ice: number;           // days completed after their unlock date
+  diamonds: number;      // days with score === 100
+  stars: number;         // fire + diamonds
+  totalCompleted: number;
+}
+
+// Kept for backward compatibility with adminEngine / meta subsystem
 export type Language = 'en' | 'pt' | 'es' | 'el' | 'he';
 export type GroupId = 'tuesday' | 'saturday' | string;
 export type ResetScope = 'all' | 'language' | 'workbook';
 
-export interface DayRecord {
-  dayNumber: number;       // 1–7
-  unlockedAt: string;      // ISO date string — when this day became available
-  completedAt: string | null;
-  completed: boolean;
-  score: number | null;    // 0–100 exercise score
-  diamond: boolean;        // score === 100
-  fire: boolean;           // completed on the same calendar day as unlockedAt
-  ice: boolean;            // completed late (after unlockedAt day)
-}
-
-export interface LessonRecord {
-  lessonId: number;        // 1–12
-  unlockedAt: string;      // ISO datetime of when lesson was started
-  days: DayRecord[];
-}
-
-export interface CourseProgressDoc {
-  language: Language;
-  workbook: number;
-  startedAt: any;          // serverTimestamp
-  lastUpdated: any;        // serverTimestamp
-  lessons: LessonRecord[];
-}
-
-export interface WeekScores {
-  fire: number;
-  ice: number;
-  diamonds: number;
-  stars: number;           // fire + diamonds
-  totalDays: number;       // completed day count
-}
-
 export interface GroupConfig {
   groupId: GroupId;
   name: string;
-  startDay: string;        // e.g. 'tuesday', 'saturday'
-  resetDay: string;        // e.g. 'monday', 'friday'
+  startDay: string;  // day-of-week name, e.g. 'tuesday'
+  resetDay: string;
 }
 
 export interface UserMeta {
@@ -87,109 +102,120 @@ export interface UserMeta {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Calendar / time helpers  (local time, not UTC)
+// Calendar helpers  (local time only, never UTC)
 // ─────────────────────────────────────────────────────────────
 
-/** Returns midnight of the given date in local time */
+/** Format a Date as YYYY-MM-DD using local time. */
+function toLocalISO(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** Today’s YYYY-MM-DD in local time. */
+function todayLocalISO(): string {
+  return toLocalISO(new Date());
+}
+
+/** Midnight of a given Date in local time. */
 function startOfLocalDay(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-/** Add N calendar days to a date (local time) */
-function addLocalDays(date: Date, days: number): Date {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  d.setDate(d.getDate() + days);
+/** Add N calendar days in local time. */
+function addLocalDays(date: Date, n: number): Date {
+  const d = startOfLocalDay(date);
+  d.setDate(d.getDate() + n);
   return d;
 }
 
-/** True when two dates fall on the same calendar day in local time */
+/** True when a and b fall on the same local calendar date. */
 function isSameCalendarDay(a: Date, b: Date): boolean {
   return a.toDateString() === b.toDateString();
 }
 
-/** ISO date string (YYYY-MM-DD) for the current local day */
-function todayLocalISO(): string {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+/** Returns the Firestore document ID for a course + book. */
+function cpDocId(courseId: string, bookNumber: number): string {
+  return `${courseId}_${bookNumber}`;
 }
 
-function courseDocId(language: Language, workbook: number): string {
-  return `${language}_${workbook}`;
-}
+// ─────────────────────────────────────────────────────────────
+// Exported pure helpers
+// ─────────────────────────────────────────────────────────────
 
 /**
- * Build a 7-day array anchored to the lesson's startedAt date.
- * Day 1 unlocks on startedAt, day 2 = startedAt + 1, etc.
- * Using local midnight ensures unlock schedule matches the user's clock.
+ * Build a fresh 7-day array anchored to a lesson’s startedAt (local) date.
+ * Day 1 unlocks on startedAt; day N unlocks on startedAt + (N−1) days.
+ * Exported so callers can preview the schedule without a Firestore round-trip.
  */
-function buildDays(lessonStartedAt: string): DayRecord[] {
-  const base = startOfLocalDay(new Date(lessonStartedAt));
-  return Array.from({ length: 7 }, (_, i) => {
-    const unlockDate = addLocalDays(base, i);
-    const unlockISO = `${unlockDate.getFullYear()}-${String(unlockDate.getMonth() + 1).padStart(2, '0')}-${String(unlockDate.getDate()).padStart(2, '0')}`;
-    console.log(`[UNLOCK] day ${i + 1} unlockedAt: ${unlockISO}`);
-    return {
-      dayNumber: i + 1,
-      unlockedAt: unlockISO,         // YYYY-MM-DD local date
-      completedAt: null,
-      completed: false,
-      score: null,
-      diamond: false,
-      fire: false,
-      ice: false,
-    };
-  });
-}
-
-/** Guard: ensure a lesson's days array is intact (7 entries with required fields). */
-function guardDays(lesson: LessonRecord): DayRecord[] {
-  const startedAt = lesson.unlockedAt ?? new Date().toISOString();
-  if (!Array.isArray(lesson.days) || lesson.days.length !== 7) {
-    console.warn('[UNLOCK] days array invalid — rebuilding from startedAt:', startedAt);
-    return buildDays(startedAt);
-  }
-  // Ensure every day has required boolean/nullable fields
-  return lesson.days.map(d => ({
-    dayNumber: d.dayNumber,
-    unlockedAt: d.unlockedAt ?? '',
-    completedAt: d.completedAt ?? null,
-    completed: d.completed ?? false,
-    score: d.score ?? null,
-    diamond: d.diamond ?? false,
-    fire: d.fire ?? false,
-    ice: d.ice ?? false,
+export function buildDays(startedAt: string): DayEntry[] {
+  const base = startOfLocalDay(new Date(startedAt));
+  return Array.from({ length: 7 }, (_, i) => ({
+    day: i + 1,
+    unlockedAt: toLocalISO(addLocalDays(base, i)),
+    completed: false,
   }));
 }
 
 /**
- * Recompute fire/ice/diamond/stars by iterating stored day records.
- * NEVER trust pre-aggregated totals — always rebuild from source.
+ * Recompute lesson stats from raw day records.
+ * Never trust cached aggregates — always derive fire/ice/diamonds from source data.
+ *
+ * fire:            day completed on its exact unlockedAt calendar date
+ * ice:             day completed after its unlockedAt date
+ * diamonds:        score === 100
+ * stars:           fire + diamonds
+ * totalCompleted:  days with completed === true
  */
-export function rebuildLessonStats(days: DayRecord[]): WeekScores {
-  let fire = 0, ice = 0, diamonds = 0, totalDays = 0;
-  for (const d of days) {
-    if (d.fire) fire++;
-    if (d.ice) ice++;
-    if (d.diamond) diamonds++;
-    if (d.completed) totalDays++;
+export function rebuildLessonStats(lesson: LessonProgress): LessonStats {
+  let fire = 0, ice = 0, diamonds = 0, totalCompleted = 0;
+  for (const d of lesson.days) {
+    if (!d.completed || !d.completedAt) continue;
+    totalCompleted++;
+    const completedDay = startOfLocalDay(new Date(d.completedAt));
+    const unlockedDay = startOfLocalDay(new Date(d.unlockedAt));
+    if (isSameCalendarDay(completedDay, unlockedDay)) {
+      fire++;
+    } else {
+      ice++;
+    }
+    if ((d.score ?? 0) === 100) diamonds++;
   }
   const stars = fire + diamonds;
-  console.log('[REBUILD] totals:', { fire, ice, diamonds, stars, totalDays });
-  return { fire, ice, diamonds, stars, totalDays };
+  console.log('[REBUILD] stats:', { fire, ice, diamonds, stars, totalCompleted });
+  return { fire, ice, diamonds, stars, totalCompleted };
+}
+
+/**
+ * Return a safe 7-day array for a lesson.
+ * If the stored array is missing or has the wrong length, rebuild it from
+ * startedAt so the UI is never broken by a partial Firestore write.
+ */
+function guardDays(lesson: LessonProgress): DayEntry[] {
+  if (!Array.isArray(lesson.days) || lesson.days.length !== 7) {
+    console.warn('[UNLOCK] days array corrupt — rebuilding from startedAt:', lesson.startedAt);
+    return buildDays(lesson.startedAt);
+  }
+  return lesson.days.map(d => ({
+    day: d.day,
+    unlockedAt: d.unlockedAt ?? '',
+    completed: d.completed ?? false,
+    ...(d.completedAt !== undefined && { completedAt: d.completedAt }),
+    ...(d.score    !== undefined && { score: d.score }),
+  }));
 }
 
 // ─────────────────────────────────────────────────────────────
-// Course progress — read
+// Public API — reads
 // ─────────────────────────────────────────────────────────────
 
+/** Read the full courseProgress document for a given course + book. */
 export async function getCourseProgress(
   uid: string,
-  language: Language,
-  workbook: number,
+  courseId: string,
+  bookNumber: number,
 ): Promise<CourseProgressDoc | null> {
   if (!db) return null;
   try {
-    const ref = doc(db, `users/${uid}/courseProgress/${courseDocId(language, workbook)}`);
+    const ref = doc(db, `users/${uid}/courseProgress/${cpDocId(courseId, bookNumber)}`);
     const snap = await getDoc(ref);
     return snap.exists() ? (snap.data() as CourseProgressDoc) : null;
   } catch (e) {
@@ -198,210 +224,196 @@ export async function getCourseProgress(
   }
 }
 
+/** Read a single lesson’s progress record. Returns null if not yet started. */
+export async function getLessonProgress(
+  uid: string,
+  courseId: string,
+  bookNumber: number,
+  lessonId: number,
+): Promise<LessonProgress | null> {
+  const cp = await getCourseProgress(uid, courseId, bookNumber);
+  return cp?.lessons[String(lessonId)] ?? null;
+}
+
 // ─────────────────────────────────────────────────────────────
-// Course progress — ensure lesson + day 1 exist
+// Public API — writes
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Called when the user opens a lesson for the first time.
- * Creates the lesson record and unlocks day 1 immediately.
- * Subsequent days unlock midnight after the previous day.
+ * Ensure a lesson record exists in Firestore.
+ * Called every time the user opens a lesson — idempotent if the lesson was already started.
+ * Returns the existing or newly created LessonProgress.
  */
 export async function ensureLessonStarted(
   uid: string,
-  language: Language,
-  workbook: number,
+  courseId: string,
+  bookNumber: number,
   lessonId: number,
-): Promise<CourseProgressDoc | null> {
+): Promise<LessonProgress | null> {
   if (!db) return null;
-
-  const docId = courseDocId(language, workbook);
-  const ref = doc(db, `users/${uid}/courseProgress/${docId}`);
+  const ref = doc(db, `users/${uid}/courseProgress/${cpDocId(courseId, bookNumber)}`);
 
   try {
     const snap = await getDoc(ref);
-    const existing = snap.exists() ? (snap.data() as CourseProgressDoc) : null;
-    const lessons: LessonRecord[] = existing?.lessons ?? [];
+    const data = snap.exists() ? (snap.data() as CourseProgressDoc) : null;
+    const lessonKey = String(lessonId);
 
-    const alreadyExists = lessons.some(l => l.lessonId === lessonId);
-    if (alreadyExists) {
-      console.log(`[UNLOCK] Lesson ${lessonId} already started for ${uid}`);
-      return existing;
+    // Idempotent: lesson already started — return existing record unchanged
+    if (data?.lessons?.[lessonKey]) {
+      console.log(`[UNLOCK] Lesson ${lessonId} already started for uid: ${uid}`);
+      return data.lessons[lessonKey];
     }
 
-    // Use a real local-time ISO string so buildDays can anchor unlock dates
-    const lessonStartedAt = new Date().toISOString();
-    const newLesson: LessonRecord = {
-      lessonId,
-      unlockedAt: lessonStartedAt,
-      days: buildDays(lessonStartedAt),
+    // startedAt is the LOCAL calendar date — immutable from this point on
+    const startedAt = todayLocalISO();
+    const newLesson: LessonProgress = { startedAt, days: buildDays(startedAt) };
+    console.log(`[UNLOCK] Starting lesson ${lessonId} for uid: ${uid} — startedAt: ${startedAt}`);
+
+    const patch: Record<string, unknown> = {
+      [`lessons.${lessonKey}`]: newLesson,
+      updatedAt: serverTimestamp(),
     };
 
-    const updatedLessons = [...lessons, newLesson].sort((a, b) => a.lessonId - b.lessonId);
-
-    const updatedDoc: Partial<CourseProgressDoc> = {
-      language,
-      workbook,
-      lastUpdated: serverTimestamp(),
-      lessons: updatedLessons,
-    };
-
-    if (!existing) {
-      (updatedDoc as CourseProgressDoc).startedAt = serverTimestamp();
+    if (!data) {
+      // First lesson for this course + book — write document-level fields too
+      patch.courseId = courseId;
+      patch.bookNumber = bookNumber;
+      patch.createdAt = startedAt;
     }
 
-    await setDoc(ref, updatedDoc, { merge: true });
-    console.log(`[UNLOCK] Lesson ${lessonId} started. lessonStartedAt: ${lessonStartedAt}`);
-
-    const updated = await getDoc(ref);
-    return updated.data() as CourseProgressDoc;
+    await setDoc(ref, patch, { merge: true });
+    return newLesson;
   } catch (e) {
     console.error('[UNLOCK] ensureLessonStarted error:', e);
     return null;
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Day completion
-// ─────────────────────────────────────────────────────────────
-
 /**
- * Mark a day as completed and persist to Firestore.
- * Wrapped in a Firestore transaction to prevent race conditions and double-completions.
- * Returns updated WeekScores (rebuilt from stored data) for immediate UI use.
+ * Mark a day as completed and persist atomically.
  *
- * TODO: Remove weeklyProgress reads after full migration to courseProgress.
+ * Safety guarantees (all enforced inside the transaction):
+ *   • Future days (unlockedAt > today) are rejected.
+ *   • Already-completed days are skipped (idempotent).
+ *   • Missing lesson / document is auto-initialised.
+ *
+ * Returns rebuilt LessonStats so the UI can update immediately.
+ *
+ * TODO: Remove weeklyProgress parallel writes after full migration.
  */
 export async function completeCourseDay(
   uid: string,
-  language: Language,
-  workbook: number,
+  courseId: string,
+  bookNumber: number,
   lessonId: number,
-  dayNumber: number,
-  exerciseScore: number,
-): Promise<{ success: boolean; scores: WeekScores }> {
-  const zeroScores: WeekScores = { fire: 0, ice: 0, diamonds: 0, stars: 0, totalDays: 0 };
+  dayIndex: number,  // 1-based
+  score: number,
+): Promise<{ success: boolean; stats: LessonStats }> {
+  const zeroStats: LessonStats = { fire: 0, ice: 0, diamonds: 0, stars: 0, totalCompleted: 0 };
 
   if (!db) {
-    console.error('[SAVE] db is null — Firestore not initialized');
-    return { success: false, scores: zeroScores };
+    console.error('[SAVE] Firestore not initialised');
+    return { success: false, stats: zeroStats };
   }
 
-  const docId = courseDocId(language, workbook);
-  const ref = doc(db, `users/${uid}/courseProgress/${docId}`);
+  const lessonKey = String(lessonId);
+  const ref = doc(db, `users/${uid}/courseProgress/${cpDocId(courseId, bookNumber)}`);
 
-  console.log('[SAVE] userId:', uid);
-  console.log('[SAVE] courseDocId:', docId, '| lessonId:', lessonId, '| dayNumber:', dayNumber);
-  console.log('[SAVE] exerciseScore:', exerciseScore);
+  console.log('[SAVE] completeCourseDay — uid:', uid, '| courseId:', courseId,
+              '| book:', bookNumber, '| lesson:', lessonId, '| day:', dayIndex, '| score:', score);
 
-  let resultScores = zeroScores;
+  let resultStats = zeroStats;
 
   try {
     await runTransaction(db, async (tx) => {
       const snap = await tx.get(ref);
+      const today = todayLocalISO();
 
-      // Auto-init if doc is missing inside transaction
+      // ─ Auto-init document if missing ─
       let data: CourseProgressDoc;
       if (!snap.exists()) {
-        console.warn('[SAVE] courseProgress doc missing — initialising inside transaction');
-        const lessonStartedAt = new Date().toISOString();
+        console.warn('[SAVE] courseProgress document missing — auto-initialising');
         data = {
-          language,
-          workbook,
-          startedAt: serverTimestamp(),
-          lastUpdated: serverTimestamp(),
-          lessons: [{
-            lessonId,
-            unlockedAt: lessonStartedAt,
-            days: buildDays(lessonStartedAt),
-          }],
+          courseId, bookNumber,
+          createdAt: today, updatedAt: serverTimestamp(),
+          lessons: {},
         };
       } else {
         data = snap.data() as CourseProgressDoc;
       }
 
-      let lessonIdx = data.lessons.findIndex(l => l.lessonId === lessonId);
-      if (lessonIdx === -1) {
-        // Lesson not found — append it
-        const lessonStartedAt = new Date().toISOString();
-        data = {
-          ...data,
-          lessons: [...data.lessons, {
-            lessonId,
-            unlockedAt: lessonStartedAt,
-            days: buildDays(lessonStartedAt),
-          }].sort((a, b) => a.lessonId - b.lessonId),
-        };
-        lessonIdx = data.lessons.findIndex(l => l.lessonId === lessonId);
+      // ─ Auto-init lesson if missing ─
+      const lesson: LessonProgress = data.lessons[lessonKey]
+        ?? { startedAt: today, days: buildDays(today) };
+
+      const safeDays = guardDays(lesson);
+      const idx = dayIndex - 1;  // convert to 0-based array index
+
+      if (idx < 0 || idx >= safeDays.length) {
+        throw new Error(`[SAVE] Invalid dayIndex: ${dayIndex}`);
       }
 
-      const lesson = data.lessons[lessonIdx];
-      const sanitisedDays = guardDays(lesson);  // safety guard
-      const dayIdx = dayNumber - 1;
+      const day = safeDays[idx];
 
-      if (dayIdx < 0 || dayIdx >= sanitisedDays.length) {
-        console.error('[SAVE] Invalid dayNumber:', dayNumber);
-        throw new Error(`Invalid dayNumber: ${dayNumber}`);
+      // ─ Guard: future days are not yet accessible ─
+      if (day.unlockedAt > today) {
+        const msg = `Day ${dayIndex} unlocks on ${day.unlockedAt} — cannot complete before then`;
+        console.warn('[SAVE]', msg);
+        throw new Error(msg);
       }
 
-      const day = sanitisedDays[dayIdx];
+      // ─ Idempotency: do not overwrite a completed day ─
+      if (day.completed) {
+        console.log(`[SAVE] Day ${dayIndex} already completed — skipping write`);
+        resultStats = rebuildLessonStats({ ...lesson, days: safeDays });
+        return;
+      }
 
-      // Calendar-day fire/ice using LOCAL time (not UTC)
-      const now = new Date();
-      const unlockedDate = new Date(day.unlockedAt); // YYYY-MM-DD parses to local midnight in most envs
-      const fireEarned = isSameCalendarDay(now, unlockedDate);
-      const iceEarned = !fireEarned;
-      const diamond = exerciseScore === 100;
-
-      console.log(`[COMPLETE] dayNumber: ${dayNumber}, fire: ${fireEarned}, ice: ${iceEarned}, diamond: ${diamond}`);
-
-      const updatedDay: DayRecord = {
+      const updatedDay: DayEntry = {
         ...day,
-        completedAt: now.toISOString(),
         completed: true,
-        score: exerciseScore,
-        diamond,
-        fire: fireEarned,
-        ice: iceEarned,
+        completedAt: new Date().toISOString(),
+        score,
       };
 
-      const updatedDays = sanitisedDays.map((d, i) => (i === dayIdx ? updatedDay : d));
-      const updatedLesson: LessonRecord = { ...lesson, days: updatedDays };
-      const updatedLessons = data.lessons.map((l, i) => (i === lessonIdx ? updatedLesson : l));
+      console.log(`[COMPLETE] day ${dayIndex}: score=${score}, unlockedAt=${day.unlockedAt}`);
 
-      // Always rebuild from stored day records — never trust cached totals
-      resultScores = rebuildLessonStats(updatedDays);
+      const updatedDays = safeDays.map((d, i) => (i === idx ? updatedDay : d));
+      const updatedLesson: LessonProgress = { ...lesson, days: updatedDays };
 
-      console.log('[SAVE] updatedDay:', JSON.stringify({ dayNumber, exerciseScore, fire: fireEarned, ice: iceEarned, diamond }));
+      resultStats = rebuildLessonStats(updatedLesson);
+      console.log('[COMPLETE] rebuilt stats:', resultStats);
 
-      tx.set(ref, { lessons: updatedLessons, lastUpdated: serverTimestamp() }, { merge: true });
+      tx.set(ref, {
+        [`lessons.${lessonKey}`]: updatedLesson,
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
     });
 
-    console.log('[SAVE] courseProgress persisted to Firestore ✓');
-    return { success: true, scores: resultScores };
-  } catch (e) {
+    console.log('[SAVE] courseProgress persisted ✓');
+    return { success: true, stats: resultStats };
+  } catch (e: any) {
+    const msg: string = e?.message ?? String(e);
+    // Business-rule rejections are not errors — return gracefully
+    if (msg.includes('cannot complete before')) {
+      return { success: false, stats: zeroStats };
+    }
     console.error('[SAVE ERROR] completeCourseDay transaction failed:', e);
-    return { success: false, scores: zeroScores };
+    return { success: false, stats: zeroStats };
   }
 }
 
-// ─────────────────────────────────────────────────────────────
-// Aggregate metrics for a lesson
-// ─────────────────────────────────────────────────────────────
-
-export async function getLessonScores(
+/** Get aggregated stats for a lesson (convenience wrapper). */
+export async function getLessonStats(
   uid: string,
-  language: Language,
-  workbook: number,
+  courseId: string,
+  bookNumber: number,
   lessonId: number,
-): Promise<WeekScores> {
-  const zero: WeekScores = { fire: 0, ice: 0, diamonds: 0, stars: 0, totalDays: 0 };
-  const cp = await getCourseProgress(uid, language, workbook);
-  if (!cp) return zero;
-  const lesson = cp.lessons.find(l => l.lessonId === lessonId);
+): Promise<LessonStats> {
+  const zero: LessonStats = { fire: 0, ice: 0, diamonds: 0, stars: 0, totalCompleted: 0 };
+  const lesson = await getLessonProgress(uid, courseId, bookNumber, lessonId);
   if (!lesson) return zero;
-  // Always rebuild from stored day records
-  return rebuildLessonStats(guardDays(lesson));
+  return rebuildLessonStats(lesson);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -459,22 +471,15 @@ export async function setGroupConfig(config: GroupConfig): Promise<void> {
 }
 
 /**
- * Check whether today is on or after the group's startDay.
- * Used to gate Day 1 access.
- *
- * startDay is a day-of-week name ('tuesday', 'saturday', …).
- * Returns true when today's weekday name >= startDay name (cyclically).
- * For simplicity we allow access if today IS the startDay or later in the week.
+ * Check whether today is on or after the group’s startDay.
+ * Used to gate Day 1 access for scheduled classes.
  */
-const DOW = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const DOW = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 
 export function canStartLesson(group: GroupConfig): boolean {
-  const todayDow = DOW[new Date().getDay()];
-  const startIdx = DOW.indexOf(group.startDay.toLowerCase());
-  const todayIdx = DOW.indexOf(todayDow);
-  if (startIdx === -1) return true; // unknown day name → allow
-  // Allow if today is the start day or any day after it in the same week
-  return todayIdx >= startIdx;
+  const startIdx = DOW.indexOf(group.startDay.toLowerCase() as typeof DOW[number]);
+  if (startIdx === -1) return true;
+  return new Date().getDay() >= startIdx;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -495,8 +500,8 @@ export interface UserProgressSummary {
 }
 
 /**
- * Fetch a progress summary for every user (for teacher dashboard).
- * Reads /users collection + each user's courseProgress subcollection.
+ * Fetch a progress summary for every user (teacher dashboard).
+ * Reads /users + each user’s courseProgress subcollection.
  */
 export async function getAllUserProgressSummaries(): Promise<UserProgressSummary[]> {
   if (!db) return [];
@@ -511,36 +516,33 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
         try {
           const metaSnap = await getDoc(doc(db!, `users/${uid}/meta/status`));
           metaGroup = metaSnap.data()?.group;
-        } catch {}
+        } catch { /* no meta — skip */ }
 
-        let totalStars = 0, totalFire = 0, totalIce = 0, totalDiamonds = 0;
+        let totalFire = 0, totalIce = 0, totalDiamonds = 0;
         let lessonsStarted = 0, daysCompleted = 0;
 
         try {
           const cpSnap = await getDocs(collection(db!, `users/${uid}/courseProgress`));
           for (const cpDoc of cpSnap.docs) {
             const cpData = cpDoc.data() as CourseProgressDoc;
-            for (const lesson of (cpData.lessons ?? [])) {
+            // lessons is a Record<string, LessonProgress>
+            for (const lesson of Object.values(cpData.lessons ?? {})) {
               lessonsStarted++;
-              for (const day of lesson.days) {
-                if (day.completed) {
-                  daysCompleted++;
-                  if (day.fire) totalFire++;
-                  if (day.ice) totalIce++;
-                  if (day.diamond) totalDiamonds++;
-                }
-              }
+              const stats = rebuildLessonStats(lesson);
+              totalFire     += stats.fire;
+              totalIce      += stats.ice;
+              totalDiamonds += stats.diamonds;
+              daysCompleted += stats.totalCompleted;
             }
           }
-          totalStars = totalFire + totalDiamonds;
-        } catch {}
+        } catch { /* no courseProgress — skip */ }
 
         return {
           uid,
           displayName: userData.displayName ?? userData.name,
           email: userData.email,
           group: metaGroup,
-          totalStars,
+          totalStars: totalFire + totalDiamonds,
           totalFire,
           totalIce,
           totalDiamonds,

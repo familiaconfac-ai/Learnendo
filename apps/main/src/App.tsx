@@ -22,7 +22,7 @@ import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/week
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
 import { calculateWeeklyScore, DayProgress, ScoreResult } from './engine/scoringEngine';
-import { ensureLessonStarted, completeCourseDay, Language } from './engine/courseProgressEngine';
+import { ensureLessonStarted, completeCourseDay, LessonProgress } from './engine/courseProgressEngine';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 
 const DEFAULT_COURSE_ID = 'english';
@@ -133,6 +133,8 @@ const App: React.FC = () => {
   const stars = Number((progress as any).totalStars ?? (progress.completedActivities || []).length);
   const [sessionCount, setSessionCount] = useState<number>(0);
   const [score, setScore] = useState<ScoreResult | null>(null);
+  /** Progress for the currently open lesson — read from Firestore on lesson open. */
+  const [lessonProgress, setLessonProgress] = useState<LessonProgress | null>(null);
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
@@ -452,11 +454,14 @@ const App: React.FC = () => {
       return;
     }
 
-    // Ensure the lesson is initialised in courseProgress (creates days array if first time)
+    // Initialise (or reload) lesson progress from courseProgress
     if (user?.uid) {
-      const lang = (COURSE_TO_LANGUAGE[currentCourseId ?? DEFAULT_COURSE_ID] ?? 'en') as Language;
-      ensureLessonStarted(user.uid, lang, progress.currentWorkbook, lessonNumber)
+      const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
+      ensureLessonStarted(user.uid, courseId, progress.currentWorkbook, lessonNumber)
+        .then(lp => setLessonProgress(lp))
         .catch(e => console.warn('[UNLOCK] ensureLessonStarted failed:', e));
+    } else {
+      setLessonProgress(null);
     }
 
     setCurrentLessonId(lessonId);
@@ -650,11 +655,15 @@ const App: React.FC = () => {
           }
 
           // ── New courseProgress path ──
-          const lang = (COURSE_TO_LANGUAGE[currentCourseId ?? DEFAULT_COURSE_ID] ?? 'en') as Language;
-          completeCourseDay(user.uid, lang, progress.currentWorkbook, lessonNumber, dayNumber, score)
-            .then(({ success, scores }) => {
+          const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
+          completeCourseDay(user.uid, courseId, progress.currentWorkbook, lessonNumber, dayNumber, score)
+            .then(({ success, stats }) => {
               if (success) {
-                console.log('[SAVE] courseProgress scores:', scores);
+                console.log('[SAVE] courseProgress stats:', stats);
+                // Refresh the in-memory lessonProgress so LessonView shows the tick
+                ensureLessonStarted(user.uid!, courseId, progress.currentWorkbook, lessonNumber)
+                  .then(lp => { if (lp) setLessonProgress(lp); })
+                  .catch(() => {});
               }
             })
             .catch(e => console.warn('[SAVE] completeCourseDay failed:', e));
@@ -703,6 +712,7 @@ const App: React.FC = () => {
             progress={progress}
             currentCourse={activeCourse}
             isAdmin={isAdmin}
+            userId={user?.uid ?? null}
             onNavigate={handleNavigate}
           />
         );
@@ -738,6 +748,7 @@ const App: React.FC = () => {
             lesson={lesson}
             lessonNumber={lessonNumber}
             progress={progress}
+            lessonProgress={lessonProgress}
             currentLanguage={language}
             isAdmin={isAdmin}
             testCompleted={lessonTestCompleted[lessonNumber] || false}

@@ -52,16 +52,19 @@ async function deleteSubcollection(path: string): Promise<void> {
 /**
  * Reset user progress by scope.
  *
- * 'all'      → clears courseProgress + weeklyProgress for all languages/workbooks
- * 'language' → clears only courseProgress docs for the given language
+ * 'all'      → clears all courseProgress + weeklyProgress docs
+ * 'language' → clears courseProgress docs whose ID starts with the given courseId
  * 'workbook' → clears only the specific courseProgress doc
  *
- * NEVER modifies: profile (/users/{uid}), placementTests, meta/status
+ * Pass `courseId` (e.g. 'english') for 'language'/'workbook' scope.
+ * `language` (Language code) is accepted as a fallback for backwards compatibility.
+ *
+ * NEVER modifies: /users/{uid} profile, placementTests, or meta/status.
  */
 export async function resetUserProgress(
   uid: string,
   scope: ResetScope,
-  opts?: { language?: Language; workbook?: number }
+  opts?: { language?: Language; courseId?: string; workbook?: number }
 ): Promise<void> {
   if (!db) {
     console.error('[RESET] db is null');
@@ -72,32 +75,32 @@ export async function resetUserProgress(
 
   try {
     if (scope === 'all') {
-      // Clear all courseProgress docs
       await deleteSubcollection(`users/${uid}/courseProgress`);
-      // Clear legacy weeklyProgress docs
       await deleteSubcollection(`users/${uid}/weeklyProgress`);
       console.log('[RESET] All progress cleared for:', uid);
       return;
     }
 
     if (scope === 'language') {
-      if (!opts?.language) {
-        console.error('[RESET] language scope requires opts.language');
+      const prefix = opts?.courseId ?? opts?.language;
+      if (!prefix) {
+        console.error('[RESET] language scope requires opts.courseId or opts.language');
         return;
       }
       const cpSnap = await getDocs(collection(db, `users/${uid}/courseProgress`));
-      const toDelete = cpSnap.docs.filter(d => d.id.startsWith(`${opts.language}_`));
+      const toDelete = cpSnap.docs.filter(d => d.id.startsWith(`${prefix}_`));
       await Promise.all(toDelete.map(d => deleteDoc(d.ref)));
-      console.log(`[RESET] Cleared ${toDelete.length} docs for language ${opts.language}`);
+      console.log(`[RESET] Cleared ${toDelete.length} docs matching prefix "${prefix}_" for uid:`, uid);
       return;
     }
 
     if (scope === 'workbook') {
-      if (!opts?.language || opts?.workbook === undefined) {
-        console.error('[RESET] workbook scope requires opts.language and opts.workbook');
+      const coursePrefix = opts?.courseId ?? opts?.language;
+      if (!coursePrefix || opts?.workbook === undefined) {
+        console.error('[RESET] workbook scope requires opts.courseId (or opts.language) and opts.workbook');
         return;
       }
-      const docId = `${opts.language}_${opts.workbook}`;
+      const docId = `${coursePrefix}_${opts.workbook}`;
       const ref = doc(db, `users/${uid}/courseProgress/${docId}`);
       await deleteDoc(ref);
       console.log(`[RESET] Cleared courseProgress/${docId} for uid:`, uid);

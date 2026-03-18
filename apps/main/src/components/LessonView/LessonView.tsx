@@ -1,11 +1,16 @@
 import React from 'react';
 import { Day, Lesson, UserProgress, LessonLanguageCode } from '../../types';
 import { canAccessDay } from '../../engine/unlockEngine';
+import { LessonProgress } from '../../engine/courseProgressEngine';
 
 interface LessonViewProps {
   lesson: Lesson;
   lessonNumber: number;
   progress: UserProgress;
+  /** Live courseProgress data for this lesson, passed in from App.tsx. When
+   *  provided, day status is driven by Firestore data (date-based unlocks &
+   *  real completion flags).  Falls back to local completedActivities when null. */
+  lessonProgress?: LessonProgress | null;
   currentLanguage?: LessonLanguageCode;
   isAdmin?: boolean;
   onStartDay: (day: Day) => void;
@@ -18,10 +23,17 @@ interface LessonViewProps {
 
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
 
+/** YYYY-MM-DD in local time */
+function todayLocalISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export const LessonView: React.FC<LessonViewProps> = ({
   lesson,
   lessonNumber,
   progress,
+  lessonProgress,
   currentLanguage = 'en',
   isAdmin = false,
   onStartDay,
@@ -38,20 +50,43 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const testMarker = `${LESSON_TEST_PREFIX}${lessonNumber}`;
   const hasPassedTest = testPassed || completed.includes(testMarker);
 
-  // 1-based list of day positions that are already completed within this lesson
-  const completedDays = firstSixDays
-    .map((day, i) => (day && completed.includes(day.id) ? i + 1 : null))
-    .filter((n): n is number => n !== null);
-
+  /**
+   * Determine day status using Firestore data when available.
+   *
+   * Priority (highest → lowest):
+   *   1. lessonProgress (Firestore) — date-based unlock + real completion flag
+   *   2. local completedActivities array — falls back when Firestore unavailable
+   */
   const getDayStatus = (dayId: string | null, index: number): 'completed' | 'in-progress' | 'locked' => {
     if (!dayId) return 'locked';
+
+    if (lessonProgress) {
+      const today = todayLocalISO();
+      const entry = lessonProgress.days[index];
+      if (!entry) return 'locked';
+      if (entry.completed) return 'completed';
+      if (isAdmin) return 'in-progress';
+      // Future day: not yet unlocked
+      if (entry.unlockedAt > today) return 'locked';
+      return 'in-progress';
+    }
+
+    // ── Fallback: local state ──
     if (completed.includes(dayId)) return 'completed';
     if (isAdmin) return 'in-progress';
-    return canAccessDay(index + 1, completedDays) ? 'in-progress' : 'locked';
+    const completedDaysLocal = firstSixDays
+      .map((d, i) => (d && completed.includes(d.id) ? i + 1 : null))
+      .filter((n): n is number => n !== null);
+    return canAccessDay(index + 1, completedDaysLocal) ? 'in-progress' : 'locked';
   };
 
   const firstUnlockedIndex = firstSixDays.findIndex((day, index) => getDayStatus(day?.id || null, index) === 'in-progress');
-  const firstSixComplete = firstSixDays.every((day) => day && completed.includes(day.id));
+
+  // Day 7 (test) unlocks when all 6 practice days are completed
+  const firstSixComplete = lessonProgress
+    ? lessonProgress.days.slice(0, 6).every(d => d.completed)
+    : firstSixDays.every(day => day && completed.includes(day.id));
+
   const testUnlocked = (isAdmin || firstSixComplete) && !!daySeven;
   const lessonFullyCompleted = hasPassedTest && !isAdmin;
 
