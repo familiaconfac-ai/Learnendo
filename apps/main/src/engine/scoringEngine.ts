@@ -28,12 +28,24 @@ export interface WeeklyScoreResult {
  * @returns Weekly score metrics (all values in the 0–7 range).
  */
 export function calculateWeeklyScore(days: DayProgress[]): WeeklyScoreResult {
+  console.log('[Score] calculateWeeklyScore — DAYS LENGTH:', days.length);
+
+  if (days.length === 0) {
+    console.log('[Score] No days provided — returning all zeros.');
+    return { fire: 0, freeze: 0, diamonds: 0, stars: 0 };
+  }
+
   const sorted = [...days].sort((a, b) => a.dayNumber - b.dayNumber);
   let fire = 0;
   let freeze = 0;
   let diamonds = 0;
 
   for (const day of sorted) {
+    console.log('[Score] Day:', {
+      dayNumber: day.dayNumber,
+      completed: day.completed,
+      score: day.score ?? '(no score)',
+    });
     if (day.completed) {
       fire++;
       if ((day.score ?? 0) === 100) diamonds++;
@@ -44,6 +56,7 @@ export function calculateWeeklyScore(days: DayProgress[]): WeeklyScoreResult {
   }
 
   const stars = Math.max(0, fire + diamonds - freeze);
+  console.log('[Score] Result:', { fire, freeze, diamonds, stars });
   return { fire, freeze, diamonds, stars };
 }
 

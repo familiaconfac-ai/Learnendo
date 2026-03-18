@@ -303,9 +303,15 @@ const App: React.FC = () => {
     if (isNaN(lessonNumber)) return;
     const uid = user.uid;
     const weekId = `workbook_${progress.currentWorkbook}_lesson_${lessonNumber}`;
+    console.log('[Score] Loading weekly progress for weekId:', weekId);
     getWeeklyProgress(uid, weekId)
       .then((week) => {
-        if (!week) return;
+        console.log('[Score] USER DATA (weeklyProgress):', week);
+        if (!week) {
+          console.log('[Score] No week data — setting all zeros.');
+          setScore({ streak: 0, freeze: 0, diamonds: 0, stars: 0, activeDays: 0, totalDays: 7 });
+          return;
+        }
         const today = new Date().toISOString().split('T')[0];
         const dayProgress: DayProgress[] = week.days
           .filter(d => d.status !== 'pending' || d.scheduledDate <= today)
@@ -324,7 +330,10 @@ const App: React.FC = () => {
           totalDays: 7,
         });
       })
-      .catch(() => {});
+      .catch(() => {
+        console.warn('[Score] Failed to load weeklyProgress — setting all zeros.');
+        setScore({ streak: 0, freeze: 0, diamonds: 0, stars: 0, activeDays: 0, totalDays: 7 });
+      });
   }, [user?.uid, currentLessonId]);
 
   useEffect(() => {
@@ -538,29 +547,37 @@ const App: React.FC = () => {
         // Recalculate weekly score from Firestore before showing animation
         if (user?.uid) {
           const weekId = `workbook_${progress.currentWorkbook}_lesson_${lessonNumber}`;
+          console.log('[Score] Pre-animation fetch for weekId:', weekId);
           getWeeklyProgress(user.uid, weekId)
             .then((week) => {
-              if (week) {
-                const today = new Date().toISOString().split('T')[0];
-                const dayProgress: DayProgress[] = week.days
-                  .filter(d => d.status !== 'pending' || d.scheduledDate <= today)
-                  .map(d => ({
-                    dayNumber: d.dayNumber,
-                    completed: d.status !== 'pending',
-                    score: d.diamondEarned ? 100 : (d.status !== 'pending' ? 0 : undefined),
-                  }));
-                const weekly = calculateWeeklyScore(dayProgress);
-                setScore({
-                  streak: weekly.fire,
-                  freeze: weekly.freeze,
-                  diamonds: weekly.diamonds,
-                  stars: weekly.stars,
-                  activeDays: weekly.fire,
-                  totalDays: 7,
-                });
+              console.log('[Score] Pre-animation USER DATA (weeklyProgress):', week);
+              if (!week) {
+                console.log('[Score] No week data before animation — setting all zeros.');
+                setScore({ streak: 0, freeze: 0, diamonds: 0, stars: 0, activeDays: 0, totalDays: 7 });
+                return;
               }
+              const today = new Date().toISOString().split('T')[0];
+              const dayProgress: DayProgress[] = week.days
+                .filter(d => d.status !== 'pending' || d.scheduledDate <= today)
+                .map(d => ({
+                  dayNumber: d.dayNumber,
+                  completed: d.status !== 'pending',
+                  score: d.diamondEarned ? 100 : (d.status !== 'pending' ? 0 : undefined),
+                }));
+              const weekly = calculateWeeklyScore(dayProgress);
+              setScore({
+                streak: weekly.fire,
+                freeze: weekly.freeze,
+                diamonds: weekly.diamonds,
+                stars: weekly.stars,
+                activeDays: weekly.fire,
+                totalDays: 7,
+              });
             })
-            .catch(() => {})
+            .catch(() => {
+              console.warn('[Score] Pre-animation fetch failed — setting all zeros.');
+              setScore({ streak: 0, freeze: 0, diamonds: 0, stars: 0, activeDays: 0, totalDays: 7 });
+            })
             .finally(() => setShowResultAnimation(true));
         } else {
           setShowResultAnimation(true);
@@ -838,10 +855,10 @@ const App: React.FC = () => {
             <span className="rounded-lg bg-blue-100 text-blue-700 px-1.5 py-1" title="Current Language">
               {language.toUpperCase()}
             </span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {score?.streak ?? (sessionCount || streak)}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {score?.freeze ?? freeze}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {score?.diamonds ?? diamonds}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">⭐ {score?.stars ?? stars}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {score?.streak ?? 0}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {score?.freeze ?? 0}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {score?.diamonds ?? 0}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">⭐ {score?.stars ?? 0}</span>
           </div>
 
           <button
@@ -882,10 +899,10 @@ const App: React.FC = () => {
       )}
       {showResultAnimation && (
         <ResultAnimation
-          streak={score?.streak ?? streak}
-          freeze={score?.freeze ?? freeze}
-          diamonds={score?.diamonds ?? diamonds}
-          stars={score?.stars ?? stars}
+          streak={score?.streak ?? 0}
+          freeze={score?.freeze ?? 0}
+          diamonds={score?.diamonds ?? 0}
+          stars={score?.stars ?? 0}
           onClose={() => setShowResultAnimation(false)}
         />
       )}
