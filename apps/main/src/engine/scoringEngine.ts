@@ -1,3 +1,56 @@
+// ─────────────────────────────────────────────────────────────
+// Week-based scoring (lesson = one week, days 1–7)
+// ─────────────────────────────────────────────────────────────
+
+export type DayProgress = {
+  dayNumber: number;
+  completed: boolean;
+  /** Actual score 0–100 for this day (optional). Used to determine diamonds. */
+  score?: number;
+};
+
+export interface WeeklyScoreResult {
+  fire: number;
+  freeze: number;
+  diamonds: number;
+  stars: number;
+}
+
+/**
+ * Calculate week-based score from the progress of individual days.
+ *
+ * Caller is responsible for passing only the days that were actually
+ * unlocked (scheduled or completed). Future days that the student has
+ * not yet had access to must be excluded before calling this function –
+ * this avoids counting them as freeze in admin/bypass scenarios.
+ *
+ * @param days - Array of unlocked/completed day records for the lesson week.
+ * @returns Weekly score metrics (all values in the 0–7 range).
+ */
+export function calculateWeeklyScore(days: DayProgress[]): WeeklyScoreResult {
+  const sorted = [...days].sort((a, b) => a.dayNumber - b.dayNumber);
+  let fire = 0;
+  let freeze = 0;
+  let diamonds = 0;
+
+  for (const day of sorted) {
+    if (day.completed) {
+      fire++;
+      if ((day.score ?? 0) === 100) diamonds++;
+    } else {
+      // Only reached here for days the caller confirmed were unlocked/due.
+      freeze++;
+    }
+  }
+
+  const stars = Math.max(0, fire + diamonds - freeze);
+  return { fire, freeze, diamonds, stars };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Legacy global scoring (kept for reference – not used by UI)
+// ─────────────────────────────────────────────────────────────
+
 /** Milliseconds in one day */
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 

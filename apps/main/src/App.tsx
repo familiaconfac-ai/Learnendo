@@ -17,11 +17,11 @@ import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
-import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getUserActivityData } from './services/db';
+import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
-import { calculateScore, ScoreResult } from './engine/scoringEngine';
+import { calculateWeeklyScore, DayProgress, ScoreResult } from './engine/scoringEngine';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 
 const DEFAULT_COURSE_ID = 'english';
@@ -298,16 +298,34 @@ const App: React.FC = () => {
   }, [user?.uid]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user?.uid || !currentLessonId) return;
+    const lessonNumber = getLessonNumberFromId(currentLessonId);
+    if (isNaN(lessonNumber)) return;
     const uid = user.uid;
-    const creationTime = user.metadata?.creationTime;
-    const startDate = creationTime ? new Date(creationTime) : new Date();
-    getUserActivityData(uid)
-      .then(({ sessionDates, lessonCompletions }) => {
-        setScore(calculateScore({ sessionDates, lessonCompletions, startDate }));
+    const weekId = `workbook_${progress.currentWorkbook}_lesson_${lessonNumber}`;
+    getWeeklyProgress(uid, weekId)
+      .then((week) => {
+        if (!week) return;
+        const today = new Date().toISOString().split('T')[0];
+        const dayProgress: DayProgress[] = week.days
+          .filter(d => d.status !== 'pending' || d.scheduledDate <= today)
+          .map(d => ({
+            dayNumber: d.dayNumber,
+            completed: d.status !== 'pending',
+            score: d.diamondEarned ? 100 : (d.status !== 'pending' ? 0 : undefined),
+          }));
+        const weekly = calculateWeeklyScore(dayProgress);
+        setScore({
+          streak: weekly.fire,
+          freeze: weekly.freeze,
+          diamonds: weekly.diamonds,
+          stars: weekly.stars,
+          activeDays: weekly.fire,
+          totalDays: 7,
+        });
       })
       .catch(() => {});
-  }, [user?.uid]);
+  }, [user?.uid, currentLessonId]);
 
   useEffect(() => {
     if (!user) return;
@@ -516,7 +534,37 @@ const App: React.FC = () => {
 
         setCurrentLessonId(null);
         setCurrentSection(SectionType.WORKBOOK);
-        setShowResultAnimation(true);
+
+        // Recalculate weekly score from Firestore before showing animation
+        if (user?.uid) {
+          const weekId = `workbook_${progress.currentWorkbook}_lesson_${lessonNumber}`;
+          getWeeklyProgress(user.uid, weekId)
+            .then((week) => {
+              if (week) {
+                const today = new Date().toISOString().split('T')[0];
+                const dayProgress: DayProgress[] = week.days
+                  .filter(d => d.status !== 'pending' || d.scheduledDate <= today)
+                  .map(d => ({
+                    dayNumber: d.dayNumber,
+                    completed: d.status !== 'pending',
+                    score: d.diamondEarned ? 100 : (d.status !== 'pending' ? 0 : undefined),
+                  }));
+                const weekly = calculateWeeklyScore(dayProgress);
+                setScore({
+                  streak: weekly.fire,
+                  freeze: weekly.freeze,
+                  diamonds: weekly.diamonds,
+                  stars: weekly.stars,
+                  activeDays: weekly.fire,
+                  totalDays: 7,
+                });
+              }
+            })
+            .catch(() => {})
+            .finally(() => setShowResultAnimation(true));
+        } else {
+          setShowResultAnimation(true);
+        }
         return;
       }
 
