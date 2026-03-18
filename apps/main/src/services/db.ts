@@ -689,6 +689,7 @@ export interface DailyProgressData {
   diamondEarned: boolean;
   fireEarned: boolean;
   iceEarned: boolean;
+  score?: number; // exercise score 0–100 for this day
 }
 
 export interface WeeklyProgressData {
@@ -820,9 +821,14 @@ export async function recordDailyProgress(
   uid: string,
   weekId: string,
   dayNumber: number,
-  completedDate: string
+  completedDate: string,
+  exerciseScore: number = 0
 ): Promise<{ isDayComplete: boolean; fireEarned: boolean; iceEarned: boolean; isWeekComplete: boolean }> {
+  console.log('[SAVE] userId:', uid);
+  console.log('[SAVE] weekId:', weekId, '| dayNumber:', dayNumber, '| exerciseScore:', exerciseScore);
+
   if (!db) {
+    console.error('[SAVE] Firestore db is null — cannot save day progress.');
     return { isDayComplete: false, fireEarned: false, iceEarned: false, isWeekComplete: false };
   }
 
@@ -849,24 +855,28 @@ export async function recordDailyProgress(
     const fireEarned = isOnTime;
     const iceEarned = !isOnTime && !day.iceEarned;
 
-    // Update day record
+    // Update day record — only this day changes, all others are preserved via spread
+    const diamondEarned = exerciseScore >= 100;
     const updatedDay: DailyProgressData = {
       ...day,
       completedDate: completedDate,
       completedOnTime: isOnTime,
       status: isOnTime ? 'completed_on_time' : 'completed_late',
-      diamondEarned: true,
+      diamondEarned,
       fireEarned: fireEarned,
       iceEarned: iceEarned,
+      score: exerciseScore,
     };
 
-    // Calculate new totals
-    const diamondsEarned = weekData.days.filter((d, idx) => idx < dayIndex ? d.diamondEarned : d.diamondEarned || (idx === dayIndex)).length;
-    const fireCount = weekData.days.filter((d, idx) => idx < dayIndex ? d.fireEarned : (idx === dayIndex && fireEarned)).length;
-    const iceCount = weekData.days.filter((d, idx) => idx < dayIndex ? d.iceEarned : (idx === dayIndex && iceEarned)).length;
+    // Build updated days array — only the target index is replaced
+    const updatedDays = weekData.days.map((d, idx) =>
+      idx === dayIndex ? updatedDay : d
+    );
 
-    const updatedDays = [...weekData.days];
-    updatedDays[dayIndex] = updatedDay;
+    // Calculate totals from the fully updated days array
+    const diamondsEarned = updatedDays.filter(d => d.diamondEarned).length;
+    const fireCount = updatedDays.filter(d => d.fireEarned).length;
+    const iceCount = updatedDays.filter(d => d.iceEarned).length;
 
     const starsEarned = diamondsEarned + fireCount;
     const isWeekComplete = diamondsEarned === 7;
@@ -884,16 +894,23 @@ export async function recordDailyProgress(
     };
 
     const weekDocRef = doc(db, `users/${uid}/weeklyProgress/${weekId}`);
-    await setDoc(weekDocRef, updatedWeekData);
+    console.log('[SAVE] updatedWeek:', JSON.stringify({ weekId, dayNumber, exerciseScore, diamondEarned, diamondsEarned, fireCount, iceCount, starsEarned, isWeekComplete }));
+    try {
+      await setDoc(weekDocRef, updatedWeekData, { merge: true });
+      console.log('[SAVE] weeklyProgress persisted to Firestore ✓');
+    } catch (err) {
+      console.error('[SAVE ERROR] setDoc failed:', err);
+      throw err;
+    }
 
     // Update total user stats
     await updateUserTotalProgress(uid, {
-      diamondsEarned: fireEarned ? 1 : 0,
+      diamondsEarned: diamondEarned ? 1 : 0,
       fireEarned: fireEarned ? 1 : 0,
       iceEarned: iceEarned ? 1 : 0,
     });
 
-    console.log(`Day ${dayNumber} recorded. Fire: ${fireEarned}, Ice: ${iceEarned}, Week complete: ${isWeekComplete}`);
+    console.log(`[SAVE] Day ${dayNumber} done. fire=${fireEarned} ice=${iceEarned} diamond=${diamondEarned} weekComplete=${isWeekComplete}`);
 
     return {
       isDayComplete: true,
@@ -902,7 +919,7 @@ export async function recordDailyProgress(
       isWeekComplete,
     };
   } catch (e) {
-    console.error("Error recording daily progress:", e);
+    console.error('[SAVE ERROR] recordDailyProgress failed:', e);
     return { isDayComplete: false, fireEarned: false, iceEarned: false, isWeekComplete: false };
   }
 }

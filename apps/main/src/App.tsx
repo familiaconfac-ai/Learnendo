@@ -22,6 +22,7 @@ import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/week
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
 import { calculateWeeklyScore, DayProgress, ScoreResult } from './engine/scoringEngine';
+import { ensureLessonStarted, completeCourseDay, Language } from './engine/courseProgressEngine';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 
 const DEFAULT_COURSE_ID = 'english';
@@ -451,6 +452,13 @@ const App: React.FC = () => {
       return;
     }
 
+    // Ensure the lesson is initialised in courseProgress (creates days array if first time)
+    if (user?.uid) {
+      const lang = (COURSE_TO_LANGUAGE[currentCourseId ?? DEFAULT_COURSE_ID] ?? 'en') as Language;
+      ensureLessonStarted(user.uid, lang, progress.currentWorkbook, lessonNumber)
+        .catch(e => console.warn('[UNLOCK] ensureLessonStarted failed:', e));
+    }
+
     setCurrentLessonId(lessonId);
     setCurrentSection(SectionType.LESSON);
   };
@@ -612,19 +620,44 @@ const App: React.FC = () => {
         const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
 
         if (!isNaN(lessonNumber) && !isNaN(dayNumber)) {
+          // ── Existing weeklyProgress path (kept unchanged) ──
           const result = await completeDayAndGetResult(
             user.uid,
             progress.currentWorkbook,
             lessonNumber,
-            dayNumber
+            dayNumber,
+            score  // forward the real exercise score (0-100)
           );
 
           console.log('[App] Firebase day completion result:', result);
+
+          // Immediately refresh header scores — no waiting for useEffect re-run
+          if (result.success && result.weekScores) {
+            setScore({
+              streak: result.weekScores.fire,
+              freeze: result.weekScores.freeze,
+              diamonds: result.weekScores.diamonds,
+              stars: result.weekScores.stars,
+              activeDays: result.weekScores.fire,
+              totalDays: 7,
+            });
+            console.log('[App] Score state updated from saved week data:', result.weekScores);
+          }
 
           // Show week completion popup if week is complete
           if (result.weekComplete && result.weekResult) {
             setWeekCompletionResult(result.weekResult);
           }
+
+          // ── New courseProgress path ──
+          const lang = (COURSE_TO_LANGUAGE[currentCourseId ?? DEFAULT_COURSE_ID] ?? 'en') as Language;
+          completeCourseDay(user.uid, lang, progress.currentWorkbook, lessonNumber, dayNumber, score)
+            .then(({ success, scores }) => {
+              if (success) {
+                console.log('[SAVE] courseProgress scores:', scores);
+              }
+            })
+            .catch(e => console.warn('[SAVE] completeCourseDay failed:', e));
 
           await recordLessonCompletion(user.uid, lessonNumber, {
             completedIslands: [dayId],

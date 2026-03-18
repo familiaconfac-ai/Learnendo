@@ -38,7 +38,8 @@ export async function completeDayAndGetResult(
   uid: string,
   workbookId: number,
   lessonId: number,
-  dayNumber: number
+  dayNumber: number,
+  exerciseScore: number = 0
 ): Promise<{
   success: boolean;
   fireEarned: boolean;
@@ -47,6 +48,7 @@ export async function completeDayAndGetResult(
   daysCompleted: number;
   weekComplete: boolean;
   weekResult?: WeekCompletionResult;
+  weekScores?: { fire: number; freeze: number; diamonds: number; stars: number };
 }> {
   const weekId = `workbook_${workbookId}_lesson_${lessonId}`;
   const today = new Date().toISOString();
@@ -64,8 +66,8 @@ export async function completeDayAndGetResult(
     };
   }
 
-  // Record day completion
-  const result = await recordDailyProgress(uid, weekId, dayNumber, today);
+  // Record day completion (passes actual exercise score for diamond eligibility)
+  const result = await recordDailyProgress(uid, weekId, dayNumber, today, exerciseScore);
 
   if (!result.isDayComplete) {
     return {
@@ -78,7 +80,7 @@ export async function completeDayAndGetResult(
     };
   }
 
-  // Get updated week data
+  // Get updated week data (freshly saved)
   const updatedWeek = await getWeeklyProgress(uid, weekId);
   if (!updatedWeek) {
     return {
@@ -104,6 +106,13 @@ export async function completeDayAndGetResult(
     weekResult = await getWeekCompletionResult(uid, weekId) || undefined;
   }
 
+  // Build week-scoped score for immediate UI update (no stale fallback needed)
+  const todayStr = new Date().toISOString().split('T')[0];
+  const fire = updatedWeek.days.filter(d => d.status !== 'pending').length;
+  const freeze = updatedWeek.days.filter(d => d.status === 'pending' && d.scheduledDate <= todayStr).length;
+  const diamonds = updatedWeek.days.filter(d => d.diamondEarned).length;
+  const stars = Math.max(0, fire + diamonds - freeze);
+
   return {
     success: true,
     fireEarned: result.fireEarned,
@@ -112,6 +121,7 @@ export async function completeDayAndGetResult(
     daysCompleted: updatedWeek.totalDaysCompleted,
     weekComplete: result.isWeekComplete,
     weekResult,
+    weekScores: { fire, freeze, diamonds, stars },
   };
 }
 
