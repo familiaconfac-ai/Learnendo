@@ -17,7 +17,7 @@ import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
-import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress } from './services/db';
+import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress, promoteAdminIfNeeded } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
@@ -204,6 +204,9 @@ const App: React.FC = () => {
         // Create or update user profile in Firestore
         console.log('[App] Recording user profile...');
         await createOrUpdateUserProfile(authenticatedUser);
+
+        // Promote to admin if the email is in the ADMIN_EMAILS list
+        await promoteAdminIfNeeded(authenticatedUser);
         
         // Create session entry
         console.log('[App] Creating session...');

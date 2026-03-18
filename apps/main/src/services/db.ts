@@ -77,6 +77,53 @@ export async function createOrUpdateUserProfile(user: User, emailOverride?: stri
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Admin role management
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Emails that should always have role: "admin" in Firestore.
+ * Add new admins here — the promotion runs automatically on their next login.
+ */
+const ADMIN_EMAILS: readonly string[] = [
+  'learnendo@gmail.com',
+  'jdhufstetler@gmail.com',
+];
+
+/**
+ * Returns true when the given Firestore user document has role === "admin".
+ * Safe to call with null / undefined.
+ */
+export function isAdmin(userData: Record<string, unknown> | null | undefined): boolean {
+  return userData?.role === 'admin';
+}
+
+/**
+ * If the signed-in user's email is in ADMIN_EMAILS, ensures their Firestore
+ * document has { role: "admin" }.  Uses merge so no existing fields are lost
+ * and no unnecessary write is issued when the role is already set.
+ *
+ * This is the ONLY place the role field is written — never call setDoc with
+ * role anywhere else to avoid accidentally downgrading users.
+ */
+export async function promoteAdminIfNeeded(user: User): Promise<void> {
+  if (!db || !user?.uid || !user.email) return;
+  if (!ADMIN_EMAILS.includes(user.email.toLowerCase())) return;
+
+  try {
+    const ref = doc(db, 'users', user.uid);
+    const snap = await getDoc(ref);
+    if (snap.data()?.role === 'admin') {
+      // Already an admin — skip write to avoid unnecessary Firestore ops
+      return;
+    }
+    await setDoc(ref, { role: 'admin' }, { merge: true });
+    console.log('[DB] Admin role granted to:', user.email);
+  } catch (e) {
+    console.error('[DB] promoteAdminIfNeeded error:', e);
+  }
+}
+
 /**
  * createSession
  * Creates session document at /users/{uid}/sessions/{sessionId}
