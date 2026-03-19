@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User } from 'firebase/auth';
 import {
-  subscribeToTeacherData,
+  getTeacherDashboardData,
   sortRows,
   filterRows,
   TeacherStudentRow,
@@ -313,12 +313,12 @@ const SummaryCard: React.FC<{
   value: string;
   colour: string;
 }> = ({ emoji, label, value, colour }) => (
-  <div className="bg-white rounded-2xl shadow-sm px-5 py-4 flex items-center gap-4">
+  <div className="bg-white rounded-2xl shadow-sm px-4 py-4 flex flex-col items-center text-center gap-2 overflow-hidden w-full">
     <div className={`${colour} text-white rounded-xl w-10 h-10 flex items-center justify-center text-lg shrink-0`}>
       {emoji}
     </div>
-    <div>
-      <p className="text-xs text-slate-500 font-medium">{label}</p>
+    <div className="w-full">
+      <p className="text-xs text-slate-500 font-medium break-words">{label}</p>
       <p className="text-2xl font-black text-slate-800 leading-tight">{value}</p>
     </div>
   </div>
@@ -329,23 +329,27 @@ const SummaryCard: React.FC<{
 // ─────────────────────────────────────────────────────────────
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user }) => {
-  const [tab, setTab]         = useState<Tab>('students');
-  const [rows, setRows]       = useState<TeacherStudentRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]     = useState<string | null>(null);
+  const [tab, setTab]               = useState<Tab>('students');
+  const [rows, setRows]             = useState<TeacherStudentRow[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
-    const unsub = subscribeToTeacherData((data) => {
-      setRows(data);
-      setLoading(false);
-    });
+    getTeacherDashboardData()
+      .then(data => { if (!cancelled) setRows(data); })
+      .catch(err  => {
+        if (!cancelled) setError('Failed to load student data. Please try again.');
+        console.error('[TeacherDash]', err);
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
 
-    // If subscribeToTeacherData calls cb([]) synchronously (no db), still stop loading
-    return unsub;
-  }, []);
+    return () => { cancelled = true; };
+  }, [refreshKey]);
 
   // ── Loading state ──────────────────────────────────────────
   if (loading) {
@@ -365,7 +369,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
       <div className="min-h-screen bg-gradient-to-b from-blue-50 to-slate-50 p-6">
         <div className="max-w-2xl mx-auto bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
           <p className="text-red-800 font-semibold mb-4">{error}</p>
-          <p className="text-slate-500 text-sm">Check your network connection and reload the page.</p>
+          <button
+            className="bg-red-600 text-white px-6 py-2 rounded-xl font-medium hover:bg-red-700"
+            onClick={() => setRefreshKey(k => k + 1)}
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -391,15 +400,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
             </p>
           </div>
           <button
-            className="bg-white border border-slate-200 text-slate-500 px-4 py-2 rounded-xl text-sm font-medium shadow-sm cursor-default"
-            title="Data updates automatically"
+            onClick={() => setRefreshKey(k => k + 1)}
+            title="Refresh data"
+            className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-50 shadow-sm"
           >
-            🔴 Live
+            ↻ Refresh
           </button>
         </div>
 
         {/* ── Summary cards ─────────────────────────── */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <SummaryCard emoji="🎓" label="Total Students" value={String(totalStudents)} colour="bg-blue-500" />
           <SummaryCard emoji="⚠️" label="Need Attention"  value={String(alertedCount)}  colour="bg-red-500"  />
           <SummaryCard emoji="🎯" label="Avg Accuracy"    value={`${avgAccuracyAll}%`}  colour="bg-green-500" />
