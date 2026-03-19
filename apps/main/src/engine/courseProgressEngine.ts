@@ -54,6 +54,10 @@ export interface DayEntry {
   completed: boolean;
   completedAt?: string;  // ISO timestamp recorded at completion
   score?: number;        // 0–100 exercise score
+  timeSpent?: number;    // seconds spent on this day's exercises
+  attempts?: number;     // total answer attempts made
+  errors?: number;       // incorrect answers
+  accuracy?: number;     // 0–100 (correct / total × 100)
 }
 
 /** A single lesson’s progress, stored as a value in CourseProgressDoc.lessons. */
@@ -74,12 +78,23 @@ export interface CourseProgressDoc {
 
 /** Aggregated stats for one lesson, computed by rebuildLessonStats(). */
 export interface LessonStats {
-  fire: number;          // days completed on their unlock date
-  ice: number;           // days completed after their unlock date
-  diamonds: number;      // days with score === 100
-  stars: number;         // fire + diamonds
-  totalCompleted: number;
+  fire: number;           // days completed on their unlock date
+  ice: number;            // days completed after their unlock date
+  diamonds: number;       // days with score === 100
+  stars: number;          // fire + diamonds
+  totalCompleted: number; // total days with completed === true
+  sessions: number;       // semantic alias for totalCompleted
+  avgTimeSpent: number;   // average seconds per completed session
+  totalErrors: number;    // sum of errors across completed days
+  totalAttempts: number;  // sum of attempts across completed days
+  avgAccuracy: number;    // average accuracy 0–100 across completed days
 }
+
+/** All-zeros LessonStats — use as a safe default / fallback. */
+export const EMPTY_STATS: LessonStats = {
+  fire: 0, ice: 0, diamonds: 0, stars: 0, totalCompleted: 0,
+  sessions: 0, avgTimeSpent: 0, totalErrors: 0, totalAttempts: 0, avgAccuracy: 0,
+};
 
 // Kept for backward compatibility with adminEngine / meta subsystem
 export type Language = 'en' | 'pt' | 'es' | 'el' | 'he';
@@ -167,21 +182,34 @@ export function buildDays(startedAt: string): DayEntry[] {
  */
 export function rebuildLessonStats(lesson: LessonProgress): LessonStats {
   let fire = 0, ice = 0, diamonds = 0, totalCompleted = 0;
+  let totalTimeSpent = 0, totalErrors = 0, totalAttempts = 0;
+  let totalAccuracy = 0, accuracyCount = 0;
+
   for (const d of lesson.days) {
     if (!d.completed || !d.completedAt) continue;
     totalCompleted++;
     const completedDay = startOfLocalDay(new Date(d.completedAt));
-    const unlockedDay = startOfLocalDay(new Date(d.unlockedAt));
-    if (isSameCalendarDay(completedDay, unlockedDay)) {
-      fire++;
-    } else {
-      ice++;
-    }
+    const unlockedDay  = startOfLocalDay(new Date(d.unlockedAt));
+    if (isSameCalendarDay(completedDay, unlockedDay)) fire++;
+    else ice++;
     if ((d.score ?? 0) === 100) diamonds++;
+    if (d.timeSpent  !== undefined) totalTimeSpent += d.timeSpent;
+    if (d.attempts   !== undefined) totalAttempts  += d.attempts;
+    if (d.errors     !== undefined) totalErrors    += d.errors;
+    if (d.accuracy   !== undefined) { totalAccuracy += d.accuracy; accuracyCount++; }
   }
-  const stars = fire + diamonds;
-  console.log('[REBUILD] stats:', { fire, ice, diamonds, stars, totalCompleted });
-  return { fire, ice, diamonds, stars, totalCompleted };
+
+  const stars        = fire + diamonds;
+  const avgTimeSpent = totalCompleted > 0 ? Math.round(totalTimeSpent / totalCompleted) : 0;
+  const avgAccuracy  = accuracyCount  > 0 ? Math.round(totalAccuracy  / accuracyCount)  : 0;
+
+  const result: LessonStats = {
+    fire, ice, diamonds, stars, totalCompleted,
+    sessions: totalCompleted,
+    avgTimeSpent, totalErrors, totalAttempts, avgAccuracy,
+  };
+  console.log('[REBUILD] stats:', result);
+  return result;
 }
 
 /**
@@ -199,7 +227,11 @@ function guardDays(lesson: LessonProgress): DayEntry[] {
     unlockedAt: d.unlockedAt ?? '',
     completed: d.completed ?? false,
     ...(d.completedAt !== undefined && { completedAt: d.completedAt }),
-    ...(d.score    !== undefined && { score: d.score }),
+    ...(d.score      !== undefined && { score:      d.score      }),
+    ...(d.timeSpent  !== undefined && { timeSpent:  d.timeSpent  }),
+    ...(d.attempts   !== undefined && { attempts:   d.attempts   }),
+    ...(d.errors     !== undefined && { errors:     d.errors     }),
+    ...(d.accuracy   !== undefined && { accuracy:   d.accuracy   }),
   }));
 }
 
@@ -301,19 +333,27 @@ export async function ensureLessonStarted(
  *
  * TODO: Remove weeklyProgress parallel writes after full migration.
  */
+/** Optional per-day analytics to store alongside the completion. */
+export interface DayAnalytics {
+  timeSpent?: number;  // seconds
+  attempts?: number;
+  errors?: number;
+  accuracy?: number;   // 0–100
+}
+
 export async function completeCourseDay(
   uid: string,
   courseId: string,
   bookNumber: number,
   lessonId: number,
-  dayIndex: number,  // 1-based
+  dayIndex: number,   // 1-based
   score: number,
+  analytics?: DayAnalytics,
 ): Promise<{ success: boolean; stats: LessonStats }> {
-  const zeroStats: LessonStats = { fire: 0, ice: 0, diamonds: 0, stars: 0, totalCompleted: 0 };
 
   if (!db) {
     console.error('[SAVE] Firestore not initialised');
-    return { success: false, stats: zeroStats };
+    return { success: false, stats: { ...EMPTY_STATS } };
   }
 
   const lessonKey = String(lessonId);
@@ -322,7 +362,7 @@ export async function completeCourseDay(
   console.log('[SAVE] completeCourseDay — uid:', uid, '| courseId:', courseId,
               '| book:', bookNumber, '| lesson:', lessonId, '| day:', dayIndex, '| score:', score);
 
-  let resultStats = zeroStats;
+  let resultStats: LessonStats = { ...EMPTY_STATS };
 
   try {
     await runTransaction(db, async (tx) => {
@@ -374,6 +414,10 @@ export async function completeCourseDay(
         completed: true,
         completedAt: new Date().toISOString(),
         score,
+        ...(analytics?.timeSpent !== undefined && { timeSpent: analytics.timeSpent }),
+        ...(analytics?.attempts  !== undefined && { attempts:  analytics.attempts  }),
+        ...(analytics?.errors    !== undefined && { errors:    analytics.errors    }),
+        ...(analytics?.accuracy  !== undefined && { accuracy:  analytics.accuracy  }),
       };
 
       console.log(`[COMPLETE] day ${dayIndex}: score=${score}, unlockedAt=${day.unlockedAt}`);
@@ -396,10 +440,10 @@ export async function completeCourseDay(
     const msg: string = e?.message ?? String(e);
     // Business-rule rejections are not errors — return gracefully
     if (msg.includes('cannot complete before')) {
-      return { success: false, stats: zeroStats };
+      return { success: false, stats: { ...EMPTY_STATS } };
     }
     console.error('[SAVE ERROR] completeCourseDay transaction failed:', e);
-    return { success: false, stats: zeroStats };
+    return { success: false, stats: { ...EMPTY_STATS } };
   }
 }
 
@@ -410,9 +454,8 @@ export async function getLessonStats(
   bookNumber: number,
   lessonId: number,
 ): Promise<LessonStats> {
-  const zero: LessonStats = { fire: 0, ice: 0, diamonds: 0, stars: 0, totalCompleted: 0 };
   const lesson = await getLessonProgress(uid, courseId, bookNumber, lessonId);
-  if (!lesson) return zero;
+  if (!lesson) return { ...EMPTY_STATS };
   return rebuildLessonStats(lesson);
 }
 
@@ -497,6 +540,16 @@ export interface UserProgressSummary {
   totalDiamonds: number;
   lessonsStarted: number;
   daysCompleted: number;
+  totalTimeSpent: number;  // total seconds across all days
+  totalErrors: number;
+  totalAttempts: number;
+  avgAccuracy: number;     // weighted average 0–100
+  // Learning position — populated from users/{uid}/meta/status
+  currentWorkbook?: number;
+  currentLesson?: number;
+  currentDay?: number;
+  // Last activity — populated from users/{uid}.lastActive
+  lastActivity?: any;      // Firestore Timestamp or ISO string
 }
 
 /**
@@ -513,26 +566,39 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
         const userData = userDoc.data();
 
         let metaGroup: GroupId | undefined;
+        let metaWorkbook: number | undefined;
+        let metaLesson: number  | undefined;
+        let metaDay:    number  | undefined;
         try {
           const metaSnap = await getDoc(doc(db!, `users/${uid}/meta/status`));
-          metaGroup = metaSnap.data()?.group;
+          const metaData = metaSnap.data();
+          metaGroup    = metaData?.group;
+          metaWorkbook = metaData?.currentWorkbook;
+          metaLesson   = metaData?.currentLesson;
+          metaDay      = metaData?.currentDay;
         } catch { /* no meta — skip */ }
 
         let totalFire = 0, totalIce = 0, totalDiamonds = 0;
         let lessonsStarted = 0, daysCompleted = 0;
+        let totalTimeSpent = 0, totalErrors = 0, totalAttempts = 0;
+        let accSum = 0, accCount = 0;
 
         try {
           const cpSnap = await getDocs(collection(db!, `users/${uid}/courseProgress`));
           for (const cpDoc of cpSnap.docs) {
             const cpData = cpDoc.data() as CourseProgressDoc;
-            // lessons is a Record<string, LessonProgress>
             for (const lesson of Object.values(cpData.lessons ?? {})) {
               lessonsStarted++;
               const stats = rebuildLessonStats(lesson);
-              totalFire     += stats.fire;
-              totalIce      += stats.ice;
-              totalDiamonds += stats.diamonds;
-              daysCompleted += stats.totalCompleted;
+              totalFire        += stats.fire;
+              totalIce         += stats.ice;
+              totalDiamonds    += stats.diamonds;
+              daysCompleted    += stats.totalCompleted;
+              // Reverse-engineer total time from average
+              totalTimeSpent   += stats.avgTimeSpent * stats.totalCompleted;
+              totalErrors      += stats.totalErrors;
+              totalAttempts    += stats.totalAttempts;
+              if (stats.avgAccuracy > 0) { accSum += stats.avgAccuracy; accCount++; }
             }
           }
         } catch { /* no courseProgress — skip */ }
@@ -548,6 +614,14 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           totalDiamonds,
           lessonsStarted,
           daysCompleted,
+          totalTimeSpent: Math.round(totalTimeSpent),
+          totalErrors,
+          totalAttempts,
+          avgAccuracy: accCount > 0 ? Math.round(accSum / accCount) : 0,
+          currentWorkbook: metaWorkbook,
+          currentLesson:   metaLesson,
+          currentDay:      metaDay,
+          lastActivity:    userData.lastActive ?? null,
         } as UserProgressSummary;
       })
     );

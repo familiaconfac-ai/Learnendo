@@ -22,7 +22,8 @@ import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/week
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
 import { calculateWeeklyScore, DayProgress, ScoreResult } from './engine/scoringEngine';
-import { ensureLessonStarted, completeCourseDay, LessonProgress } from './engine/courseProgressEngine';
+import { ensureLessonStarted, completeCourseDay, LessonProgress, DayAnalytics } from './engine/courseProgressEngine';
+import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 
 const DEFAULT_COURSE_ID = 'english';
@@ -136,6 +137,8 @@ const App: React.FC = () => {
   /** Progress for the currently open lesson — read from Firestore on lesson open. */
   const [lessonProgress, setLessonProgress] = useState<LessonProgress | null>(null);
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
+  /** Timestamp (ms) when the current day practice started — used to compute timeSpent. */
+  const dayStartTimeRef = useRef<number | null>(null);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
@@ -530,6 +533,12 @@ const App: React.FC = () => {
   const handleDayComplete = async (dayId: string, score: number) => {
     console.log(`[App] Day "${dayId}" completed. Score: ${score}%`);
 
+    // Compute time spent since the day was opened
+    const timeSpent = dayStartTimeRef.current
+      ? Math.round((Date.now() - dayStartTimeRef.current) / 1000)
+      : undefined;
+    dayStartTimeRef.current = null;
+
     if (activeWeeklyTest) {
       const { lessonNumber, lessonId } = activeWeeklyTest;
       setLessonTestScores((prev) => ({ ...prev, [lessonNumber]: score }));
@@ -607,11 +616,33 @@ const App: React.FC = () => {
     }
 
     const alreadyDone = progress.completedActivities.includes(dayId);
+
+    // Extract day/lesson numbers early so we can update the path in progress
+    const dayMatch = dayId.match(/d(\d+)/);
+    const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
+    const lessonNumber = getLessonNumberFromId(currentLessonId);
+
+    // Compute the NEXT position the student should work on after this day
+    const nextPath = (!isNaN(dayNumber) && !isNaN(lessonNumber))
+      ? computeNextPath({
+          workbook: progress.currentWorkbook,
+          lesson: lessonNumber,
+          day: dayNumber,
+        })
+      : null;
+
     const updated: UserProgress = {
       ...progress,
       completedActivities: alreadyDone
         ? progress.completedActivities
         : [...progress.completedActivities, dayId],
+      // Advance to next position (capped to valid bounds by computeNextPath)
+      ...(nextPath && {
+        currentDay:      nextPath.day,
+        currentLesson:   nextPath.lesson,
+        currentWorkbook: nextPath.workbook,
+      }),
+      lastCompletedDate: new Date().toISOString(),
     };
     setProgress(updated);
     try {
@@ -623,10 +654,6 @@ const App: React.FC = () => {
     // Firebase: Track day completion and check for week completion
     if (user?.uid && currentLessonId) {
       try {
-        const lessonNumber = getLessonNumberFromId(currentLessonId);
-        const dayMatch = dayId.match(/d(\d+)/);
-        const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
-
         if (!isNaN(lessonNumber) && !isNaN(dayNumber)) {
           // ── Existing weeklyProgress path (kept unchanged) ──
           const result = await completeDayAndGetResult(
@@ -659,7 +686,11 @@ const App: React.FC = () => {
 
           // ── New courseProgress path ──
           const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
-          completeCourseDay(user.uid, courseId, progress.currentWorkbook, lessonNumber, dayNumber, score)
+          const analytics: DayAnalytics = {
+            timeSpent,
+            accuracy: score,  // score is 0–100 percentage correct
+          };
+          completeCourseDay(user.uid, courseId, progress.currentWorkbook, lessonNumber, dayNumber, score, analytics)
             .then(({ success, stats }) => {
               if (success) {
                 console.log('[SAVE] courseProgress stats:', stats);
@@ -758,11 +789,12 @@ const App: React.FC = () => {
             testScore={lessonTestScores[lessonNumber]}
             testPassed={completedLessonSet.has(lessonNumber)}
             onStartDay={(day: Day) => {
+              dayStartTimeRef.current = Date.now();
               setCurrentDay(day);
               setActiveWeeklyTest(null);
               setCurrentSection(SectionType.PRACTICE);
             }}
-            onStartWeeklyTest={(day: Day) => startWeeklyTest(lesson.id, lessonNumber, day)}
+            onStartWeeklyTest={(day: Day) => { dayStartTimeRef.current = Date.now(); startWeeklyTest(lesson.id, lessonNumber, day); }}
             onBack={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook })}
           />
         );

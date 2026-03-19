@@ -1,10 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Course, UserProgress, SectionType } from '../../types';
-import {
-  getLessonProgress,
-  rebuildLessonStats,
-  LessonStats,
-} from '../../engine/courseProgressEngine';
+import { LessonStats } from '../../engine/courseProgressEngine';
+import { getProgressStats, formatTime, formatAccuracy, getCurrentPath } from '../../engine/progressStatsService';
 
 interface DashboardProps {
   progress: UserProgress;
@@ -40,16 +37,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
     let cancelled = false;
     setLoadingStats(true);
 
-    getLessonProgress(userId, currentCourse.id, progress.currentWorkbook, progress.currentLesson)
-      .then(lesson => {
-        if (cancelled) return;
-        setStats(lesson ? rebuildLessonStats(lesson) : null);
-      })
+    getProgressStats(userId, currentCourse.id, progress.currentWorkbook, progress.currentLesson)
+      .then(stats => { if (!cancelled) setStats(stats); })
       .catch(() => { if (!cancelled) setStats(null); })
       .finally(() => { if (!cancelled) setLoadingStats(false); });
 
     return () => { cancelled = true; };
   }, [userId, currentCourse?.id, progress.currentWorkbook, progress.currentLesson]);
+
+  const path = getCurrentPath(progress);
 
   return (
     <div className="min-h-screen bg-blue-50 pb-28 px-4 pt-6">
@@ -59,13 +55,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {currentCourse?.title ?? 'No course selected'} · Book {progress.currentWorkbook}
       </p>
 
+      {/* ── Current position card ───────────────────── */}
+      <div className="bg-white rounded-2xl shadow-sm px-5 py-4 mb-4 flex items-center gap-4">
+        <span className="text-2xl">📍</span>
+        <div>
+          <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold">Current position</p>
+          <p className="text-base font-bold text-slate-800">
+            Workbook {path.workbook} · Lesson {path.lesson} · Day {path.day}
+          </p>
+        </div>
+      </div>
+
       {/* ── Stats row ───────────────────────────────── */}
-      <div className="flex justify-around bg-white rounded-2xl shadow-sm px-4 py-4 mb-6">
+      <div className="flex justify-around bg-white rounded-2xl shadow-sm px-4 py-4 mb-4">
         <StatBadge emoji="🔥" label="Fire"     value={loadingStats ? '…' : String(stats?.fire     ?? 0)} />
         <StatBadge emoji="❄️"  label="Ice"      value={loadingStats ? '…' : String(stats?.ice      ?? 0)} />
         <StatBadge emoji="💎" label="Diamonds" value={loadingStats ? '…' : String(stats?.diamonds ?? 0)} />
         <StatBadge emoji="⭐" label="Stars"    value={loadingStats ? '…' : String(stats?.stars    ?? 0)} />
       </div>
+
+      {/* ── Analytics row ─────────────────────────────────── */}
+      {(stats?.sessions ?? 0) > 0 && (
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          <AnalyticsBadge label="Sessions"  value={String(stats!.sessions)} />
+          <AnalyticsBadge label="Avg time"  value={formatTime(stats!.avgTimeSpent)} />
+          <AnalyticsBadge label="Accuracy"  value={formatAccuracy(stats!.avgAccuracy)} />
+        </div>
+      )}
 
       {/* ── Continue button ──────────────────────────── */}
       <button
@@ -116,12 +132,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
   );
 };
 
-// ── Internal sub-component ────────────────────────────────────
+// ── Internal sub-components ──────────────────────────────────────────
 
 const StatBadge: React.FC<{ emoji: string; label: string; value: string }> = ({ emoji, label, value }) => (
   <div className="flex flex-col items-center gap-1">
     <span className="text-2xl">{emoji}</span>
     <span className="text-lg font-bold text-slate-800">{value}</span>
     <span className="text-xs text-slate-500">{label}</span>
+  </div>
+);
+
+const AnalyticsBadge: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div className="flex flex-col items-center justify-center bg-white rounded-2xl py-3 shadow-sm">
+    <span className="text-base font-bold text-slate-800">{value}</span>
+    <span className="text-xs text-slate-500 mt-0.5">{label}</span>
   </div>
 );

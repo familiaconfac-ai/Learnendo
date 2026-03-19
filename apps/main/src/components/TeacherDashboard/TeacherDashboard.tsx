@@ -1,188 +1,221 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * TeacherDashboard.tsx
+ *
+ * Full teacher dashboard:
+ *   Tab 1 — Students table (sortable, searchable, alert badges, PDF download)
+ *   Tab 2 — Top-10 ranking leaderboard
+ *
+ * All data comes from teacherService → courseProgressEngine + alertService + rankingService.
+ * No business logic lives in this component.
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
 import { User } from 'firebase/auth';
 import {
-  getAllStudents,
-  getStudentDetail,
-  formatTimestamp,
-  formatDate,
-  StudentBasicInfo,
-  StudentDetail,
-} from '../../services/teacherDashboard';
-import { StudentDetailView } from './StudentDetailView';
+  getTeacherDashboardData,
+  sortRows,
+  filterRows,
+  TeacherStudentRow,
+  SortColumn,
+  formatAccuracy,
+} from '../../engine/teacherService';
+import { rankMedal, getTopRanked } from '../../engine/rankingService';
+import { AlertType } from '../../engine/alertService';
+import { generateStudentReport } from '../../services/reportService';
+
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
+
+type Tab = 'students' | 'ranking';
 
 interface TeacherDashboardProps {
   user: User;
 }
 
-export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user }) => {
-  const [students, setStudents] = useState<StudentBasicInfo[]>([]);
-  const [isLoadingStudents, setIsLoadingStudents] = useState(true);
-  const [selectedStudentDetail, setSelectedStudentDetail] = useState<StudentDetail | null>(null);
-  const [isLoadingDetail, setIsLoadingDetail] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+// ─────────────────────────────────────────────────────────────
+// Alert Badge
+// ─────────────────────────────────────────────────────────────
 
-  // ===== INITIAL LOAD =====
-  useEffect(() => {
-    const loadStudents = async () => {
-      setIsLoadingStudents(true);
-      setError(null);
-      try {
-        const studentsList = await getAllStudents();
-        setStudents(studentsList);
-        console.log('[TeacherDash] Loaded', studentsList.length, 'students');
-      } catch (err) {
-        setError('Failed to load students. Please try again.');
-        console.error('[TeacherDash] Error:', err);
-      } finally {
-        setIsLoadingStudents(false);
-      }
-    };
+const ALERT_STYLES: Record<AlertType, { bg: string; text: string; icon: string }> = {
+  inactive:     { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: '⏰' },
+  low_accuracy: { bg: 'bg-red-100',    text: 'text-red-800',    icon: '📉' },
+  high_errors:  { bg: 'bg-pink-100',   text: 'text-pink-800',   icon: '⚠️' },
+};
 
-    loadStudents();
-  }, []);
+const AlertBadge: React.FC<{ type: AlertType; message: string }> = ({ type, message }) => {
+  const s = ALERT_STYLES[type];
+  return (
+    <span
+      title={message}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text} cursor-default`}
+    >
+      {s.icon} {message}
+    </span>
+  );
+};
 
-  // ===== HANDLE STUDENT SELECTION =====
-  const handleSelectStudent = async (studentUid: string) => {
-    setIsLoadingDetail(true);
-    setError(null);
-    try {
-      const detail = await getStudentDetail(studentUid);
-      if (detail) {
-        setSelectedStudentDetail(detail);
-      } else {
-        setError('Could not load student details.');
-      }
-    } catch (err) {
-      setError('Failed to load student details.');
-      console.error('[TeacherDash] Error:', err);
-    } finally {
-      setIsLoadingDetail(false);
+// ─────────────────────────────────────────────────────────────
+// Sortable column header
+// ─────────────────────────────────────────────────────────────
+
+const SortHeader: React.FC<{
+  col: SortColumn;
+  label: string;
+  activeCol: SortColumn;
+  dir: 'asc' | 'desc';
+  onClick: (col: SortColumn) => void;
+}> = ({ col, label, activeCol, dir, onClick }) => (
+  <th
+    className="px-4 py-3 text-left text-sm font-semibold text-white cursor-pointer select-none hover:bg-blue-700 transition-colors whitespace-nowrap"
+    onClick={() => onClick(col)}
+  >
+    {label}
+    {activeCol === col && (
+      <span className="ml-1 text-blue-200">{dir === 'asc' ? '↑' : '↓'}</span>
+    )}
+  </th>
+);
+
+// ─────────────────────────────────────────────────────────────
+// Students Tab
+// ─────────────────────────────────────────────────────────────
+
+const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
+  const [search, setSearch]         = useState('');
+  const [sortCol, setSortCol]       = useState<SortColumn>('score');
+  const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
+  const [generating, setGenerating] = useState<string | null>(null);
+
+  const handleSort = (col: SortColumn) => {
+    if (col === sortCol) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortCol(col);
+      setSortDir('desc');
     }
   };
 
-  // ===== SHOW DETAIL VIEW IF SELECTED =====
-  if (selectedStudentDetail) {
-    return (
-      <StudentDetailView
-        student={selectedStudentDetail}
-        onBack={() => setSelectedStudentDetail(null)}
-      />
-    );
-  }
+  const visible = useMemo(
+    () => sortRows(filterRows(rows, search), sortCol, sortDir),
+    [rows, search, sortCol, sortDir],
+  );
 
-  // ===== LOADING STATE =====
-  if (isLoadingStudents) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-100 to-blue-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="text-slate-600 mt-4">Loading students...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const handlePdf = (student: TeacherStudentRow) => {
+    setGenerating(student.uid);
+    try {
+      generateStudentReport(student);
+    } finally {
+      setGenerating(null);
+    }
+  };
 
-  // ===== ERROR STATE =====
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-100 to-blue-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded-2xl p-6">
-            <h2 className="text-lg font-bold text-red-800 mb-2">Error</h2>
-            <p className="text-red-700">{error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ===== EMPTY STATE =====
-  if (students.length === 0) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-100 to-blue-50 p-6">
-        <div className="max-w-6xl mx-auto">
-          <h1 className="text-3xl font-bold text-slate-800 mb-8">Teacher Dashboard</h1>
-          <div className="bg-white rounded-2xl shadow-lg p-12 text-center">
-            <p className="text-slate-600 text-lg">No students found yet.</p>
-            <p className="text-slate-500 mt-2">Students will appear here once they register.</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ===== MAIN DASHBOARD =====
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-100 to-blue-50 p-6">
-      <div className="max-w-6xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-800">📊 Teacher Dashboard</h1>
-          <p className="text-slate-600 mt-2">
-            Monitoring {students.length} student{students.length !== 1 ? 's' : ''}
-          </p>
-        </div>
+    <div>
+      {/* Search bar */}
+      <div className="flex items-center gap-3 mb-4">
+        <input
+          type="search"
+          placeholder="Search by name or email…"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full max-w-sm px-4 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
+        />
+        <span className="text-sm text-slate-500 whitespace-nowrap">
+          {visible.length} of {rows.length} student{rows.length !== 1 ? 's' : ''}
+        </span>
+      </div>
 
-        {/* Students Table */}
-        <div className="bg-white rounded-2xl shadow-lg overflow-hidden">
+      {visible.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center text-slate-500">
+          No students match your search.
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+            <table className="w-full text-sm">
+              <thead className="bg-gradient-to-r from-blue-600 to-blue-700">
                 <tr>
-                  <th className="px-6 py-4 text-left font-semibold">Name</th>
-                  <th className="px-6 py-4 text-left font-semibold">Email</th>
-                  <th className="px-6 py-4 text-left font-semibold">Type</th>
-                  <th className="px-6 py-4 text-left font-semibold">Last Active</th>
-                  <th className="px-6 py-4 text-center font-semibold">Sessions</th>
-                  <th className="px-6 py-4 text-center font-semibold">Actions</th>
+                  <SortHeader col="name"         label="Name"         activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="email"        label="Email"        activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="path"         label="Position"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="sessions"     label="Sessions"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="accuracy"     label="Accuracy"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="lastActivity" label="Last Active"  activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-white">Report</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200">
-                {students.map((student, index) => (
+              <tbody className="divide-y divide-slate-100">
+                {visible.map((student, idx) => (
                   <tr
                     key={student.uid}
-                    className={index % 2 === 0 ? 'bg-white' : 'bg-slate-50'}
+                    className={idx % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50 hover:bg-blue-50'}
                   >
-                    <td className="px-6 py-4">
-                      <span className="font-semibold text-slate-800">{student.name}</span>
+                    {/* Name + rank medal */}
+                    <td className="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">
+                      <span className="mr-1 text-base">{rankMedal(student.rank)}</span>
+                      {student.displayName || '—'}
                     </td>
-                    <td className="px-6 py-4 text-slate-600">
-                      {student.email || '-'}
+                    {/* Email */}
+                    <td className="px-4 py-3 text-slate-500 max-w-[180px] truncate">
+                      {student.email || '—'}
                     </td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-3 py-1 rounded-full text-sm font-medium ${
-                          student.isAnonymous
-                            ? 'bg-purple-100 text-purple-800'
-                            : 'bg-green-100 text-green-800'
-                        }`}
-                      >
-                        {student.isAnonymous ? 'Anonymous' : 'Email'}
+                    {/* Current position */}
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-mono text-xs">
+                      {student.pathLabel}
+                    </td>
+                    {/* Sessions */}
+                    <td className="px-4 py-3 text-center">
+                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
+                        {student.daysCompleted}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-slate-600 text-sm">
-                      {formatDate(student.lastActive)}
+                    {/* Accuracy bar */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <div className="w-20 bg-slate-200 rounded-full h-1.5">
+                          <div
+                            className={`h-1.5 rounded-full ${
+                              student.avgAccuracy >= 80
+                                ? 'bg-green-500'
+                                : student.avgAccuracy >= 60
+                                ? 'bg-yellow-400'
+                                : 'bg-red-400'
+                            }`}
+                            style={{ width: `${student.avgAccuracy}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium text-slate-700">
+                          {formatAccuracy(student.avgAccuracy)}
+                        </span>
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-semibold">
-                        0
-                      </span>
+                    {/* Last active */}
+                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
+                      {student.lastActivityLabel}
                     </td>
-                    <td className="px-6 py-4 text-center">
+                    {/* Alerts */}
+                    <td className="px-4 py-3">
+                      {student.alerts.length === 0 ? (
+                        <span className="text-xs text-green-600 font-medium">✓ OK</span>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          {student.alerts.map((a, i) => (
+                            <AlertBadge key={i} type={a.type} message={a.message} />
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    {/* PDF download */}
+                    <td className="px-4 py-3 text-center">
                       <button
-                        onClick={() => handleSelectStudent(student.uid)}
-                        disabled={isLoadingDetail}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-all active:scale-95 disabled:opacity-50"
+                        onClick={() => handlePdf(student)}
+                        disabled={generating === student.uid}
+                        title="Download PDF report"
+                        className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95"
                       >
-                        {isLoadingDetail ? 'Loading...' : 'View'}
+                        {generating === student.uid ? '…' : '📄 PDF'}
                       </button>
                     </td>
                   </tr>
@@ -191,26 +224,221 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user }) => {
             </table>
           </div>
         </div>
+      )}
+    </div>
+  );
+};
 
-        {/* Stats Footer */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
-          <div className="bg-white rounded-xl shadow p-6 text-center">
-            <p className="text-slate-600 text-sm font-medium">Total Students</p>
-            <p className="text-3xl font-bold text-blue-600 mt-2">{students.length}</p>
-          </div>
-          <div className="bg-white rounded-xl shadow p-6 text-center">
-            <p className="text-slate-600 text-sm font-medium">Anonymous Users</p>
-            <p className="text-3xl font-bold text-purple-600 mt-2">
-              {students.filter(s => s.isAnonymous).length}
-            </p>
-          </div>
-          <div className="bg-white rounded-xl shadow p-6 text-center">
-            <p className="text-slate-600 text-sm font-medium">Registered Users</p>
-            <p className="text-3xl font-bold text-green-600 mt-2">
-              {students.filter(s => !s.isAnonymous).length}
-            </p>
-          </div>
+// ─────────────────────────────────────────────────────────────
+// Ranking Tab
+// ─────────────────────────────────────────────────────────────
+
+const RankingTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
+  const top10 = useMemo(() => getTopRanked(rows, 10), [rows]);
+
+  const podiumColour = (rank: number) => {
+    if (rank === 1) return 'bg-yellow-50 border-yellow-300';
+    if (rank === 2) return 'bg-slate-50 border-slate-300';
+    if (rank === 3) return 'bg-orange-50 border-orange-300';
+    return 'bg-white border-slate-200';
+  };
+
+  return (
+    <div>
+      <p className="text-sm text-slate-500 mb-4">
+        Score = Stars + Diamonds + (Sessions × 0.5) &nbsp;·&nbsp; Top 10 shown
+      </p>
+      {top10.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center text-slate-500">
+          No students with scores yet.
         </div>
+      ) : (
+        <div className="space-y-2">
+          {top10.map(student => (
+            <div
+              key={student.uid}
+              className={`flex items-center gap-4 rounded-2xl border px-5 py-3 ${podiumColour(student.rank)}`}
+            >
+              {/* Rank */}
+              <div className="w-10 text-center shrink-0">
+                {rankMedal(student.rank) ? (
+                  <span className="text-2xl">{rankMedal(student.rank)}</span>
+                ) : (
+                  <span className="text-lg font-bold text-slate-400">#{student.rank}</span>
+                )}
+              </div>
+              {/* Name + email */}
+              <div className="flex-1 min-w-0">
+                <p className="font-bold text-slate-800 truncate">
+                  {student.displayName || '—'}
+                </p>
+                <p className="text-xs text-slate-500 truncate">{student.email || '—'}</p>
+              </div>
+              {/* Path */}
+              <div className="text-xs font-mono text-slate-500 hidden sm:block whitespace-nowrap">
+                {student.pathLabel}
+              </div>
+              {/* Stat chips */}
+              <div className="flex gap-2 text-xs">
+                <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full font-semibold">
+                  🔥 {student.totalFire}
+                </span>
+                <span className="bg-purple-100 text-purple-800 px-2 py-0.5 rounded-full font-semibold">
+                  💎 {student.totalDiamonds}
+                </span>
+                <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
+                  📅 {student.daysCompleted}
+                </span>
+              </div>
+              {/* Score */}
+              <div className="text-right w-16 shrink-0">
+                <p className="text-xl font-black text-blue-700">{student.score.toFixed(0)}</p>
+                <p className="text-xs text-slate-400">pts</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────
+// Summary card (internal)
+// ─────────────────────────────────────────────────────────────
+
+const SummaryCard: React.FC<{
+  emoji: string;
+  label: string;
+  value: string;
+  colour: string;
+}> = ({ emoji, label, value, colour }) => (
+  <div className="bg-white rounded-2xl shadow-sm px-5 py-4 flex items-center gap-4">
+    <div className={`${colour} text-white rounded-xl w-10 h-10 flex items-center justify-center text-lg shrink-0`}>
+      {emoji}
+    </div>
+    <div>
+      <p className="text-xs text-slate-500 font-medium">{label}</p>
+      <p className="text-2xl font-black text-slate-800 leading-tight">{value}</p>
+    </div>
+  </div>
+);
+
+// ─────────────────────────────────────────────────────────────
+// Main export
+// ─────────────────────────────────────────────────────────────
+
+export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user }) => {
+  const [tab, setTab]               = useState<Tab>('students');
+  const [rows, setRows]             = useState<TeacherStudentRow[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    getTeacherDashboardData()
+      .then(data => { if (!cancelled) setRows(data); })
+      .catch(err  => {
+        if (!cancelled) setError('Failed to load student data. Please try again.');
+        console.error('[TeacherDash]', err);
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [refreshKey]);
+
+  // ── Loading state ──────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 to-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4" />
+          <p className="text-slate-600">Loading students…</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Error state ────────────────────────────────────────────
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-blue-50 to-slate-50 p-6">
+        <div className="max-w-2xl mx-auto bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
+          <p className="text-red-800 font-semibold mb-4">{error}</p>
+          <button
+            className="bg-red-600 text-white px-6 py-2 rounded-xl font-medium hover:bg-red-700"
+            onClick={() => setRefreshKey(k => k + 1)}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Summary stats ─────────────────────────────────────────
+  const totalStudents  = rows.length;
+  const alertedCount   = rows.filter(r => r.alerts.length > 0).length;
+  const avgAccuracyAll = totalStudents > 0
+    ? Math.round(rows.reduce((s, r) => s + r.avgAccuracy, 0) / totalStudents)
+    : 0;
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-slate-50 pb-28 px-4 pt-6">
+      <div className="max-w-6xl mx-auto">
+
+        {/* ── Header ──────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-black text-slate-800">📊 Teacher Dashboard</h1>
+            <p className="text-sm text-slate-500 mt-1">
+              {totalStudents} student{totalStudents !== 1 ? 's' : ''} registered
+            </p>
+          </div>
+          <button
+            onClick={() => setRefreshKey(k => k + 1)}
+            title="Refresh data"
+            className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-50 shadow-sm"
+          >
+            ↻ Refresh
+          </button>
+        </div>
+
+        {/* ── Summary cards ─────────────────────────── */}
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <SummaryCard emoji="🎓" label="Total Students" value={String(totalStudents)} colour="bg-blue-500" />
+          <SummaryCard emoji="⚠️" label="Need Attention"  value={String(alertedCount)}  colour="bg-red-500"  />
+          <SummaryCard emoji="🎯" label="Avg Accuracy"    value={`${avgAccuracyAll}%`}  colour="bg-green-500" />
+        </div>
+
+        {/* ── Tabs ────────────────────────────────────── */}
+        <div className="flex gap-1 mb-5 bg-white rounded-xl shadow-sm p-1 w-fit">
+          {(['students', 'ranking'] as Tab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all ${
+                tab === t
+                  ? 'bg-blue-600 text-white shadow'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {t === 'students' ? '👥 Students' : '🏆 Ranking'}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Tab content ─────────────────────────────── */}
+        {tab === 'students' ? (
+          <StudentsTab rows={rows} />
+        ) : (
+          <RankingTab rows={rows} />
+        )}
+
       </div>
     </div>
   );
