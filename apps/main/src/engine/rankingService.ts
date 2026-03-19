@@ -2,7 +2,7 @@
  * rankingService.ts
  *
  * Pure ranking computation for the teacher dashboard leaderboard.
- * Score formula:  stars + diamonds + (sessions × 0.5)
+ * Score formula:  (stars × 2) + (diamonds × 3) + (accuracy ÷ 10) + (sessions × 0.2)
  *
  * All logic is pure and side-effect-free — safe to call in any context.
  */
@@ -26,10 +26,15 @@ export interface RankedStudent extends UserProgressSummary {
 
 /**
  * Compute the composite score for a single student.
- * Formula: totalStars + totalDiamonds + (daysCompleted × 0.5)
+ * Formula: (totalStars × 2) + (totalDiamonds × 3) + (avgAccuracy ÷ 10) + (daysCompleted × 0.2)
  */
 export function computeScore(summary: UserProgressSummary): number {
-  return summary.totalStars + summary.totalDiamonds + summary.daysCompleted * 0.5;
+  return (
+    summary.totalStars    * 2   +
+    summary.totalDiamonds * 3   +
+    summary.avgAccuracy   / 10  +
+    summary.daysCompleted * 0.2
+  );
 }
 
 /**

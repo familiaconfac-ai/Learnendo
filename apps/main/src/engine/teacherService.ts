@@ -7,10 +7,13 @@
  * Components import from here — never from the lower-level engines directly.
  */
 
+import { collection, onSnapshot } from 'firebase/firestore';
 import { getAllUserProgressSummaries, UserProgressSummary } from './courseProgressEngine';
 import { detectAlerts, StudentAlert } from './alertService';
 import { rankStudents, RankedStudent, computeScore } from './rankingService';
 import { formatTime, formatAccuracy } from './progressStatsService';
+import { db } from '../services/firebase';
+import { UserTestData } from '../types';
 
 // ─────────────────────────────────────────────────────────────
 // Re-exports so callers only need one import
@@ -29,6 +32,7 @@ export interface TeacherStudentRow extends RankedStudent {
   /** Resolved current path — always has a value (falls back to 1/1/1). */
   pathLabel: string;           // e.g. "Wbk 2 · L3 · D5"
   lastActivityLabel: string;   // human-readable relative date
+  tests?: UserTestData;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -123,4 +127,73 @@ export function filterRows(rows: TeacherStudentRow[], query: string): TeacherStu
     (r.displayName ?? '').toLowerCase().includes(q) ||
     (r.email       ?? '').toLowerCase().includes(q),
   );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Realtime subscription (flat "progress" collection)
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Subscribe to realtime teacher dashboard data from the flat
+ * `"progress"` Firestore collection (one doc per student, keyed by uid).
+ *
+ * Returns an unsubscribe function — call it to stop listening.
+ * Falls back to an empty list and calls `cb([])` when Firestore is unavailable.
+ */
+export function subscribeToTeacherData(
+  cb: (rows: TeacherStudentRow[]) => void,
+): () => void {
+  if (!db) {
+    cb([]);
+    return () => {};
+  }
+
+  const unsub = onSnapshot(
+    collection(db, 'progress'),
+    (snap) => {
+      const summaries: UserProgressSummary[] = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          uid:           d.id,
+          displayName:   data.displayName   ?? undefined,
+          email:         data.email         ?? undefined,
+          group:         data.group         ?? undefined,
+          totalStars:    data.totalStars    ?? 0,
+          totalFire:     data.totalFire     ?? 0,
+          totalIce:      data.totalIce      ?? 0,
+          totalDiamonds: data.totalDiamonds ?? 0,
+          lessonsStarted:data.lessonsStarted ?? 0,
+          daysCompleted: data.daysCompleted ?? 0,
+          totalTimeSpent:data.totalTimeSpent ?? 0,
+          totalErrors:   data.totalErrors   ?? 0,
+          totalAttempts: data.totalAttempts ?? 0,
+          avgAccuracy:   data.avgAccuracy   ?? 0,
+          currentWorkbook: data.currentWorkbook ?? 1,
+          currentLesson:   data.currentLesson   ?? 1,
+          currentDay:      data.currentDay      ?? 1,
+          lastActivity:    data.lastActivity    ?? undefined,
+        } as UserProgressSummary;
+      });
+
+      const ranked = rankStudents(summaries);
+      const rows: TeacherStudentRow[] = ranked.map(student => {
+        const raw = snap.docs.find(d => d.id === student.uid)?.data();
+        return {
+          ...student,
+          alerts:            detectAlerts(student),
+          pathLabel:         pathLabel(student),
+          lastActivityLabel: relativeDate(student.lastActivity),
+          tests:             raw?.tests ?? undefined,
+        };
+      });
+
+      cb(rows);
+    },
+    (err) => {
+      console.error('[TeacherService] onSnapshot error:', err);
+      cb([]);
+    },
+  );
+
+  return unsub;
 }

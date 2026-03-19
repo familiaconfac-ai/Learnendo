@@ -36,6 +36,19 @@ export interface Workbook {
   lessons: Lesson[];
 }
 
+export interface TestRecord {
+  score: number;
+  date: string; // ISO string
+}
+
+export interface UserTestData {
+  placement?: TestRecord;
+  lessons?: {
+    /** Key format: "W{workbook}L{lesson}", e.g. "W1L3" */
+    [key: string]: TestRecord & { workbook: number; lesson: number; day: number };
+  };
+}
+
 export interface UserProgress {
   userId: string;
   currentCourseId?: string;
@@ -45,6 +58,7 @@ export interface UserProgress {
   completedActivities: string[]; // array of day ids
   lastCompletedDate: string; // ISO date
   placementScore?: number;
+  tests?: UserTestData;
 }
 
 export enum SectionType {

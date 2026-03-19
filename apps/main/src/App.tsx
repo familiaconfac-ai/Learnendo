@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
@@ -16,7 +17,7 @@ import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
-import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
+import { auth, db, loginWithEmail, registerWithEmail } from './services/firebase';
 import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress, promoteAdminIfNeeded } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
@@ -491,6 +492,16 @@ const App: React.FC = () => {
     } catch {
       // Do not block rendering when persistence fails.
     }
+
+    // Persist placement test result to flat progress doc
+    if (user?.uid && db) {
+      setDoc(
+        doc(db, 'progress', user.uid),
+        { tests: { placement: { score, date: new Date().toISOString() } } },
+        { merge: true },
+      ).catch(e => console.warn('[PROGRESS] placement test save failed:', e));
+    }
+
     setCurrentSection(SectionType.WORKBOOK);
   };
 
@@ -564,6 +575,28 @@ const App: React.FC = () => {
           ProgressEngine.saveProgress(updated);
         } catch {
           // Keep UI responsive even if persistence fails.
+        }
+
+        // Persist lesson test result to flat progress doc (Day 7 test)
+        if (user?.uid && db) {
+          const key = `W${progress.currentWorkbook}L${lessonNumber}`;
+          setDoc(
+            doc(db, 'progress', user.uid),
+            {
+              tests: {
+                lessons: {
+                  [key]: {
+                    workbook: progress.currentWorkbook,
+                    lesson:   lessonNumber,
+                    day:      7,
+                    score,
+                    date:     new Date().toISOString(),
+                  },
+                },
+              },
+            },
+            { merge: true },
+          ).catch(e => console.warn('[PROGRESS] lesson test save failed:', e));
         }
 
         setCurrentLessonId(null);
@@ -698,6 +731,33 @@ const App: React.FC = () => {
                 ensureLessonStarted(user.uid!, courseId, progress.currentWorkbook, lessonNumber)
                   .then(lp => { if (lp) setLessonProgress(lp); })
                   .catch(() => {});
+
+                // Write to flat "progress" collection for realtime teacher dashboard
+                if (db) {
+                  setDoc(
+                    doc(db, 'progress', user.uid!),
+                    {
+                      uid:           user.uid,
+                      displayName:   user.displayName  ?? null,
+                      email:         user.email        ?? null,
+                      currentWorkbook: updated.currentWorkbook,
+                      currentLesson:   updated.currentLesson,
+                      currentDay:      updated.currentDay,
+                      lastActivity:    serverTimestamp(),
+                      totalStars:    stats.stars,
+                      totalDiamonds: stats.diamonds,
+                      totalFire:     stats.fire,
+                      totalIce:      stats.ice,
+                      daysCompleted: stats.sessions,
+                      avgAccuracy:   stats.avgAccuracy,
+                      totalTimeSpent: stats.sessions * stats.avgTimeSpent,
+                      totalErrors:   stats.totalErrors,
+                      totalAttempts: stats.totalAttempts,
+                      lessonsStarted: Math.max(updated.currentLesson, lessonNumber),
+                    },
+                    { merge: true },
+                  ).catch(e => console.warn('[PROGRESS] flat doc write failed:', e));
+                }
               }
             })
             .catch(e => console.warn('[SAVE] completeCourseDay failed:', e));

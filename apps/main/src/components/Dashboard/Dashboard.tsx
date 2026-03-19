@@ -76,7 +76,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* ── Analytics row ─────────────────────────────────── */}
       {(stats?.sessions ?? 0) > 0 && (
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           <AnalyticsBadge label="Sessions"  value={String(stats!.sessions)} />
           <AnalyticsBadge label="Avg time"  value={formatTime(stats!.avgTimeSpent)} />
           <AnalyticsBadge label="Accuracy"  value={formatAccuracy(stats!.avgAccuracy)} />
@@ -143,8 +143,8 @@ const StatBadge: React.FC<{ emoji: string; label: string; value: string }> = ({ 
 );
 
 const AnalyticsBadge: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div className="flex flex-col items-center justify-center bg-white rounded-2xl py-3 shadow-sm">
-    <span className="text-base font-bold text-slate-800">{value}</span>
-    <span className="text-xs text-slate-500 mt-0.5">{label}</span>
+  <div className="flex flex-col items-center justify-center bg-white rounded-2xl py-3 px-2 shadow-sm overflow-hidden">
+    <span className="text-base font-bold text-slate-800 truncate w-full text-center">{value}</span>
+    <span className="text-xs text-slate-500 mt-0.5 truncate w-full text-center">{label}</span>
   </div>
 );

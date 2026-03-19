@@ -213,7 +213,7 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor('#1e293b');
-  doc.text(`Ranking score: ${student.score.toFixed(1)}  ·  Formula: Stars + Diamonds + (Sessions × 0.5)`, MARGIN + 4, y + 8);
+  doc.text(`Ranking score: ${student.score.toFixed(1)}  ·  Formula: Stars×2 + Diamonds×3 + Accuracy÷10 + Sessions×0.2`, MARGIN + 4, y + 8);
   y += 18;
 
   // ── ALERTS ────────────────────────────────────────────────
@@ -238,6 +238,35 @@ export function generateStudentReport(student: TeacherStudentRow): void {
       y += 13;
     }
     y += 2;
+  }
+
+  // ── TESTS PERFORMANCE ─────────────────────────────────────
+  const hasTestData =
+    student.tests?.placement ||
+    Object.keys(student.tests?.lessons ?? {}).length > 0;
+
+  if (hasTestData) {
+    const sectionN = student.alerts.length > 0 ? '6' : '5';
+    y = sectionHead(doc, `${sectionN}. Tests Performance`, y);
+
+    if (student.tests?.placement) {
+      labelValue(doc, 'Placement Test', `${student.tests.placement.score}%`, MARGIN, y);
+      y += 8;
+    }
+
+    const lessonTests = Object.entries(student.tests?.lessons ?? {});
+    for (const [, test] of lessonTests) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#1e293b');
+      doc.text(
+        `W${test.workbook}  L${test.lesson}  →  ${test.score}%`,
+        MARGIN + 4,
+        y,
+      );
+      y += 7;
+    }
+    y += 4;
   }
 
   // ── FOOTER ────────────────────────────────────────────────

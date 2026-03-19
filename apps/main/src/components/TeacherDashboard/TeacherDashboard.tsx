@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User } from 'firebase/auth';
 import {
-  getTeacherDashboardData,
+  subscribeToTeacherData,
   sortRows,
   filterRows,
   TeacherStudentRow,
@@ -329,27 +329,23 @@ const SummaryCard: React.FC<{
 // ─────────────────────────────────────────────────────────────
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user }) => {
-  const [tab, setTab]               = useState<Tab>('students');
-  const [rows, setRows]             = useState<TeacherStudentRow[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [error, setError]           = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [tab, setTab]         = useState<Tab>('students');
+  const [rows, setRows]       = useState<TeacherStudentRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState<string | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
     setError(null);
 
-    getTeacherDashboardData()
-      .then(data => { if (!cancelled) setRows(data); })
-      .catch(err  => {
-        if (!cancelled) setError('Failed to load student data. Please try again.');
-        console.error('[TeacherDash]', err);
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    const unsub = subscribeToTeacherData((data) => {
+      setRows(data);
+      setLoading(false);
+    });
 
-    return () => { cancelled = true; };
-  }, [refreshKey]);
+    // If subscribeToTeacherData calls cb([]) synchronously (no db), still stop loading
+    return unsub;
+  }, []);
 
   // ── Loading state ──────────────────────────────────────────
   if (loading) {
@@ -369,12 +365,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
       <div className="min-h-screen bg-gradient-to-b from-blue-50 to-slate-50 p-6">
         <div className="max-w-2xl mx-auto bg-red-50 border border-red-200 rounded-2xl p-8 text-center">
           <p className="text-red-800 font-semibold mb-4">{error}</p>
-          <button
-            className="bg-red-600 text-white px-6 py-2 rounded-xl font-medium hover:bg-red-700"
-            onClick={() => setRefreshKey(k => k + 1)}
-          >
-            Retry
-          </button>
+          <p className="text-slate-500 text-sm">Check your network connection and reload the page.</p>
         </div>
       </div>
     );
@@ -400,11 +391,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
             </p>
           </div>
           <button
-            onClick={() => setRefreshKey(k => k + 1)}
-            title="Refresh data"
-            className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-50 shadow-sm"
+            className="bg-white border border-slate-200 text-slate-500 px-4 py-2 rounded-xl text-sm font-medium shadow-sm cursor-default"
+            title="Data updates automatically"
           >
-            ↻ Refresh
+            🔴 Live
           </button>
         </div>
 
