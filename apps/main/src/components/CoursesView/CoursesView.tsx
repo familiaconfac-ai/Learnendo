@@ -13,8 +13,8 @@ interface CoursesViewProps {
 type CategoryKey = 'modern' | 'biblical' | 'track';
 
 const CATEGORY_LABELS: Record<CategoryKey, string> = {
-  modern: 'Modern Languages',
-  biblical: 'Biblical Languages',
+  modern: 'Main Courses',
+  biblical: 'Advanced Studies',
   track: 'Special Study Track',
 };
 
@@ -26,7 +26,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
   onSelectCourse,
   onLogoClick,
 }) => {
-  const categories: CategoryKey[] = ['modern', 'biblical', 'track'];
+  const categories: CategoryKey[] = ['modern', 'biblical'];
 
   return (
     <div className="min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">

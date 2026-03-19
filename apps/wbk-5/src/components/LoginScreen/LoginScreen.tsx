@@ -1,4 +1,22 @@
 import React, { useState } from 'react';
+import ForgotPasswordModal from '../common/ForgotPasswordModal';
+
+function mapAuthError(code: string): string {
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'Invalid email or password.';
+    case 'auth/invalid-email':
+      return 'Invalid email format.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Try again later.';
+    case 'auth/network-request-failed':
+      return 'Network error. Check your connection.';
+    default:
+      return 'Login failed. Please try again.';
+  }
+}
 
 interface LoginScreenProps {
   menuOpen: boolean;
@@ -17,6 +35,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
 
   const validate = () => {
     if (!email.trim() || !password.trim()) {
@@ -39,7 +58,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         await onRegister(email.trim(), password);
       }
     } catch (err: any) {
-      setError(err?.message || 'Authentication failed.');
+      setError(mapAuthError(err?.code ?? ''));
     } finally {
       setIsSubmitting(false);
     }
@@ -113,9 +132,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             >
               Create account
             </button>
+
+            <button
+              type="button"
+              onClick={() => setShowForgot(true)}
+              className="w-full text-center text-xs font-medium text-blue-500 hover:text-blue-700 pt-1"
+            >
+              Forgot password?
+            </button>
           </div>
         </div>
       </div>
+
+      <ForgotPasswordModal
+        open={showForgot}
+        onClose={() => setShowForgot(false)}
+        initialEmail={email}
+      />
     </div>
   );
 };

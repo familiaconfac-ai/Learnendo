@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
@@ -16,12 +17,13 @@ import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
-import { auth, loginWithEmail, registerWithEmail } from './services/firebase';
+import { auth, db, loginWithEmail, registerWithEmail } from './services/firebase';
 import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getUserActivityData } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
 import { calculateScore, ScoreResult } from './engine/scoringEngine';
+import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 
 const DEFAULT_COURSE_ID = 'english';
@@ -445,6 +447,16 @@ const App: React.FC = () => {
     } catch {
       // Do not block rendering when persistence fails.
     }
+
+    // Persist placement test result to flat progress doc
+    if (user?.uid && db) {
+      setDoc(
+        doc(db, 'progress', user.uid),
+        { tests: { placement: { score, date: new Date().toISOString() } } },
+        { merge: true },
+      ).catch(e => console.warn('[PROGRESS] placement test save failed:', e));
+    }
+
     setCurrentSection(SectionType.WORKBOOK);
   };
 
@@ -514,6 +526,28 @@ const App: React.FC = () => {
           // Keep UI responsive even if persistence fails.
         }
 
+        // Persist lesson test result to flat progress doc (Day 7 test)
+        if (user?.uid && db) {
+          const key = `W${progress.currentWorkbook}L${lessonNumber}`;
+          setDoc(
+            doc(db, 'progress', user.uid),
+            {
+              tests: {
+                lessons: {
+                  [key]: {
+                    workbook: progress.currentWorkbook,
+                    lesson:   lessonNumber,
+                    day:      7,
+                    score,
+                    date:     new Date().toISOString(),
+                  },
+                },
+              },
+            },
+            { merge: true },
+          ).catch(e => console.warn('[PROGRESS] lesson test save failed:', e));
+        }
+
         setCurrentLessonId(null);
         setCurrentSection(SectionType.WORKBOOK);
         setShowResultAnimation(true);
@@ -526,11 +560,33 @@ const App: React.FC = () => {
     }
 
     const alreadyDone = progress.completedActivities.includes(dayId);
+
+    // Extract day/lesson numbers early so we can update the path in progress
+    const dayMatch = dayId.match(/d(\d+)/);
+    const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
+    const lessonNumber = getLessonNumberFromId(currentLessonId);
+
+    // Compute the NEXT position after completing this day
+    const nextPath = (!isNaN(dayNumber) && !isNaN(lessonNumber))
+      ? computeNextPath({
+          workbook: progress.currentWorkbook,
+          lesson: lessonNumber,
+          day: dayNumber,
+        })
+      : null;
+
     const updated: UserProgress = {
       ...progress,
       completedActivities: alreadyDone
         ? progress.completedActivities
         : [...progress.completedActivities, dayId],
+      // Advance to next position
+      ...(nextPath && {
+        currentDay:      nextPath.day,
+        currentLesson:   nextPath.lesson,
+        currentWorkbook: nextPath.workbook,
+      }),
+      lastCompletedDate: new Date().toISOString(),
     };
     setProgress(updated);
     try {
@@ -542,10 +598,6 @@ const App: React.FC = () => {
     // Firebase: Track day completion and check for week completion
     if (user?.uid && currentLessonId) {
       try {
-        const lessonNumber = getLessonNumberFromId(currentLessonId);
-        const dayMatch = dayId.match(/d(\d+)/);
-        const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
-
         if (!isNaN(lessonNumber) && !isNaN(dayNumber)) {
           const result = await completeDayAndGetResult(
             user.uid,
@@ -568,6 +620,26 @@ const App: React.FC = () => {
             totalCorrect: Math.round(score),
             totalAnswers: 100,
           });
+
+          // Write to flat "progress" collection for realtime teacher dashboard
+          if (db) {
+            setDoc(
+              doc(db, 'progress', user.uid!),
+              {
+                uid:             user.uid,
+                displayName:     user.displayName  ?? null,
+                email:           user.email        ?? null,
+                currentWorkbook: updated.currentWorkbook,
+                currentLesson:   updated.currentLesson,
+                currentDay:      updated.currentDay,
+                lastActivity:    serverTimestamp(),
+                avgAccuracy:     score,
+                daysCompleted:   updated.completedActivities.length,
+                lessonsStarted:  Math.max(updated.currentLesson, lessonNumber),
+              },
+              { merge: true },
+            ).catch(e => console.warn('[PROGRESS] flat doc write failed:', e));
+          }
         }
       } catch (error) {
         console.warn('[App] Firebase day tracking failed:', error);
@@ -769,7 +841,7 @@ const App: React.FC = () => {
                           setCurrentWorkbook(null);
                           setCurrentLessonId(null);
                           setCurrentDay(null);
-                          setCurrentSection(SectionType.WORKBOOK);
+                          setCurrentSection(SectionType.COURSES);
                           setCourseMenuOpen(false);
                         }}
                         className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${

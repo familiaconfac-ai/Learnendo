@@ -384,7 +384,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     levelBand: 'B2',
     type: 'multiple-choice',
     prompt: 'Complete: "Not only ___ he speak three languages, but he also plays the piano."',
-    options: ['does he', 'do', 'is', 'does his'],
+    options: ['does', 'do', 'is', 'does his'],
     correctAnswerIndex: 0,
     explanation: 'Inversion after "Not only" requires "does he" (auxiliary + subject).'
   },
@@ -394,7 +394,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     levelBand: 'C1',
     type: 'multiple-choice',
     prompt: 'Which word best completes: "Despite the difficulties, she continued her studies. ___,  she received a scholarship."',
-    options: ['However', 'Moreover', 'Consequently', 'Nevertheless'],
+    options: ['However', 'Although', 'Consequently', 'Nevertheless'],
     correctAnswerIndex: 2,
     explanation: '"Consequently" shows that her persistence resulted in a scholarship.'
   },

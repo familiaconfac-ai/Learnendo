@@ -10,25 +10,18 @@ export const COURSES: Course[] = [
     description: 'Learn English from A1 to B2',
   },
   {
-    id: 'spanish',
-    title: 'Spanish',
-    flag: '🇪🇸',
-    category: 'modern',
-    description: 'Learn Spanish — coming soon',
-  },
-  {
-    id: 'portuguese_native',
-    title: 'Portuguese Grammar',
-    flag: '🇧🇷',
-    category: 'modern',
-    description: 'Grammar for native speakers — coming soon',
-  },
-  {
     id: 'portuguese_foreigners',
     title: 'Portuguese for Foreigners',
     flag: '🇧🇷',
     category: 'modern',
     description: 'Learn Brazilian Portuguese — coming soon',
+  },
+  {
+    id: 'spanish',
+    title: 'Spanish',
+    flag: '🇪🇸',
+    category: 'modern',
+    description: 'Learn Spanish — coming soon',
   },
   // ── Biblical Languages ────────────────────────────────────────────────────
   {
@@ -45,12 +38,11 @@ export const COURSES: Course[] = [
     category: 'biblical',
     description: 'Read the Old Testament in classical Hebrew',
   },
-  // ── Special Study Track ───────────────────────────────────────────────────
   {
-    id: 'bible_language_track',
-    title: 'Bible Language Track',
-    flag: '📖',
-    category: 'track',
-    description: 'Combined Greek + Hebrew study path',
+    id: 'portuguese_native',
+    title: 'Portuguese Grammar',
+    flag: '🇧🇷',
+    category: 'biblical',
+    description: 'Grammar for native speakers — coming soon',
   },
 ];

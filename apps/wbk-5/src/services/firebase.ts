@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserLocalPersistence, linkWithCredential, EmailAuthProvider } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserLocalPersistence, linkWithCredential, EmailAuthProvider, sendPasswordResetEmail } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
@@ -61,6 +61,10 @@ export async function registerWithEmail(email: string, pass: string, fullName: s
  * ALWAYS returns a real Firebase Auth user or throws an error.
  * Eliminates any fallback that creates fake/mock users.
  */
+export async function sendPasswordReset(email: string): Promise<void> {
+  await sendPasswordResetEmail(auth, email);
+}
+
 export async function ensureAnonAuth(): Promise<{ uid: string; isAnonymous: boolean }> {
   // If already authenticated, return immediately
   if (auth.currentUser) {
