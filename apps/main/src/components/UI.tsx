@@ -605,7 +605,8 @@ export const ResultDashboard: React.FC<{
   };
 
   const isMastered = score >= 100 || isAdmin;
-  const isLockedByTime = !isAdmin && isMastered && lastCompletionDayKey === todayKey;
+  // Time-based lesson lock removed — next lesson unlocks immediately on completion.
+  const isLockedByTime = false;
 
   return (
     <div className="p-10 text-center bg-white rounded-[3rem] shadow-2xl border-4 border-blue-50 animate-in zoom-in duration-300">

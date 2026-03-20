@@ -108,6 +108,10 @@ export async function completeDayAndGetResult(
 
   // Build week-scoped score for immediate UI update (no stale fallback needed)
   const todayStr = new Date().toISOString().split('T')[0];
+  if (!updatedWeek.days) {
+    console.warn('[weeklyProgressEngine] Invalid week structure — missing days', updatedWeek);
+    return { success: true, fireEarned: result.fireEarned, iceEarned: result.iceEarned, fireIconColor, daysCompleted: 0, weekComplete: result.isWeekComplete, weekResult };
+  }
   const fire = updatedWeek.days.filter(d => d.status !== 'pending').length;
   const freeze = updatedWeek.days.filter(d => d.status === 'pending' && d.scheduledDate <= todayStr).length;
   const diamonds = updatedWeek.days.filter(d => d.diamondEarned).length;
@@ -220,6 +224,11 @@ export async function canAccessDay(
 
   if (!week) {
     // New week: only day 1 is accessible
+    return dayNumber === 1;
+  }
+
+  if (!week.days) {
+    console.warn('[weeklyProgressEngine] Invalid week structure — missing days', week);
     return dayNumber === 1;
   }
 

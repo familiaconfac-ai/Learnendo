@@ -61,14 +61,14 @@ export const LessonView: React.FC<LessonViewProps> = ({
     if (!dayId) return 'locked';
 
     if (lessonProgress) {
-      const today = todayLocalISO();
       const entry = lessonProgress.days[index];
       if (!entry) return 'locked';
       if (entry.completed) return 'completed';
       if (isAdmin) return 'in-progress';
-      // Future day: not yet unlocked
-      if (entry.unlockedAt > today) return 'locked';
-      return 'in-progress';
+      // Unlock as soon as the previous day is completed (no date gate).
+      if (index === 0) return 'in-progress';
+      const prevEntry = lessonProgress.days[index - 1];
+      return prevEntry?.completed ? 'in-progress' : 'locked';
     }
 
     // ── Fallback: local state ──

@@ -519,7 +519,7 @@ export async function updatePerformanceSummary(uid: string, isCorrect: boolean):
     const userSnap = await getDoc(userDocRef);
     const currentStudyTime = userSnap.data()?.totalStudyTime || 0;
 
-    const statsDocRef = doc(db, `users/${uid}/stats`);
+    const statsDocRef = doc(db, `users/${uid}/stats/main`);
 
     // Get current stats to recalculate accuracy
     const statsSnap = await getDoc(statsDocRef);
@@ -555,19 +555,20 @@ export async function updateStudyTime(uid: string, additionalSeconds: number): P
 
   try {
     const userDocRef = doc(db, "users", uid);
-    const statsDocRef = doc(db, `users/${uid}/stats`);
+    const statsDocRef = doc(db, `users/${uid}/stats/main`);
 
-    // Update both user doc and stats
-    await updateDoc(userDocRef, {
+    // Update both user doc and stats (setDoc+merge creates doc if missing)
+    await setDoc(userDocRef, {
       totalStudyTime: increment(additionalSeconds),
-    });
+    }, { merge: true });
 
-    await updateDoc(statsDocRef, {
+    await setDoc(statsDocRef, {
       totalStudyTime: increment(additionalSeconds),
       lastUpdated: serverTimestamp(),
-    });
+    }, { merge: true });
 
-    console.log("Study time updated. Added:", additionalSeconds, "seconds");
+    console.log("✅ Progress write completed: study time updated. Added:", additionalSeconds, "seconds");
+    console.log("📊 STATS WRITE SUCCESS");
   } catch (e) {
     console.error("Error updating study time:", e);
   }
@@ -594,10 +595,10 @@ export async function updateAdaptiveDifficulty(uid: string, accuracyRate: number
       newDifficulty = "normal";
     }
 
-    await updateDoc(userDocRef, {
+    await setDoc(userDocRef, {
       difficultyLevel: newDifficulty,
       lastUpdated: serverTimestamp(),
-    });
+    }, { merge: true });
 
     console.log("Difficulty level updated to:", newDifficulty, "based on accuracy:", accuracyRate);
   } catch (e) {
@@ -642,16 +643,17 @@ export async function recordLessonCompletion(
     await updateStudyTime(uid, completionData.timeSpentSeconds);
 
     // Update stats with completion count
-    const statsDocRef = doc(db, `users/${uid}/stats`);
+    const statsDocRef = doc(db, `users/${uid}/stats/main`);
     const statsSnap = await getDoc(statsDocRef);
     const currentLessonsCompleted = statsSnap.data()?.lessonsCompleted || 0;
 
-    await updateDoc(statsDocRef, {
+    await setDoc(statsDocRef, {
       lessonsCompleted: currentLessonsCompleted + 1,
       lastUpdated: serverTimestamp(),
-    });
+    }, { merge: true });
 
-    console.log("Lesson completion recorded. Lesson:", lessonId);
+    console.log("✅ Progress write completed: lesson completion recorded. Lesson:", lessonId);
+    console.log("📊 STATS WRITE SUCCESS");
   } catch (e) {
     console.error("Error recording lesson completion:", e);
   }
@@ -887,12 +889,16 @@ export async function recordDailyProgress(
     }
 
     const dayIndex = dayNumber - 1;
-    if (dayIndex < 0 || dayIndex >= weekData.days.length) {
-      console.warn("Invalid day number:", dayNumber);
+    if (!weekData.days || dayIndex < 0 || dayIndex >= weekData.days.length) {
+      console.warn("Invalid week structure or day number:", { weekId, dayNumber, hasDays: !!weekData.days });
       return { isDayComplete: false, fireEarned: false, iceEarned: false, isWeekComplete: false };
     }
 
-    const day = weekData.days[dayIndex];
+    const day = weekData?.days?.[dayIndex] || null;
+    if (!day) {
+      console.warn("Day not found at index:", dayIndex);
+      return { isDayComplete: false, fireEarned: false, iceEarned: false, isWeekComplete: false };
+    }
     const scheduledDate = day.scheduledDate;
     const completedDateObj = new Date(completedDate).toISOString().split('T')[0];
     const scheduledDateObj = new Date(scheduledDate).toISOString().split('T')[0];
@@ -937,7 +943,7 @@ export async function recordDailyProgress(
       diamondsEarned,
       starsEarned,
       completed: isWeekComplete,
-      completedAt: isWeekComplete ? serverTimestamp() : undefined,
+      ...(isWeekComplete && { completedAt: serverTimestamp() }),
     };
 
     const weekDocRef = doc(db, `users/${uid}/weeklyProgress/${weekId}`);

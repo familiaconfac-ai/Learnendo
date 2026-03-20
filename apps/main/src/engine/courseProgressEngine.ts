@@ -162,10 +162,11 @@ function cpDocId(courseId: string, bookNumber: number): string {
  * Exported so callers can preview the schedule without a Firestore round-trip.
  */
 export function buildDays(startedAt: string): DayEntry[] {
-  const base = startOfLocalDay(new Date(startedAt));
+  // All days unlock immediately on lesson start — no date-based delay.
+  const startISO = toLocalISO(startOfLocalDay(new Date(startedAt)));
   return Array.from({ length: 7 }, (_, i) => ({
     day: i + 1,
-    unlockedAt: toLocalISO(addLocalDays(base, i)),
+    unlockedAt: startISO,
     completed: false,
   }));
 }
@@ -394,13 +395,6 @@ export async function completeCourseDay(
       }
 
       const day = safeDays[idx];
-
-      // ─ Guard: future days are not yet accessible ─
-      if (day.unlockedAt > today) {
-        const msg = `Day ${dayIndex} unlocks on ${day.unlockedAt} — cannot complete before then`;
-        console.warn('[SAVE]', msg);
-        throw new Error(msg);
-      }
 
       // ─ Idempotency: do not overwrite a completed day ─
       if (day.completed) {

@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, increment } from 'firebase/firestore';
 import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
@@ -27,6 +27,7 @@ import { calculateWeeklyScore, DayProgress, ScoreResult } from './engine/scoring
 import { ensureLessonStarted, completeCourseDay, LessonProgress, DayAnalytics } from './engine/courseProgressEngine';
 import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
+import { trackLessonCompletion } from './services/progressService';
 
 const DEFAULT_COURSE_ID = 'english';
 const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
@@ -103,7 +104,7 @@ const App: React.FC = () => {
   const [lessonTestCompleted, setLessonTestCompleted] = useState<Record<number, boolean>>({});
   const [lessonTestScores, setLessonTestScores] = useState<Record<number, number>>({});
   const [user, setUser] = useState<User | null>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authReady, setAuthReady] = useState(false);
   const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
   const [showConversionModal, setShowConversionModal] = useState(false);
   const [showResultAnimation, setShowResultAnimation] = useState(false);
@@ -165,7 +166,6 @@ const App: React.FC = () => {
       
       // If no user is authenticated, we need to check if this is acceptable
       if (!authenticatedUser) {
-        setAuthLoading(false);
         closeActiveSession();
         setCurrentCourseId(null);
         setCurrentSection(SectionType.COURSES);
@@ -181,11 +181,11 @@ const App: React.FC = () => {
           completedActivities: [],
         }));
         setUser(null);
+        setAuthReady(true);
         return;
       }
 
       setUser(authenticatedUser);
-      setAuthLoading(false);
 
       // ========== STEP 2: TRACK ALL AUTHENTICATED USERS ==========
       // This runs for EVERY authenticated user (including restricted)
@@ -235,6 +235,9 @@ const App: React.FC = () => {
         setCurrentWorkbookId(1);
         setCurrentSection(SectionType.WORKBOOK);
       }
+
+      // Auth is now ready — user and progress are both set
+      setAuthReady(true);
 
       // ========== STEP 4: SESSION MANAGEMENT ==========
       // Create/manage session reference for tracking activity
@@ -294,12 +297,12 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!authReady || !user?.uid) return;
     getSessionCount(user.uid).then(setSessionCount).catch(() => {});
-  }, [user?.uid]);
+  }, [authReady, user?.uid]);
 
   useEffect(() => {
-    if (!user?.uid || !currentLessonId) return;
+    if (!authReady || !user?.uid || !currentLessonId) return;
     const lessonNumber = getLessonNumberFromId(currentLessonId);
     if (isNaN(lessonNumber)) return;
     const uid = user.uid;
@@ -335,7 +338,7 @@ const App: React.FC = () => {
         console.warn('[Score] Failed to load weeklyProgress — setting all zeros.');
         setScore({ streak: 0, freeze: 0, diamonds: 0, stars: 0, activeDays: 0, totalDays: 7 });
       });
-  }, [user?.uid, currentLessonId]);
+  }, [authReady, user?.uid, currentLessonId]);
 
   useEffect(() => {
     if (!user) return;
@@ -675,8 +678,43 @@ const App: React.FC = () => {
       // Persistence failure should not block navigation.
     }
 
+    // Optimistically mark the completed day in local lessonProgress so LessonView
+    // unlocks the next day immediately, without waiting for the Firestore round-trip.
+    if (!isNaN(dayNumber)) {
+      setLessonProgress(prev => {
+        if (!prev) return prev;
+        const updatedDays = prev.days.map((d, i) =>
+          i === dayNumber - 1
+            ? { ...d, completed: true, completedAt: new Date().toISOString(), score }
+            : d
+        );
+        return { ...prev, days: updatedDays };
+      });
+    }
+
+    // ── Bonus flag: reward consistency (different calendar day) — no score inflation ──
+    const isSameDay = (a: string | undefined, b: string | undefined): boolean => {
+      if (!a || !b) return false;
+      return new Date(a).toDateString() === new Date(b).toDateString();
+    };
+    const earnsBonus = !isSameDay(progress.lastCompletedDate, new Date().toISOString());
+    if (earnsBonus && score > 0) {
+      console.log(`[Bonus] Different day — bonus earned! score kept real at ${score}`);
+    }
+
     // Firebase: Track day completion and check for week completion
     if (user?.uid && currentLessonId) {
+      // ── Atomic progress write (independent of completeCourseDay) ──
+      if (user?.uid) {
+        trackLessonCompletion({
+          userId: user.uid,
+          lessonId: dayId,
+          score,
+          totalQuestions: 100,
+          correctAnswers: Math.round(score),
+        }).catch(e => console.warn('[App] trackLessonCompletion failed:', e));
+      }
+
       try {
         if (!isNaN(lessonNumber) && !isNaN(dayNumber)) {
           // ── Existing weeklyProgress path (kept unchanged) ──
@@ -712,7 +750,7 @@ const App: React.FC = () => {
           const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
           const analytics: DayAnalytics = {
             timeSpent,
-            accuracy: score,  // score is 0–100 percentage correct
+            accuracy: score,
           };
           completeCourseDay(user.uid, courseId, progress.currentWorkbook, lessonNumber, dayNumber, score, analytics)
             .then(({ success, stats }) => {
@@ -748,6 +786,25 @@ const App: React.FC = () => {
                     },
                     { merge: true },
                   ).catch(e => console.warn('[PROGRESS] flat doc write failed:', e));
+
+                  // Update dashboard stats collection with lesson results
+                  const safeDiamonds = stats.diamonds ?? 0;
+                  const safeStars    = stats.stars    ?? 0;
+                  const safeFire     = stats.fire     ?? 0;
+                  const safeIce      = stats.ice      ?? 0;
+                  console.log('📊 STATS UPDATED:', { diamonds: safeDiamonds, stars: safeStars, fire: safeFire, ice: safeIce });
+                  setDoc(
+                    doc(db, 'users', user.uid!, 'stats', 'main'),
+                    {
+                      diamonds:      increment(safeDiamonds),
+                      stars:         increment(safeStars),
+                      fire:          increment(safeFire),
+                      ice:           increment(safeIce),
+                      lastLessonId:  dayId,
+                      lastUpdated:   serverTimestamp(),
+                    },
+                    { merge: true },
+                  ).catch(e => console.warn('[STATS] stats/main write failed:', e));
                 }
               }
             })
@@ -770,6 +827,18 @@ const App: React.FC = () => {
     // Return to day islands after finishing day practice.
     setCurrentDay(null);
     setCurrentSection(SectionType.LESSON);
+
+    // ── DEBUG: force test write to verify Firestore connectivity ──
+    if (user?.uid && db) {
+      setDoc(doc(db, 'debug_test', user.uid), {
+        test: true,
+        time: new Date().toISOString(),
+        lessonId: dayId,
+        userId: user.uid,
+        score,
+      }).then(() => console.log('🟢 DEBUG write OK — Firestore is reachable'))
+        .catch(e => console.error('🔴 DEBUG write FAILED:', e));
+    }
   };
 
   const renderSection = () => {
@@ -900,7 +969,7 @@ const App: React.FC = () => {
     }
   };
 
-  if (authLoading) {
+  if (!authReady) {
     return null;
   }
 
