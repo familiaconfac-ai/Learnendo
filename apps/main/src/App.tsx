@@ -43,14 +43,7 @@ const COURSE_TO_LANGUAGE: Record<string, LessonLanguageCode> = {
   'hebrew_biblical': 'he',
 };
 
-// Map language codes to course IDs
-const LANGUAGE_TO_COURSE: Record<LessonLanguageCode, string> = {
-  'en': 'english',
-  'pt': 'portuguese_foreigners',
-  'es': 'spanish',
-  'el': 'greek_koine',
-  'he': 'hebrew_biblical',
-};
+
 
 const COURSE_SELECTOR_OPTIONS = [
   { id: 'english', label: 'English', flag: '🇺🇸' },
@@ -79,17 +72,12 @@ const App: React.FC = () => {
     return DEFAULT_LANGUAGE;
   });
 
-  // Update localStorage and course when language changes
+  // Update localStorage when language changes (course sync is handled explicitly in handleCourseChange)
   const setLanguage = useCallback((newLanguage: LessonLanguageCode) => {
     console.log('[App] Language changed:', newLanguage);
     setLanguageState(newLanguage);
     if (typeof window !== 'undefined') {
       localStorage.setItem(LANGUAGE_STORAGE_KEY, newLanguage);
-    }
-    // Auto-switch course to match language
-    const courseForLanguage = LANGUAGE_TO_COURSE[newLanguage];
-    if (courseForLanguage) {
-      setCurrentCourseId(courseForLanguage);
     }
   }, []);
 
@@ -153,17 +141,7 @@ const App: React.FC = () => {
     }
   }, [language, setLanguage]);
 
-  // Language selector handler — switches language, resets navigation to courses view
-  const handleLangSelect = useCallback((lang: LessonLanguageCode) => {
-    console.log('LANG CHANGE', lang);
-    setLanguage(lang);
-    setCurrentWorkbookId(1);
-    setCurrentWorkbook(null);
-    setCurrentLessonId(null);
-    setCurrentDay(null);
-    setCurrentSection(SectionType.COURSES);
-    setCourseMenuOpen(false);
-  }, [setLanguage]);
+
 
   const triggerConversion = (reason?: string) => {
     setConversionReason(reason);
@@ -956,7 +934,7 @@ const App: React.FC = () => {
           </button>
 
           <div className="flex-shrink-0">
-            <LanguageSelector current={language} onChange={handleLangSelect} />
+            <LanguageSelector current={language} onOpenCourses={() => setCurrentSection(SectionType.COURSES)} />
           </div>
 
           <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">

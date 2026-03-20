@@ -3,7 +3,7 @@ import { LessonLanguageCode } from '../../types';
 
 interface LanguageSelectorProps {
   current?: LessonLanguageCode;
-  onChange: (lang: LessonLanguageCode) => void;
+  onOpenCourses: () => void;
 }
 
 const LANGUAGE_OPTIONS: { id: LessonLanguageCode; label: string; iconSrc: string }[] = [
@@ -14,7 +14,7 @@ const LANGUAGE_OPTIONS: { id: LessonLanguageCode; label: string; iconSrc: string
   { id: 'he', label: 'Hebrew', iconSrc: '/flags/il.png' },
 ];
 
-export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onChange }) => {
+export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onOpenCourses }) => {
   return (
     <div className="flex items-center justify-center gap-2">
       {LANGUAGE_OPTIONS.map((lang) => (
@@ -25,8 +25,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onC
           title={lang.label}
           onClick={(e) => {
             e.stopPropagation();
-            console.log('FLAG CLICK', lang.id);
-            onChange(lang.id);
+            console.log('GO TO COURSES ONLY');
+            onOpenCourses();
           }}
           className={[
             'rounded-full p-1 transition-transform active:scale-95',
