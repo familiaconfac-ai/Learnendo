@@ -1,4 +1,4 @@
-import { Lesson } from '../../types';
+﻿import { Lesson } from '../../types';
 
 export const lesson1: Lesson = {
   id: "wb1_l1",
@@ -8,31 +8,33 @@ export const lesson1: Lesson = {
       id: "wb1_l1_d1",
       type: "practice",
       exercises: [
-        { id: 'wb1_l1_d1_e1', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'A', options: ['H', 'B', 'F', 'L'], correctValue: 'H', isNewVocab: true },
-        { id: 'wb1_l1_d1_e2', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'B', options: ['G', 'F', 'I', 'S'], correctValue: 'G' },
-        { id: 'wb1_l1_d1_e3', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'F', options: ['L', 'A', 'Q', 'O'], correctValue: 'L' },
-        { id: 'wb1_l1_d1_e4', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'I', options: ['Y', 'O', 'U', 'V'], correctValue: 'Y' },
-        { id: 'wb1_l1_d1_e5', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'U', options: ['W', 'M', 'N', 'Z'], correctValue: 'W' },
-        { id: 'wb1_l1_d1_e6', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'S', options: ['X', 'J', 'K', 'R'], correctValue: 'X' },
-        { id: 'wb1_l1_d1_e7', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'O', options: ['O', 'E', 'G', 'T'], correctValue: 'O' },
-        { id: 'wb1_l1_d1_e8', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'J', options: ['K', 'L', 'M', 'N'], correctValue: 'K' },
-        { id: 'wb1_l1_d1_e9', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'C', options: ['D', 'F', 'H', 'J'], correctValue: 'D' },
-        { id: 'wb1_l1_d1_e10', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'P', options: ['T', 'S', 'R', 'Q'], correctValue: 'T' },
-        { id: 'wb1_l1_d1_e11', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'V', options: ['E', 'A', 'I', 'O'], correctValue: 'E' },
-        { id: 'wb1_l1_d1_e12', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'M', options: ['N', 'P', 'Q', 'R'], correctValue: 'N' },
-        { id: 'wb1_l1_d1_e13', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'H', options: ['A', 'E', 'I', 'O'], correctValue: 'A' },
-        { id: 'wb1_l1_d1_e14', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'Y', options: ['I', 'E', 'A', 'U'], correctValue: 'I' },
-        { id: 'wb1_l1_d1_e15', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'Q', options: ['U', 'O', 'A', 'E'], correctValue: 'U' },
-        { id: 'wb1_l1_d1_e16', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'Z', options: ['X', 'Y', 'W', 'V'], correctValue: 'V' },
-        { id: 'wb1_l1_d1_e17', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'G', options: ['B', 'A', 'F', 'L'], correctValue: 'B' },
-        { id: 'wb1_l1_d1_e18', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'K', options: ['J', 'L', 'M', 'N'], correctValue: 'J' },
-        { id: 'wb1_l1_d1_e19', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'D', options: ['C', 'F', 'H', 'J'], correctValue: 'C' },
-        { id: 'wb1_l1_d1_e20', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'T', options: ['P', 'S', 'R', 'Q'], correctValue: 'P' },
-        { id: 'wb1_l1_d1_e21', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'E', options: ['V', 'A', 'I', 'O'], correctValue: 'V' },
-        { id: 'wb1_l1_d1_e22', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'N', options: ['M', 'P', 'Q', 'R'], correctValue: 'M' },
-        { id: 'wb1_l1_d1_e23', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'A', options: ['H', 'E', 'I', 'O'], correctValue: 'H' },
-        { id: 'wb1_l1_d1_e24', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'I', options: ['Y', 'E', 'A', 'U'], correctValue: 'Y' },
-        { id: 'wb1_l1_d1_e25', type: 'multiple-choice', instruction: 'Which letter has the same vowel sound?', audioValue: 'U', options: ['Q', 'O', 'A', 'E'], correctValue: 'Q' }
+        // Letters (18) — hear the letter, pick what you heard
+        { id: 'wb1_l1_d1_e1',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'A',        options: ['A', 'E', 'H', 'K'],      correctValue: 'A',  isNewVocab: true },
+        { id: 'wb1_l1_d1_e2',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'G',        options: ['G', 'J', 'Z', 'D'],      correctValue: 'G'  },
+        { id: 'wb1_l1_d1_e3',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'D',        options: ['D', 'B', 'T', 'P'],      correctValue: 'D'  },
+        { id: 'wb1_l1_d1_e4',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'I',        options: ['I', 'Y', 'E', 'A'],      correctValue: 'I'  },
+        { id: 'wb1_l1_d1_e5',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'H',        options: ['H', 'A', 'E', 'I'],      correctValue: 'H'  },
+        { id: 'wb1_l1_d1_e6',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'J',        options: ['J', 'G', 'K', 'Z'],      correctValue: 'J'  },
+        { id: 'wb1_l1_d1_e7',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'K',        options: ['K', 'J', 'Q', 'G'],      correctValue: 'K'  },
+        { id: 'wb1_l1_d1_e8',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'Q',        options: ['Q', 'K', 'U', 'O'],      correctValue: 'Q'  },
+        { id: 'wb1_l1_d1_e9',  type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'R',        options: ['R', 'L', 'W', 'N'],      correctValue: 'R'  },
+        { id: 'wb1_l1_d1_e10', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'W',        options: ['W', 'R', 'M', 'V'],      correctValue: 'W'  },
+        { id: 'wb1_l1_d1_e11', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'X',        options: ['X', 'Z', 'S', 'K'],      correctValue: 'X'  },
+        { id: 'wb1_l1_d1_e12', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'Y',        options: ['Y', 'I', 'E', 'J'],      correctValue: 'Y'  },
+        { id: 'wb1_l1_d1_e13', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'E',        options: ['E', 'I', 'A', 'O'],      correctValue: 'E'  },
+        { id: 'wb1_l1_d1_e14', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'U',        options: ['U', 'Q', 'O', 'A'],      correctValue: 'U'  },
+        { id: 'wb1_l1_d1_e15', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'O',        options: ['O', 'U', 'A', 'E'],      correctValue: 'O'  },
+        { id: 'wb1_l1_d1_e16', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'L',        options: ['L', 'R', 'N', 'M'],      correctValue: 'L'  },
+        { id: 'wb1_l1_d1_e17', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'M',        options: ['M', 'N', 'W', 'L'],      correctValue: 'M'  },
+        { id: 'wb1_l1_d1_e18', type: 'multiple-choice', instruction: 'What are you listening to?', audioValue: 'N',        options: ['N', 'M', 'L', 'R'],      correctValue: 'N'  },
+        // Numbers (7) — hear the number word, pick the digit
+        { id: 'wb1_l1_d1_e19', type: 'identification',  instruction: 'What are you listening to?', audioValue: 'Zero',     options: ['0', '1', '6', '10'],     correctValue: '0'  },
+        { id: 'wb1_l1_d1_e20', type: 'identification',  instruction: 'What are you listening to?', audioValue: 'Three',    options: ['3', '8', '13', '30'],    correctValue: '3'  },
+        { id: 'wb1_l1_d1_e21', type: 'identification',  instruction: 'What are you listening to?', audioValue: 'Eight',    options: ['8', '3', '18', '80'],    correctValue: '8'  },
+        { id: 'wb1_l1_d1_e22', type: 'identification',  instruction: 'What are you listening to?', audioValue: 'Eleven',   options: ['1', '11', '12', '21'],   correctValue: '11' },
+        { id: 'wb1_l1_d1_e23', type: 'identification',  instruction: 'What are you listening to?', audioValue: 'Twelve',   options: ['2', '12', '20', '21'],   correctValue: '12' },
+        { id: 'wb1_l1_d1_e24', type: 'identification',  instruction: 'What are you listening to?', audioValue: 'Thirteen', options: ['3', '13', '30', '33'],   correctValue: '13' },
+        { id: 'wb1_l1_d1_e25', type: 'identification',  instruction: 'What are you listening to?', audioValue: 'Twenty',   options: ['2', '12', '20', '22'],   correctValue: '20' }
       ]
     },
     {

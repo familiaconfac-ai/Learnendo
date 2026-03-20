@@ -2,6 +2,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
+import speakerIcon from '../assets/icons/speaker.svg';
+import turtleIcon from '../assets/icons/turtle.svg';
+import backIcon from '../assets/icons/back.svg';
+import checkIcon from '../assets/icons/check.svg';
 
 const SUCCESS_SOUND = "https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3";
 const ERR_SOUND = "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3";
@@ -451,13 +455,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
             {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
               {item.audioValue && (
-                <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] text-2xl active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
-                  <i className="fa-solid fa-volume-high"></i>
+                <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
+                  <img src={speakerIcon} className="w-6 h-6 brightness-0 invert" alt="Play" />
                 </button>
               )}
               {item.audioValue && (
-                <button onClick={() => speak(item.audioValue, 0.7)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] text-3xl active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
-                  <i className="fa-solid fa-turtle text-white drop-shadow-md"></i>
+                <button onClick={() => speak(item.audioValue, 0.7)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
+                  <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
               )}
               {item.type === 'speaking' && (
@@ -562,17 +566,17 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                 {onBack && (
                   <button
                     onClick={onBack}
-                    className="flex-1 py-4 bg-yellow-500 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#b45309] active:translate-y-1 transition-all hover:bg-yellow-600"
+                    className="flex-1 py-4 bg-yellow-500 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#b45309] active:translate-y-1 transition-all hover:bg-yellow-600 flex items-center justify-center"
                   >
-                    ← BACK
+                    <img src={backIcon} className="w-6 h-6 brightness-0 invert" alt="Back" />
                   </button>
                 )}
                 <button
                   disabled={isMultipleChoice ? !selectedOption : !userInput.trim()}
                   onClick={() => handleCheck()}
-                  className={`${onBack ? 'flex-1' : 'w-full'} py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0`}
+                  className={`${onBack ? 'flex-1' : 'w-full'} py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center`}
                 >
-                  CHECK
+                  <img src={checkIcon} className="w-6 h-6 brightness-0 invert" alt="Check" />
                 </button>
               </div>
             )}
