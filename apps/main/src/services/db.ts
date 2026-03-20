@@ -306,11 +306,11 @@ export async function finishSession(uid: string, sessionId: string, durationSeco
 
   try {
     const sessionDocRef = doc(db, `users/${uid}/sessions/${sessionId}`);
-    await updateDoc(sessionDocRef, {
+    await setDoc(sessionDocRef, {
       logoutTime: serverTimestamp(),
       durationSeconds,
       status: "finished",
-    });
+    }, { merge: true });
     console.log("Session finished. Duration:", durationSeconds, "seconds");
   } catch (e) {
     console.error("Error finishing session:", e);
@@ -1000,7 +1000,8 @@ export async function updateUserTotalProgress(
       updates.totalIce = increment(increment_values.iceEarned);
     }
 
-    await updateDoc(userDocRef, updates);
+    await setDoc(userDocRef, updates, { merge: true });
+    console.log('Saving progress: totalDiamonds/fire/ice incremented for', uid);
   } catch (e) {
     console.error("Error updating user total progress:", e);
   }
@@ -1044,11 +1045,11 @@ export async function savePlacementTestResult(
 
     // Also update user profile with score
     const userDocRef = doc(db, "users", uid);
-    await updateDoc(userDocRef, {
+    await setDoc(userDocRef, {
       placementScore: score,
       placementLevel: estimatedLevel,
       placementCompletedAt: serverTimestamp(),
-    });
+    }, { merge: true });
 
     console.log("Placement test saved. ID:", testId, "Level:", estimatedLevel);
     return testId;

@@ -55,7 +55,11 @@ export interface UserProgress {
   currentWorkbook: number;
   currentLesson: number;
   currentDay: number;
-  completedActivities: string[]; // array of day ids
+  completedActivities: string[]; // array of day ids (in-memory)
+  /** Firestore-persisted map of completed day ids → true.
+   *  Stored as a map so individual keys are preserved on every setDoc merge,
+   *  avoiding the array-overwrite race condition. */
+  days?: Record<string, boolean>;
   lastCompletedDate: string; // ISO date
   placementScore?: number;
   tests?: UserTestData;
@@ -73,6 +77,7 @@ export enum SectionType {
   SETTINGS = 'SETTINGS',
   HELP = 'HELP',
   TEACHER_DASHBOARD = 'TEACHER_DASHBOARD',
+  RANK = 'RANK',
 }
 
 export interface AnswerLog {

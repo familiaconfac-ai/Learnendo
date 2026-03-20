@@ -383,7 +383,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     part: 4,
     levelBand: 'B2',
     type: 'multiple-choice',
-    prompt: 'Complete: "Not only ___ he speak three languages, but he also plays the piano."',
+    prompt: 'Complete: "Not only ___ speak three languages, but he also plays the piano."',
     options: ['does', 'do', 'is', 'does his'],
     correctAnswerIndex: 0,
     explanation: 'Inversion after "Not only" requires "does he" (auxiliary + subject).'

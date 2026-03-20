@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, increment } from 'firebase/firestore';
+import { doc, setDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
 import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
@@ -14,10 +14,13 @@ import { PronunciationTrainer } from './components/PronunciationTrainer/Pronunci
 import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
 import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
 import { LanguageSelector } from './components/LanguageSelector';
+import { RankScreen } from './components/RankScreen';
 import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
+import { GRAMMAR_GUIDES } from './constants';
+import { GRAMMAR_GUIDES } from './constants';
 import { auth, db, loginWithEmail, registerWithEmail } from './services/firebase';
 import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress, promoteAdminIfNeeded } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
@@ -105,11 +108,15 @@ const App: React.FC = () => {
   const [lessonTestScores, setLessonTestScores] = useState<Record<number, number>>({});
   const [user, setUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  /** True once the Firestore courseProgress/main snapshot has responded (even if empty).
+   *  The main UI is not rendered until this is true, preventing the empty-state flicker. */
+  const [progressLoaded, setProgressLoaded] = useState(false);
   const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
   const [showConversionModal, setShowConversionModal] = useState(false);
   const [showResultAnimation, setShowResultAnimation] = useState(false);
   const [conversionReason, setConversionReason] = useState<string | undefined>();
   const [conversionSuccess, setConversionSuccess] = useState(false);
+  const [showGrammarModal, setShowGrammarModal] = useState(false);
   const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
   const activeCourse = COURSES.find((course) => course.id === activeCourseId) ?? null;
@@ -169,6 +176,7 @@ const App: React.FC = () => {
         closeActiveSession();
         setCurrentCourseId(null);
         setCurrentSection(SectionType.COURSES);
+        console.log('SET WORKBOOK ID', null, '← logout/signout'); console.trace('TRACE WORKBOOK ID');
         setCurrentWorkbookId(null);
         setCurrentLessonId(null);
         setCurrentDay(null);
@@ -180,6 +188,7 @@ const App: React.FC = () => {
           userId: 'user1',
           completedActivities: [],
         }));
+        setProgressLoaded(false); // reset so next login waits for Firestore again
         setUser(null);
         setAuthReady(true);
         return;
@@ -200,6 +209,21 @@ const App: React.FC = () => {
         console.log('[App] Recording user profile...');
         await createOrUpdateUserProfile(authenticatedUser);
 
+        // Sync displayName/email to the flat progress doc so rankings show real names.
+        // Anonymous users get a stable "Player_XXXXXX" identifier derived from their UID.
+        if (db) {
+          const displayName =
+            authenticatedUser.displayName ??
+            (authenticatedUser.isAnonymous
+              ? `Player_${authenticatedUser.uid.slice(0, 6)}`
+              : authenticatedUser.email?.split('@')[0] ?? 'User');
+          setDoc(
+            doc(db, 'progress', authenticatedUser.uid),
+            { displayName, email: authenticatedUser.email ?? null },
+            { merge: true },
+          ).catch(e => console.warn('[App] progress profile write failed:', e));
+        }
+
         // Promote to admin if the email is in the ADMIN_EMAILS list
         await promoteAdminIfNeeded(authenticatedUser);
         
@@ -218,23 +242,19 @@ const App: React.FC = () => {
         // Do NOT return - continue even if tracking fails
       }
 
-      // ========== STEP 3: LOAD PROGRESS & CONTENT ==========
-      try {
-        const loadedProgress = ProgressEngine.loadProgress(authenticatedUser.uid);
-        if (loadedProgress) {
-          setProgress(loadedProgress);
-          setCurrentWorkbookId(loadedProgress.currentWorkbook || 1);
-        } else {
-          setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid, currentWorkbook: 1, currentLesson: 1 }));
-          setCurrentWorkbookId(1);
-        }
-        setCurrentSection(SectionType.WORKBOOK);
-      } catch (progressError) {
-        console.warn('[App] Progress load error:', progressError);
-        setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid, currentWorkbook: 1, currentLesson: 1 }));
-        setCurrentWorkbookId(1);
-        setCurrentSection(SectionType.WORKBOOK);
-      }
+      // ========== STEP 3: SET UID & DEFAULTS ==========
+      // Progress is driven SOLELY by the onSnapshot listener on courseProgress/main.
+      // We only stamp userId here so that any Firestore write before the snapshot
+      // arrives uses the correct key.  Do NOT set workbook/lesson/completedActivities
+      // here — that would race against and overwrite the Firestore snapshot.
+      // Stamp userId into progress so any write before onSnapshot arrives uses the right key.
+      // Progress fields are loaded by the onSnapshot listener on courseProgress/main.
+      setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid }));
+      // Do NOT hardcode 1 — that would overwrite the correct workbookId on every
+      // token refresh (~1/hour). Only initialise to 1 if the value is still null.
+      console.log('SET WORKBOOK ID', '(prev ?? 1)', '← onAuthStateChanged Step 3'); console.trace('TRACE WORKBOOK ID');
+      setCurrentWorkbookId((prev) => prev ?? 1);
+      setCurrentSection(SectionType.WORKBOOK);
 
       // Auth is now ready — user and progress are both set
       setAuthReady(true);
@@ -296,9 +316,112 @@ const App: React.FC = () => {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, []);
 
+  // ── Firestore progress listener — single source of truth for UserProgress ──
   useEffect(() => {
-    if (!authReady || !user?.uid) return;
-    getSessionCount(user.uid).then(setSessionCount).catch(() => {});
+    if (!authReady || !user?.uid || !db) return;
+    const progressRef = doc(db, 'users', user.uid, 'courseProgress', 'main');
+    const unsub = onSnapshot(
+      progressRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data() as Partial<UserProgress> & { workbook?: number; lesson?: number };
+
+          // ── Guard: ignore incomplete snapshots to prevent flicker ──
+          // Firestore sometimes delivers a partial/empty document before the real
+          // data arrives (e.g. during initialisation).  Only update state when the
+          // snapshot has at least one completed day recorded.
+          const rawDays = data.days;
+          const hasCompletedDay =
+            rawDays &&
+            typeof rawDays === 'object' &&
+            Object.values(rawDays as Record<string, boolean>).some(v => v === true);
+
+          // Also accept old-format progress stored in completedActivities without
+          // a days map — users who completed lessons before the days map was
+          // introduced would otherwise be permanently locked at lesson 1.
+          const hasOldFormatProgress =
+            (Array.isArray(data.completedActivities) && data.completedActivities.length > 0) ||
+            ((data.currentLesson  ?? (data as any).lesson  ?? 1) > 1) ||
+            ((data.currentWorkbook ?? (data as any).workbook ?? 1) > 1);
+
+          if (!hasCompletedDay && !hasOldFormatProgress) {
+            console.warn('Ignoring incomplete Firestore snapshot (no progress in any format)', data);
+            // Firestore has responded — unblock the UI even though there are no
+            // completed days yet (brand-new user whose doc is truly empty).
+            setProgressLoaded(true);
+            return;
+          }
+
+          console.log('SETTING PROGRESS FROM FIRESTORE', data);
+
+          // Derive completedActivities from the days map when the array is absent/empty.
+          // The days map is the authoritative Firestore representation; completedActivities
+          // is the in-memory array used by UI components.
+          const firestoreDays = rawDays as Record<string, boolean>;
+          const resolvedActivities: string[] | undefined =
+            Array.isArray(data.completedActivities) && data.completedActivities.length > 0
+              ? data.completedActivities
+              : firestoreDays
+                ? Object.keys(firestoreDays).filter(k => firestoreDays[k] === true)
+                : undefined;
+
+          setProgress((prev) => ({
+            ...prev,
+            ...(((data.currentWorkbook ?? data.workbook) !== undefined) && { currentWorkbook: data.currentWorkbook ?? data.workbook }),
+            ...(((data.currentLesson  ?? data.lesson)  !== undefined) && { currentLesson:   data.currentLesson  ?? data.lesson  }),
+            ...(data.currentDay      !== undefined && { currentDay:      data.currentDay      }),
+            ...(resolvedActivities   !== undefined && { completedActivities: resolvedActivities }),
+            ...(firestoreDays        !== undefined && { days:             firestoreDays        }),
+            ...(data.lastCompletedDate !== undefined && { lastCompletedDate: data.lastCompletedDate }),
+            ...(data.placementScore    !== undefined && { placementScore:    data.placementScore    }),
+          }));
+          console.log('SET WORKBOOK ID', data.currentWorkbook ?? data.workbook ?? 1, '← onSnapshot courseProgress/main'); console.trace('TRACE WORKBOOK ID');
+          setCurrentWorkbookId(data.currentWorkbook ?? data.workbook ?? 1);
+          setProgressLoaded(true);
+        } else {
+          // Document not yet created — initialize defaults and write them
+          console.log('Firestore progress: no document yet — initialising defaults for', user.uid);
+          const defaults: Partial<UserProgress> & { workbook: number; lesson: number; days: Record<string, unknown> } = {
+            workbook: 1,
+            lesson: 1,
+            days: {},
+            currentWorkbook: 1,
+            currentLesson: 1,
+            currentDay: 1,
+            completedActivities: [],
+            lastCompletedDate: new Date(0).toISOString(),
+          };
+          setProgressLoaded(true); // no existing data — render the empty state
+          import('firebase/firestore').then(({ setDoc }) =>
+            setDoc(progressRef, defaults, { merge: true }).catch((e) =>
+              console.warn('[Progress] Failed to write default progress:', e)
+            )
+          );
+        }
+      },
+      (err) => console.warn('[Progress] onSnapshot error:', err),
+    );
+    return unsub;
+  }, [authReady, user?.uid]);
+
+  // ── Live stats/main listener — single source of truth for dashboard stats ──
+  useEffect(() => {
+    if (!authReady || !user?.uid || !db) return;
+    const statsRef = doc(db, 'users', user.uid, 'stats', 'main');
+    const unsub = onSnapshot(
+      statsRef,
+      (snap) => {
+        if (!snap.exists()) {
+          console.log('[Stats] stats/main does not exist yet for', user.uid, '— will be created on first lesson completion');
+          return;
+        }
+        const data = snap.data();
+        console.log('Firestore returned:', data);
+        if (typeof data.sessions === 'number') setSessionCount(data.sessions);
+      },
+      (err) => console.warn('[Stats] onSnapshot error:', err),
+    );
+    return unsub;
   }, [authReady, user?.uid]);
 
   useEffect(() => {
@@ -346,25 +469,33 @@ const App: React.FC = () => {
       setCurrentCourseId(DEFAULT_COURSE_ID);
     }
     if (!currentWorkbookId) {
+      console.log('SET WORKBOOK ID', progress.currentWorkbook || 1, '← ensure-defaults useEffect (fired because currentWorkbookId is falsy)'); console.trace('TRACE WORKBOOK ID');
       setCurrentWorkbookId(progress.currentWorkbook || 1);
     }
   }, [user, currentCourseId, currentWorkbookId, progress.currentWorkbook]);
 
   useEffect(() => {
     if (!currentWorkbookId) return;
+    // Cancellation flag: if currentWorkbookId or currentCourseId changes while
+    // the async import is in-flight, the stale load must NOT call setCurrentWorkbook.
+    // Without this, a slow load for workbookId=1 can resolve AFTER a fast load
+    // for the correct workbookId and overwrite the UI — the classic "briefly correct
+    // then resets to lesson 1" race condition.
+    let cancelled = false;
 
     const loadWorkbook = async () => {
       const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
       const registry = COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
       const loader = registry[currentWorkbookId as keyof typeof registry];
       if (!loader) {
-        setCurrentSection(SectionType.WORKBOOK);
+        if (!cancelled) setCurrentSection(SectionType.WORKBOOK);
         return;
       }
 
-      setIsWorkbookLoading(true);
+      if (!cancelled) setIsWorkbookLoading(true);
       try {
         const module = await loader();
+        if (cancelled) return;  // stale — discard result
         const resolvedWorkbook =
           (module as any)[`workbook${currentWorkbookId}`] ||
           (module as any).default ||
@@ -379,13 +510,14 @@ const App: React.FC = () => {
         setCurrentWorkbook(resolvedWorkbook);
         setCurrentSection(SectionType.WORKBOOK);
       } catch {
-        setCurrentSection(SectionType.WORKBOOK);
+        if (!cancelled) setCurrentSection(SectionType.WORKBOOK);
       } finally {
-        setIsWorkbookLoading(false);
+        if (!cancelled) setIsWorkbookLoading(false);
       }
     };
 
     loadWorkbook();
+    return () => { cancelled = true; };
   }, [currentWorkbookId, currentCourseId]);
 
   const handleNavigate = (section: SectionType, params?: any) => {
@@ -396,6 +528,7 @@ const App: React.FC = () => {
       setCurrentDay(null);
       setCurrentLessonId(null);
       const workbookId = Number(progress.currentWorkbook || 1);
+      console.log('SET WORKBOOK ID', workbookId, '← handleNavigate DASHBOARD'); console.trace('TRACE WORKBOOK ID');
       setCurrentWorkbookId(workbookId);
       setCurrentSection(SectionType.WORKBOOK);
       return;
@@ -412,6 +545,7 @@ const App: React.FC = () => {
 
     if (section === SectionType.WORKBOOK) {
       const workbookId = Number(params?.workbookId || progress.currentWorkbook || 1);
+      console.log('SET WORKBOOK ID', workbookId, '← handleNavigate WORKBOOK', params); console.trace('TRACE WORKBOOK ID');
       setCurrentWorkbookId(workbookId);
 
       if (params?.resumeCurrentDay && currentWorkbook?.lessons?.length) {
@@ -481,11 +615,7 @@ const App: React.FC = () => {
     const workbook = PlacementEngine.determineWorkbook(score);
     const updated = { ...progress, currentWorkbook: workbook, placementScore: score };
     setProgress(updated);
-    try {
-      ProgressEngine.saveProgress(updated);
-    } catch {
-      // Do not block rendering when persistence fails.
-    }
+    try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
 
     // Persist placement test result to flat progress doc
     if (user?.uid && db) {
@@ -565,10 +695,26 @@ const App: React.FC = () => {
         };
 
         setProgress(updated);
-        try {
-          ProgressEngine.saveProgress(updated);
-        } catch {
-          // Keep UI responsive even if persistence fails.
+        try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
+
+        // Persist progress to Firestore.
+        if (user?.uid && db) {
+          const progressToSave = {
+            workbook: updated.currentWorkbook,
+            lesson:   updated.currentLesson,
+            currentWorkbook: updated.currentWorkbook,
+            currentLesson:   updated.currentLesson,
+            currentDay:      updated.currentDay,
+            completedActivities: updated.completedActivities,
+            days: updated.days ?? {},
+            lastCompletedDate: updated.lastCompletedDate,
+          };
+          console.log('FINAL PROGRESS OBJECT:', progressToSave);
+          setDoc(
+            doc(db, 'users', user.uid, 'courseProgress', 'main'),
+            progressToSave,
+            { merge: true },
+          ).catch(e => console.warn('[PROGRESS] courseProgress/main write failed:', e));
         }
 
         // Persist lesson test result to flat progress doc (Day 7 test)
@@ -663,6 +809,11 @@ const App: React.FC = () => {
       completedActivities: alreadyDone
         ? progress.completedActivities
         : [...progress.completedActivities, dayId],
+      // Accumulate the days map — keys are preserved individually in Firestore.
+      days: {
+        ...(progress.days ?? {}),
+        [dayId]: true,
+      },
       // Advance to next position (capped to valid bounds by computeNextPath)
       ...(nextPath && {
         currentDay:      nextPath.day,
@@ -672,10 +823,31 @@ const App: React.FC = () => {
       lastCompletedDate: new Date().toISOString(),
     };
     setProgress(updated);
-    try {
-      ProgressEngine.saveProgress(updated);
-    } catch {
-      // Persistence failure should not block navigation.
+    try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
+
+    // Persist progress to Firestore.
+    if (user?.uid && db) {
+      const progressToSave = {
+        workbook: updated.currentWorkbook,
+        lesson:   updated.currentLesson,
+        currentWorkbook: updated.currentWorkbook,
+        currentLesson:   updated.currentLesson,
+        currentDay:      updated.currentDay,
+        completedActivities: updated.completedActivities,
+        // Spread the accumulated days map — Firestore merge preserves all existing keys.
+        // NEVER reset to {} — always spread progress.days to accumulate.
+        days: {
+          ...(progress.days ?? {}),
+          [dayId]: true,
+        },
+        lastCompletedDate: updated.lastCompletedDate,
+      };
+      console.log('FINAL PROGRESS OBJECT:', progressToSave);
+      setDoc(
+        doc(db, 'users', user.uid, 'courseProgress', 'main'),
+        progressToSave,
+        { merge: true },
+      ).catch(e => console.warn('[PROGRESS] courseProgress/main write failed:', e));
     }
 
     // Optimistically mark the completed day in local lessonProgress so LessonView
@@ -853,6 +1025,7 @@ const App: React.FC = () => {
             onLogoClick={() => handleNavigate(SectionType.WORKBOOK)}
             onSelectCourse={(id) => {
               handleCourseChange(id);
+              console.log('SET WORKBOOK ID', 1, '← CoursesView onSelectCourse'); console.trace('TRACE WORKBOOK ID');
               setCurrentWorkbookId(1);
               setCurrentLessonId(null);
               setCurrentDay(null);
@@ -953,6 +1126,8 @@ const App: React.FC = () => {
             <p className="text-slate-700 font-semibold">Access denied. Teacher dashboard is for authorized users only.</p>
           </div>
         );
+      case SectionType.RANK:
+        return <RankScreen currentUserId={user?.uid} />;
       case SectionType.SHARE:
         return <div>Share App Placeholder</div>;
       default:
@@ -984,6 +1159,14 @@ const App: React.FC = () => {
     );
   }
 
+  if (!progressLoaded) {
+    return (
+      <div className="min-h-screen bg-blue-50 flex items-center justify-center">
+        <p className="text-slate-500 font-semibold text-sm">Loading your progress...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="app overflow-x-hidden">
       <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -1002,14 +1185,22 @@ const App: React.FC = () => {
             <span className="ml-1">Home</span>
           </button>
 
-          <div className="flex-shrink-0">
-            <LanguageSelector current={language} onOpenCourses={() => setCurrentSection(SectionType.COURSES)} />
-          </div>
-
           <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">
-            <span className="rounded-lg bg-blue-100 text-blue-700 px-1.5 py-1" title="Current Language">
-              {language.toUpperCase()}
-            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentSection(SectionType.COURSES)}
+              className="rounded-full p-0.5 ring-2 ring-blue-400 ring-offset-1 active:scale-95 flex-shrink-0"
+              title={`Language: ${language.toUpperCase()}`}
+              aria-label="Change language"
+            >
+              <img
+                src={`/flags/${{ en: 'us', pt: 'br', es: 'es', el: 'gr', he: 'il' }[language as string] ?? 'us'}.png`}
+                alt={language}
+                width="24"
+                height="24"
+                className="rounded-full block"
+              />
+            </button>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {score?.streak ?? 0}</span>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {score?.freeze ?? 0}</span>
             <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {score?.diamonds ?? 0}</span>
@@ -1079,7 +1270,58 @@ const App: React.FC = () => {
           ✅ Account created successfully! Your progress is saved.
         </div>
       )}
-      <BottomNavigation currentSection={currentSection} onNavigate={handleNavigate} onShare={handleShare} />
+      {showGrammarModal && (() => {
+        const lessonNum = progress.currentLesson || 1;
+        const entries = Object.entries(GRAMMAR_GUIDES).filter(([k]) => k.startsWith(`L${lessonNum}_`));
+        return (
+          <div
+            className="fixed inset-0 z-[1001] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+            onClick={() => setShowGrammarModal(false)}
+          >
+            <div
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-3xl">
+                <h2 className="text-lg font-bold text-slate-800">📖 Lesson {lessonNum} Grammar</h2>
+                <button
+                  onClick={() => setShowGrammarModal(false)}
+                  className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
+                  aria-label="Close"
+                >×</button>
+              </div>
+              <div className="px-6 py-4 space-y-5">
+                {entries.length === 0 ? (
+                  <p className="text-slate-500 text-sm">No grammar notes available for this lesson yet.</p>
+                ) : (
+                  entries.map(([key, tips]) => (
+                    <div key={key}>
+                      <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-2">
+                        {key.replace('_', ' › ')}
+                      </p>
+                      <ul className="space-y-1.5">
+                        {tips.map((tip, i) => (
+                          <li key={i} className="flex gap-2 text-sm text-slate-700">
+                            <span className="text-blue-400 flex-shrink-0">•</span>
+                            <span>{tip}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      <BottomNavigation
+        currentSection={currentSection}
+        onNavigate={handleNavigate}
+        onShare={handleShare}
+        onGrammar={() => setShowGrammarModal(true)}
+        currentLessonNumber={progress.currentLesson || null}
+      />
     </div>
   );
 };

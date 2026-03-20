@@ -4,7 +4,7 @@ import { LessonLanguageCode } from '../../types';
 import { auth, db, ensureAnonAuth } from '../../services/firebase';
 import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
 import { savePlacementTestResultForUser } from '../../services/db';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 
 interface PlacementTestProps {
   currentLanguage?: LessonLanguageCode;
@@ -173,7 +173,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
 
       // Update user root doc with latest placement score
       if (db) {
-        await updateDoc(doc(db, 'users', authUser.uid), { placementScore: percentage }).catch(() => {});
+        await setDoc(doc(db, 'users', authUser.uid), { placementScore: percentage }, { merge: true }).catch(() => {});
       }
     } catch (error) {
       console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);

@@ -34,7 +34,9 @@ export class ProgressEngine {
     try {
       const saved = window.localStorage.getItem(getStorageKey(userId));
       if (!saved) return null;
-      return normalizeProgress(userId, JSON.parse(saved));
+      const loaded = normalizeProgress(userId, JSON.parse(saved));
+      console.log('Firestore returned: localStorage progress for', userId, loaded);
+      return loaded;
     } catch (error) {
       console.warn('[ProgressEngine] Failed to load progress:', error);
       return null;
@@ -45,6 +47,7 @@ export class ProgressEngine {
     if (typeof window === 'undefined' || !progress.userId) return;
 
     try {
+      console.log('Saving progress:', progress);
       window.localStorage.setItem(getStorageKey(progress.userId), JSON.stringify(progress));
     } catch (error) {
       console.warn('[ProgressEngine] Failed to save progress:', error);
