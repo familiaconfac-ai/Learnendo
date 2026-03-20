@@ -13,6 +13,7 @@ import { ExercisePractice } from './components/ExercisePractice';
 import { PronunciationTrainer } from './components/PronunciationTrainer/PronunciationTrainer';
 import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
 import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
+import { LanguageSelector } from './components/LanguageSelector';
 import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
@@ -151,6 +152,18 @@ const App: React.FC = () => {
       setLanguage(languageForCourse);
     }
   }, [language, setLanguage]);
+
+  // Language selector handler — switches language, resets navigation to courses view
+  const handleLangSelect = useCallback((lang: LessonLanguageCode) => {
+    console.log('LANG CHANGE', lang);
+    setLanguage(lang);
+    setCurrentWorkbookId(1);
+    setCurrentWorkbook(null);
+    setCurrentLessonId(null);
+    setCurrentDay(null);
+    setCurrentSection(SectionType.COURSES);
+    setCourseMenuOpen(false);
+  }, [setLanguage]);
 
   const triggerConversion = (reason?: string) => {
     setConversionReason(reason);
@@ -942,52 +955,8 @@ const App: React.FC = () => {
             <span className="ml-1">Home</span>
           </button>
 
-          <div className="relative flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setCourseMenuOpen((open) => !open)}
-              className="flex h-10 w-10 items-center justify-center rounded-lg sm:rounded-xl bg-slate-50 text-xl sm:text-2xl shadow-sm active:scale-95"
-              aria-label="Open language selector"
-              aria-expanded={courseMenuOpen}
-            >
-              <span>{activeCourse?.flag ?? '🇺🇸'}</span>
-            </button>
-            {courseMenuOpen && (
-              <>
-                <button
-                  type="button"
-                  className="fixed inset-0 z-30 cursor-default"
-                  aria-label="Close language selector"
-                  onClick={() => setCourseMenuOpen(false)}
-                />
-                <div className="absolute right-0 sm:left-0 top-12 z-40 w-48 sm:w-52 overflow-hidden rounded-xl sm:rounded-2xl border border-slate-200 bg-white shadow-xl">
-                  {COURSE_SELECTOR_OPTIONS.map((courseOption) => {
-                    const selected = courseOption.id === activeCourseId;
-                    return (
-                      <button
-                        key={courseOption.id}
-                        type="button"
-                        onClick={() => {
-                          handleCourseChange(courseOption.id);
-                          setCurrentWorkbookId(1);
-                          setCurrentWorkbook(null);
-                          setCurrentLessonId(null);
-                          setCurrentDay(null);
-                          setCurrentSection(SectionType.COURSES);
-                          setCourseMenuOpen(false);
-                        }}
-                        className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors ${
-                          selected ? 'bg-blue-50 text-blue-700' : 'text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <span className="text-lg leading-none">{courseOption.flag}</span>
-                        <span className="font-medium">{courseOption.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+          <div className="flex-shrink-0">
+            <LanguageSelector current={language} onChange={handleLangSelect} />
           </div>
 
           <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">

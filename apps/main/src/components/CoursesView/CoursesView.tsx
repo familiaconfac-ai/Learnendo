@@ -18,10 +18,18 @@ const CATEGORY_LABELS: Record<CategoryKey, string> = {
   track: 'Special Study Track',
 };
 
+const CHOOSE_LANGUAGE_LABEL: Record<LessonLanguageCode, string> = {
+  en: 'Choose your language',
+  pt: 'Escolha seu idioma',
+  es: 'Elige tu idioma',
+  el: 'Επιλέξτε γλώσσα',
+  he: 'בחר שפה',
+};
+
 export const CoursesView: React.FC<CoursesViewProps> = ({
   courses,
   currentCourseId,
-  currentLanguage,
+  currentLanguage = 'en',
   onLanguageChange,
   onSelectCourse,
   onLogoClick,
@@ -42,7 +50,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
               style={{ width: 'min(160px, 80vw)', marginBottom: '8px' }}
             />
           </button>
-          <p className="text-slate-500 font-semibold text-xs sm:text-sm mt-1">Choose your language</p>
+          <p className="text-slate-500 font-semibold text-xs sm:text-sm mt-1">{CHOOSE_LANGUAGE_LABEL[currentLanguage]}</p>
         </div>
 
         {/* Category sections */}
