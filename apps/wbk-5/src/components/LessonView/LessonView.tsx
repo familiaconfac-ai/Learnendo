@@ -10,6 +10,7 @@ interface LessonViewProps {
   isAdmin?: boolean;
   onStartDay: (day: Day) => void;
   onStartWeeklyTest: (day: Day) => void;
+  onSkipToSavedProgress?: () => void;
   testCompleted?: boolean;
   testScore?: number;
   testPassed?: boolean;
@@ -26,6 +27,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   isAdmin = false,
   onStartDay,
   onStartWeeklyTest,
+  onSkipToSavedProgress,
   testCompleted = false,
   testScore,
   testPassed = false,
@@ -61,6 +63,17 @@ export const LessonView: React.FC<LessonViewProps> = ({
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">Back</button>
         <h1 className="text-xl sm:text-2xl font-bold mb-2 text-center text-blue-900">{lesson.title}</h1>
         <p className="text-center text-xs sm:text-sm text-slate-500 mb-6 sm:mb-8">Day Islands</p>
+        {onSkipToSavedProgress && (
+          <div className="mb-4 flex justify-center">
+            <button
+              onClick={onSkipToSavedProgress}
+              className="rounded-xl bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-300 transition-colors"
+              type="button"
+            >
+              Ir para progresso salvo
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-col items-center gap-4 sm:gap-6">
           {firstSixDays.map((day, index) => {

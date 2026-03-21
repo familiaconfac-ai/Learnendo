@@ -15,7 +15,6 @@ interface LessonViewProps {
   isAdmin?: boolean;
   onStartDay: (day: Day) => void;
   onStartWeeklyTest: (day: Day) => void;
-  onSkipToSavedProgress?: () => void;
   testCompleted?: boolean;
   testScore?: number;
   testPassed?: boolean;
@@ -30,6 +29,22 @@ function todayLocalISO(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Returns the localised label for an exercise ("Exercise" / "Exercício" / "Ejercicio").
+ * 'el' and 'he' are biblical study languages with no UI text — they fall back to
+ * the browser's language, then default to English.
+ */
+function getExerciseLabel(lang: LessonLanguageCode | string, plural = false): string {
+  let uiLang: string = lang;
+  if (lang === 'el' || lang === 'he') {
+    const nav = typeof navigator !== 'undefined' ? navigator.language.toLowerCase() : '';
+    uiLang = nav.startsWith('pt') ? 'pt' : nav.startsWith('es') ? 'es' : 'en';
+  }
+  if (uiLang === 'pt') return plural ? 'Exercícios' : 'Exercício';
+  if (uiLang === 'es') return plural ? 'Ejercicios' : 'Ejercicio';
+  return plural ? 'Exercises' : 'Exercise';
+}
+
 export const LessonView: React.FC<LessonViewProps> = ({
   lesson,
   lessonNumber,
@@ -39,18 +54,26 @@ export const LessonView: React.FC<LessonViewProps> = ({
   isAdmin = false,
   onStartDay,
   onStartWeeklyTest,
-  onSkipToSavedProgress,
   testCompleted = false,
   testScore,
   testPassed = false,
   onBack,
 }) => {
   const completed = progress.completedActivities || [];
+  const completedFromMap = Object.keys(progress.days ?? {}).filter((id) => progress.days?.[id] === true);
+  const completedExerciseSet = new Set([...completed, ...completedFromMap]);
   const lessonDays = lesson.days || [];
   const firstSixDays = Array.from({ length: 6 }, (_, index) => lessonDays[index] ?? null);
   const daySeven = lessonDays[6] ?? null;
   const testMarker = `${LESSON_TEST_PREFIX}${lessonNumber}`;
   const hasPassedTest = testPassed || completed.includes(testMarker);
+
+  const isExerciseCompleted = (dayId: string | null, index: number): boolean => {
+    if (!dayId) return false;
+    const completedByMainProgress = completedExerciseSet.has(dayId);
+    const completedByLessonProgress = !!lessonProgress?.days[index]?.completed;
+    return completedByMainProgress || completedByLessonProgress;
+  };
 
   /**
    * Determine day status using Firestore data when available.
@@ -62,14 +85,18 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const getDayStatus = (dayId: string | null, index: number): 'completed' | 'in-progress' | 'locked' => {
     if (!dayId) return 'locked';
 
+    const dayCompleted = isExerciseCompleted(dayId, index);
+    const previousDayId = firstSixDays[index - 1]?.id ?? null;
+    const previousCompleted = index > 0 ? isExerciseCompleted(previousDayId, index - 1) : false;
+
     if (lessonProgress) {
       const entry = lessonProgress.days[index];
       if (!entry) return 'locked';
       // ── DIAGNOSTIC: log the lessonProgress source for each day ──
-      const result = entry.completed ? 'completed'
+      const result = dayCompleted ? 'completed'
         : isAdmin ? 'in-progress'
         : index === 0 ? 'in-progress'
-        : (lessonProgress.days[index - 1]?.completed ? 'in-progress' : 'locked');
+        : (previousCompleted ? 'in-progress' : 'locked');
       console.log('[DAY RENDER] using lessonProgress (courseProgressEngine path)', {
         source: 'lessonProgress — users/{uid}/courseProgress/{courseId}_{bookNumber}',
         lessonNumber,
@@ -90,10 +117,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
     }
 
     // ── Fallback: local state ──
-    const localResult = completed.includes(dayId) ? 'completed'
+    const localResult = dayCompleted ? 'completed'
       : isAdmin ? 'in-progress'
       : (canAccessDay(index + 1, firstSixDays
-          .map((d, i) => (d && completed.includes(d.id) ? i + 1 : null))
+          .map((d, i) => (d && isExerciseCompleted(d.id, i) ? i + 1 : null))
           .filter((n): n is number => n !== null))
         ? 'in-progress' : 'locked');
     console.log('[DAY RENDER] FALLBACK to completedActivities (no lessonProgress)', {
@@ -110,10 +137,9 @@ export const LessonView: React.FC<LessonViewProps> = ({
 
   const firstUnlockedIndex = firstSixDays.findIndex((day, index) => getDayStatus(day?.id || null, index) === 'in-progress');
 
-  // Day 7 (test) unlocks when all 6 practice days are completed
-  const firstSixComplete = lessonProgress
-    ? lessonProgress.days.slice(0, 6).every(d => d.completed)
-    : firstSixDays.every(day => day && completed.includes(day.id));
+  // Exercise 7 (test) unlocks when all 6 practice exercises are completed.
+  // Uses merged completion sources so late lessonProgress cannot hide saved progress.
+  const firstSixComplete = firstSixDays.every((day, index) => !!day && isExerciseCompleted(day.id, index));
 
   const testUnlocked = (isAdmin || firstSixComplete) && !!daySeven;
   const lessonFullyCompleted = hasPassedTest && !isAdmin;
@@ -139,19 +165,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">Back</button>
         <h1 className="text-xl sm:text-2xl font-bold mb-2 text-center text-blue-900">{lesson.title}</h1>
-        <p className="text-center text-xs sm:text-sm text-slate-500 mb-6 sm:mb-8">Day Islands</p>
-        {onSkipToSavedProgress && (
-          <div className="mb-4 flex justify-center">
-            <button
-              onClick={onSkipToSavedProgress}
-              className="rounded-xl bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-300 transition-colors"
-              type="button"
-            >
-              Ir para progresso salvo
-            </button>
-          </div>
-        )}
-
+        <p className="text-center text-xs sm:text-sm text-slate-500 mb-6 sm:mb-8">{getExerciseLabel(currentLanguage, true)}</p>
         <div className="flex flex-col items-center gap-4 sm:gap-6">
           {firstSixDays.map((day, index) => {
             const status = getDayStatus(day?.id || null, index);
@@ -185,7 +199,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 >
                   <img
                     src={`/islands/days/day${dayNumber}.png`}
-                    alt={`Day ${dayNumber}`}
+                    alt={`${getExerciseLabel(currentLanguage)} ${dayNumber}`}
                     className={`absolute inset-0 w-full h-full object-cover rounded-full ${isLocked ? 'opacity-10' : 'opacity-30'}`}
                     onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                   />
@@ -194,7 +208,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                   </span>
                 </button>
                 <p className={`text-center text-xs mt-2 leading-tight ${isLocked ? 'text-slate-400' : 'text-slate-600'}`}>
-                  {`Day ${dayNumber}`}
+                  {`${getExerciseLabel(currentLanguage)} ${dayNumber}`}
                 </p>
               </div>
             );
@@ -217,7 +231,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
             >
               <img
                 src="/islands/days/day7.png"
-                alt="Day 7"
+                alt={`${getExerciseLabel(currentLanguage)} 7`}
                 className={`absolute inset-0 w-full h-full object-cover rounded-full ${!testUnlocked || hasPassedTest ? 'opacity-10' : 'opacity-30'}`}
                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
               />
@@ -226,7 +240,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
               </span>
             </button>
             <p className={`text-center text-xs mt-2 leading-tight ${!testUnlocked || hasPassedTest ? 'text-slate-400' : 'text-slate-700'}`}>
-              Day 7 (Final Test)
+              {`${getExerciseLabel(currentLanguage)} 7`}
             </p>
           </div>
         </div>

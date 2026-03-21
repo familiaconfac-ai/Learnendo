@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
@@ -192,11 +192,6 @@ const App: React.FC = () => {
         setActiveWeeklyTest(null);
         setLessonTestCompleted({});
         setLessonTestScores({});
-        setProgress((prev) => ({
-          ...prev,
-          userId: 'user1',
-          completedActivities: [],
-        }));
         setUser(null);
         return;
       }
@@ -239,13 +234,11 @@ const App: React.FC = () => {
           setProgress(loadedProgress);
           setCurrentWorkbookId(loadedProgress.currentWorkbook || 1);
         } else {
-          setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid, currentWorkbook: 1, currentLesson: 1 }));
           setCurrentWorkbookId(1);
         }
         setCurrentSection(SectionType.WORKBOOK);
       } catch (progressError) {
         console.warn('[App] Progress load error:', progressError);
-        setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid, currentWorkbook: 1, currentLesson: 1 }));
         setCurrentWorkbookId(1);
         setCurrentSection(SectionType.WORKBOOK);
       }
@@ -454,7 +447,7 @@ const App: React.FC = () => {
   const handlePlacementComplete = (score: number) => {
     const workbook = PlacementEngine.determineWorkbook(score);
     const updated = { ...progress, currentWorkbook: workbook, placementScore: score };
-    setProgress(updated);
+    // Keep Firestore as the source of truth for progress state.
     try {
       ProgressEngine.saveProgress(updated);
     } catch {
@@ -509,6 +502,104 @@ const App: React.FC = () => {
     setMenuOpen(false);
   };
 
+  /**
+   * Safe skip helper: reads true saved days from Firebase and navigates only.
+   * Never writes completion or gamification data.
+   */
+  const handleSkipToSavedProgress = async (lesson: { id: string; days?: Day[] }, lessonNumber: number) => {
+    if (!user?.uid || !db) {
+      console.log('[SKIP] unavailable: missing user or Firestore instance');
+      return;
+    }
+
+    const progressRef = doc(db, 'users', user.uid, 'courseProgress', 'main');
+    const snap = await getDoc(progressRef);
+    const currentCourse = currentCourseId ?? DEFAULT_COURSE_ID;
+    const currentWorkbook = currentWorkbookId ?? progress.currentWorkbook;
+
+    if (!snap.exists()) {
+      console.log('[SKIP] no saved progress found, staying on current lesson/day');
+      return;
+    }
+
+    const data = snap.data() as {
+      days?: Record<string, unknown>;
+      courseId?: string;
+      workbook?: number;
+      currentWorkbook?: number;
+    };
+
+    const savedDaysObj = data.days && typeof data.days === 'object' ? data.days : {};
+    const savedDays = Object.keys(savedDaysObj).filter((key) => savedDaysObj[key] === true);
+
+    console.log('[SKIP] savedDays:', savedDays);
+    console.log('[SKIP] context', {
+      currentCourse,
+      currentWorkbook,
+      savedCourseId: data.courseId,
+      savedWorkbook: data.currentWorkbook ?? data.workbook,
+      lessonNumber,
+    });
+
+    if (data.courseId && data.courseId !== currentCourse) {
+      console.log('[SKIP] course mismatch, staying on current lesson/day');
+      return;
+    }
+
+    if (
+      typeof (data.currentWorkbook ?? data.workbook) === 'number'
+      && (data.currentWorkbook ?? data.workbook) !== currentWorkbook
+    ) {
+      console.log('[SKIP] workbook mismatch, staying on current lesson/day');
+      return;
+    }
+
+    const lessonDays = Array.isArray(lesson.days) ? lesson.days : [];
+    const firstSixDays = lessonDays.slice(0, 6).filter(Boolean) as Day[];
+    if (!firstSixDays.length) {
+      console.log('[SKIP] no lesson day structure found, staying on current lesson/day');
+      return;
+    }
+
+    let contiguousCompleted = 0;
+    let targetDay: Day | null = null;
+
+    for (const day of firstSixDays) {
+      if (savedDaysObj[day.id] === true) {
+        contiguousCompleted += 1;
+        continue;
+      }
+      targetDay = day;
+      break;
+    }
+
+    if (contiguousCompleted === 0) {
+      console.log('[SKIP] no saved progress found, staying on current lesson/day');
+      return;
+    }
+
+    if (targetDay) {
+      console.log('[SKIP] next target:', {
+        lesson: lessonNumber,
+        dayId: targetDay.id,
+        dayNumber: contiguousCompleted + 1,
+      });
+      setCurrentDay(targetDay);
+      setActiveWeeklyTest(null);
+      setCurrentSection(SectionType.PRACTICE);
+      return;
+    }
+
+    const daySeven = lessonDays[6] ?? null;
+    if (daySeven && !completedLessonSet.has(lessonNumber)) {
+      console.log('[SKIP] next target: lesson test day 7', { lesson: lessonNumber });
+      startWeeklyTest(lesson.id, lessonNumber, daySeven);
+      return;
+    }
+
+    console.log('[SKIP] all saved steps already completed for this lesson');
+  };
+
   const handleDayComplete = async (dayId: string, score: number) => {
     console.log(`[App] Day "${dayId}" completed. Score: ${score}%`);
 
@@ -532,7 +623,7 @@ const App: React.FC = () => {
           lastCompletedDate: new Date().toISOString(),
         };
 
-        setProgress(updated);
+        // Keep Firestore as the source of truth for progress state.
         try {
           ProgressEngine.saveProgress(updated);
         } catch {
@@ -601,7 +692,7 @@ const App: React.FC = () => {
       }),
       lastCompletedDate: new Date().toISOString(),
     };
-    setProgress(updated);
+    // Keep Firestore as the source of truth for progress state.
     try {
       ProgressEngine.saveProgress(updated);
     } catch {
@@ -735,6 +826,7 @@ const App: React.FC = () => {
               setActiveWeeklyTest(null);
               setCurrentSection(SectionType.PRACTICE);
             }}
+            onSkipToSavedProgress={() => { void handleSkipToSavedProgress(lesson, lessonNumber); }}
             onStartWeeklyTest={(day: Day) => startWeeklyTest(lesson.id, lessonNumber, day)}
             onBack={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook })}
           />
