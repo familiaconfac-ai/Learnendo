@@ -140,11 +140,10 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                   <SortHeader col="name"         label="Name"         activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="email"        label="Email"        activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="path"         label="Position"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="sessions"     label="Completed Exercises" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="accuracy"     label="Accuracy"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="lastActivity" label="Last Active"  activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-white sticky right-0 bg-blue-700 z-10">Report</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-white">Report</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -165,12 +164,6 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     {/* Current position */}
                     <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-mono text-xs">
                       {student.pathLabel}
-                    </td>
-                    {/* Completed exercises */}
-                    <td className="px-4 py-3 text-center">
-                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
-                        {student.daysCompleted}
-                      </span>
                     </td>
                     {/* Accuracy bar */}
                     <td className="px-4 py-3">
@@ -210,7 +203,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                       )}
                     </td>
                     {/* PDF download */}
-                    <td className={`px-4 py-3 text-center sticky right-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
+                    <td className="px-4 py-3 text-center">
                       <button
                         onClick={() => handlePdf(student)}
                         disabled={generating === student.uid}

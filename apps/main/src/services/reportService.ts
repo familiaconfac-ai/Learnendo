@@ -174,7 +174,7 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   labelValue(doc, 'Workbook', `${wb} / ${MAX_WORKBOOK}`, MARGIN,  y);
   labelValue(doc, 'Lesson',   `${ls} / ${MAX_LESSON}`,   col2x(), y);
   y += 8;
-  labelValue(doc, 'Day',      `${dy} / ${MAX_DAY}`,      MARGIN,  y);
+  labelValue(doc, 'Exercise', `${dy} / ${MAX_DAY}`,      MARGIN,  y);
   labelValue(doc, 'Rank',     `#${student.rank}`,          col2x(), y);
   y += 8;
 

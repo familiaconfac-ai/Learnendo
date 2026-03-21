@@ -685,6 +685,55 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
                 ? flatProgress.currentDay
                 : metaDay);
 
+        const extractCompletedIdsFromMain = (): string[] => {
+          const daysMap = mainProgress.days;
+          if (!daysMap || typeof daysMap !== 'object') return [];
+          return Object.keys(daysMap).filter((k) => (daysMap as Record<string, unknown>)[k] === true);
+        };
+
+        const extractCompletedIdsFromFlat = (): string[] => {
+          const lessonsMap = flatProgress.lessons;
+          if (!lessonsMap || typeof lessonsMap !== 'object') return [];
+          return Object.entries(lessonsMap as Record<string, any>)
+            .filter(([, value]) => value?.completed === true)
+            .map(([key]) => key);
+        };
+
+        const completedIds = Array.from(new Set([
+          ...extractCompletedIdsFromMain(),
+          ...extractCompletedIdsFromFlat(),
+        ]));
+
+        const wbForPosition = dashboardWorkbook ?? 1;
+        const lessonForPosition = resolvedLesson ?? 1;
+
+        const completedDaysInCurrentLesson = completedIds
+          .map((id) => {
+            const m = /^wb(\d+)_l(\d+)_d(\d+)$/.exec(id);
+            if (!m) return null;
+            const wb = Number(m[1]);
+            const ls = Number(m[2]);
+            const dy = Number(m[3]);
+            if (wb !== wbForPosition || ls !== lessonForPosition) return null;
+            return dy;
+          })
+          .filter((v): v is number => Number.isFinite(v));
+
+        const maxCompletedInCurrentLesson =
+          completedDaysInCurrentLesson.length > 0
+            ? Math.max(...completedDaysInCurrentLesson)
+            : 0;
+
+        const fallbackFromNextPointer =
+          typeof dashboardDay === 'number' && dashboardDay > 1
+            ? dashboardDay - 1
+            : 0;
+
+        const dashboardLastCompletedDay =
+          maxCompletedInCurrentLesson > 0
+            ? maxCompletedInCurrentLesson
+            : (fallbackFromNextPointer > 0 ? fallbackFromNextPointer : 1);
+
         const dashboardErrors =
           typeof flatProgress.totalErrors === 'number'
             ? flatProgress.totalErrors
@@ -720,7 +769,7 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           avgAccuracy: dashboardAccuracy,
           currentWorkbook: dashboardWorkbook,
           currentLesson:   resolvedLesson,
-          currentDay:      dashboardDay,
+          currentDay:      dashboardLastCompletedDay,
           lastLessonId:    typeof flatProgress.lastLesson === 'string' ? flatProgress.lastLesson : undefined,
           lastActivity:    userData.lastActive ?? null,
         } as UserProgressSummary;
