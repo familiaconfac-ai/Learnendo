@@ -1,6 +1,5 @@
 import React from 'react';
 import { Day, Lesson, UserProgress, LessonLanguageCode } from '../../types';
-import { canAccessDay } from '../../engine/unlockEngine';
 import { LessonProgress } from '../../engine/courseProgressEngine';
 
 interface LessonViewProps {
@@ -22,12 +21,6 @@ interface LessonViewProps {
 }
 
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
-
-/** YYYY-MM-DD in local time */
-function todayLocalISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 /**
  * Returns the localised label for an exercise ("Exercise" / "Exercício" / "Ejercicio").
@@ -76,63 +69,21 @@ export const LessonView: React.FC<LessonViewProps> = ({
   };
 
   /**
-   * Determine day status using Firestore data when available.
+   * Determine whether an exercise is completed, in-progress, or locked.
    *
-   * Priority (highest → lowest):
-   *   1. lessonProgress (Firestore) — date-based unlock + real completion flag
-   *   2. local completedActivities array — falls back when Firestore unavailable
+   * Single unified path — uses isExerciseCompleted which merges ALL sources:
+   *   completedActivities array, progress.days map, and lessonProgress.days[i].completed
+   *
+   * Sequential rule: exercise N unlocks only when exercise N-1 is completed.
+   * No date-based gating. No split paths that could diverge on timing.
    */
   const getDayStatus = (dayId: string | null, index: number): 'completed' | 'in-progress' | 'locked' => {
     if (!dayId) return 'locked';
-
-    const dayCompleted = isExerciseCompleted(dayId, index);
-    const previousDayId = firstSixDays[index - 1]?.id ?? null;
-    const previousCompleted = index > 0 ? isExerciseCompleted(previousDayId, index - 1) : false;
-
-    if (lessonProgress) {
-      const entry = lessonProgress.days[index];
-      if (!entry) return 'locked';
-      // ── DIAGNOSTIC: log the lessonProgress source for each day ──
-      const result = dayCompleted ? 'completed'
-        : isAdmin ? 'in-progress'
-        : index === 0 ? 'in-progress'
-        : (previousCompleted ? 'in-progress' : 'locked');
-      console.log('[DAY RENDER] using lessonProgress (courseProgressEngine path)', {
-        source: 'lessonProgress — users/{uid}/courseProgress/{courseId}_{bookNumber}',
-        lessonNumber,
-        dayIndex: index,
-        dayId,
-        lessonProgressStartedAt: lessonProgress.startedAt,
-        entryDay: entry.day,
-        entryCompleted: entry.completed,
-        entryCompletedAt: entry.completedAt ?? null,
-        entryScore: entry.score ?? null,
-        resolvedStatus: result,
-        language: currentLanguage,
-        '--- STALE? ---': lessonProgress.startedAt
-          ? `If startedAt does not match today's lesson, this is STALE state from previous session`
-          : 'unknown',
-      });
-      return result;
-    }
-
-    // ── Fallback: local state ──
-    const localResult = dayCompleted ? 'completed'
-      : isAdmin ? 'in-progress'
-      : (canAccessDay(index + 1, firstSixDays
-          .map((d, i) => (d && isExerciseCompleted(d.id, i) ? i + 1 : null))
-          .filter((n): n is number => n !== null))
-        ? 'in-progress' : 'locked');
-    console.log('[DAY RENDER] FALLBACK to completedActivities (no lessonProgress)', {
-      source: 'progress.completedActivities',
-      lessonNumber,
-      dayIndex: index,
-      dayId,
-      dayIdInCompletedActivities: completed.includes(dayId),
-      resolvedStatus: localResult,
-      language: currentLanguage,
-    });
-    return localResult;
+    if (isExerciseCompleted(dayId, index)) return 'completed';
+    if (isAdmin) return 'in-progress';
+    if (index === 0) return 'in-progress';
+    const prevId = firstSixDays[index - 1]?.id ?? null;
+    return isExerciseCompleted(prevId, index - 1) ? 'in-progress' : 'locked';
   };
 
   const firstUnlockedIndex = firstSixDays.findIndex((day, index) => getDayStatus(day?.id || null, index) === 'in-progress');

@@ -1239,6 +1239,17 @@ const App: React.FC = () => {
     setCurrentDay(null);
     setCurrentSection(SectionType.LESSON);
 
+    // Immediately surface the completion in local state so LessonView unlocks
+    // the next exercise before the Firestore onSnapshot arrives.
+    // Safe: additive-only merge; the snapshot will confirm the same values later.
+    setProgress(prev => ({
+      ...prev,
+      completedActivities: prev.completedActivities.includes(dayId)
+        ? prev.completedActivities
+        : [...prev.completedActivities, dayId],
+      days: { ...(prev.days ?? {}), [dayId]: true },
+    }));
+
     // ── DEBUG: force test write to verify Firestore connectivity ──
     if (user?.uid && db) {
       const debugPayload = {
