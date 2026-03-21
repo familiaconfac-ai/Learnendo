@@ -559,6 +559,14 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
         const uid = userDoc.id;
         const userData = userDoc.data();
 
+        // Flat dashboard doc (progress/{uid}) is written by the student app on
+        // every completion. Use it to stabilise sessions/accuracy/position.
+        let flatProgress: Record<string, any> = {};
+        try {
+          const flatSnap = await getDoc(doc(db!, 'progress', uid));
+          flatProgress = flatSnap.exists() ? (flatSnap.data() as Record<string, any>) : {};
+        } catch { /* no flat progress — keep defaults */ }
+
         let metaGroup: GroupId | undefined;
         let metaWorkbook: number | undefined;
         let metaLesson: number  | undefined;
@@ -597,24 +605,73 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           }
         } catch { /* no courseProgress — skip */ }
 
+        const dashboardSessions =
+          typeof flatProgress.sessions === 'number'
+            ? flatProgress.sessions
+            : daysCompleted;
+
+        const flatTotalAttempts =
+          typeof flatProgress.totalAttempts === 'number'
+            ? flatProgress.totalAttempts
+            : totalAttempts;
+
+        const flatTotalCorrect =
+          typeof flatProgress.totalCorrect === 'number'
+            ? flatProgress.totalCorrect
+            : undefined;
+
+        const derivedAccuracyFromFlat =
+          typeof flatTotalCorrect === 'number' && flatTotalAttempts > 0
+            ? Math.round((flatTotalCorrect / flatTotalAttempts) * 100)
+            : 0;
+
+        const dashboardAccuracy =
+          derivedAccuracyFromFlat > 0
+            ? derivedAccuracyFromFlat
+            : (typeof flatProgress.avgAccuracy === 'number' && flatProgress.avgAccuracy > 0
+                ? flatProgress.avgAccuracy
+                : (accCount > 0 ? Math.round(accSum / accCount) : 0));
+
+        const dashboardWorkbook =
+          typeof flatProgress.currentWorkbook === 'number'
+            ? flatProgress.currentWorkbook
+            : metaWorkbook;
+
+        const dashboardLesson =
+          typeof flatProgress.currentLesson === 'number'
+            ? flatProgress.currentLesson
+            : metaLesson;
+
+        const dashboardDay =
+          typeof flatProgress.currentDay === 'number'
+            ? flatProgress.currentDay
+            : metaDay;
+
+        const dashboardErrors =
+          typeof flatProgress.totalErrors === 'number'
+            ? flatProgress.totalErrors
+            : (typeof flatTotalCorrect === 'number' && flatTotalAttempts >= flatTotalCorrect
+                ? flatTotalAttempts - flatTotalCorrect
+                : totalErrors);
+
         return {
           uid,
-          displayName: userData.displayName ?? userData.name,
-          email: userData.email,
+          displayName: flatProgress.displayName ?? userData.displayName ?? userData.name,
+          email: flatProgress.email ?? userData.email,
           group: metaGroup,
           totalStars: totalFire + totalDiamonds,
           totalFire,
           totalIce,
           totalDiamonds,
           lessonsStarted,
-          daysCompleted,
+          daysCompleted: dashboardSessions,
           totalTimeSpent: Math.round(totalTimeSpent),
-          totalErrors,
-          totalAttempts,
-          avgAccuracy: accCount > 0 ? Math.round(accSum / accCount) : 0,
-          currentWorkbook: metaWorkbook,
-          currentLesson:   metaLesson,
-          currentDay:      metaDay,
+          totalErrors: dashboardErrors,
+          totalAttempts: flatTotalAttempts,
+          avgAccuracy: dashboardAccuracy,
+          currentWorkbook: dashboardWorkbook,
+          currentLesson:   dashboardLesson,
+          currentDay:      dashboardDay,
           lastActivity:    userData.lastActive ?? null,
         } as UserProgressSummary;
       })
