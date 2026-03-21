@@ -569,6 +569,13 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           flatProgress = flatSnap.exists() ? (flatSnap.data() as Record<string, any>) : {};
         } catch { /* no flat progress — keep defaults */ }
 
+        // Main progress doc is the student's navigation source-of-truth.
+        let mainProgress: Record<string, any> = {};
+        try {
+          const mainSnap = await getDoc(doc(db!, `users/${uid}/courseProgress/main`));
+          mainProgress = mainSnap.exists() ? (mainSnap.data() as Record<string, any>) : {};
+        } catch { /* no main progress — keep defaults */ }
+
         let metaGroup: GroupId | undefined;
         let metaWorkbook: number | undefined;
         let metaLesson: number  | undefined;
@@ -617,9 +624,14 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           }
         } catch { /* no courseProgress — skip */ }
 
-        const dashboardSessions =
-          typeof flatProgress.sessions === 'number'
-            ? flatProgress.sessions
+        const uniqueCompletedFromFlat =
+          flatProgress.lessons && typeof flatProgress.lessons === 'object'
+            ? Object.values(flatProgress.lessons as Record<string, any>).filter((v) => v?.completed === true).length
+            : 0;
+
+        const dashboardCompletedExercises =
+          uniqueCompletedFromFlat > 0
+            ? uniqueCompletedFromFlat
             : daysCompleted;
 
         const flatTotalAttempts =
@@ -645,19 +657,33 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
                 : (accCount > 0 ? Math.round(accSum / accCount) : 0));
 
         const dashboardWorkbook =
-          typeof flatProgress.currentWorkbook === 'number'
-            ? flatProgress.currentWorkbook
-            : metaWorkbook;
+          typeof mainProgress.currentWorkbook === 'number'
+            ? mainProgress.currentWorkbook
+            : (typeof mainProgress.workbook === 'number'
+                ? mainProgress.workbook
+                : (typeof flatProgress.currentWorkbook === 'number'
+                    ? flatProgress.currentWorkbook
+                    : flatProgress.workbook))
+            ?? metaWorkbook;
 
         const dashboardLesson =
-          typeof flatProgress.currentLesson === 'number'
-            ? flatProgress.currentLesson
-            : metaLesson;
+          typeof mainProgress.currentLesson === 'number'
+            ? mainProgress.currentLesson
+            : (typeof mainProgress.lesson === 'number'
+                ? mainProgress.lesson
+                : (typeof flatProgress.currentLesson === 'number'
+                    ? flatProgress.currentLesson
+                    : flatProgress.lesson))
+            ?? metaLesson;
+
+        const resolvedLesson = dashboardLesson;
 
         const dashboardDay =
-          typeof flatProgress.currentDay === 'number'
-            ? flatProgress.currentDay
-            : metaDay;
+          typeof mainProgress.currentDay === 'number'
+            ? mainProgress.currentDay
+            : (typeof flatProgress.currentDay === 'number'
+                ? flatProgress.currentDay
+                : metaDay);
 
         const dashboardErrors =
           typeof flatProgress.totalErrors === 'number'
@@ -686,14 +712,14 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           totalIce,
           totalDiamonds,
           lessonsStarted,
-          daysCompleted: dashboardSessions,
+          daysCompleted: dashboardCompletedExercises,
           totalTimeSpent: dashboardTotalTimeSpent,
           timeSpentToday: dashboardTimeSpentToday,
           totalErrors: dashboardErrors,
           totalAttempts: flatTotalAttempts,
           avgAccuracy: dashboardAccuracy,
           currentWorkbook: dashboardWorkbook,
-          currentLesson:   dashboardLesson,
+          currentLesson:   resolvedLesson,
           currentDay:      dashboardDay,
           lastLessonId:    typeof flatProgress.lastLesson === 'string' ? flatProgress.lastLesson : undefined,
           lastActivity:    userData.lastActive ?? null,

@@ -140,11 +140,11 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                   <SortHeader col="name"         label="Name"         activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="email"        label="Email"        activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="path"         label="Position"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="sessions"     label="Exercises"    activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="sessions"     label="Completed Exercises" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="accuracy"     label="Accuracy"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="lastActivity" label="Last Active"  activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-white">Report</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-white sticky right-0 bg-blue-700 z-10">Report</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -210,7 +210,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                       )}
                     </td>
                     {/* PDF download */}
-                    <td className="px-4 py-3 text-center">
+                    <td className={`px-4 py-3 text-center sticky right-0 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50'}`}>
                       <button
                         onClick={() => handlePdf(student)}
                         disabled={generating === student.uid}
