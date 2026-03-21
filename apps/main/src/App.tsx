@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
 import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
@@ -110,6 +110,7 @@ const App: React.FC = () => {
   /** True once the Firestore courseProgress/main snapshot has responded (even if empty).
    *  The main UI is not rendered until this is true, preventing the empty-state flicker. */
   const [progressLoaded, setProgressLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
   const [showConversionModal, setShowConversionModal] = useState(false);
   const [showResultAnimation, setShowResultAnimation] = useState(false);
@@ -134,25 +135,65 @@ const App: React.FC = () => {
   /** Progress for the currently open lesson — read from Firestore on lesson open. */
   const [lessonProgress, setLessonProgress] = useState<LessonProgress | null>(null);
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
+  const lastLocalUpdateRef = useRef<string | null>(null);
   /** Timestamp (ms) when the current day practice started — used to compute timeSpent. */
   const dayStartTimeRef = useRef<number | null>(null);
+  /** Always holds the latest progress to avoid stale closures in async callbacks. */
+  const latestProgressRef = useRef<UserProgress>(progress);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
+  // Keep latestProgressRef in sync with the latest progress state
+  useEffect(() => {
+    latestProgressRef.current = progress;
+  }, [progress]);
+
+  // Log whenever language changes
+  useEffect(() => {
+    console.log('[LANGUAGE CHANGED]', {
+      newLanguage: language,
+      currentCourseId,
+      currentWorkbookId,
+      progressCurrentWorkbook: progress.currentWorkbook,
+      progressCurrentLesson: progress.currentLesson,
+      completedDaysCount: countCompletedDays((progress as any).days),
+      daysKeys: Object.keys((progress as any).days ?? {}).sort(),
+    });
+  }, [language]);
+
   // Sync language with course selection
   const handleCourseChange = useCallback((courseId: string) => {
+    console.log('[COURSE CHANGE] handleCourseChange called', {
+      newCourseId: courseId,
+      previousCourseId: currentCourseId,
+      currentLanguage: language,
+      currentWorkbook: progress.currentWorkbook,
+      completedDaysCount: countCompletedDays((progress as any).days),
+    });
     setCurrentCourseId(courseId);
     const languageForCourse = COURSE_TO_LANGUAGE[courseId];
     if (languageForCourse && languageForCourse !== language) {
+      console.log('[LANGUAGE CHANGE] via handleCourseChange', {
+        newLanguage: languageForCourse,
+        previousLanguage: language,
+        courseId,
+        currentWorkbook: progress.currentWorkbook,
+        completedDaysCount: countCompletedDays((progress as any).days),
+      });
       setLanguage(languageForCourse);
     }
-  }, [language, setLanguage]);
+  }, [language, setLanguage, currentCourseId, progress]);
 
 
 
   const triggerConversion = (reason?: string) => {
     setConversionReason(reason);
     setShowConversionModal(true);
+  };
+
+  const countCompletedDays = (days: unknown): number => {
+    if (!days || typeof days !== 'object') return 0;
+    return Object.values(days as Record<string, boolean>).filter(v => v === true).length;
   };
 
   const closeActiveSession = () => {
@@ -182,12 +223,8 @@ const App: React.FC = () => {
         setActiveWeeklyTest(null);
         setLessonTestCompleted({});
         setLessonTestScores({});
-        setProgress((prev) => ({
-          ...prev,
-          userId: 'user1',
-          completedActivities: [],
-        }));
         setProgressLoaded(false); // reset so next login waits for Firestore again
+        setLoading(true);
         setUser(null);
         setAuthReady(true);
         return;
@@ -216,6 +253,13 @@ const App: React.FC = () => {
             (authenticatedUser.isAnonymous
               ? `Player_${authenticatedUser.uid.slice(0, 6)}`
               : authenticatedUser.email?.split('@')[0] ?? 'User');
+          console.log('[WRITE] setDoc', {
+            path: `users/${authenticatedUser.uid}/progress`,
+            workbookId: null,
+            courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+            completedDays: countCompletedDays(progress.days),
+            payloadKeys: ['displayName', 'email'],
+          });
           setDoc(
             doc(db, 'progress', authenticatedUser.uid),
             { displayName, email: authenticatedUser.email ?? null },
@@ -246,10 +290,7 @@ const App: React.FC = () => {
       // We only stamp userId here so that any Firestore write before the snapshot
       // arrives uses the correct key.  Do NOT set workbook/lesson/completedActivities
       // here — that would race against and overwrite the Firestore snapshot.
-      // Stamp userId into progress so any write before onSnapshot arrives uses the right key.
       // Progress fields are loaded by the onSnapshot listener on courseProgress/main.
-      setProgress((prev) => ({ ...prev, userId: authenticatedUser.uid }));
-      // Do NOT hardcode 1 — that would overwrite the correct workbookId on every
       // token refresh (~1/hour). Only initialise to 1 if the value is still null.
       console.log('SET WORKBOOK ID', '(prev ?? 1)', '← onAuthStateChanged Step 3'); console.trace('TRACE WORKBOOK ID');
       setCurrentWorkbookId((prev) => prev ?? 1);
@@ -318,40 +359,54 @@ const App: React.FC = () => {
   // ── Firestore progress listener — single source of truth for UserProgress ──
   useEffect(() => {
     if (!authReady || !user?.uid || !db) return;
+    setLoading(true);
     const progressRef = doc(db, 'users', user.uid, 'courseProgress', 'main');
+    const progressPath = `users/${user.uid}/courseProgress/main`;
     const unsub = onSnapshot(
       progressRef,
       (snap) => {
+        const rawData = snap.exists() ? snap.data() : null;
+        const rawKeys = rawData ? Object.keys(rawData) : [];
+        const snapshotDays = rawData && typeof rawData === 'object' ? (rawData as any).days : undefined;
+        const daysDirect = !!snapshotDays && typeof snapshotDays === 'object';
+        const daysNestedKeys = rawData && typeof rawData === 'object'
+          ? Object.keys(rawData as Record<string, unknown>).filter(k => {
+              const candidate = (rawData as Record<string, any>)[k];
+              return !!candidate && typeof candidate === 'object' && !!candidate.days;
+            })
+          : [];
+        console.log('[READ] onSnapshot — DIAGNOSTIC CONTEXT', {
+          path: progressPath,
+          exists: snap.exists(),
+          rawKeys,
+          lastUpdated: rawData && typeof rawData === 'object' ? (rawData as any).lastUpdated : undefined,
+          daysDirect,
+          daysNestedUnder: daysNestedKeys,
+          completedDaysBeforeSetProgress: countCompletedDays(snapshotDays),
+          '==== CURRENT UI CONTEXT ====': null,
+          currentLanguage: language,
+          currentWorkbookId,
+          currentCourseId,
+          currentActiveCourseId: activeCourseId,
+          selectedLesson: currentLessonId,
+          selectedDay: currentDay?.id,
+          payloadWorkbook: rawData?.workbook ?? rawData?.currentWorkbook,
+          payloadLesson: rawData?.lesson ?? rawData?.currentLesson,
+          daysSnapshot: snapshotDays ? Object.keys(snapshotDays as Record<string, boolean>).map(k => `${k}:${(snapshotDays as any)[k]}`) : [],
+        });
         if (snap.exists()) {
-          const data = snap.data() as Partial<UserProgress> & { workbook?: number; lesson?: number };
+          const data = snap.data() as Partial<UserProgress> & { workbook?: number; lesson?: number; lastUpdated?: string; courseId?: string };
 
-          // ── Guard: ignore incomplete snapshots to prevent flicker ──
-          // Firestore sometimes delivers a partial/empty document before the real
-          // data arrives (e.g. during initialisation).  Only update state when the
-          // snapshot has at least one completed day recorded.
+          // ── Accept all data from Firestore as valid ──
+          // Even empty documents are valid (brand-new users).
+          // Do not filter or ignore based on content shape.
           const rawDays = data.days;
-          const hasCompletedDay =
-            rawDays &&
-            typeof rawDays === 'object' &&
-            Object.values(rawDays as Record<string, boolean>).some(v => v === true);
 
-          // Also accept old-format progress stored in completedActivities without
-          // a days map — users who completed lessons before the days map was
-          // introduced would otherwise be permanently locked at lesson 1.
-          const hasOldFormatProgress =
-            (Array.isArray(data.completedActivities) && data.completedActivities.length > 0) ||
-            ((data.currentLesson  ?? (data as any).lesson  ?? 1) > 1) ||
-            ((data.currentWorkbook ?? (data as any).workbook ?? 1) > 1);
-
-          if (!hasCompletedDay && !hasOldFormatProgress) {
-            console.warn('Ignoring incomplete Firestore snapshot (no progress in any format)', data);
-            // Firestore has responded — unblock the UI even though there are no
-            // completed days yet (brand-new user whose doc is truly empty).
-            setProgressLoaded(true);
-            return;
-          }
-
-          console.log('SETTING PROGRESS FROM FIRESTORE', data);
+          console.log('[STATE UPDATE]← Firestore snapshot (ONLY source of truth)', {
+            completedDays: Object.keys(rawDays ?? {}).filter(k => (rawDays as any)?.[k] === true),
+            currentWorkbook: data.currentWorkbook ?? data.workbook,
+            currentLesson: data.currentLesson ?? data.lesson,
+          });
 
           // Derive completedActivities from the days map when the array is absent/empty.
           // The days map is the authoritative Firestore representation; completedActivities
@@ -364,6 +419,36 @@ const App: React.FC = () => {
                 ? Object.keys(firestoreDays).filter(k => firestoreDays[k] === true)
                 : undefined;
 
+          if (
+            lastLocalUpdateRef.current &&
+            data?.lastUpdated &&
+            data.lastUpdated < lastLocalUpdateRef.current
+          ) {
+            console.log('[SNAPSHOT] Ignored outdated snapshot', {
+              snapshotLastUpdated: data.lastUpdated,
+              localLastUpdated: lastLocalUpdateRef.current,
+            });
+            return;
+          }
+
+          console.log('[STATE] FROM FIRESTORE', new Date().toISOString());
+          console.log('[setProgress from snapshot] — APPLYING FIRESTORE STATE', {
+            completedDays: countCompletedDays(firestoreDays),
+            daysKeys: Object.keys(firestoreDays).sort(),
+            language,
+            currentWorkbookId,
+            currentCourseId,
+            activeCourseId,
+            selectedLesson: currentLessonId,
+            selectedDay: currentDay?.id,
+            payloadWorkbook: data.currentWorkbook ?? data.workbook,
+            payloadLesson: data.currentLesson ?? data.lesson,
+            willUpdateState: {
+              workbook: data.currentWorkbook ?? data.workbook,
+              lesson: data.currentLesson ?? data.lesson,
+              daysCount: countCompletedDays(firestoreDays),
+            },
+          });
           setProgress((prev) => ({
             ...prev,
             ...(((data.currentWorkbook ?? data.workbook) !== undefined) && { currentWorkbook: data.currentWorkbook ?? data.workbook }),
@@ -374,12 +459,18 @@ const App: React.FC = () => {
             ...(data.lastCompletedDate !== undefined && { lastCompletedDate: data.lastCompletedDate }),
             ...(data.placementScore    !== undefined && { placementScore:    data.placementScore    }),
           }));
-          console.log('SET WORKBOOK ID', data.currentWorkbook ?? data.workbook ?? 1, '← onSnapshot courseProgress/main'); console.trace('TRACE WORKBOOK ID');
+          console.log('[STATE CONTROL ✓] Progress updated from Firestore snapshot');
           setCurrentWorkbookId(data.currentWorkbook ?? data.workbook ?? 1);
+          // Restore the saved courseId so ensureLessonStarted reads the correct
+          // courseProgress/{courseId}_{bookNumber} document after logout/login.
+          if (data.courseId) {
+            setCurrentCourseId(data.courseId);
+          }
           setProgressLoaded(true);
+          setLoading(false);
         } else {
-          // Document not yet created — initialize defaults and write them
-          console.log('Firestore progress: no document yet — initialising defaults for', user.uid);
+          // Document not yet created — initialize defaults LOCALLY only
+          console.log('Firestore progress: no document yet — using local defaults for', user.uid);
           const defaults: Partial<UserProgress> & { workbook: number; lesson: number; days: Record<string, unknown> } = {
             workbook: 1,
             lesson: 1,
@@ -390,15 +481,33 @@ const App: React.FC = () => {
             completedActivities: [],
             lastCompletedDate: new Date(0).toISOString(),
           };
-          setProgressLoaded(true); // no existing data — render the empty state
-          import('firebase/firestore').then(({ setDoc }) =>
-            setDoc(progressRef, defaults, { merge: true }).catch((e) =>
-              console.warn('[Progress] Failed to write default progress:', e)
-            )
-          );
+          console.log('[STATE] FROM FIRESTORE', new Date().toISOString());
+          console.log('[setProgress from default builder] — NO DOCUMENT YET', {
+            completedDays: countCompletedDays(defaults.days),
+            language,
+            currentWorkbookId,
+            currentCourseId,
+            activeCourseId,
+            selectedLesson: currentLessonId,
+            selectedDay: currentDay?.id,
+            reason: 'snap.exists() === false',
+            willInitializeTo: {
+              workbook: defaults.workbook,
+              lesson: defaults.lesson,
+              daysCount: 0,
+            },
+          });
+          setProgress((prev) => ({ ...prev, ...defaults }));
+          console.log('[STATE CONTROL ✓] Firestore empty — using local defaults (awaiting user action)');
+          setProgressLoaded(true); // render the empty state
+          setLoading(false);
+          // DO NOT write defaults to Firestore — only write when user makes progress
         }
       },
-      (err) => console.warn('[Progress] onSnapshot error:', err),
+      (err) => {
+        console.warn('[Progress] onSnapshot error:', err);
+        setLoading(false);
+      },
     );
     return unsub;
   }, [authReady, user?.uid]);
@@ -463,18 +572,39 @@ const App: React.FC = () => {
   }, [authReady, user?.uid, currentLessonId]);
 
   useEffect(() => {
-    if (!user) return;
+    // This effect initializes defaults ONLY before Firestore loads.
+    // Once progressLoaded is true, DO NOT re-run — let Firestore state persist.
+    if (!user || progressLoaded) return;
+    console.log('[EFFECT] ensure-defaults running', {
+      reason: 'user exists but progressLoaded is false',
+      currentCourseId,
+      currentWorkbookId,
+      language,
+      progressCurrentWorkbook: progress.currentWorkbook,
+      progressCurrentLesson: progress.currentLesson,
+    });
     if (!currentCourseId) {
+      console.log('[ACTION] Setting DEFAULT_COURSE_ID', {
+        newValue: DEFAULT_COURSE_ID,
+        reason: 'currentCourseId is falsy',
+        language,
+      });
       setCurrentCourseId(DEFAULT_COURSE_ID);
     }
     if (!currentWorkbookId) {
-      console.log('SET WORKBOOK ID', progress.currentWorkbook || 1, '← ensure-defaults useEffect (fired because currentWorkbookId is falsy)'); console.trace('TRACE WORKBOOK ID');
+      console.log('[ACTION] Setting currentWorkbookId from progress', {
+        newValue: progress.currentWorkbook || 1,
+        reason: 'currentWorkbookId is falsy',
+        language,
+        progressCurrentWorkbook: progress.currentWorkbook,
+      });
+      console.log('SET WORKBOOK ID', progress.currentWorkbook || 1, '← ensure-defaults useEffect (fired because currentWorkbookId is falsy)');
       setCurrentWorkbookId(progress.currentWorkbook || 1);
     }
-  }, [user, currentCourseId, currentWorkbookId, progress.currentWorkbook]);
+  }, [user, progressLoaded]);
 
   useEffect(() => {
-    if (!currentWorkbookId) return;
+    if (!currentWorkbookId || !progressLoaded) return;
     // Cancellation flag: if currentWorkbookId or currentCourseId changes while
     // the async import is in-flight, the stale load must NOT call setCurrentWorkbook.
     // Without this, a slow load for workbookId=1 can resolve AFTER a fast load
@@ -517,7 +647,7 @@ const App: React.FC = () => {
 
     loadWorkbook();
     return () => { cancelled = true; };
-  }, [currentWorkbookId, currentCourseId]);
+  }, [currentWorkbookId, currentCourseId, progressLoaded]);
 
   const handleNavigate = (section: SectionType, params?: any) => {
     setCourseMenuOpen(false);
@@ -588,11 +718,36 @@ const App: React.FC = () => {
       return;
     }
 
+    // ── FIX: clear stale lessonProgress BEFORE navigating to the lesson ──
+    // Without this, LessonView renders immediately with the previous lesson's
+    // completed days (green), then corrects itself when the async resolves (reset to blue).
+    // Setting null here forces LessonView to fall back to completedActivities
+    // during the async window — no flash of wrong green days.
+    setLessonProgress(null);
+
     // Initialise (or reload) lesson progress from courseProgress
     if (user?.uid) {
       const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
+      console.log('[OPEN LESSON] ensureLessonStarted path:', `users/${user.uid}/courseProgress/${courseId}_${progress.currentWorkbook}`, {
+        lessonNumber,
+        language,
+        courseId,
+        workbook: progress.currentWorkbook,
+      });
       ensureLessonStarted(user.uid, courseId, progress.currentWorkbook, lessonNumber)
-        .then(lp => setLessonProgress(lp))
+        .then(lp => {
+          console.log('[OPEN LESSON] ensureLessonStarted resolved', {
+            lessonNumber,
+            language,
+            courseId,
+            returnedLpPresent: !!lp,
+            returnedLpStartedAt: lp?.startedAt ?? null,
+            returnedCompletedDays: lp
+              ? lp.days.filter(d => d.completed).map(d => `day${d.day}`)
+              : [],
+          });
+          setLessonProgress(lp);
+        })
         .catch(e => console.warn('[UNLOCK] ensureLessonStarted failed:', e));
     } else {
       setLessonProgress(null);
@@ -613,14 +768,22 @@ const App: React.FC = () => {
   const handlePlacementComplete = (score: number) => {
     const workbook = PlacementEngine.determineWorkbook(score);
     const updated = { ...progress, currentWorkbook: workbook, placementScore: score };
-    setProgress(updated);
+    // DO NOT call setProgress here — let Firestore snapshot update state
     try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
 
     // Persist placement test result to flat progress doc
     if (user?.uid && db) {
+      const placementPayload = { tests: { placement: { score, date: new Date().toISOString() } } };
+      console.log('[WRITE] setDoc', {
+        path: `progress/${user.uid}`,
+        workbookId: progress.currentWorkbook,
+        courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+        completedDays: countCompletedDays(progress.days),
+        payloadKeys: Object.keys(placementPayload),
+      });
       setDoc(
         doc(db, 'progress', user.uid),
-        { tests: { placement: { score, date: new Date().toISOString() } } },
+        placementPayload,
         { merge: true },
       ).catch(e => console.warn('[PROGRESS] placement test save failed:', e));
     }
@@ -664,6 +827,106 @@ const App: React.FC = () => {
     setMenuOpen(false);
   };
 
+  /**
+   * Safe skip helper: navigates to the next truly saved step from Firebase.
+   * It never writes completion data and never mutates gamification/stats.
+   */
+  const handleSkipToSavedProgress = async (lesson: { id: string; days?: Day[] }, lessonNumber: number) => {
+    if (!user?.uid || !db) {
+      console.log('[SKIP] unavailable: missing user or Firestore instance');
+      return;
+    }
+
+    const progressRef = doc(db, 'users', user.uid, 'courseProgress', 'main');
+    const snap = await getDoc(progressRef);
+    const currentCourse = currentCourseId ?? DEFAULT_COURSE_ID;
+    const currentWorkbook = currentWorkbookId ?? progress.currentWorkbook;
+
+    if (!snap.exists()) {
+      console.log('[SKIP] no saved progress found, staying on current lesson/day');
+      return;
+    }
+
+    const data = snap.data() as {
+      days?: Record<string, unknown>;
+      courseId?: string;
+      workbook?: number;
+      currentWorkbook?: number;
+    };
+
+    const savedDaysObj = data.days && typeof data.days === 'object' ? data.days : {};
+    const savedDays = Object.keys(savedDaysObj).filter((key) => savedDaysObj[key] === true);
+
+    console.log('[SKIP] savedDays:', savedDays);
+    console.log('[SKIP] context', {
+      currentCourse,
+      currentWorkbook,
+      savedCourseId: data.courseId,
+      savedWorkbook: data.currentWorkbook ?? data.workbook,
+      lessonNumber,
+    });
+
+    if (data.courseId && data.courseId !== currentCourse) {
+      console.log('[SKIP] course mismatch, staying on current lesson/day');
+      return;
+    }
+
+    if (
+      typeof (data.currentWorkbook ?? data.workbook) === 'number'
+      && (data.currentWorkbook ?? data.workbook) !== currentWorkbook
+    ) {
+      console.log('[SKIP] workbook mismatch, staying on current lesson/day');
+      return;
+    }
+
+    const lessonDays = Array.isArray(lesson.days) ? lesson.days : [];
+    const firstSixDays = lessonDays.slice(0, 6).filter(Boolean) as Day[];
+    if (!firstSixDays.length) {
+      console.log('[SKIP] no lesson day structure found, staying on current lesson/day');
+      return;
+    }
+
+    let contiguousCompleted = 0;
+    let targetDay: Day | null = null;
+
+    for (const day of firstSixDays) {
+      if (savedDaysObj[day.id] === true) {
+        contiguousCompleted += 1;
+        continue;
+      }
+      targetDay = day;
+      break;
+    }
+
+    if (contiguousCompleted === 0) {
+      console.log('[SKIP] no saved progress found, staying on current lesson/day');
+      return;
+    }
+
+    if (targetDay) {
+      console.log('[SKIP] next target:', {
+        lesson: lessonNumber,
+        dayId: targetDay.id,
+        dayNumber: contiguousCompleted + 1,
+      });
+      dayStartTimeRef.current = Date.now();
+      setCurrentDay(targetDay);
+      setActiveWeeklyTest(null);
+      setCurrentSection(SectionType.PRACTICE);
+      return;
+    }
+
+    const daySeven = lessonDays[6] ?? null;
+    if (daySeven && !completedLessonSet.has(lessonNumber)) {
+      console.log('[SKIP] next target: lesson test day 7', { lesson: lessonNumber });
+      dayStartTimeRef.current = Date.now();
+      startWeeklyTest(lesson.id, lessonNumber, daySeven);
+      return;
+    }
+
+    console.log('[SKIP] all saved steps already completed for this lesson');
+  };
+
   const handleDayComplete = async (dayId: string, score: number) => {
     console.log(`[App] Day "${dayId}" completed. Score: ${score}%`);
 
@@ -693,11 +956,12 @@ const App: React.FC = () => {
           lastCompletedDate: new Date().toISOString(),
         };
 
-        setProgress(updated);
+        // DO NOT call setProgress here — let Firestore snapshot update state
         try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
 
         // Persist progress to Firestore.
         if (user?.uid && db) {
+          const currentDays = latestProgressRef.current?.days ?? {};
           const progressToSave = {
             workbook: updated.currentWorkbook,
             lesson:   updated.currentLesson,
@@ -705,35 +969,66 @@ const App: React.FC = () => {
             currentLesson:   updated.currentLesson,
             currentDay:      updated.currentDay,
             completedActivities: updated.completedActivities,
-            days: updated.days ?? {},
+            courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+            days: currentDays,
             lastCompletedDate: updated.lastCompletedDate,
           };
-          console.log('FINAL PROGRESS OBJECT:', progressToSave);
-          setDoc(
-            doc(db, 'users', user.uid, 'courseProgress', 'main'),
-            progressToSave,
-            { merge: true },
-          ).catch(e => console.warn('[PROGRESS] courseProgress/main write failed:', e));
+          try {
+            const now = new Date().toISOString();
+            lastLocalUpdateRef.current = now;
+            console.log('[WRITE] setDoc to courseProgress/main — WEEKLY TEST COMPLETED', {
+              path: `users/${user.uid}/courseProgress/main`,
+              language,
+              currentWorkbookId,
+              currentCourseId: currentCourseId ?? DEFAULT_COURSE_ID,
+              activeCourseId,
+              completedDays: countCompletedDays(progressToSave.days),
+              daysKeys: Object.keys(progressToSave.days as any),
+              sourceWorkbook: updated.currentWorkbook,
+              sourceLesson: updated.currentLesson,
+              sourceCurrentDay: updated.currentDay,
+              payloadKeys: [...Object.keys(progressToSave), 'lastUpdated'],
+            });
+            await setDoc(
+              doc(db, 'users', user.uid, 'courseProgress', 'main'),
+              {
+                ...progressToSave,
+                lastUpdated: now,
+              },
+              { merge: true },
+            );
+            console.log('[PROGRESS] courseProgress/main write succeeded ✓');
+          } catch (e) {
+            console.error('[PROGRESS] courseProgress/main write failed:', e);
+          }
         }
 
         // Persist lesson test result to flat progress doc (Day 7 test)
         if (user?.uid && db) {
           const key = `W${progress.currentWorkbook}L${lessonNumber}`;
-          setDoc(
-            doc(db, 'progress', user.uid),
-            {
-              tests: {
-                lessons: {
-                  [key]: {
-                    workbook: progress.currentWorkbook,
-                    lesson:   lessonNumber,
-                    day:      7,
-                    score,
-                    date:     new Date().toISOString(),
-                  },
+          const lessonTestPayload = {
+            tests: {
+              lessons: {
+                [key]: {
+                  workbook: progress.currentWorkbook,
+                  lesson: lessonNumber,
+                  day: 7,
+                  score,
+                  date: new Date().toISOString(),
                 },
               },
             },
+          };
+          console.log('[WRITE] setDoc', {
+            path: `progress/${user.uid}`,
+            workbookId: progress.currentWorkbook,
+            courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+            completedDays: countCompletedDays(progress.days),
+            payloadKeys: Object.keys(lessonTestPayload),
+          });
+          setDoc(
+            doc(db, 'progress', user.uid),
+            lessonTestPayload,
             { merge: true },
           ).catch(e => console.warn('[PROGRESS] lesson test save failed:', e));
         }
@@ -821,11 +1116,16 @@ const App: React.FC = () => {
       }),
       lastCompletedDate: new Date().toISOString(),
     };
-    setProgress(updated);
+    // DO NOT call setProgress here — let Firestore snapshot update state
     try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
 
     // Persist progress to Firestore.
     if (user?.uid && db) {
+      const currentDays = latestProgressRef.current?.days ?? {};
+      const newDays = {
+        ...currentDays,
+        [dayId]: true,
+      };
       const progressToSave = {
         workbook: updated.currentWorkbook,
         lesson:   updated.currentLesson,
@@ -833,20 +1133,41 @@ const App: React.FC = () => {
         currentLesson:   updated.currentLesson,
         currentDay:      updated.currentDay,
         completedActivities: updated.completedActivities,
-        // Spread the accumulated days map — Firestore merge preserves all existing keys.
-        // NEVER reset to {} — always spread progress.days to accumulate.
-        days: {
-          ...(progress.days ?? {}),
-          [dayId]: true,
-        },
+        courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+        days: newDays,
         lastCompletedDate: updated.lastCompletedDate,
       };
-      console.log('FINAL PROGRESS OBJECT:', progressToSave);
-      setDoc(
-        doc(db, 'users', user.uid, 'courseProgress', 'main'),
-        progressToSave,
-        { merge: true },
-      ).catch(e => console.warn('[PROGRESS] courseProgress/main write failed:', e));
+      try {
+        const now = new Date().toISOString();
+        lastLocalUpdateRef.current = now;
+        console.log('[WRITE] setDoc to courseProgress/main — NORMAL DAY COMPLETED', {
+          path: `users/${user.uid}/courseProgress/main`,
+          language,
+          currentWorkbookId,
+          currentCourseId: currentCourseId ?? DEFAULT_COURSE_ID,
+          activeCourseId,
+          completedDaysBefore: countCompletedDays(currentDays),
+          completedDaysAfter: countCompletedDays(newDays),
+          newDayAdded: dayId,
+          daysKeysAfter: Object.keys(newDays).sort(),
+          sourceWorkbook: updated.currentWorkbook,
+          sourceLesson: updated.currentLesson,
+          sourceCurrentDay: updated.currentDay,
+          sourceCurrentDay_fromUpdated: updated.currentDay,
+          payloadKeys: [...Object.keys(progressToSave), 'lastUpdated'],
+        });
+        await setDoc(
+          doc(db, 'users', user.uid, 'courseProgress', 'main'),
+          {
+            ...progressToSave,
+            lastUpdated: now,
+          },
+          { merge: true },
+        );
+        console.log('[PROGRESS] courseProgress/main write succeeded ✓');
+      } catch (e) {
+        console.error('[PROGRESS] courseProgress/main write failed:', e);
+      }
     }
 
     // Optimistically mark the completed day in local lessonProgress so LessonView
@@ -934,27 +1255,36 @@ const App: React.FC = () => {
 
                 // Write to flat "progress" collection for realtime teacher dashboard
                 if (db) {
+                  const flatProgressPayload = {
+                    uid: user.uid,
+                    displayName: user.displayName ?? null,
+                    email: user.email ?? null,
+                    currentWorkbook: updated.currentWorkbook,
+                    currentLesson: updated.currentLesson,
+                    currentDay: updated.currentDay,
+                    lastActivity: serverTimestamp(),
+                    totalStars: stats.stars,
+                    totalDiamonds: stats.diamonds,
+                    totalFire: stats.fire,
+                    totalIce: stats.ice,
+                    daysCompleted: stats.sessions,
+                    avgAccuracy: stats.avgAccuracy,
+                    totalTimeSpent: stats.sessions * stats.avgTimeSpent,
+                    totalErrors: stats.totalErrors,
+                    totalAttempts: stats.totalAttempts,
+                    lessonsStarted: Math.max(updated.currentLesson, lessonNumber),
+                  };
+                  console.log('[WRITE] setDoc to progress/{uid} — FLAT DOC (should not affect courseProgress/main)', {
+                    path: `progress/${user.uid}`,
+                    language,
+                    workbookId: updated.currentWorkbook,
+                    courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+                    completedDays: countCompletedDays((progress as any).days),
+                    payloadKeys: Object.keys(flatProgressPayload),
+                  });
                   setDoc(
                     doc(db, 'progress', user.uid!),
-                    {
-                      uid:           user.uid,
-                      displayName:   user.displayName  ?? null,
-                      email:         user.email        ?? null,
-                      currentWorkbook: updated.currentWorkbook,
-                      currentLesson:   updated.currentLesson,
-                      currentDay:      updated.currentDay,
-                      lastActivity:    serverTimestamp(),
-                      totalStars:    stats.stars,
-                      totalDiamonds: stats.diamonds,
-                      totalFire:     stats.fire,
-                      totalIce:      stats.ice,
-                      daysCompleted: stats.sessions,
-                      avgAccuracy:   stats.avgAccuracy,
-                      totalTimeSpent: stats.sessions * stats.avgTimeSpent,
-                      totalErrors:   stats.totalErrors,
-                      totalAttempts: stats.totalAttempts,
-                      lessonsStarted: Math.max(updated.currentLesson, lessonNumber),
-                    },
+                    flatProgressPayload,
                     { merge: true },
                   ).catch(e => console.warn('[PROGRESS] flat doc write failed:', e));
 
@@ -964,16 +1294,25 @@ const App: React.FC = () => {
                   const safeFire     = stats.fire     ?? 0;
                   const safeIce      = stats.ice      ?? 0;
                   console.log('📊 STATS UPDATED:', { diamonds: safeDiamonds, stars: safeStars, fire: safeFire, ice: safeIce });
+                  const statsPayload = {
+                    diamonds: increment(safeDiamonds),
+                    stars: increment(safeStars),
+                    fire: increment(safeFire),
+                    ice: increment(safeIce),
+                    lastLessonId: dayId,
+                    lastUpdated: serverTimestamp(),
+                  };
+                  console.log('[WRITE] setDoc to stats/main — INCREMENTS ONLY (should not affect courseProgress/main)', {
+                    path: `users/${user.uid}/stats/main`,
+                    language,
+                    workbookId: updated.currentWorkbook,
+                    courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+                    completedDays: countCompletedDays((progress as any).days),
+                    payloadKeys: Object.keys(statsPayload),
+                  });
                   setDoc(
                     doc(db, 'users', user.uid!, 'stats', 'main'),
-                    {
-                      diamonds:      increment(safeDiamonds),
-                      stars:         increment(safeStars),
-                      fire:          increment(safeFire),
-                      ice:           increment(safeIce),
-                      lastLessonId:  dayId,
-                      lastUpdated:   serverTimestamp(),
-                    },
+                    statsPayload,
                     { merge: true },
                   ).catch(e => console.warn('[STATS] stats/main write failed:', e));
                 }
@@ -1001,12 +1340,23 @@ const App: React.FC = () => {
 
     // ── DEBUG: force test write to verify Firestore connectivity ──
     if (user?.uid && db) {
-      setDoc(doc(db, 'debug_test', user.uid), {
+      const debugPayload = {
         test: true,
         time: new Date().toISOString(),
         lessonId: dayId,
         userId: user.uid,
         score,
+      };
+      console.log('[WRITE] setDoc to debug_test/{uid} — CONNECTIVITY TEST (should not affect courseProgress/main)', {
+        path: `debug_test/${user.uid}`,
+        language,
+        workbookId: progress.currentWorkbook,
+        courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+        completedDays: countCompletedDays((progress as any).days),
+        payloadKeys: Object.keys(debugPayload),
+      });
+      setDoc(doc(db, 'debug_test', user.uid), {
+        ...debugPayload,
       }).then(() => console.log('🟢 DEBUG write OK — Firestore is reachable'))
         .catch(e => console.error('🔴 DEBUG write FAILED:', e));
     }
@@ -1086,6 +1436,7 @@ const App: React.FC = () => {
               setActiveWeeklyTest(null);
               setCurrentSection(SectionType.PRACTICE);
             }}
+            onSkipToSavedProgress={() => { void handleSkipToSavedProgress(lesson, lessonNumber); }}
             onStartWeeklyTest={(day: Day) => { dayStartTimeRef.current = Date.now(); startWeeklyTest(lesson.id, lessonNumber, day); }}
             onBack={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook })}
           />
@@ -1158,7 +1509,7 @@ const App: React.FC = () => {
     );
   }
 
-  if (!progressLoaded) {
+  if (loading || !progressLoaded) {
     return (
       <div className="min-h-screen bg-blue-50 flex items-center justify-center">
         <p className="text-slate-500 font-semibold text-sm">Loading your progress...</p>

@@ -15,6 +15,7 @@ interface LessonViewProps {
   isAdmin?: boolean;
   onStartDay: (day: Day) => void;
   onStartWeeklyTest: (day: Day) => void;
+  onSkipToSavedProgress?: () => void;
   testCompleted?: boolean;
   testScore?: number;
   testPassed?: boolean;
@@ -38,6 +39,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   isAdmin = false,
   onStartDay,
   onStartWeeklyTest,
+  onSkipToSavedProgress,
   testCompleted = false,
   testScore,
   testPassed = false,
@@ -63,21 +65,47 @@ export const LessonView: React.FC<LessonViewProps> = ({
     if (lessonProgress) {
       const entry = lessonProgress.days[index];
       if (!entry) return 'locked';
-      if (entry.completed) return 'completed';
-      if (isAdmin) return 'in-progress';
-      // Unlock as soon as the previous day is completed (no date gate).
-      if (index === 0) return 'in-progress';
-      const prevEntry = lessonProgress.days[index - 1];
-      return prevEntry?.completed ? 'in-progress' : 'locked';
+      // ── DIAGNOSTIC: log the lessonProgress source for each day ──
+      const result = entry.completed ? 'completed'
+        : isAdmin ? 'in-progress'
+        : index === 0 ? 'in-progress'
+        : (lessonProgress.days[index - 1]?.completed ? 'in-progress' : 'locked');
+      console.log('[DAY RENDER] using lessonProgress (courseProgressEngine path)', {
+        source: 'lessonProgress — users/{uid}/courseProgress/{courseId}_{bookNumber}',
+        lessonNumber,
+        dayIndex: index,
+        dayId,
+        lessonProgressStartedAt: lessonProgress.startedAt,
+        entryDay: entry.day,
+        entryCompleted: entry.completed,
+        entryCompletedAt: entry.completedAt ?? null,
+        entryScore: entry.score ?? null,
+        resolvedStatus: result,
+        language: currentLanguage,
+        '--- STALE? ---': lessonProgress.startedAt
+          ? `If startedAt does not match today's lesson, this is STALE state from previous session`
+          : 'unknown',
+      });
+      return result;
     }
 
     // ── Fallback: local state ──
-    if (completed.includes(dayId)) return 'completed';
-    if (isAdmin) return 'in-progress';
-    const completedDaysLocal = firstSixDays
-      .map((d, i) => (d && completed.includes(d.id) ? i + 1 : null))
-      .filter((n): n is number => n !== null);
-    return canAccessDay(index + 1, completedDaysLocal) ? 'in-progress' : 'locked';
+    const localResult = completed.includes(dayId) ? 'completed'
+      : isAdmin ? 'in-progress'
+      : (canAccessDay(index + 1, firstSixDays
+          .map((d, i) => (d && completed.includes(d.id) ? i + 1 : null))
+          .filter((n): n is number => n !== null))
+        ? 'in-progress' : 'locked');
+    console.log('[DAY RENDER] FALLBACK to completedActivities (no lessonProgress)', {
+      source: 'progress.completedActivities',
+      lessonNumber,
+      dayIndex: index,
+      dayId,
+      dayIdInCompletedActivities: completed.includes(dayId),
+      resolvedStatus: localResult,
+      language: currentLanguage,
+    });
+    return localResult;
   };
 
   const firstUnlockedIndex = firstSixDays.findIndex((day, index) => getDayStatus(day?.id || null, index) === 'in-progress');
@@ -90,12 +118,39 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const testUnlocked = (isAdmin || firstSixComplete) && !!daySeven;
   const lessonFullyCompleted = hasPassedTest && !isAdmin;
 
+  // ── DIAGNOSTIC: log render context on every render ──
+  console.log('[LESSONVIEW RENDER]', {
+    lessonNumber,
+    language: currentLanguage,
+    lessonProgressPresent: !!lessonProgress,
+    lessonProgressStartedAt: lessonProgress?.startedAt ?? null,
+    lessonProgressDaysCompleted: lessonProgress
+      ? lessonProgress.days.filter(d => d.completed).map(d => `day${d.day}`)
+      : '(no lessonProgress — using completedActivities)',
+    completedActivitiesCount: completed.length,
+    completedActivitiesHasDayIds: completed.filter(id => /^l\d+_d\d+$/.test(id) || /^d\d+$/.test(id)),
+    warning: lessonProgress && lessonProgress.days.some(d => d.completed)
+      ? '⚠️ lessonProgress has completed days — verify these are for THIS lesson, not a stale previous lesson'
+      : null,
+  });
+
   return (
     <div className="lesson-view min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">Back</button>
         <h1 className="text-xl sm:text-2xl font-bold mb-2 text-center text-blue-900">{lesson.title}</h1>
         <p className="text-center text-xs sm:text-sm text-slate-500 mb-6 sm:mb-8">Day Islands</p>
+        {onSkipToSavedProgress && (
+          <div className="mb-4 flex justify-center">
+            <button
+              onClick={onSkipToSavedProgress}
+              className="rounded-xl bg-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-300 transition-colors"
+              type="button"
+            >
+              Ir para progresso salvo
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-col items-center gap-4 sm:gap-6">
           {firstSixDays.map((day, index) => {
