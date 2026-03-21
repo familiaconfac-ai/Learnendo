@@ -68,32 +68,29 @@ export const LessonView: React.FC<LessonViewProps> = ({
     return completedByMainProgress || completedByLessonProgress;
   };
 
-  /**
-   * Determine whether an exercise is completed, in-progress, or locked.
-   *
-   * Single unified path — uses isExerciseCompleted which merges ALL sources:
-   *   completedActivities array, progress.days map, and lessonProgress.days[i].completed
-   *
-   * Sequential rule: exercise N unlocks only when exercise N-1 is completed.
-   * No date-based gating. No split paths that could diverge on timing.
-   */
+  const firstIncompleteIndex = firstSixDays.findIndex((day, index) => day && !isExerciseCompleted(day.id, index));
+  const nextOpenIndex = firstIncompleteIndex === -1 ? firstSixDays.length : firstIncompleteIndex;
+
+  const canOpenExercise = (dayId: string | null, index: number): boolean => {
+    if (!dayId) return false;
+    if (isAdmin) return true;
+    if (isExerciseCompleted(dayId, index)) return true;
+    return index === nextOpenIndex;
+  };
+
   const getDayStatus = (dayId: string | null, index: number): 'completed' | 'in-progress' | 'locked' => {
     if (!dayId) return 'locked';
     if (isExerciseCompleted(dayId, index)) return 'completed';
-    if (isAdmin) return 'in-progress';
-    if (index === 0) return 'in-progress';
-    const prevId = firstSixDays[index - 1]?.id ?? null;
-    return isExerciseCompleted(prevId, index - 1) ? 'in-progress' : 'locked';
+    return canOpenExercise(dayId, index) ? 'in-progress' : 'locked';
   };
 
-  const firstUnlockedIndex = firstSixDays.findIndex((day, index) => getDayStatus(day?.id || null, index) === 'in-progress');
+  const firstUnlockedIndex = firstSixDays.findIndex((day, index) => !day ? false : canOpenExercise(day.id, index) && !isExerciseCompleted(day.id, index));
 
   // Exercise 7 (test) unlocks when all 6 practice exercises are completed.
   // Uses merged completion sources so late lessonProgress cannot hide saved progress.
   const firstSixComplete = firstSixDays.every((day, index) => !!day && isExerciseCompleted(day.id, index));
 
   const testUnlocked = (isAdmin || firstSixComplete) && !!daySeven;
-  const lessonFullyCompleted = hasPassedTest && !isAdmin;
 
   // ── DIAGNOSTIC: log render context on every render ──
   console.log('[LESSONVIEW RENDER]', {
@@ -136,10 +133,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 )}
                 <button
                   onClick={() => {
-                    if (isLocked || lessonFullyCompleted || !day) return;
+                    if (isLocked || !day) return;
                     onStartDay(day);
                   }}
-                  disabled={isLocked || lessonFullyCompleted}
+                  disabled={isLocked}
                   className={`relative overflow-hidden w-[72px] h-[72px] rounded-full flex items-center justify-center font-bold text-sm transition-transform active:scale-95 ${
                     isLocked
                       ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
@@ -168,10 +165,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
           <div className="relative ml-0">
             <button
               onClick={() => {
-                if (!testUnlocked || hasPassedTest || !daySeven) return;
+                if (!testUnlocked || !daySeven) return;
                 onStartWeeklyTest(daySeven);
               }}
-              disabled={!testUnlocked || hasPassedTest}
+              disabled={!testUnlocked}
               className={`relative overflow-hidden w-[78px] h-[78px] rounded-full flex items-center justify-center text-center font-bold text-xs transition-transform active:scale-95 ${
                 !testUnlocked
                   ? 'bg-slate-200 text-slate-400 shadow-inner cursor-not-allowed'
