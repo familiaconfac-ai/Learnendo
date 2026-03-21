@@ -87,9 +87,10 @@ export function detectAlerts(summary: UserProgressSummary): StudentAlert[] {
 
   // ── High error rate ─────────────────────────────────────────
   if (summary.totalErrors > HIGH_ERROR_THRESHOLD) {
+    const where = summary.lastLessonId ? ` (latest: ${summary.lastLessonId})` : '';
     alerts.push({
       type: 'high_errors',
-      message: `${summary.totalErrors} total errors recorded`,
+      message: `${summary.totalErrors} total errors recorded${where}`,
     });
   }
 

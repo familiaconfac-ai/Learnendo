@@ -11,7 +11,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { getAllUserProgressSummaries, UserProgressSummary } from './courseProgressEngine';
 import { detectAlerts, StudentAlert } from './alertService';
 import { rankStudents, RankedStudent, computeScore } from './rankingService';
-import { formatTime, formatAccuracy } from './progressStatsService';
+import { formatTime, formatAccuracy, MAX_WORKBOOK, MAX_LESSON, MAX_DAY } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
 
@@ -59,7 +59,7 @@ function pathLabel(summary: UserProgressSummary): string {
   const wb = summary.currentWorkbook ?? 1;
   const ls = summary.currentLesson   ?? 1;
   const dy = summary.currentDay      ?? 1;
-  return `Wbk ${wb} · L${ls} · D${dy}`;
+  return `Workbook ${wb}/${MAX_WORKBOOK} • Lesson ${ls}/${MAX_LESSON} • Exercise ${dy}/${MAX_DAY}`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -165,12 +165,14 @@ export function subscribeToTeacherData(
           lessonsStarted:data.lessonsStarted ?? 0,
           daysCompleted: data.daysCompleted ?? 0,
           totalTimeSpent:data.totalTimeSpent ?? 0,
+          timeSpentToday:data.timeSpentToday ?? 0,
           totalErrors:   data.totalErrors   ?? 0,
           totalAttempts: data.totalAttempts ?? 0,
           avgAccuracy:   data.avgAccuracy   ?? 0,
           currentWorkbook: data.currentWorkbook ?? 1,
           currentLesson:   data.currentLesson   ?? 1,
           currentDay:      data.currentDay      ?? 1,
+          lastLessonId:    data.lastLesson      ?? undefined,
           lastActivity:    data.lastActivity    ?? undefined,
         } as UserProgressSummary;
       });

@@ -1099,12 +1099,14 @@ const App: React.FC = () => {
     if (user?.uid && currentLessonId) {
       // ── Atomic progress write (independent of completeCourseDay) ──
       if (user?.uid) {
+        const questionCount = Math.max(1, currentDay?.exercises?.length ?? 0);
+        const estimatedCorrect = Math.round((score / 100) * questionCount);
         trackLessonCompletion({
           userId: user.uid,
           lessonId: dayId,
           score,
-          totalQuestions: 100,
-          correctAnswers: Math.round(score),
+          totalQuestions: questionCount,
+          correctAnswers: estimatedCorrect,
         }).catch(e => console.warn('[App] trackLessonCompletion failed:', e));
       }
 

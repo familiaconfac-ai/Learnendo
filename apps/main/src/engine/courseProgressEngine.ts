@@ -535,6 +535,7 @@ export interface UserProgressSummary {
   lessonsStarted: number;
   daysCompleted: number;
   totalTimeSpent: number;  // total seconds across all days
+  timeSpentToday?: number; // total seconds completed today
   totalErrors: number;
   totalAttempts: number;
   avgAccuracy: number;     // weighted average 0–100
@@ -542,6 +543,7 @@ export interface UserProgressSummary {
   currentWorkbook?: number;
   currentLesson?: number;
   currentDay?: number;
+  lastLessonId?: string;
   // Last activity — populated from users/{uid}.lastActive
   lastActivity?: any;      // Firestore Timestamp or ISO string
 }
@@ -580,9 +582,11 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           metaDay      = metaData?.currentDay;
         } catch { /* no meta — skip */ }
 
+        const todayKey = new Date().toISOString().slice(0, 10);
+
         let totalFire = 0, totalIce = 0, totalDiamonds = 0;
         let lessonsStarted = 0, daysCompleted = 0;
-        let totalTimeSpent = 0, totalErrors = 0, totalAttempts = 0;
+        let totalTimeSpent = 0, timeSpentToday = 0, totalErrors = 0, totalAttempts = 0;
         let accSum = 0, accCount = 0;
 
         try {
@@ -601,6 +605,14 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
               totalErrors      += stats.totalErrors;
               totalAttempts    += stats.totalAttempts;
               if (stats.avgAccuracy > 0) { accSum += stats.avgAccuracy; accCount++; }
+
+              // Precise "today" time from per-day records when available.
+              for (const day of lesson.days ?? []) {
+                if (!day.completedAt || typeof day.timeSpent !== 'number') continue;
+                if (day.completedAt.slice(0, 10) === todayKey) {
+                  timeSpentToday += day.timeSpent;
+                }
+              }
             }
           }
         } catch { /* no courseProgress — skip */ }
@@ -654,6 +666,16 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
                 ? flatTotalAttempts - flatTotalCorrect
                 : totalErrors);
 
+        const dashboardTotalTimeSpent =
+          typeof flatProgress.totalTimeSpent === 'number' && flatProgress.totalTimeSpent > 0
+            ? flatProgress.totalTimeSpent
+            : Math.round(totalTimeSpent);
+
+        const dashboardTimeSpentToday =
+          typeof flatProgress.timeSpentToday === 'number' && flatProgress.timeSpentToday >= 0
+            ? flatProgress.timeSpentToday
+            : Math.round(timeSpentToday);
+
         return {
           uid,
           displayName: flatProgress.displayName ?? userData.displayName ?? userData.name,
@@ -665,13 +687,15 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           totalDiamonds,
           lessonsStarted,
           daysCompleted: dashboardSessions,
-          totalTimeSpent: Math.round(totalTimeSpent),
+          totalTimeSpent: dashboardTotalTimeSpent,
+          timeSpentToday: dashboardTimeSpentToday,
           totalErrors: dashboardErrors,
           totalAttempts: flatTotalAttempts,
           avgAccuracy: dashboardAccuracy,
           currentWorkbook: dashboardWorkbook,
           currentLesson:   dashboardLesson,
           currentDay:      dashboardDay,
+          lastLessonId:    typeof flatProgress.lastLesson === 'string' ? flatProgress.lastLesson : undefined,
           lastActivity:    userData.lastActive ?? null,
         } as UserProgressSummary;
       })

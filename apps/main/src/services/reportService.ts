@@ -188,11 +188,13 @@ export function generateStudentReport(student: TeacherStudentRow): void {
 
   // ── STATS ─────────────────────────────────────────────────
   y = sectionHead(doc, '3. Performance Statistics', y);
-  labelValue(doc, 'Sessions completed', String(student.daysCompleted),          MARGIN,  y);
-  labelValue(doc, 'Average time/day',   formatTime(student.totalTimeSpent),      col2x(), y);
+  labelValue(doc, 'Exercises completed', String(student.daysCompleted),          MARGIN,  y);
+  labelValue(doc, 'Study time today',    formatTime(student.timeSpentToday ?? 0), col2x(), y);
   y += 8;
-  labelValue(doc, 'Total attempts',     String(student.totalAttempts),           MARGIN,  y);
-  labelValue(doc, 'Total errors',       String(student.totalErrors),             col2x(), y);
+  labelValue(doc, 'Total study time',   formatTime(student.totalTimeSpent),      MARGIN,  y);
+  labelValue(doc, 'Total responses',    String(student.totalAttempts),           col2x(), y);
+  y += 8;
+  labelValue(doc, 'Total errors',       String(student.totalErrors),             MARGIN,  y);
   y += 8;
   progressBar(doc, 'Accuracy',          student.avgAccuracy, MARGIN, y, COL_W - 20);
   y += 12;
@@ -213,7 +215,7 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor('#1e293b');
-  doc.text(`Ranking score: ${student.score.toFixed(1)}  ·  Formula: Stars×2 + Diamonds×3 + Accuracy÷10 + Sessions×0.2`, MARGIN + 4, y + 8);
+  doc.text(`Ranking score: ${student.score.toFixed(1)}  ·  Formula: Stars×2 + Diamonds×3 + Accuracy÷10 + Exercises×0.2`, MARGIN + 4, y + 8);
   y += 18;
 
   // ── ALERTS ────────────────────────────────────────────────

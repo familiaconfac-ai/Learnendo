@@ -18,6 +18,7 @@ import {
   TeacherStudentRow,
   SortColumn,
   formatAccuracy,
+  formatTime,
 } from '../../engine/teacherService';
 import { rankMedal, getTopRanked } from '../../engine/rankingService';
 import { AlertType } from '../../engine/alertService';
@@ -139,7 +140,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                   <SortHeader col="name"         label="Name"         activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="email"        label="Email"        activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="path"         label="Position"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="sessions"     label="Sessions"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="sessions"     label="Exercises"    activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="accuracy"     label="Accuracy"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="lastActivity" label="Last Active"  activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
@@ -165,7 +166,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-mono text-xs">
                       {student.pathLabel}
                     </td>
-                    {/* Sessions */}
+                    {/* Completed exercises */}
                     <td className="px-4 py-3 text-center">
                       <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
                         {student.daysCompleted}
@@ -193,7 +194,8 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     </td>
                     {/* Last active */}
                     <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
-                      {student.lastActivityLabel}
+                      <div>{student.lastActivityLabel}</div>
+                      <div className="text-[11px] text-slate-400">Today: {formatTime(student.timeSpentToday ?? 0)}</div>
                     </td>
                     {/* Alerts */}
                     <td className="px-4 py-3">
@@ -246,7 +248,7 @@ const RankingTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
   return (
     <div>
       <p className="text-sm text-slate-500 mb-4">
-        Score = Stars + Diamonds + (Sessions × 0.5) &nbsp;·&nbsp; Top 10 shown
+        Score = Stars + Diamonds + (Exercises × 0.5) &nbsp;·&nbsp; Top 10 shown
       </p>
       {top10.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center text-slate-500">
