@@ -58,6 +58,10 @@ const COURSE_SELECTOR_OPTIONS = [
 
 const getLessonNumberFromId = (lessonId: string | null | undefined) => {
   if (!lessonId) return NaN;
+  // IDs like "wb1_l3" encode the lesson number after "_l"; extract that first.
+  const wbMatch = lessonId.match(/_l(\d+)/i);
+  if (wbMatch) return Number(wbMatch[1]);
+  // Fallback for simple IDs like "lesson2".
   const match = lessonId.match(/(\d+)/);
   return match ? Number(match[1]) : NaN;
 };
