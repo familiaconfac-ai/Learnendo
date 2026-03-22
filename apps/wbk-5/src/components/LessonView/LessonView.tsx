@@ -145,11 +145,11 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
               />
               <span className="relative z-10">
-                {hasPassedTest ? 'Done' : 'Test'}
+                {hasPassedTest ? 'Done' : `Test ${lessonNumber}`}
               </span>
             </button>
             <p className={`text-center text-xs mt-2 leading-tight ${!testUnlocked || hasPassedTest ? 'text-slate-400' : 'text-slate-700'}`}>
-              Day 7 (Final Test)
+              {`Test ${lessonNumber}`}
             </p>
           </div>
         </div>

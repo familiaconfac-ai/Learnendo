@@ -7,7 +7,7 @@
  * Components import from here — never from the lower-level engines directly.
  */
 
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { getAllUserProgressSummaries, UserProgressSummary } from './courseProgressEngine';
 import { detectAlerts, StudentAlert } from './alertService';
 import { rankStudents, RankedStudent, computeScore } from './rankingService';
@@ -142,14 +142,19 @@ export function filterRows(rows: TeacherStudentRow[], query: string): TeacherStu
  */
 export function subscribeToTeacherData(
   cb: (rows: TeacherStudentRow[]) => void,
+  courseId?: string | null,
 ): () => void {
   if (!db) {
     cb([]);
     return () => {};
   }
 
+  const progressQuery = courseId
+    ? query(collection(db, 'progress'), where('courseId', '==', courseId))
+    : collection(db, 'progress');
+
   const unsub = onSnapshot(
-    collection(db, 'progress'),
+    progressQuery,
     (snap) => {
       const summaries: UserProgressSummary[] = snap.docs.map(d => {
         const data = d.data();

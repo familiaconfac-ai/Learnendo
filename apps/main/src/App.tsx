@@ -262,11 +262,11 @@ const App: React.FC = () => {
             workbookId: null,
             courseId: currentCourseId ?? DEFAULT_COURSE_ID,
             completedDays: countCompletedDays(progress.days),
-            payloadKeys: ['displayName', 'email'],
+            payloadKeys: ['displayName', 'email', 'courseId'],
           });
           setDoc(
             doc(db, 'progress', authenticatedUser.uid),
-            { displayName, email: authenticatedUser.email ?? null },
+            { displayName, email: authenticatedUser.email ?? null, courseId: currentCourseId ?? DEFAULT_COURSE_ID },
             { merge: true },
           ).catch(e => console.warn('[App] progress profile write failed:', e));
         }
@@ -469,6 +469,15 @@ const App: React.FC = () => {
           // courseProgress/{courseId}_{bookNumber} document after logout/login.
           if (data.courseId) {
             setCurrentCourseId(data.courseId);
+            // Backfill courseId on the flat progress doc for returning users whose
+            // doc predates the courseId field (written via merge so nothing else changes).
+            if (db && user?.uid) {
+              setDoc(
+                doc(db, 'progress', user.uid),
+                { courseId: data.courseId },
+                { merge: true },
+              ).catch(() => {});
+            }
           }
           setProgressLoaded(true);
           setLoading(false);
@@ -1166,6 +1175,7 @@ const App: React.FC = () => {
                     uid: user.uid,
                     displayName: user.displayName ?? null,
                     email: user.email ?? null,
+                    courseId: currentCourseId ?? DEFAULT_COURSE_ID,
                     currentWorkbook: updated.currentWorkbook,
                     currentLesson: updated.currentLesson,
                     currentDay: updated.currentDay,
@@ -1394,7 +1404,7 @@ const App: React.FC = () => {
           </div>
         );
       case SectionType.RANK:
-        return <RankScreen currentUserId={user?.uid} />;
+        return <RankScreen currentUserId={user?.uid} courseId={currentCourseId ?? DEFAULT_COURSE_ID} />;
       case SectionType.SHARE:
         return <div>Share App Placeholder</div>;
       default:

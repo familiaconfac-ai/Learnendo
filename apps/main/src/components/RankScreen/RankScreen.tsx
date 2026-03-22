@@ -4,9 +4,10 @@ import { rankMedal } from '../../engine/rankingService';
 
 interface RankScreenProps {
   currentUserId?: string | null;
+  courseId?: string | null;
 }
 
-export const RankScreen: React.FC<RankScreenProps> = ({ currentUserId }) => {
+export const RankScreen: React.FC<RankScreenProps> = ({ currentUserId, courseId }) => {
   const [rows, setRows] = useState<TeacherStudentRow[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -14,9 +15,9 @@ export const RankScreen: React.FC<RankScreenProps> = ({ currentUserId }) => {
     const unsub = subscribeToTeacherData((data) => {
       setRows(data.slice(0, 10)); // top 10
       setLoading(false);
-    });
+    }, courseId);
     return unsub;
-  }, []);
+  }, [courseId]);
 
   const currentUserRank = currentUserId
     ? rows.find(r => r.uid === currentUserId)?.rank ?? null

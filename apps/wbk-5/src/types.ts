@@ -14,6 +14,7 @@ export interface Exercise {
   audioValue: string;
   options?: string[];
   correctValue: string;
+  translation?: string;
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
 }
@@ -106,6 +107,7 @@ export interface PracticeItem {
   audioValue: string;
   options?: string[];
   correctValue: string;
+  translation?: string;
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
 }
