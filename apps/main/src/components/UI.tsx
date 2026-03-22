@@ -67,6 +67,54 @@ const normalizeAnswer = (answer: string): string => {
   return normalized;
 };
 
+// Pre-processes time expressions for speaking/shadowing BEFORE punctuation stripping
+const normalizeSpeakingAnswer = (answer: string): string => {
+  let s = answer.toLowerCase().trim();
+  // Normalize a.m./p.m. dots → am/pm before punctuation is stripped
+  s = s.replace(/\ba\.m\.\b/gi, 'am').replace(/\bp\.m\.\b/gi, 'pm');
+  // No-space am/pm: "7am" / "8PM" → "7 am" / "8 pm"
+  s = s.replace(/\b(\d+)(am|pm)\b/gi, '$1 $2');
+  // Convert word-form numbers → digits first, so "eight o'clock" → "8 o'clock" below
+  Object.entries(NUMBER_MAP).forEach(([word, digit]) => {
+    s = s.replace(new RegExp(`\\b${word}\\b`, 'g'), digit);
+  });
+  // H:00 am/pm → H am/pm  ("7:00 am" → "7 am")
+  s = s.replace(/\b(\d+):00\s*(am|pm)\b/gi, '$1 $2');
+  // H:30 am/pm → H thirty am/pm  (before generic H:MM so "7:30 am" → "7 thirty am")
+  s = s.replace(/\b(\d+):30\s*(am|pm)\b/gi, '$1 thirty $2');
+  // H:MM am/pm → H MM am/pm (generic fallback)
+  s = s.replace(/\b(\d+):(\d+)\s*(am|pm)\b/gi, '$1 $2 $3');
+  // H:30 (no am/pm) → H thirty  ("7:30" → "7 thirty")
+  s = s.replace(/\b(\d+):30\b/g, '$1 thirty');
+  // H:00 (no am/pm) → H  ("7:00" → "7")
+  s = s.replace(/\b(\d+):00\b/g, '$1');
+  // H:MM (no am/pm) → H MM (generic fallback)
+  s = s.replace(/\b(\d+):(\d+)\b/g, '$1 $2');
+  // Bare "H 30" → "H thirty"  (STT often returns "7 30" for "seven thirty")
+  s = s.replace(/\b(\d+)\s+30\b/g, '$1 thirty');
+  // H o'clock / H o clock / H oclock → bare digit (flexible AM/PM matching)
+  s = s.replace(/\b(\d+)\s*o'clock\b/gi, '$1');
+  s = s.replace(/\b(\d+)\s*o\s+clock\b/gi, '$1');
+  s = s.replace(/\b(\d+)\s*oclock\b/gi, '$1');
+  return normalizeAnswer(s);
+};
+
+// Returns true when a speaking/shadowing response is semantically equivalent to the target.
+// Accepts AM/PM variants and o'clock as interchangeable; rejects explicit AM↔PM swaps.
+const isSpeakingMatch = (response: string, target: string): boolean => {
+  const normResp = normalizeSpeakingAnswer(response);
+  const normTarget = normalizeSpeakingAnswer(target);
+  if (normResp === normTarget) return true;
+  // Explicit AM vs PM conflict → fail
+  const hasAm = (s: string) => /\b\d+\s+am\b/.test(s);
+  const hasPm = (s: string) => /\b\d+\s+pm\b/.test(s);
+  if (hasAm(normTarget) && hasPm(normResp)) return false;
+  if (hasPm(normTarget) && hasAm(normResp)) return false;
+  // Strip am/pm from both sides and compare (handles o'clock ↔ am/pm equivalence)
+  const stripAmPm = (s: string) => s.replace(/\s+(?:am|pm)\b/g, '').replace(/\s{2,}/g, ' ').trim();
+  return stripAmPm(normResp) === stripAmPm(normTarget);
+};
+
 const shuffle = <T,>(array: T[]): T[] => {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i--) {
@@ -265,6 +313,9 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
+    // Tracks whether the student has had at least one wrong attempt on this item.
+    // Writing exercises reveal the audio hint only after the first wrong attempt.
+    const [hasWrongAttempt, setHasWrongAttempt] = useState(false);
 
     useEffect(() => {
       setUserInput('');
@@ -272,6 +323,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       setShowFooter(false);
       setShowHint(false);
       setSelectedOption(null);
+      setHasWrongAttempt(false);
 
       if (item.options && item.options.length > 0) {
         setShuffledOptions(shuffle(item.options));
@@ -279,12 +331,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         setShuffledOptions([]);
       }
 
-      if (item.audioValue && item.type !== 'speaking') {
+      if (item.audioValue && item.type !== 'speaking' && item.type !== 'writing') {
         speak(item.audioValue);
       } else if (item.audioValue && item.type === 'speaking') {
         // ✅ Auto-play audio for speaking exercises
         setTimeout(() => speak(item.audioValue), 500);
       }
+      // writing: audio is only revealed after the first wrong attempt
 
       setTimeout(() => {
         if (item.type === 'speaking') {
@@ -332,12 +385,15 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     };
 
     const handleCheck = () => {
-      const response = normalizeAnswer(userInput || selectedOption || '');
+      const rawInput = userInput || selectedOption || '';
+      const response = normalizeAnswer(rawInput);
       const cleanTarget = normalizeAnswer(item.correctValue);
 
-      const isCorrect = (response === cleanTarget) ||
-        (NUMBER_MAP[response] === cleanTarget) ||
-        (NUMBER_MAP[cleanTarget] === response);
+      const isCorrect = item.type === 'speaking'
+        ? isSpeakingMatch(rawInput, item.correctValue)
+        : (response === cleanTarget) ||
+          (NUMBER_MAP[response] === cleanTarget) ||
+          (NUMBER_MAP[cleanTarget] === response);
 
       setFeedback(isCorrect ? 'correct' : 'wrong');
       setShowFooter(true);
@@ -351,6 +407,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         new Audio(ERR_SOUND).play().catch(() => { });
         setPraiseText("Try again!");
         speak("No, that's not it.");
+        if (item.type === 'writing') setHasWrongAttempt(true);
       }
     };
 
@@ -420,7 +477,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       );
     };
 
-    const translation = TRANSLATIONS[item.instruction];
+    const translation = item.translation;
     const isMultipleChoice = item.type === 'multiple-choice' || item.type === 'identification';
 
     return (
@@ -435,7 +492,21 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
         <div className="flex-1 w-full max-w-sm px-6 flex flex-col justify-center pb-40">
           <div className="relative group mb-8 cursor-help" onClick={() => setShowHint(!showHint)}>
-            {item.type === 'speaking' && item.instruction.toLowerCase().includes('listen and answer') ? (
+            {item.type === 'writing' ? (
+              <div className="flex flex-col items-center gap-2">
+                <span className="inline-block px-3 py-1 text-xs font-black text-blue-700 bg-blue-50 border border-blue-200 rounded-full uppercase tracking-widest">Writing</span>
+                <h2 className="text-base font-semibold text-slate-800 text-center leading-snug max-w-full break-words" style={{ fontSize: 'clamp(14px, 2.2vw, 18px)' }}>
+                  {item.instruction}
+                </h2>
+              </div>
+            ) : item.type === 'speaking' && !item.instruction.toLowerCase().includes('listen and answer') ? (
+              <div className="flex flex-col items-center gap-2">
+                <span className="inline-block px-3 py-1 text-xs font-black text-green-700 bg-green-50 border border-green-200 rounded-full uppercase tracking-widest">Shadowing</span>
+                <h2 className="text-base font-semibold text-slate-800 text-center leading-snug max-w-full break-words" style={{ fontSize: 'clamp(14px, 2.2vw, 18px)' }}>
+                  {item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:)\s*/i, '')}
+                </h2>
+              </div>
+            ) : item.type === 'speaking' ? (
               <h2 className="text-sm font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600 max-w-full break-words" style={{ fontSize: 'clamp(16px, 2.5vw, 22px)', wordBreak: 'break-word' }}>
                 Listen and Answer
               </h2>
@@ -454,12 +525,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           <div className="flex flex-col items-center gap-6">
             {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
-              {item.audioValue && (
+              {item.audioValue && (item.type !== 'writing' || hasWrongAttempt) && (
                 <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
                   <img src={speakerIcon} className="w-6 h-6 brightness-0 invert" alt="Play" />
                 </button>
               )}
-              {item.audioValue && (
+              {item.audioValue && (item.type !== 'writing' || hasWrongAttempt) && (
                 <button onClick={() => speak(item.audioValue, 0.7)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
                   <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
@@ -536,6 +607,11 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                     {feedback === 'wrong' && (
                       <div className="text-red-700 font-bold text-xs mt-1 animate-in fade-in">
                         The correct answer is: <span className="font-black text-sm uppercase underline decoration-2">{item.correctValue}</span>
+                      </div>
+                    )}
+                    {feedback === 'wrong' && item.type === 'writing' && item.audioValue && hasWrongAttempt && (
+                      <div className="text-blue-600 font-bold text-xs mt-1 animate-in fade-in">
+                        🔊 Listen to the audio for help!
                       </div>
                     )}
                     {/* ✅ Show translation after correct answer */}

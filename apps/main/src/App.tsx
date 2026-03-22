@@ -864,7 +864,14 @@ const App: React.FC = () => {
         // DO NOT call setProgress here — let Firestore snapshot update state
         try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
 
-        // Persist progress to Firestore.
+        // Navigate immediately so the first CONTINUE click advances the UI without
+        // waiting for the Firestore round-trip (which blocked navigation before and
+        // caused users to see "Exercicio indisponivel." for 300–1000 ms, making
+        // them think their click had not registered).
+        setCurrentLessonId(null);
+        setCurrentSection(SectionType.WORKBOOK);
+
+        // Persist progress to Firestore — fire-and-forget (no await).
         if (user?.uid && db) {
           const currentDays = latestProgressRef.current?.days ?? {};
           const progressToSave = {
@@ -878,34 +885,30 @@ const App: React.FC = () => {
             days: currentDays,
             lastCompletedDate: updated.lastCompletedDate,
           };
-          try {
-            const now = new Date().toISOString();
-            lastLocalUpdateRef.current = now;
-            console.log('[WRITE] setDoc to courseProgress/main — WEEKLY TEST COMPLETED', {
-              path: `users/${user.uid}/courseProgress/main`,
-              language,
-              currentWorkbookId,
-              currentCourseId: currentCourseId ?? DEFAULT_COURSE_ID,
-              activeCourseId,
-              completedDays: countCompletedDays(progressToSave.days),
-              daysKeys: Object.keys(progressToSave.days as any),
-              sourceWorkbook: updated.currentWorkbook,
-              sourceLesson: updated.currentLesson,
-              sourceCurrentDay: updated.currentDay,
-              payloadKeys: [...Object.keys(progressToSave), 'lastUpdated'],
-            });
-            await setDoc(
-              doc(db, 'users', user.uid, 'courseProgress', 'main'),
-              {
-                ...progressToSave,
-                lastUpdated: now,
-              },
-              { merge: true },
-            );
-            console.log('[PROGRESS] courseProgress/main write succeeded ✓');
-          } catch (e) {
-            console.error('[PROGRESS] courseProgress/main write failed:', e);
-          }
+          const now = new Date().toISOString();
+          lastLocalUpdateRef.current = now;
+          console.log('[WRITE] setDoc to courseProgress/main — WEEKLY TEST COMPLETED', {
+            path: `users/${user.uid}/courseProgress/main`,
+            language,
+            currentWorkbookId,
+            currentCourseId: currentCourseId ?? DEFAULT_COURSE_ID,
+            activeCourseId,
+            completedDays: countCompletedDays(progressToSave.days),
+            daysKeys: Object.keys(progressToSave.days as any),
+            sourceWorkbook: updated.currentWorkbook,
+            sourceLesson: updated.currentLesson,
+            sourceCurrentDay: updated.currentDay,
+            payloadKeys: [...Object.keys(progressToSave), 'lastUpdated'],
+          });
+          setDoc(
+            doc(db, 'users', user.uid, 'courseProgress', 'main'),
+            {
+              ...progressToSave,
+              lastUpdated: now,
+            },
+            { merge: true },
+          ).then(() => console.log('[PROGRESS] courseProgress/main write succeeded ✓'))
+            .catch(e => console.error('[PROGRESS] courseProgress/main write failed:', e));
         }
 
         // Persist lesson test result to flat progress doc (Day 7 test)
@@ -937,9 +940,6 @@ const App: React.FC = () => {
             { merge: true },
           ).catch(e => console.warn('[PROGRESS] lesson test save failed:', e));
         }
-
-        setCurrentLessonId(null);
-        setCurrentSection(SectionType.WORKBOOK);
 
         // Recalculate weekly score from Firestore before showing animation
         if (user?.uid) {
