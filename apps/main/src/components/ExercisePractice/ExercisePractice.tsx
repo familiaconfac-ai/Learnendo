@@ -23,6 +23,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
+  // Guard against onComplete being called multiple times on the last exercise
+  const isCompletedRef = React.useRef(false);
 
   const exercises = day.exercises;
 
@@ -56,6 +58,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     const nextIdx = currentIdx + 1;
 
     if (nextIdx >= exercises.length) {
+      if (isCompletedRef.current) return; // prevent double-fire on last exercise
+      isCompletedRef.current = true;
       const score = Math.round((newCorrect / exercises.length) * 100);
       console.log(`[ExercisePractice] Day "${day.id}" complete. Score: ${score}%`);
       onComplete(day.id, score);

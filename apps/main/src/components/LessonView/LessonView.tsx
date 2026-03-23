@@ -112,8 +112,19 @@ export const LessonView: React.FC<LessonViewProps> = ({
     <div className="lesson-view min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">Back</button>
-        <h1 className="text-xl sm:text-2xl font-bold mb-2 text-center text-blue-900">{lesson.title}</h1>
-        <p className="text-center text-xs sm:text-sm text-slate-500 mb-6 sm:mb-8">{getExerciseLabel(currentLanguage, true)}</p>
+        {(() => {
+          const colonIdx = lesson.title.indexOf(':');
+          const mainTitle = colonIdx > -1 ? lesson.title.slice(0, colonIdx) : lesson.title;
+          const subtitle = colonIdx > -1 ? lesson.title.slice(colonIdx + 1).trim() : null;
+          return (
+            <div className="text-center mb-6 sm:mb-8">
+              <h1 className="text-2xl sm:text-3xl font-black text-blue-900 leading-tight">{mainTitle}</h1>
+              {subtitle && (
+                <p className="text-base sm:text-lg font-semibold text-blue-600 mt-1 leading-snug">{subtitle}</p>
+              )}
+            </div>
+          );
+        })()}
         <div className="flex flex-col items-center gap-4 sm:gap-6">
           {firstSixDays.map((day, index) => {
             const status = getDayStatus(day?.id || null, index);

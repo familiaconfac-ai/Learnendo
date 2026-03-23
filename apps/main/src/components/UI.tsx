@@ -41,7 +41,10 @@ const TIME_NORMALIZE_MAP: Record<string, string> = {
 };
 
 const normalizeAnswer = (answer: string): string => {
-  let normalized = answer.toLowerCase().trim().replace(/[.,!?;:]/g, "");
+  let normalized = answer.toLowerCase().trim().replace(/[.,!?;:']/g, "");
+
+  // Strip sentence prefixes so "It is five." / "It's five." are accepted as "five"
+  normalized = normalized.replace(/^(it is |its |the answer is |the result is |the number is )/, '');
 
   // Convert written numbers to digits
   Object.entries(NUMBER_MAP).forEach(([word, digit]) => {
@@ -317,8 +320,29 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     // Writing exercises reveal the audio hint only after the first wrong attempt.
     const [hasWrongAttempt, setHasWrongAttempt] = useState(false);
 
+    // Dictation exercises: audio should be visible from the start; digits rejected
+    const isDictationWriting = item.type === 'writing' &&
+      item.instruction.toLowerCase().includes('what you hear');
+
+    // Shadowing exercises: "speaking" type that is NOT a free-answer exercise
+    const isShadowing = item.type === 'speaking' &&
+      !item.instruction.toLowerCase().includes('listen and answer');
+
+    // Refs for STT lifecycle — prevents stale callbacks from bleeding across exercises
+    const recRef = useRef<any>(null);
+    const currentItemIdRef = useRef<string>(item.id);
+
     useEffect(() => {
+      // Cancel any ongoing STT from the previous exercise so its callbacks can't
+      // write a stale transcript into the new exercise's input.
+      if (recRef.current) {
+        try { recRef.current.abort(); } catch (_) {}
+        recRef.current = null;
+      }
+      currentItemIdRef.current = item.id;
+
       setUserInput('');
+      setIsListening(false);
       setFeedback('none');
       setShowFooter(false);
       setShowHint(false);
@@ -334,10 +358,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       if (item.audioValue && item.type !== 'speaking' && item.type !== 'writing') {
         speak(item.audioValue);
       } else if (item.audioValue && item.type === 'speaking') {
-        // ✅ Auto-play audio for speaking exercises
+        // ✅ Auto-play audio for speaking/shadowing exercises
         setTimeout(() => speak(item.audioValue), 500);
+      } else if (item.audioValue && isDictationWriting) {
+        // Dictation writing: play audio upfront so students can hear before typing
+        speak(item.audioValue);
       }
-      // writing: audio is only revealed after the first wrong attempt
+      // non-dictation writing: audio is only revealed after the first wrong attempt
 
       setTimeout(() => {
         if (item.type === 'speaking') {
@@ -346,7 +373,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           inputRef.current?.focus();
         }
       }, 200);
-    }, [item.id]);
+    }, [item.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
     // Auto-grow textarea
     const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -370,22 +397,46 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const handleSTT = () => {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) return alert("Mic not supported");
+
+      // Abort any previous recognition before starting a new one
+      if (recRef.current) {
+        try { recRef.current.abort(); } catch (_) {}
+      }
+
+      const capturedItemId = item.id; // capture for stale-closure guard below
       const rec = new SpeechRecognition();
+      recRef.current = rec;
       rec.lang = 'en-US';
       rec.onstart = () => setIsListening(true);
 
-      // ✅ FIX: guard against empty results
       rec.onresult = (e: any) => {
+        if (currentItemIdRef.current !== capturedItemId) return; // stale callback
         setUserInput(e?.results?.[0]?.[0]?.transcript ?? "");
         setIsListening(false);
       };
 
-      rec.onend = () => setIsListening(false);
+      rec.onend = () => {
+        if (currentItemIdRef.current !== capturedItemId) return;
+        setIsListening(false);
+      };
+
       rec.start();
     };
 
     const handleCheck = () => {
       const rawInput = userInput || selectedOption || '';
+
+      // Dictation writing: reject pure numeric input — student must type words
+      if (isDictationWriting && /^\s*\d[\d\s]*$/.test(rawInput)) {
+        setFeedback('wrong');
+        setShowFooter(true);
+        new Audio(ERR_SOUND).play().catch(() => {});
+        setPraiseText("Type the word!");
+        speak("Type the word, not a digit.");
+        setHasWrongAttempt(true);
+        return;
+      }
+
       const response = normalizeAnswer(rawInput);
       const cleanTarget = normalizeAnswer(item.correctValue);
 
@@ -485,7 +536,10 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         <div className="w-full max-sm:px-4 max-w-sm px-6 pt-5">
           <div className="flex items-center gap-4 mb-4">
             <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden shadow-inner">
-              <div className="h-full bg-green-500 transition-all duration-300" style={{ width: `${(currentIdx / totalItems) * 100}%` }} />
+              <div
+                className="h-full bg-green-500 transition-all duration-300"
+                style={{ width: `${feedback === 'correct' && currentIdx === totalItems - 1 ? 100 : (currentIdx / totalItems) * 100}%` }}
+              />
             </div>
           </div>
         </div>
@@ -494,26 +548,33 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           <div className="relative group mb-8 cursor-help" onClick={() => setShowHint(!showHint)}>
             {item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-xs font-black text-blue-700 bg-blue-50 border border-blue-200 rounded-full uppercase tracking-widest">Writing</span>
-                <h2 className="text-base font-semibold text-slate-800 text-center leading-snug max-w-full break-words" style={{ fontSize: 'clamp(14px, 2.2vw, 18px)' }}>
+                <span className="inline-block px-3 py-1 text-sm font-black text-blue-700 bg-blue-50 border border-blue-200 rounded-full uppercase tracking-widest">Writing</span>
+                <h2 className="text-base sm:text-lg font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
                   {item.instruction}
                 </h2>
               </div>
             ) : item.type === 'speaking' && !item.instruction.toLowerCase().includes('listen and answer') ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-xs font-black text-green-700 bg-green-50 border border-green-200 rounded-full uppercase tracking-widest">Shadowing</span>
-                <h2 className="text-base font-semibold text-slate-800 text-center leading-snug max-w-full break-words" style={{ fontSize: 'clamp(14px, 2.2vw, 18px)' }}>
-                  {item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:)\s*/i, '')}
+                <span className="inline-block px-3 py-1 text-sm font-black text-green-700 bg-green-50 border border-green-200 rounded-full uppercase tracking-widest">Shadowing</span>
+                <h2 className="text-base sm:text-lg font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
+                  {item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, '')}
                 </h2>
               </div>
             ) : item.type === 'speaking' ? (
-              <h2 className="text-sm font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600 max-w-full break-words" style={{ fontSize: 'clamp(16px, 2.5vw, 22px)', wordBreak: 'break-word' }}>
-                Listen and Answer
-              </h2>
+              <div className="flex flex-col items-center gap-2">
+                <span className="inline-block px-3 py-1 text-sm font-black text-orange-700 bg-orange-50 border border-orange-200 rounded-full uppercase tracking-widest">Speaking</span>
+                <h2 className="text-base sm:text-lg font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
+                  Listen and answer
+                </h2>
+              </div>
             ) : (
-              <h2 className="text-sm font-black text-slate-800 text-center uppercase tracking-tight leading-relaxed transition-colors hover:text-blue-600 max-w-full break-words" style={{ fontSize: 'clamp(16px, 2.5vw, 22px)', wordBreak: 'break-word' }}>
-                {item.instruction}
-              </h2>
+              /* multiple-choice and identification → Listening badge */
+              <div className="flex flex-col items-center gap-2">
+                <span className="inline-block px-3 py-1 text-sm font-black text-sky-700 bg-sky-50 border border-sky-200 rounded-full uppercase tracking-widest">Listening</span>
+                <h2 className="text-base sm:text-lg font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
+                  {item.instruction}
+                </h2>
+              </div>
             )}
             {translation && showHint && (
               <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-3 py-1.5 rounded-lg whitespace-nowrap z-10 animate-in fade-in slide-in-from-top-1 font-bold">
@@ -525,13 +586,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           <div className="flex flex-col items-center gap-6">
             {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
-              {item.audioValue && (item.type !== 'writing' || hasWrongAttempt) && (
+              {item.audioValue && (item.type !== 'writing' || isDictationWriting || hasWrongAttempt) && (
                 <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
                   <img src={speakerIcon} className="w-6 h-6 brightness-0 invert" alt="Play" />
                 </button>
               )}
-              {item.audioValue && (item.type !== 'writing' || hasWrongAttempt) && (
-                <button onClick={() => speak(item.audioValue, 0.7)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
+              {item.audioValue && (item.type !== 'writing' || isDictationWriting || hasWrongAttempt) && (
+                <button onClick={() => speak(item.audioValue, 0.5)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
                   <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
               )}
@@ -547,7 +608,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               )}
             </div>
 
-            {item.displayValue && renderDisplay()}
+            {/* Shadowing: never show the target visually — the whole point is to listen */}
+            {item.displayValue && !isShadowing && renderDisplay()}
 
             {isMultipleChoice && shuffledOptions.length > 0 ? (
               <div className="grid grid-cols-2 gap-2 w-full">
