@@ -197,18 +197,18 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
   };
 
   return (
-    <div className="min-h-screen bg-blue-50 pb-32">
+    <div className="min-h-screen bg-slate-900 pb-32">
       <div className="max-w-[420px] mx-auto px-4 pt-6">
-        <h1 className="text-2xl font-bold text-center text-blue-900">Pronunciation Trainer</h1>
-        <p className="mt-1 text-center text-[11px] font-bold uppercase tracking-wide text-blue-500">
+        <h1 className="text-2xl font-bold text-center text-white">Pronunciation Trainer</h1>
+        <p className="mt-1 text-center text-[11px] font-bold uppercase tracking-wide text-blue-400">
           {stage === 'listen-repeat' ? 'Stage 1 — Listen & Repeat' : 'Stage 2 — Speech Recognition'}
         </p>
-        <p className="mt-1 text-center text-sm text-slate-500">
+        <p className="mt-1 text-center text-sm text-slate-400">
           Item {itemIndex + 1} of {ITEMS.length}
         </p>
 
-        <div className="mt-6 rounded-3xl bg-white border border-slate-200 p-6 shadow-sm text-center">
-          <p className="text-5xl font-black text-slate-800 tracking-wide">{item}</p>
+        <div className="mt-6 rounded-3xl bg-slate-800 border border-slate-700 p-6 shadow-sm text-center">
+          <p className="text-5xl font-black text-white tracking-wide">{item}</p>
           {isNumber && (
             <p className="mt-1 text-base italic text-slate-400">"{spokenLabel}"</p>
           )}
@@ -248,7 +248,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                     <button
                       type="button"
                       onClick={clearRecording}
-                      className="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold text-slate-700 active:scale-[0.98]"
+                      className="rounded-2xl bg-slate-700 px-4 py-3 text-sm font-bold text-slate-200 active:scale-[0.98]"
                     >
                       Try again
                     </button>
@@ -267,7 +267,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                 <button
                   type="button"
                   onClick={advanceItem}
-                  className="w-full rounded-2xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-500 active:scale-[0.98]"
+                  className="w-full rounded-2xl bg-slate-700 px-4 py-3 text-sm font-semibold text-slate-300 active:scale-[0.98]"
                 >
                   Skip
                 </button>
@@ -294,7 +294,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
               )}
 
               {isListening && (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+                <div className="rounded-2xl border border-emerald-700 bg-emerald-900/40 px-4 py-3 text-sm font-semibold text-emerald-300">
                   Listening...
                 </div>
               )}
@@ -302,13 +302,13 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
               {detectedWord !== null && (
                 <div
                   className={`rounded-2xl border px-4 py-3 text-center ${
-                    isCorrect ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50'
+                    isCorrect ? 'border-green-700 bg-green-900/40' : 'border-red-700 bg-red-900/40'
                   }`}
                 >
-                  <p className="text-xs text-slate-500">You said:</p>
-                  <p className="mt-1 text-lg font-bold text-slate-800">"{detectedWord}"</p>
+                  <p className="text-xs text-slate-400">You said:</p>
+                  <p className="mt-1 text-lg font-bold text-white">"{detectedWord}"</p>
                   <p className={`mt-1 text-sm font-semibold ${
-                    isCorrect ? 'text-green-700' : 'text-red-600'
+                    isCorrect ? 'text-green-400' : 'text-red-400'
                   }`}>
                     {isCorrect ? 'Correct!' : 'Not quite — keep trying!'}
                   </p>

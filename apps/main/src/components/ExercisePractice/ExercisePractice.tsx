@@ -12,6 +12,8 @@ interface ExercisePracticeProps {
   progress: UserProgress;
   onComplete: (dayId: string, score: number) => void;
   onBack: () => void;
+  /** Total number of days in this lesson — used for the visible exercise header. */
+  totalDays?: number;
 }
 
 export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
@@ -20,11 +22,18 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   currentLanguage = 'en',
   onComplete,
   onBack,
+  totalDays,
 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
   // Guard against onComplete being called multiple times on the last exercise
   const isCompletedRef = React.useRef(false);
+
+  // Parse the day number from the day id (e.g. "w1l1d3" or "d3" → 3)
+  const dayNumber = (() => {
+    const m = day.id.match(/d(\d+)/);
+    return m ? parseInt(m[1], 10) : undefined;
+  })();
 
   const exercises = day.exercises;
 
@@ -77,6 +86,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       totalItems={exercises.length}
       lessonId={1}
       onBack={onBack}
+      dayNumber={dayNumber}
+      totalDays={totalDays}
     />
   );
 };

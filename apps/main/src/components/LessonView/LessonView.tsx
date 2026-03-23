@@ -109,7 +109,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   });
 
   return (
-    <div className="lesson-view min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
+    <div className="lesson-view min-h-screen bg-slate-900 pb-28 w-full overflow-x-hidden">
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">Back</button>
         {(() => {
@@ -118,9 +118,9 @@ export const LessonView: React.FC<LessonViewProps> = ({
           const subtitle = colonIdx > -1 ? lesson.title.slice(colonIdx + 1).trim() : null;
           return (
             <div className="text-center mb-6 sm:mb-8">
-              <h1 className="text-2xl sm:text-3xl font-black text-blue-900 leading-tight">{mainTitle}</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight">{mainTitle}</h1>
               {subtitle && (
-                <p className="text-base sm:text-lg font-semibold text-blue-600 mt-1 leading-snug">{subtitle}</p>
+                <p className="text-base sm:text-lg font-semibold text-blue-300 mt-1 leading-snug">{subtitle}</p>
               )}
             </div>
           );
@@ -166,7 +166,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                     {isCompleted ? 'Done' : isLocked ? 'Lock' : dayNumber}
                   </span>
                 </button>
-                <p className={`text-center text-xs mt-2 leading-tight ${isLocked ? 'text-slate-400' : 'text-slate-600'}`}>
+                <p className={`text-center text-xs mt-2 leading-tight ${isLocked ? 'text-slate-600' : 'text-slate-300'}`}>
                   {`${getExerciseLabel(currentLanguage)} ${dayNumber}`}
                 </p>
               </div>
@@ -198,16 +198,16 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 {hasPassedTest ? 'Done' : `Test ${lessonNumber}`}
               </span>
             </button>
-            <p className={`text-center text-xs mt-2 leading-tight ${!testUnlocked || hasPassedTest ? 'text-slate-400' : 'text-slate-700'}`}>
+            <p className={`text-center text-xs mt-2 leading-tight ${!testUnlocked || hasPassedTest ? 'text-slate-600' : 'text-slate-300'}`}>
               {`Test ${lessonNumber}`}
             </p>
           </div>
         </div>
 
         {testCompleted && typeof testScore === 'number' && (
-          <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm">
-            <p className="text-lg font-bold text-slate-800">Score: {testScore}%</p>
-            <p className="mt-2 text-sm text-slate-600">{testScore === 100 ? 'Lesson Complete' : 'Try again'}</p>
+          <div className="mt-8 rounded-2xl border border-slate-700 bg-slate-800 p-4 text-center shadow-sm">
+            <p className="text-lg font-bold text-white">Score: {testScore}%</p>
+            <p className="mt-2 text-sm text-slate-400">{testScore === 100 ? 'Lesson Complete' : 'Try again'}</p>
             {testScore < 100 && (
               <button
                 type="button"

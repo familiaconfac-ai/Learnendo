@@ -303,8 +303,8 @@ export const LearningPathView: React.FC<{
   );
 };
 
-export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; }> =
-  ({ item, onResult, currentIdx, totalItems, lessonId, onBack }) => {
+export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; dayNumber?: number; totalDays?: number; }> =
+  ({ item, onResult, currentIdx, totalItems, lessonId, onBack, dayNumber, totalDays }) => {
     const [userInput, setUserInput] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [feedback, setFeedback] = useState<'none' | 'correct' | 'wrong'>('none');
@@ -587,7 +587,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const isMultipleChoice = item.type === 'multiple-choice' || item.type === 'identification';
 
     return (
-      <div className="fixed inset-0 bg-slate-900 z-50 flex flex-col items-center outline-none">
+      <div className="fixed inset-x-0 top-[68px] bottom-[56px] bg-slate-900 z-30 flex flex-col items-center outline-none">
         <div className="w-full max-sm:px-4 max-w-sm px-6 pt-5">
           <div className="flex items-center gap-4 mb-4">
             <div className="flex-1 h-3 bg-slate-700 rounded-full overflow-hidden shadow-inner">
@@ -599,13 +599,17 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           </div>
         </div>
 
-        <div className="w-full max-sm:px-4 max-w-sm px-6 pt-3 pb-2">
-          {/* Lesson + exercise context header */}
-          <div className="flex flex-col items-center mb-3">
+        <div className="flex-1 w-full max-w-sm px-6 flex flex-col items-center pt-4 pb-40 overflow-y-auto no-scrollbar">
+          {/* Lesson + exercise context header — scrolls with content */}
+          <div className="flex flex-col items-center mb-3 w-full">
             <span className="text-xl font-black text-white tracking-tight leading-tight">Lesson {lessonId}</span>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">Exercise {currentIdx + 1} of {totalItems}</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+              {dayNumber != null && totalDays != null
+                ? `Exercise ${dayNumber} of ${totalDays}`
+                : `Exercise ${currentIdx + 1} of ${totalItems}`}
+            </span>
           </div>
-          <div className="relative group mb-2 cursor-help" onClick={() => setShowHint(!showHint)}>
+          <div className="relative group mb-4 cursor-help w-full" onClick={() => setShowHint(!showHint)}>
             {item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">Writing</span>
@@ -642,9 +646,6 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               </div>
             )}
           </div>
-        </div>
-
-        <div className="flex-1 w-full max-w-sm px-6 flex flex-col items-center justify-center pb-40 overflow-y-auto">
           <div className="flex flex-col items-center gap-6 w-full">
             {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
@@ -719,7 +720,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           </div>
         </div>
 
-        <div className={`fixed bottom-0 left-0 right-0 p-6 flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
+        <div className={`absolute bottom-0 left-0 right-0 p-6 flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
           <div className="w-full max-sm:max-w-xs max-w-sm">
             {showFooter ? (
               <div className="flex flex-col gap-3">

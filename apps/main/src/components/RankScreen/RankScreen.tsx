@@ -24,12 +24,12 @@ export const RankScreen: React.FC<RankScreenProps> = ({ currentUserId, courseId 
     : null;
 
   return (
-    <div className="min-h-screen bg-blue-50 pb-28 px-4 pt-6">
-      <h1 className="text-2xl font-bold text-center text-blue-900 mb-1">🏆 Ranking</h1>
-      <p className="text-center text-sm text-slate-500 mb-6">Top 10 students this season</p>
+    <div className="min-h-screen bg-slate-900 pb-28 px-4 pt-6">
+      <h1 className="text-2xl font-bold text-center text-white mb-1">🏆 Ranking</h1>
+      <p className="text-center text-sm text-slate-400 mb-6">Top 10 students this season</p>
 
       {currentUserRank && (
-        <div className="mb-4 rounded-xl bg-blue-100 border border-blue-300 px-4 py-3 text-center text-sm font-semibold text-blue-800">
+        <div className="mb-4 rounded-xl bg-blue-900/60 border border-blue-700 px-4 py-3 text-center text-sm font-semibold text-blue-300">
           👉 You are ranked #{currentUserRank}
         </div>
       )}
@@ -55,8 +55,8 @@ export const RankScreen: React.FC<RankScreenProps> = ({ currentUserId, courseId 
                 key={student.uid}
                 className={`flex items-center gap-3 rounded-2xl px-4 py-3 shadow-sm ${
                   isCurrentUser
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-white text-slate-800'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-800 text-slate-100'
                 }`}
               >
                 {/* Rank / medal */}
@@ -73,7 +73,7 @@ export const RankScreen: React.FC<RankScreenProps> = ({ currentUserId, courseId 
                 </span>
 
                 {/* Score */}
-                <span className={`text-sm font-bold flex-shrink-0 ${isCurrentUser ? 'text-white' : 'text-blue-600'}`}>
+                <span className={`text-sm font-bold flex-shrink-0 ${isCurrentUser ? 'text-white' : 'text-blue-400'}`}>
                   {pts} pts
                 </span>
               </li>

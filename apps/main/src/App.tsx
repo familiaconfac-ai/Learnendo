@@ -138,6 +138,12 @@ const App: React.FC = () => {
   const [score, setScore] = useState<ScoreResult | null>(null);
   /** Progress for the currently open lesson — read from Firestore on lesson open. */
   const [lessonProgress, setLessonProgress] = useState<LessonProgress | null>(null);
+  /** Ensures the splash is visible for at least 1.5 s even if Firebase resolves instantly. */
+  const [minSplashDone, setMinSplashDone] = useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setMinSplashDone(true), 1500);
+    return () => clearTimeout(t);
+  }, []);
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
   const lastLocalUpdateRef = useRef<string | null>(null);
   /** Timestamp (ms) when the current day practice started — used to compute timeSpent. */
@@ -1372,12 +1378,13 @@ const App: React.FC = () => {
       case SectionType.SETTINGS:
       case SectionType.HELP:
         return (
-          <div className="min-h-screen bg-blue-50 flex items-center justify-center px-6 text-center">
-            <p className="text-slate-700 font-semibold">This feature is under construction</p>
+          <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
+            <p className="text-slate-300 font-semibold">This feature is under construction</p>
           </div>
         );
       case SectionType.PRACTICE: {
-        if (!currentDay) return <div className="px-4 py-6">Exercicio indisponivel.</div>;
+        if (!currentDay) return <div className="px-4 py-6 text-white">Exercicio indisponivel.</div>;
+        const practiceTotalDays = currentWorkbook?.lessons?.find((l: any) => l.id === currentLessonId)?.days?.length ?? 7;
         return (
           <ExercisePractice
             day={currentDay}
@@ -1385,6 +1392,7 @@ const App: React.FC = () => {
             currentLanguage={language}
             progress={progress}
             onComplete={handleDayComplete}
+            totalDays={practiceTotalDays}
             onBack={() => {
               setCurrentDay(null);
               setActiveWeeklyTest(null);
@@ -1399,8 +1407,8 @@ const App: React.FC = () => {
         return user && isAdmin ? (
           <TeacherDashboard user={user} />
         ) : (
-          <div className="min-h-screen bg-blue-50 flex items-center justify-center px-6 text-center">
-            <p className="text-slate-700 font-semibold">Access denied. Teacher dashboard is for authorized users only.</p>
+          <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
+            <p className="text-slate-300 font-semibold">Access denied. Teacher dashboard is for authorized users only.</p>
           </div>
         );
       case SectionType.RANK:
@@ -1436,33 +1444,34 @@ const App: React.FC = () => {
     );
   }
 
-  if (loading || !progressLoaded) {
+  if (loading || !progressLoaded || !minSplashDone) {
     return (
-      <div className="min-h-screen bg-blue-50 flex items-center justify-center">
-        <p className="text-slate-500 font-semibold text-sm">Loading your progress...</p>
+      <div className="fixed inset-0 bg-blue-600 flex items-center justify-center">
+        <span
+          className="text-5xl font-black text-white tracking-tight"
+          style={{ animation: 'splashEnter 0.5s ease-out forwards' }}
+        >
+          Learnendo
+        </span>
       </div>
     );
   }
 
   return (
-    <div className="app overflow-x-hidden">
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <div className="app overflow-x-hidden bg-slate-900 min-h-screen">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-700 bg-slate-900/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-full items-center justify-between gap-1 sm:gap-2 px-2 sm:px-3 py-2 overflow-x-auto">
           <button
             type="button"
-            className="flex h-10 items-center rounded-lg sm:rounded-xl bg-slate-50 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-slate-700 shadow-sm active:scale-95 flex-shrink-0"
-            onClick={() => {
-              setCurrentDay(null);
-              setCurrentLessonId(null);
-              setCurrentSection(SectionType.COURSES);
-            }}
-            aria-label="Go to language selection"
+            className="flex h-10 items-center rounded-lg sm:rounded-xl bg-slate-800 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-slate-200 shadow-sm active:scale-95 flex-shrink-0"
+            onClick={() => handleNavigate(SectionType.WORKBOOK)}
+            aria-label="Go to lesson list"
           >
             <span className="text-base leading-none">🏠</span>
             <span className="ml-1">Home</span>
           </button>
 
-          <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-200 flex-shrink-0">
             <button
               type="button"
               onClick={() => setCurrentSection(SectionType.COURSES)}
@@ -1478,15 +1487,15 @@ const App: React.FC = () => {
                 className="rounded-full block"
               />
             </button>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {score?.streak ?? 0}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {score?.freeze ?? 0}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {score?.diamonds ?? 0}</span>
-            <span className="rounded-lg bg-slate-100 px-1.5 py-1">⭐ {score?.stars ?? 0}</span>
+            <span className="rounded-lg bg-slate-800 px-1.5 py-1">🔥 {score?.streak ?? 0}</span>
+            <span className="rounded-lg bg-slate-800 px-1.5 py-1">❄️ {score?.freeze ?? 0}</span>
+            <span className="rounded-lg bg-slate-800 px-1.5 py-1">💎 {score?.diamonds ?? 0}</span>
+            <span className="rounded-lg bg-slate-800 px-1.5 py-1">⭐ {score?.stars ?? 0}</span>
           </div>
 
           <button
             onClick={toggleMenu}
-            className="flex h-10 w-10 items-center justify-center rounded-lg sm:rounded-xl bg-slate-50 text-[22px] sm:text-[26px] leading-none text-slate-700 shadow-sm active:scale-95 flex-shrink-0"
+            className="flex h-10 w-10 items-center justify-center rounded-lg sm:rounded-xl bg-slate-800 text-[22px] sm:text-[26px] leading-none text-slate-200 shadow-sm active:scale-95 flex-shrink-0"
             aria-label="Open menu"
           >
             ☰
@@ -1513,7 +1522,7 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      <main className="pt-[68px]">{renderSection()}</main>
+      <main className="pt-[68px] pb-[56px]">{renderSection()}</main>
       {weekCompletionResult && (
         <WeekCompletionPopup
           result={weekCompletionResult}

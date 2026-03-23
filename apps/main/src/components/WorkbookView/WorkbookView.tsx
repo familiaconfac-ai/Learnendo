@@ -44,7 +44,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
   const firstUnlockedIndex = islandSlots.findIndex((_, index) => getLessonStatus(index) === 'in-progress');
 
   return (
-    <div className="workbook-view min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
+    <div className="workbook-view min-h-screen bg-slate-900 pb-28 w-full overflow-x-hidden">
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
         <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">←</button>
 
@@ -109,7 +109,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
                   </span>
                 </button>
                 <p className={`text-center text-xs mt-2 max-w-[140px] leading-tight ${
-                  isLocked ? 'text-slate-400' : 'text-slate-600'
+                  isLocked ? 'text-slate-600' : 'text-slate-300'
                 }`}>
                   {lessonLabel}
                 </p>
