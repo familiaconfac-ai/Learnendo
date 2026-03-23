@@ -41,21 +41,21 @@ export const lesson1: Lesson = {
       id: "wb1_l1_d2",
       type: "practice",
       exercises: [
-        { id: 'wb1_l1_d2_e1',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Zero',  options: ['0', '1', '6', '10'],    correctValue: '0',  isNewVocab: true },
-        { id: 'wb1_l1_d2_e2',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Three', options: ['2', '3', '7', '13'],    correctValue: '3'  },
-        { id: 'wb1_l1_d2_e3',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Eight', options: ['3', '8', '13', '18'],   correctValue: '8'  },
-        { id: 'wb1_l1_d2_e4',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'One',                                      correctValue: 'one'  },
-        { id: 'wb1_l1_d2_e5',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Two',                                      correctValue: 'two'  },
-        { id: 'wb1_l1_d2_e6',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Five',                                     correctValue: 'five' },
-        { id: 'wb1_l1_d2_e7',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', displayValue: '3', audioValue: 'Three',              correctValue: 'three' },
-        { id: 'wb1_l1_d2_e8',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', displayValue: '8', audioValue: 'Eight',              correctValue: 'eight' },
-        { id: 'wb1_l1_d2_e9',  type: 'writing',        instruction: 'Write the complete answer.',          displayValue: '2 + 3 = ?', audioValue: 'What is two plus three',   correctValue: '5'  },
-        { id: 'wb1_l1_d2_e10', type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Ten',                                      correctValue: 'ten'  },
+        { id: 'wb1_l1_d2_e1',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Fourteen',  options: ['4', '14', '40', '44'],  correctValue: '14', isNewVocab: true },
+        { id: 'wb1_l1_d2_e2',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Sixteen',   options: ['6', '16', '60', '66'],  correctValue: '16' },
+        { id: 'wb1_l1_d2_e3',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Seventeen', options: ['7', '17', '70', '77'],  correctValue: '17' },
+        { id: 'wb1_l1_d2_e4',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'One',                                         correctValue: 'one'      },
+        { id: 'wb1_l1_d2_e5',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Two',                                         correctValue: 'two'      },
+        { id: 'wb1_l1_d2_e6',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Five',                                        correctValue: 'five'     },
+        { id: 'wb1_l1_d2_e7',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', displayValue: '15', audioValue: 'Fifteen',             correctValue: 'fifteen'  },
+        { id: 'wb1_l1_d2_e8',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', displayValue: '19', audioValue: 'Nineteen',            correctValue: 'nineteen' },
+        { id: 'wb1_l1_d2_e9',  type: 'writing',        instruction: 'Write the complete answer.',          displayValue: '9 + 9 = ?', audioValue: 'What is nine plus nine',    correctValue: '18' },
+        { id: 'wb1_l1_d2_e10', type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Ten',                                         correctValue: 'ten'      },
         { id: 'wb1_l1_d2_e11', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Four',  options: ['4', '14', '40', '44'],  correctValue: '4'  },
         { id: 'wb1_l1_d2_e12', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Six',   options: ['6', '16', '60', '66'],  correctValue: '6'  },
         { id: 'wb1_l1_d2_e13', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Seven', options: ['7', '17', '70', '77'],  correctValue: '7'  },
         { id: 'wb1_l1_d2_e14', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Nine',  options: ['9', '19', '90', '99'],  correctValue: '9'  },
-        { id: 'wb1_l1_d2_e15', type: 'writing',        instruction: 'Write the complete answer.',          displayValue: '5 + 5 = ?', audioValue: 'What is five plus five',   correctValue: '10' }
+        { id: 'wb1_l1_d2_e15', type: 'writing',        instruction: 'Write the complete answer.',          displayValue: '6 + 9 = ?', audioValue: 'What is six plus nine',     correctValue: '15' }
       ]
     },
     {
