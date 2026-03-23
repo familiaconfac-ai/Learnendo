@@ -321,8 +321,9 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const [hasWrongAttempt, setHasWrongAttempt] = useState(false);
 
     // Dictation exercises: audio should be visible from the start; digits rejected
+    // Catches both "what you hear" and "you hear" (e.g. "Type the color you hear.")
     const isDictationWriting = item.type === 'writing' &&
-      item.instruction.toLowerCase().includes('what you hear');
+      item.instruction.toLowerCase().includes('you hear');
 
     // Shadowing exercises: "speaking" type that is NOT a free-answer exercise
     const isShadowing = item.type === 'speaking' &&
@@ -590,7 +591,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           </div>
         </div>
 
-        <div className="w-full max-sm:px-4 max-w-sm px-6 pt-4 pb-2">
+        <div className="w-full max-sm:px-4 max-w-sm px-6 pt-3 pb-2">
+          {/* Lesson + exercise context header */}
+          <div className="flex flex-col items-center mb-3">
+            <span className="text-xl font-black text-blue-900 tracking-tight leading-tight">Lesson {lessonId}</span>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">Exercise {currentIdx + 1} of {totalItems}</span>
+          </div>
           <div className="relative group mb-2 cursor-help" onClick={() => setShowHint(!showHint)}>
             {item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
