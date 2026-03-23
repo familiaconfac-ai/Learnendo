@@ -590,26 +590,26 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           </div>
         </div>
 
-        <div className={`flex-1 w-full max-w-sm px-6 flex flex-col pb-40 ${item.type === 'writing' ? 'justify-start pt-6 overflow-y-auto' : 'justify-center'}`}>
-          <div className="relative group mb-8 cursor-help" onClick={() => setShowHint(!showHint)}>
+        <div className="w-full max-sm:px-4 max-w-sm px-6 pt-4 pb-2">
+          <div className="relative group mb-2 cursor-help" onClick={() => setShowHint(!showHint)}>
             {item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-blue-700 bg-blue-50 border border-blue-200 rounded-full uppercase tracking-widest">Writing</span>
-                <h2 className="text-base sm:text-lg font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
+                <h2 className="text-lg sm:text-xl font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
                   {item.instruction}
                 </h2>
               </div>
             ) : item.type === 'speaking' && !item.instruction.toLowerCase().includes('listen and answer') ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-green-700 bg-green-50 border border-green-200 rounded-full uppercase tracking-widest">Shadowing</span>
-                <h2 className="text-base sm:text-lg font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
+                <h2 className="text-lg sm:text-xl font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
                   {item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, '')}
                 </h2>
               </div>
             ) : item.type === 'speaking' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-orange-700 bg-orange-50 border border-orange-200 rounded-full uppercase tracking-widest">Speaking</span>
-                <h2 className="text-base sm:text-lg font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
+                <h2 className="text-lg sm:text-xl font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
                   Listen and answer
                 </h2>
               </div>
@@ -617,7 +617,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               /* multiple-choice and identification → Listening badge */
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-sky-700 bg-sky-50 border border-sky-200 rounded-full uppercase tracking-widest">Listening</span>
-                <h2 className="text-base sm:text-lg font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
+                <h2 className="text-lg sm:text-xl font-semibold text-slate-800 text-center leading-snug max-w-full break-words">
                   {item.instruction}
                 </h2>
               </div>
@@ -628,8 +628,10 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               </div>
             )}
           </div>
+        </div>
 
-          <div className="flex flex-col items-center gap-6">
+        <div className="flex-1 w-full max-w-sm px-6 flex flex-col items-center justify-center pb-40 overflow-y-auto">
+          <div className="flex flex-col items-center gap-6 w-full">
             {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
               {item.audioValue && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
@@ -740,7 +742,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                         setShowFooter(false);
                       }
                     }}
-                    className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0`}
+                    className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0 [touch-action:manipulation]`}
                   >
                     {feedback === 'correct' ? 'CONTINUE' : 'GOT IT'}
                   </button>
@@ -760,7 +762,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                 <button
                   disabled={isMultipleChoice ? !selectedOption : !userInput.trim()}
                   onClick={() => handleCheck()}
-                  className={`${onBack ? 'flex-1' : 'w-full'} py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center`}
+                  className={`${onBack ? 'flex-1' : 'w-full'} py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-50 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center [touch-action:manipulation]`}
                 >
                   <img src={checkIcon} className="w-6 h-6 brightness-0 invert" alt="Check" />
                 </button>
