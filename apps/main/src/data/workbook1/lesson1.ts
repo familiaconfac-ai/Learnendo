@@ -83,16 +83,16 @@ export const lesson1: Lesson = {
       id: "wb1_l1_d4",
       type: "practice",
       exercises: [
-        { id: 'wb1_l1_d4_e1', type: 'multiple-choice', instruction: 'Identify the color of the shirt.', displayValue: 'fa-shirt',      audioValue: 'Green',  options: ['Red', 'Blue', 'Green', 'Yellow'], correctValue: 'Green',  isNewVocab: true },
-        { id: 'wb1_l1_d4_e2', type: 'multiple-choice', instruction: 'Identify the color of the car.',   displayValue: 'fa-car',        audioValue: 'Red',    options: ['Red', 'Blue', 'Green', 'Black'],  correctValue: 'Red'   },
-        { id: 'wb1_l1_d4_e3', type: 'multiple-choice', instruction: 'Identify the color of the sky.',   displayValue: 'fa-cloud-sun',  audioValue: 'Blue',   options: ['Red', 'Blue', 'Green', 'Black'],  correctValue: 'Blue'  },
-        { id: 'wb1_l1_d4_e4', type: 'identification',  instruction: 'What color is it?',                displayValue: 'fa-lemon',      audioValue: 'Yellow', options: ['Yellow', 'Orange', 'Green', 'Blue'], correctValue: 'Yellow' },
-        { id: 'wb1_l1_d4_e5', type: 'multiple-choice', instruction: 'Identify the color of the grass.', displayValue: 'fa-leaf',       audioValue: 'Green',  options: ['Green', 'Red', 'Blue', 'Yellow'], correctValue: 'Green' },
-        { id: 'wb1_l1_d4_e6', type: 'multiple-choice', instruction: 'Identify the color of the apple.', displayValue: 'fa-apple-whole',audioValue: 'Red',    options: ['Red', 'Green', 'Blue', 'Yellow'], correctValue: 'Red'   },
-        { id: 'wb1_l1_d4_e7', type: 'multiple-choice', instruction: 'Identify the color of the ocean.', displayValue: 'fa-water',      audioValue: 'Blue',   options: ['Blue', 'Red', 'Green', 'Yellow'], correctValue: 'Blue'  },
-        { id: 'wb1_l1_d4_e8', type: 'multiple-choice', instruction: 'Identify the color of the sun.',   displayValue: 'fa-sun',        audioValue: 'Yellow', options: ['Yellow', 'Red', 'Green', 'Blue'], correctValue: 'Yellow'},
-        { id: 'wb1_l1_d4_e9', type: 'writing',         instruction: 'Type the color you hear.',                                        audioValue: 'Red',    correctValue: 'red'  },
-        { id: 'wb1_l1_d4_e10', type: 'writing',        instruction: 'Type the color you hear.',                                        audioValue: 'Blue',   correctValue: 'blue' }
+        { id: 'wb1_l1_d4_e1',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Red',    options: ['Red',    'Blue',   'Green',  'Yellow'],  correctValue: 'Red',    isNewVocab: true, translation: 'Red = Vermelho'    },
+        { id: 'wb1_l1_d4_e2',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Blue',   options: ['Blue',   'Red',    'Green',  'Yellow'],  correctValue: 'Blue',   isNewVocab: true, translation: 'Blue = Azul'       },
+        { id: 'wb1_l1_d4_e3',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Green',  options: ['Green',  'Red',    'Blue',   'Yellow'],  correctValue: 'Green',  isNewVocab: true, translation: 'Green = Verde'     },
+        { id: 'wb1_l1_d4_e4',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Yellow', options: ['Yellow', 'Red',    'Blue',   'Green'],   correctValue: 'Yellow', isNewVocab: true, translation: 'Yellow = Amarelo'  },
+        { id: 'wb1_l1_d4_e5',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Orange', options: ['Orange', 'Red',    'Yellow', 'Brown'],   correctValue: 'Orange', isNewVocab: true, translation: 'Orange = Laranja'  },
+        { id: 'wb1_l1_d4_e6',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Black',  options: ['Black',  'White',  'Purple', 'Blue'],    correctValue: 'Black',  isNewVocab: true, translation: 'Black = Preto'     },
+        { id: 'wb1_l1_d4_e7',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'White',  options: ['White',  'Black',  'Yellow', 'Orange'],  correctValue: 'White',  isNewVocab: true, translation: 'White = Branco'    },
+        { id: 'wb1_l1_d4_e8',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Purple', options: ['Purple', 'Blue',   'Pink',   'Black'],   correctValue: 'Purple', isNewVocab: true, translation: 'Purple = Roxo'     },
+        { id: 'wb1_l1_d4_e9',  type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Pink',   options: ['Pink',   'Red',    'Purple', 'White'],   correctValue: 'Pink',   isNewVocab: true, translation: 'Pink = Rosa'       },
+        { id: 'wb1_l1_d4_e10', type: 'identification', instruction: 'Listen and tap the correct color.', audioValue: 'Brown',  options: ['Brown',  'Orange', 'Red',    'Black'],   correctValue: 'Brown',  isNewVocab: true, translation: 'Brown = Marrom'    },
       ]
     },
     {

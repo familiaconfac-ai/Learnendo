@@ -111,16 +111,16 @@ export const LessonView: React.FC<LessonViewProps> = ({
   return (
     <div className="lesson-view min-h-screen bg-slate-900 pb-28 w-full overflow-x-hidden">
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
-        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">Back</button>
+        <button onClick={onBack} className="mb-4 text-white font-bold text-base flex items-center gap-1" aria-label="Back">← Back</button>
         {(() => {
           const colonIdx = lesson.title.indexOf(':');
           const mainTitle = colonIdx > -1 ? lesson.title.slice(0, colonIdx) : lesson.title;
           const subtitle = colonIdx > -1 ? lesson.title.slice(colonIdx + 1).trim() : null;
           return (
             <div className="text-center mb-6 sm:mb-8">
-              <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight">{mainTitle}</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-yellow-400 leading-tight">{mainTitle}</h1>
               {subtitle && (
-                <p className="text-base sm:text-lg font-semibold text-blue-300 mt-1 leading-snug">{subtitle}</p>
+                <p className="text-lg sm:text-xl font-semibold text-white mt-1 leading-snug">{subtitle}</p>
               )}
             </div>
           );

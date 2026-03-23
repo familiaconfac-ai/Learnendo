@@ -46,7 +46,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
   return (
     <div className="workbook-view min-h-screen bg-slate-900 pb-28 w-full overflow-x-hidden">
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
-        <button onClick={onBack} className="mb-4 text-blue-500 font-semibold text-sm" aria-label="Back">←</button>
+        <button onClick={onBack} className="mb-4 text-white font-bold text-base flex items-center gap-1" aria-label="Back">← Back</button>
 
         {/* Workbook island */}
         <div className="flex flex-col items-center mb-6 sm:mb-8">

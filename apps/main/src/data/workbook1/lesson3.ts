@@ -13,21 +13,21 @@ export const lesson3: Lesson = {
         { id: 'wb1_l3_d1_e3', type: 'identification', instruction: 'What does Tom do with his breakfast?', displayValue: 'fa-utensils', audioValue: 'eat breakfast', options: ['drink milk', 'eat breakfast', 'walk to school', 'play games'], correctValue: 'eat breakfast', isNewVocab: true },
         { id: 'wb1_l3_d1_e4', type: 'identification', instruction: 'What does Lisa do before school?', displayValue: 'fa-book', audioValue: 'get ready for school', options: ['sleep', 'get ready for school', 'take a shower', 'wake up'], correctValue: 'get ready for school', isNewVocab: true },
         { id: 'wb1_l3_d1_e5', type: 'identification', instruction: 'What does Mark do to go to school?', displayValue: 'fa-person-walking', audioValue: 'walk to school', options: ['take a shower', 'eat', 'walk to school', 'sleep'], correctValue: 'walk to school', isNewVocab: true },
-        { id: 'wb1_l3_d1_e6', type: 'writing', instruction: 'Type what you hear: I wake up at seven o\'clock.', audioValue: 'wake up', correctValue: 'wake up' },
-        { id: 'wb1_l3_d1_e7', type: 'writing', instruction: 'Type what you hear: She takes a shower.', audioValue: 'shower', correctValue: 'shower' },
-        { id: 'wb1_l3_d1_e8', type: 'writing', instruction: 'Type what you hear: We eat breakfast.', audioValue: 'breakfast', correctValue: 'breakfast' },
-        { id: 'wb1_l3_d1_e9', type: 'writing', instruction: 'Type what you hear: He goes to school.', audioValue: 'school', correctValue: 'school' },
-        { id: 'wb1_l3_d1_e10', type: 'writing', instruction: 'Type what you hear: They play after school.', audioValue: 'play', correctValue: 'play' },
+        { id: 'wb1_l3_d1_e6', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'wake up', correctValue: 'wake up' },
+        { id: 'wb1_l3_d1_e7', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'shower', correctValue: 'shower' },
+        { id: 'wb1_l3_d1_e8', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'breakfast', correctValue: 'breakfast' },
+        { id: 'wb1_l3_d1_e9', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'school', correctValue: 'school' },
+        { id: 'wb1_l3_d1_e10', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'play', correctValue: 'play' },
         { id: 'wb1_l3_d1_e11', type: 'identification', instruction: 'Which shows what you do at school?', displayValue: 'fa-blackboard', audioValue: 'study', options: ['sleep', 'study', 'cook', 'watch TV'], correctValue: 'study', isNewVocab: true },
         { id: 'wb1_l3_d1_e12', type: 'identification', instruction: 'Which shows what you do in the afternoon?', displayValue: 'fa-clock', audioValue: 'have lunch', options: ['sleep', 'wake up', 'have lunch', 'take a shower'], correctValue: 'have lunch', isNewVocab: true },
         { id: 'wb1_l3_d1_e13', type: 'identification', instruction: 'Which shows what you do before bed?', displayValue: 'fa-moon', audioValue: 'go to bed', options: ['wake up', 'eat', 'go to bed', 'study'], correctValue: 'go to bed', isNewVocab: true },
-        { id: 'wb1_l3_d1_e14', type: 'speaking', instruction: 'Say: wake up', audioValue: 'wake up', correctValue: 'wake up' },
-        { id: 'wb1_l3_d1_e15', type: 'speaking', instruction: 'Say: take a shower', audioValue: 'take a shower', correctValue: 'take a shower' },
-        { id: 'wb1_l3_d1_e16', type: 'writing', instruction: 'Type what you hear: He does his homework.', audioValue: 'homework', correctValue: 'homework' },
-        { id: 'wb1_l3_d1_e17', type: 'writing', instruction: 'Type what you hear: She watches television.', audioValue: 'television', correctValue: 'television' },
-        { id: 'wb1_l3_d1_e18', type: 'speaking', instruction: 'Say: eat breakfast', audioValue: 'eat breakfast', correctValue: 'eat breakfast' },
+        { id: 'wb1_l3_d1_e14', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'wake up', correctValue: 'wake up' },
+        { id: 'wb1_l3_d1_e15', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'take a shower', correctValue: 'take a shower' },
+        { id: 'wb1_l3_d1_e16', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'homework', correctValue: 'homework' },
+        { id: 'wb1_l3_d1_e17', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'television', correctValue: 'television' },
+        { id: 'wb1_l3_d1_e18', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'eat breakfast', correctValue: 'eat breakfast' },
         { id: 'wb1_l3_d1_e19', type: 'identification', instruction: 'What do you do before sleeping?', displayValue: 'fa-brush-teeth', audioValue: 'brush your teeth', options: ['eat', 'brush your teeth', 'study', 'walk'], correctValue: 'brush your teeth', isNewVocab: true },
-        { id: 'wb1_l3_d1_e20', type: 'speaking', instruction: 'Say: go to bed', audioValue: 'go to bed', correctValue: 'go to bed' }
+        { id: 'wb1_l3_d1_e20', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'go to bed', correctValue: 'go to bed' }
       ]
     },
     {
@@ -47,26 +47,26 @@ export const lesson3: Lesson = {
         { id: 'wb1_l3_d2_e11', type: 'identification', instruction: 'Listen: Mark watches television at 7 PM. What does he do?', audioValue: 'Mark watches television at 7 o\'clock in the evening.', options: ['study', 'play', 'watch television', 'eat'], correctValue: 'watch television', isNewVocab: true },
         { id: 'wb1_l3_d2_e12', type: 'identification', instruction: 'Listen: Emma brushes her teeth before bed. What does she do?', audioValue: 'Emma brushes her teeth before going to bed.', options: ['eat', 'study', 'brush teeth', 'play'], correctValue: 'brush teeth', isNewVocab: true },
         { id: 'wb1_l3_d2_e13', type: 'identification', instruction: 'Listen: Daniel goes to bed at 9 PM. When does he go to bed?', audioValue: 'Daniel goes to bed at 9 o\'clock at night.', options: ['8 PM', '9 PM', '10 PM', '11 PM'], correctValue: '9 PM', isNewVocab: true },
-        { id: 'wb1_l3_d2_e14', type: 'speaking', instruction: 'Repeat: Sarah takes a shower after waking up.', audioValue: 'Sarah takes a shower after waking up.', correctValue: 'Sarah takes a shower after waking up.' },
-        { id: 'wb1_l3_d2_e15', type: 'speaking', instruction: 'Repeat: Tom eats breakfast at 7:30.', audioValue: 'Tom eats breakfast at 7 thirty.', correctValue: 'Tom eats breakfast at 7 thirty.' }
+        { id: 'wb1_l3_d2_e14', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Sarah takes a shower after waking up.', correctValue: 'Sarah takes a shower after waking up.' },
+        { id: 'wb1_l3_d2_e15', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Tom eats breakfast at 7 thirty.', correctValue: 'Tom eats breakfast at 7 thirty.' }
       ]
     },
     {
       id: "wb1_l3_d3",
       type: "practice",
       exercises: [
-        { id: 'wb1_l3_d3_e1', type: 'identification', instruction: 'Match the audio: You hear "wake up" - which column?', audioValue: 'wake up', options: ['sleep', 'wake up', 'eat', 'walk'], correctValue: 'wake up', isNewVocab: true },
-        { id: 'wb1_l3_d3_e2', type: 'identification', instruction: 'Match the audio: You hear "7 AM" - which column?', audioValue: '7 AM', options: ['6', '7', '8', '9'], correctValue: '7', isNewVocab: true },
-        { id: 'wb1_l3_d3_e3', type: 'identification', instruction: 'Match the audio: You hear "shower" - which column?', audioValue: 'take a shower', options: ['walk', 'eat', 'shower', 'sleep'], correctValue: 'shower' },
-        { id: 'wb1_l3_d3_e4', type: 'identification', instruction: 'Match the audio: You hear "breakfast" - which time?', audioValue: 'breakfast', options: ['7:00', '7:30', '8:00', '8:30'], correctValue: '7:30' },
-        { id: 'wb1_l3_d3_e5', type: 'identification', instruction: 'Match the audio: You hear "study" - which column?', audioValue: 'study', options: ['play', 'study', 'walk', 'eat'], correctValue: 'study' },
-        { id: 'wb1_l3_d3_e6', type: 'identification', instruction: 'Match the audio: You hear "school" - which time?', audioValue: 'school', options: ['7 AM', '9 AM', '3 PM', '9 PM'], correctValue: '9 AM' },
-        { id: 'wb1_l3_d3_e7', type: 'identification', instruction: 'Match the audio: You hear "lunch" - which time?', audioValue: 'lunch', options: ['7 AM', '8 AM', '12 PM', '6 PM'], correctValue: '12 PM' },
-        { id: 'wb1_l3_d3_e8', type: 'identification', instruction: 'Match the audio: You hear "homework" - which column?', audioValue: 'homework', options: ['play', 'homework', 'watch TV', 'sleep'], correctValue: 'homework' },
-        { id: 'wb1_l3_d3_e9', type: 'identification', instruction: 'Match the audio: You hear "dinner" - which time?', audioValue: 'dinner', options: ['12 PM', '3 PM', '6:30 PM', '9 PM'], correctValue: '6:30 PM' },
-        { id: 'wb1_l3_d3_e10', type: 'identification', instruction: 'Match the audio: You hear "television" - which column?', audioValue: 'television', options: ['study', 'watch TV', 'eat', 'walk'], correctValue: 'watch TV', isNewVocab: true },
-        { id: 'wb1_l3_d3_e11', type: 'identification', instruction: 'Match the audio: You hear "bed" - which time?', audioValue: 'bed', options: ['7 AM', '9 PM', '12 PM', '3 PM'], correctValue: '9 PM' },
-        { id: 'wb1_l3_d3_e12', type: 'identification', instruction: 'Match the audio: You hear "walk" - which column?', audioValue: 'walk to school', options: ['car', 'bus', 'walk', 'bike'], correctValue: 'walk' }
+        { id: 'wb1_l3_d3_e1', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'wake up', options: ['sleep', 'wake up', 'eat', 'walk'], correctValue: 'wake up', isNewVocab: true },
+        { id: 'wb1_l3_d3_e2', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: '7 AM', options: ['6', '7', '8', '9'], correctValue: '7', isNewVocab: true },
+        { id: 'wb1_l3_d3_e3', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'take a shower', options: ['walk', 'eat', 'shower', 'sleep'], correctValue: 'shower' },
+        { id: 'wb1_l3_d3_e4', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'breakfast', options: ['7:00', '7:30', '8:00', '8:30'], correctValue: '7:30' },
+        { id: 'wb1_l3_d3_e5', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'study', options: ['play', 'study', 'walk', 'eat'], correctValue: 'study' },
+        { id: 'wb1_l3_d3_e6', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'school', options: ['7 AM', '9 AM', '3 PM', '9 PM'], correctValue: '9 AM' },
+        { id: 'wb1_l3_d3_e7', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'lunch', options: ['7 AM', '8 AM', '12 PM', '6 PM'], correctValue: '12 PM' },
+        { id: 'wb1_l3_d3_e8', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'homework', options: ['play', 'homework', 'watch TV', 'sleep'], correctValue: 'homework' },
+        { id: 'wb1_l3_d3_e9', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'dinner', options: ['12 PM', '3 PM', '6:30 PM', '9 PM'], correctValue: '6:30 PM' },
+        { id: 'wb1_l3_d3_e10', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'television', options: ['study', 'watch TV', 'eat', 'walk'], correctValue: 'watch TV', isNewVocab: true },
+        { id: 'wb1_l3_d3_e11', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'bed', options: ['7 AM', '9 PM', '12 PM', '3 PM'], correctValue: '9 PM' },
+        { id: 'wb1_l3_d3_e12', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'walk to school', options: ['car', 'bus', 'walk', 'bike'], correctValue: 'walk' }
       ]
     },
     {
@@ -102,8 +102,8 @@ export const lesson3: Lesson = {
         { id: 'wb1_l3_d5_e11', type: 'writing', instruction: 'Read and write: Tom brushes his teeth before bed. What does Tom do before bed? Type one action.', audioValue: 'brushes teeth', correctValue: 'brush' },
         { id: 'wb1_l3_d5_e12', type: 'multiple-choice', instruction: 'Read paragraph 4. Mark goes to bed at 9:00 PM. When does he sleep?', displayValue: 'Mark goes to bed at 9:00 PM.\n(Mark vai para a cama às 9:00 da noite.)', audioValue: 'bed at 9 PM', options: ['8 PM', '9 PM', '10 PM', '11 PM'], correctValue: '9 PM' },
         { id: 'wb1_l3_d5_e13', type: 'identification', instruction: 'Read: Daniel has a very busy day! Is his day busy?', displayValue: 'Daniel has a very busy day!\n(Daniel tem um dia muito ocupado!)', audioValue: 'busy day', options: ['lazy', 'busy', 'fun', 'short'], correctValue: 'busy' },
-        { id: 'wb1_l3_d5_e14', type: 'speaking', instruction: 'Read and repeat: Daniel wakes up at 7:00 AM and takes a shower.', audioValue: 'Daniel wakes up at 7 o clock and takes a shower.', correctValue: 'Daniel wakes up at 7 o clock and takes a shower.' },
-        { id: 'wb1_l3_d5_e15', type: 'speaking', instruction: 'Read and repeat: Sarah does homework and watches television.', audioValue: 'Sarah does homework and watches television.', correctValue: 'Sarah does homework and watches television.' }
+        { id: 'wb1_l3_d5_e14', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Daniel wakes up at 7 o clock and takes a shower.', correctValue: 'Daniel wakes up at 7 o clock and takes a shower.' },
+        { id: 'wb1_l3_d5_e15', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Sarah does homework and watches television.', correctValue: 'Sarah does homework and watches television.' }
       ]
     },
     {
@@ -128,26 +128,26 @@ export const lesson3: Lesson = {
       id: "wb1_l3_d7",
       type: "review",
       exercises: [
-        { id: 'wb1_l3_d7_e1', type: 'speaking', instruction: 'Say the sentence: I wake up at 7 AM every day.', audioValue: 'I wake up at 7 AM every day.', correctValue: 'I wake up at 7 o clock every day.' },
-        { id: 'wb1_l3_d7_e2', type: 'speaking', instruction: 'Say the sentence: I take a shower after waking up.', audioValue: 'I take a shower after waking up.', correctValue: 'I take a shower after waking up.' },
-        { id: 'wb1_l3_d7_e3', type: 'speaking', instruction: 'Say the sentence: I eat breakfast at 7:30.', audioValue: 'I eat breakfast at 7 thirty.', correctValue: 'I eat breakfast at 7 thirty.' },
-        { id: 'wb1_l3_d7_e4', type: 'speaking', instruction: 'Say the sentence: I walk to school at 8 AM.', audioValue: 'I walk to school at 8 o clock.', correctValue: 'I walk to school at 8 o clock.' },
-        { id: 'wb1_l3_d7_e5', type: 'speaking', instruction: 'Say the sentence: I study English and Math at school.', audioValue: 'I study English and Math at school.', correctValue: 'I study English and Math at school.' },
-        { id: 'wb1_l3_d7_e6', type: 'speaking', instruction: 'Say the sentence: I have lunch at 12 PM.', audioValue: 'I have lunch at 12 o clock.', correctValue: 'I have lunch at 12 o clock.' },
-        { id: 'wb1_l3_d7_e7', type: 'speaking', instruction: 'Say the sentence: I play sports after school.', audioValue: 'I play sports after school.', correctValue: 'I play sports after school.' },
-        { id: 'wb1_l3_d7_e8', type: 'speaking', instruction: 'Say the sentence: I do my homework at 5 PM.', audioValue: 'I do my homework at 5 o clock.', correctValue: 'I do my homework at 5 o clock.' },
-        { id: 'wb1_l3_d7_e9', type: 'speaking', instruction: 'Say the sentence: I have dinner at 6:30 PM.', audioValue: 'I have dinner at 6 thirty PM.', correctValue: 'I have dinner at 6 thirty.' },
-        { id: 'wb1_l3_d7_e10', type: 'speaking', instruction: 'Say the sentence: I watch television at 7 PM.', audioValue: 'I watch television at 7 o clock.', correctValue: 'I watch television at 7 o clock.' },
-        { id: 'wb1_l3_d7_e11', type: 'speaking', instruction: 'Say the sentence: I brush my teeth before bed.', audioValue: 'I brush my teeth before bed.', correctValue: 'I brush my teeth before bed.' },
-        { id: 'wb1_l3_d7_e12', type: 'speaking', instruction: 'Say the sentence: I go to bed at 9 PM.', audioValue: 'I go to bed at 9 o clock.', correctValue: 'I go to bed at 9 o clock.' },
+        { id: 'wb1_l3_d7_e1', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I wake up at 7 AM every day.', correctValue: 'I wake up at 7 o clock every day.' },
+        { id: 'wb1_l3_d7_e2', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I take a shower after waking up.', correctValue: 'I take a shower after waking up.' },
+        { id: 'wb1_l3_d7_e3', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I eat breakfast at 7 thirty.', correctValue: 'I eat breakfast at 7 thirty.' },
+        { id: 'wb1_l3_d7_e4', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I walk to school at 8 o clock.', correctValue: 'I walk to school at 8 o clock.' },
+        { id: 'wb1_l3_d7_e5', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I study English and Math at school.', correctValue: 'I study English and Math at school.' },
+        { id: 'wb1_l3_d7_e6', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I have lunch at 12 o clock.', correctValue: 'I have lunch at 12 o clock.' },
+        { id: 'wb1_l3_d7_e7', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I play sports after school.', correctValue: 'I play sports after school.' },
+        { id: 'wb1_l3_d7_e8', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I do my homework at 5 o clock.', correctValue: 'I do my homework at 5 o clock.' },
+        { id: 'wb1_l3_d7_e9', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I have dinner at 6 thirty PM.', correctValue: 'I have dinner at 6 thirty.' },
+        { id: 'wb1_l3_d7_e10', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I watch television at 7 o clock.', correctValue: 'I watch television at 7 o clock.' },
+        { id: 'wb1_l3_d7_e11', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I brush my teeth before bed.', correctValue: 'I brush my teeth before bed.' },
+        { id: 'wb1_l3_d7_e12', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I go to bed at 9 o clock.', correctValue: 'I go to bed at 9 o clock.' },
         { id: 'wb1_l3_d7_e13', type: 'identification', instruction: 'What does "wake up" mean?', displayValue: 'fa-bed', audioValue: 'wake up', options: ['sleep', 'wake up', 'stand up', 'lie down'], correctValue: 'wake up', isNewVocab: true },
         { id: 'wb1_l3_d7_e14', type: 'identification', instruction: 'What does "take a shower" mean?', displayValue: 'fa-shower', audioValue: 'take a shower', options: ['wash hands', 'wash body', 'drink water', 'put on clothes'], correctValue: 'wash body', isNewVocab: true },
         { id: 'wb1_l3_d7_e15', type: 'identification', instruction: 'Which is a meal?', audioValue: 'breakfast', options: ['walk', 'study', 'breakfast', 'play'], correctValue: 'breakfast' },
         { id: 'wb1_l3_d7_e16', type: 'identification', instruction: 'Which is homework?', audioValue: 'homework', options: ['school', 'homework', 'walk', 'shower'], correctValue: 'homework' },
-        { id: 'wb1_l3_d7_e17', type: 'writing', instruction: 'Write: When does Daniel wake up? Type the time (example: 7).', audioValue: '7 AM', correctValue: '7' },
-        { id: 'wb1_l3_d7_e18', type: 'writing', instruction: 'Write: What does Sarah do at 5 PM? Type the activity.', audioValue: 'homework', correctValue: 'homework' },
-        { id: 'wb1_l3_d7_e19', type: 'writing', instruction: 'Write: How does Daniel go to school?', audioValue: 'walk', correctValue: 'walk' },
-        { id: 'wb1_l3_d7_e20', type: 'speaking', instruction: 'Say: My daily routine is very busy.', audioValue: 'My daily routine is very busy.', correctValue: 'My daily routine is very busy.' }
+        { id: 'wb1_l3_d7_e17', type: 'writing', instruction: 'Type in words what you hear.', audioValue: '7 AM', correctValue: '7' },
+        { id: 'wb1_l3_d7_e18', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'homework', correctValue: 'homework' },
+        { id: 'wb1_l3_d7_e19', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'walk', correctValue: 'walk' },
+        { id: 'wb1_l3_d7_e20', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'My daily routine is very busy.', correctValue: 'My daily routine is very busy.' }
       ]
     }
   ]

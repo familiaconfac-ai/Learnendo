@@ -23,6 +23,13 @@ const COLOR_STYLE_MAP: Record<string, string> = {
   'White': 'text-slate-200'
 };
 
+// Maps color name strings to hex values for visual color-swatch answer options.
+const OPTION_COLOR_HEX: Record<string, string> = {
+  red: '#ef4444', blue: '#3b82f6', green: '#22c55e', yellow: '#eab308',
+  orange: '#f97316', black: '#1e1e2e', white: '#e2e8f0', purple: '#a855f7',
+  pink: '#ec4899', brown: '#92400e', gray: '#6b7280', grey: '#6b7280',
+};
+
 const NUMBER_MAP: Record<string, string> = {
   'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
   'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19', 'twenty': '20',
@@ -333,6 +340,17 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const isSentenceWriting = item.type === 'writing' &&
       item.instruction.toLowerCase().includes('full sentence');
 
+    // Reading exercises: displayValue contains a multi-line passage with translations
+    const isReadingExercise = !!(item.displayValue?.includes('\n') && item.displayValue?.includes('('));
+
+    // Color-option detection: all shuffled options are known color names → render swatches
+    const isColorOptions = (item.type === 'multiple-choice' || item.type === 'identification') &&
+      shuffledOptions.length > 0 &&
+      shuffledOptions.every(opt => OPTION_COLOR_HEX[opt.toLowerCase()] !== undefined);
+
+    // Pure color listening: no icon/image, just the audio + color squares (no text labels)
+    const isPureColorListening = isColorOptions && !item.displayValue;
+
     // Refs for STT lifecycle — prevents stale callbacks from bleeding across exercises
     const recRef = useRef<any>(null);
     const currentItemIdRef = useRef<string>(item.id);
@@ -554,8 +572,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         const colorClass = COLOR_STYLE_MAP[item.correctValue] || 'text-blue-900';
         return (
           <div className="flex flex-col items-center gap-4 animate-in fade-in duration-700">
-            <div className="w-32 h-32 bg-slate-50 rounded-full flex items-center justify-center border-4 border-slate-100 shadow-inner">
-              <i className={`fas ${item.displayValue} text-6xl ${colorClass}`}></i>
+            <div className={`${isColorOptions ? 'w-20 h-20' : 'w-32 h-32'} bg-slate-50 rounded-full flex items-center justify-center border-4 border-slate-100 shadow-inner`}>
+              <i className={`fas ${item.displayValue} ${isColorOptions ? 'text-4xl' : 'text-6xl'} ${colorClass}`}></i>
             </div>
           </div>
         );
@@ -567,8 +585,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       if (isReadingText) {
         return (
           <div className="w-full max-w-sm mx-auto mb-4">
-            <div className="max-h-[220px] overflow-y-auto bg-slate-800 p-4 rounded-2xl border-2 border-slate-600 shadow-inner">
-              <div className={`text-lg font-bold text-center transition-colors duration-500 whitespace-pre-line ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
+            <div className="max-h-[260px] overflow-y-auto bg-slate-800 p-5 rounded-2xl border-2 border-slate-600 shadow-inner">
+              <div className={`text-xl font-bold text-center transition-colors duration-500 whitespace-pre-line leading-relaxed ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
                 {item.displayValue}
               </div>
             </div>
@@ -589,7 +607,16 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     return (
       <div className="fixed inset-x-0 top-[68px] bottom-[56px] bg-slate-900 z-30 flex flex-col items-center outline-none">
         <div className="w-full max-sm:px-4 max-w-sm px-6 pt-5">
-          <div className="flex items-center gap-4 mb-4">
+          <div className="flex items-center gap-3 mb-4">
+            {onBack && (
+              <button
+                onPointerDown={(e) => { e.preventDefault(); onBack(); }}
+                className="w-9 h-9 flex items-center justify-center text-white rounded-xl active:opacity-60 shrink-0 [touch-action:manipulation]"
+                aria-label="Back"
+              >
+                <img src={backIcon} className="w-5 h-5 brightness-0 invert" alt="Back" />
+              </button>
+            )}
             <div className="flex-1 h-3 bg-slate-700 rounded-full overflow-hidden shadow-inner">
               <div
                 className="h-full bg-green-500 transition-all duration-300"
@@ -602,15 +629,22 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         <div className="flex-1 w-full max-w-sm px-6 flex flex-col items-center pt-4 pb-40 overflow-y-auto no-scrollbar">
           {/* Lesson + exercise context header — scrolls with content */}
           <div className="flex flex-col items-center mb-3 w-full">
-            <span className="text-xl font-black text-white tracking-tight leading-tight">Lesson {lessonId}</span>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+            <span className="text-2xl font-black text-yellow-400 tracking-tight leading-tight">Lesson {lessonId}</span>
+            <span className="text-sm font-semibold text-white uppercase tracking-widest mt-0.5">
               {dayNumber != null && totalDays != null
                 ? `Exercise ${dayNumber} of ${totalDays}`
                 : `Exercise ${currentIdx + 1} of ${totalItems}`}
             </span>
           </div>
           <div className="relative group mb-4 cursor-help w-full" onClick={() => setShowHint(!showHint)}>
-            {item.type === 'writing' ? (
+            {isReadingExercise ? (
+              <div className="flex flex-col items-center gap-2">
+                <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">Reading</span>
+                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
+                  {item.instruction.replace(/^(Read and write:|Read:)\s*/i, '')}
+                </h2>
+              </div>
+            ) : item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">Writing</span>
                 <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
@@ -675,6 +709,40 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
             {item.displayValue && !isShadowing && renderDisplay()}
 
             {isMultipleChoice && shuffledOptions.length > 0 ? (
+              isColorOptions ? (
+                <div className="grid grid-cols-2 gap-3 w-full">
+                  {shuffledOptions.map((opt) => {
+                    const hex = OPTION_COLOR_HEX[opt.toLowerCase()] ?? '#6b7280';
+                    const isSelected = selectedOption === opt;
+                    return (
+                      <button
+                        key={opt}
+                        disabled={showFooter && feedback === 'correct'}
+                        onClick={() => handleOptionClick(opt)}
+                        aria-label={opt}
+                        className={`rounded-2xl overflow-hidden border-4 transition-all [touch-action:manipulation] ${isSelected ? 'border-blue-400 shadow-lg ring-2 ring-blue-400' : 'border-slate-700 hover:border-blue-400'}`}
+                      >
+                        {isPureColorListening ? (
+                          <div className="h-24 flex items-center justify-center" style={{ backgroundColor: hex }}>
+                            {isSelected && (
+                              <div className="w-8 h-8 rounded-full bg-black/30 flex items-center justify-center">
+                                <i className="fas fa-check text-white text-sm"></i>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <>
+                            <div className="h-11" style={{ backgroundColor: hex }} />
+                            <div className={`py-2 text-center text-sm font-black uppercase tracking-wide ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-800 text-white'}`}>
+                              {opt}
+                            </div>
+                          </>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
               <div className="grid grid-cols-2 gap-2 w-full">
                 {shuffledOptions.map((opt) => (
                   <button
@@ -687,6 +755,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                   </button>
                 ))}
               </div>
+              )
             ) : item.type === 'speaking' ? (
               <div className="w-full flex flex-col gap-4">
                 {/* Auto-growing textarea for speaking exercises - moved below buttons */}
@@ -739,15 +808,21 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                         🔊 Listen to the audio for help!
                       </div>
                     )}
-                    {/* ✅ Show translation after correct answer */}
+                    {/* Show translation on both correct and wrong feedback */}
                     {feedback === 'correct' && translation && (
                       <div className="text-green-400 font-bold text-xs mt-2 animate-in fade-in italic">
-                        Translation: {translation}
+                        {translation}
+                      </div>
+                    )}
+                    {feedback === 'wrong' && translation && (
+                      <div className="text-red-300 font-bold text-xs mt-2 animate-in fade-in italic">
+                        {translation}
                       </div>
                     )}
                   </div>
                   <button
-                    onClick={() => {
+                    onPointerDown={(e) => {
+                      e.preventDefault();
                       if (feedback === 'correct') {
                         const cb = pendingOnResultRef.current;
                         pendingOnResultRef.current = null;

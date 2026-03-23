@@ -10,14 +10,14 @@ export const lesson2: Lesson = {
       exercises: [
         { id: 'wb1_l2_d1_e1', type: 'multiple-choice', instruction: 'Is the vowel in "cake" short or long?', audioValue: 'cake', options: ['Short','Long'], correctValue: 'Long', isNewVocab: true },
         { id: 'wb1_l2_d1_e2', type: 'multiple-choice', instruction: 'Is the vowel in "cup" short or long?', audioValue: 'cup', options: ['Short','Long'], correctValue: 'Short' },
-        { id: 'wb1_l2_d1_e3', type: 'writing', instruction: 'Write what you hear:', audioValue: 'cat', correctValue: 'cat' },
-        { id: 'wb1_l2_d1_e4', type: 'writing', instruction: 'Write what you hear:', audioValue: 'bed', correctValue: 'bed' },
-        { id: 'wb1_l2_d1_e5', type: 'writing', instruction: 'Write what you hear:', audioValue: 'bike', correctValue: 'bike' },
-        { id: 'wb1_l2_d1_e6', type: 'writing', instruction: 'Write what you hear:', audioValue: 'note', correctValue: 'note' },
-        { id: 'wb1_l2_d1_e7', type: 'writing', instruction: 'Write what you hear:', audioValue: 'sun', correctValue: 'sun' },
-        { id: 'wb1_l2_d1_e8', type: 'identification', instruction: 'Listen and pick the correct word:', audioValue: 'apple', options: ['apple','orange','tree','sun'], correctValue: 'apple' },
-        { id: 'wb1_l2_d1_e9', type: 'identification', instruction: 'Listen and pick the correct word:', audioValue: 'tree', options: ['rock','tree','water','kite'], correctValue: 'tree' },
-        { id: 'wb1_l2_d1_e10', type: 'identification', instruction: 'Listen and pick the correct word:', audioValue: 'rock', options: ['sun','water','rock','mountain'], correctValue: 'rock' }
+        { id: 'wb1_l2_d1_e3', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'cat', correctValue: 'cat' },
+        { id: 'wb1_l2_d1_e4', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'bed', correctValue: 'bed' },
+        { id: 'wb1_l2_d1_e5', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'bike', correctValue: 'bike' },
+        { id: 'wb1_l2_d1_e6', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'note', correctValue: 'note' },
+        { id: 'wb1_l2_d1_e7', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'sun', correctValue: 'sun' },
+        { id: 'wb1_l2_d1_e8', type: 'identification', instruction: 'Listen and pick the correct word.', audioValue: 'apple', options: ['apple','orange','tree','sun'], correctValue: 'apple' },
+        { id: 'wb1_l2_d1_e9', type: 'identification', instruction: 'Listen and pick the correct word.', audioValue: 'tree', options: ['rock','tree','water','kite'], correctValue: 'tree' },
+        { id: 'wb1_l2_d1_e10', type: 'identification', instruction: 'Listen and pick the correct word.', audioValue: 'rock', options: ['sun','water','rock','mountain'], correctValue: 'rock' }
       ]
     },
     {
@@ -52,14 +52,14 @@ export const lesson2: Lesson = {
         { id: 'wb1_l2_d3_e6', type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-kite', audioValue: 'kite', options: ['kite','ball','plane','bird'], correctValue: 'kite' },
         { id: 'wb1_l2_d3_e7', type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-orange', audioValue: 'orange', options: ['orange','apple','lemon','grape'], correctValue: 'orange' },
         { id: 'wb1_l2_d3_e8', type: 'multiple-choice', instruction: 'What is this?', displayValue: 'fa-water', audioValue: 'water', options: ['water','juice','milk','soda'], correctValue: 'water' },
-        { id: 'wb1_l2_d3_e9', type: 'writing', instruction: 'Write what you hear:', audioValue: 'sun', correctValue: 'sun' },
-        { id: 'wb1_l2_d3_e10', type: 'writing', instruction: 'Write what you hear:', audioValue: 'toes', correctValue: 'toes' },
-        { id: 'wb1_l2_d3_e11', type: 'writing', instruction: 'Write what you hear:', audioValue: 'rock', correctValue: 'rock' },
-        { id: 'wb1_l2_d3_e12', type: 'writing', instruction: 'Write what you hear:', audioValue: 'apple', correctValue: 'apple' },
-        { id: 'wb1_l2_d3_e13', type: 'writing', instruction: 'Write what you hear:', audioValue: 'tree', correctValue: 'tree' },
-        { id: 'wb1_l2_d3_e14', type: 'writing', instruction: 'Write what you hear:', audioValue: 'kite', correctValue: 'kite' },
-        { id: 'wb1_l2_d3_e15', type: 'writing', instruction: 'Write what you hear:', audioValue: 'orange', correctValue: 'orange' },
-        { id: 'wb1_l2_d3_e16', type: 'writing', instruction: 'Write what you hear:', audioValue: 'water', correctValue: 'water' }
+        { id: 'wb1_l2_d3_e9', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'sun', correctValue: 'sun' },
+        { id: 'wb1_l2_d3_e10', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'toes', correctValue: 'toes' },
+        { id: 'wb1_l2_d3_e11', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'rock', correctValue: 'rock' },
+        { id: 'wb1_l2_d3_e12', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'apple', correctValue: 'apple' },
+        { id: 'wb1_l2_d3_e13', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'tree', correctValue: 'tree' },
+        { id: 'wb1_l2_d3_e14', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'kite', correctValue: 'kite' },
+        { id: 'wb1_l2_d3_e15', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'orange', correctValue: 'orange' },
+        { id: 'wb1_l2_d3_e16', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'water', correctValue: 'water' }
       ]
     },
     {
@@ -68,14 +68,14 @@ export const lesson2: Lesson = {
       exercises: [
         { id: 'wb1_l2_d4_e1', type: 'identification', instruction: 'What is this?', displayValue: 'fa-apple-whole', audioValue: 'apple', options: ['orange','apple','banana','grape'], correctValue: 'apple', isNewVocab: true },
         { id: 'wb1_l2_d4_e2', type: 'identification', instruction: 'What is this?', displayValue: 'fa-water', audioValue: 'water', options: ['water','juice','milk','soda'], correctValue: 'water' },
-        { id: 'wb1_l2_d4_e3', type: 'speaking', instruction: 'Say the word: apple', audioValue: 'apple', correctValue: 'apple' },
-        { id: 'wb1_l2_d4_e4', type: 'speaking', instruction: 'Say the word: water', audioValue: 'water', correctValue: 'water' },
-        { id: 'wb1_l2_d4_e5', type: 'writing', instruction: 'Write what you hear:', audioValue: 'he', correctValue: 'he' },
-        { id: 'wb1_l2_d4_e6', type: 'writing', instruction: 'Write what you hear:', audioValue: 'me', correctValue: 'me' },
-        { id: 'wb1_l2_d4_e7', type: 'identification', instruction: 'Listen and pick:', audioValue: 'rock', options: ['rock','sand','mountain','stone'], correctValue: 'rock' },
-        { id: 'wb1_l2_d4_e8', type: 'identification', instruction: 'Listen and pick:', audioValue: 'kite', options: ['kite','ball','plane','toy'], correctValue: 'kite' },
-        { id: 'wb1_l2_d4_e9', type: 'speaking', instruction: 'Repeat: rock', audioValue: 'rock', correctValue: 'rock' },
-        { id: 'wb1_l2_d4_e10', type: 'speaking', instruction: 'Repeat: kite', audioValue: 'kite', correctValue: 'kite' }
+        { id: 'wb1_l2_d4_e3', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'apple', correctValue: 'apple' },
+        { id: 'wb1_l2_d4_e4', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'water', correctValue: 'water' },
+        { id: 'wb1_l2_d4_e5', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'he', correctValue: 'he' },
+        { id: 'wb1_l2_d4_e6', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'me', correctValue: 'me' },
+        { id: 'wb1_l2_d4_e7', type: 'identification', instruction: 'Listen and pick the correct word.', audioValue: 'rock', options: ['rock','sand','mountain','stone'], correctValue: 'rock' },
+        { id: 'wb1_l2_d4_e8', type: 'identification', instruction: 'Listen and pick the correct word.', audioValue: 'kite', options: ['kite','ball','plane','toy'], correctValue: 'kite' },
+        { id: 'wb1_l2_d4_e9', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'rock', correctValue: 'rock' },
+        { id: 'wb1_l2_d4_e10', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'kite', correctValue: 'kite' }
       ]
     },
     {
@@ -98,33 +98,33 @@ export const lesson2: Lesson = {
       id: "wb1_l2_d6",
       type: "practice",
       exercises: [
-        { id: 'wb1_l2_d6_e1', type: 'speaking', instruction: 'Repeat the sentence:', audioValue: 'The sun is shining.', correctValue: 'The sun is shining.' },
-        { id: 'wb1_l2_d6_e2', type: 'speaking', instruction: 'Repeat the sentence:', audioValue: 'A boy plays with a kite.', correctValue: 'A boy plays with a kite.' },
-        { id: 'wb1_l2_d6_e3', type: 'speaking', instruction: 'Repeat the sentence:', audioValue: 'He eats an apple.', correctValue: 'He eats an apple.' },
-        { id: 'wb1_l2_d6_e4', type: 'speaking', instruction: 'Repeat the sentence:', audioValue: 'He drinks water.', correctValue: 'He drinks water.' },
-        { id: 'wb1_l2_d6_e5', type: 'speaking', instruction: 'Repeat the sentence:', audioValue: 'He steps on a rock.', correctValue: 'He steps on a rock.' },
-        { id: 'wb1_l2_d6_e6', type: 'speaking', instruction: 'Repeat the sentence:', audioValue: 'He wiggles his toes.', correctValue: 'He wiggles his toes.' }
+        { id: 'wb1_l2_d6_e1', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'The sun is shining.', correctValue: 'The sun is shining.' },
+        { id: 'wb1_l2_d6_e2', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'A boy plays with a kite.', correctValue: 'A boy plays with a kite.' },
+        { id: 'wb1_l2_d6_e3', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'He eats an apple.', correctValue: 'He eats an apple.' },
+        { id: 'wb1_l2_d6_e4', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'He drinks water.', correctValue: 'He drinks water.' },
+        { id: 'wb1_l2_d6_e5', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'He steps on a rock.', correctValue: 'He steps on a rock.' },
+        { id: 'wb1_l2_d6_e6', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'He wiggles his toes.', correctValue: 'He wiggles his toes.' }
       ]
     },
     {
       id: "wb1_l2_d7",
       type: "review",
       exercises: [
-        { id: 'wb1_l2_d7_e1', type: 'identification', instruction: 'What is this?', displayValue: 'fa-sun', audioValue: 'What is this?', options: ['sun','moon','star','cloud'], correctValue: 'sun' },
-        { id: 'wb1_l2_d7_e2', type: 'speaking', instruction: 'Say: sun', audioValue: 'sun', correctValue: 'sun' },
-        { id: 'wb1_l2_d7_e3', type: 'identification', instruction: 'What is this?', displayValue: 'fa-tree', audioValue: 'What is this?', options: ['tree','bush','flower','rock'], correctValue: 'tree' },
-        { id: 'wb1_l2_d7_e4', type: 'speaking', instruction: 'Say: tree', audioValue: 'tree', correctValue: 'tree' },
-        { id: 'wb1_l2_d7_e5', type: 'identification', instruction: 'What is this?', displayValue: 'fa-apple-whole', audioValue: 'What is this?', options: ['apple','orange','banana','grape'], correctValue: 'apple' },
-        { id: 'wb1_l2_d7_e6', type: 'speaking', instruction: 'Say: apple', audioValue: 'apple', correctValue: 'apple' },
+        { id: 'wb1_l2_d7_e1', type: 'identification', instruction: 'What is this?', displayValue: 'fa-sun', audioValue: 'sun', options: ['sun','moon','star','cloud'], correctValue: 'sun' },
+        { id: 'wb1_l2_d7_e2', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'sun', correctValue: 'sun' },
+        { id: 'wb1_l2_d7_e3', type: 'identification', instruction: 'What is this?', displayValue: 'fa-tree', audioValue: 'tree', options: ['tree','bush','flower','rock'], correctValue: 'tree' },
+        { id: 'wb1_l2_d7_e4', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'tree', correctValue: 'tree' },
+        { id: 'wb1_l2_d7_e5', type: 'identification', instruction: 'What is this?', displayValue: 'fa-apple-whole', audioValue: 'apple', options: ['apple','orange','banana','grape'], correctValue: 'apple' },
+        { id: 'wb1_l2_d7_e6', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'apple', correctValue: 'apple' },
         { id: 'wb1_l2_d7_e7', type: 'multiple-choice', instruction:'It is ___ apple', options:['a','an'], correctValue:'an', audioValue:'apple' },
-        { id: 'wb1_l2_d7_e8', type: 'identification', instruction: 'What is this?', displayValue: 'fa-foot', audioValue: 'What is this?', options: ['toes','fingers','nose','foot'], correctValue: 'toes' },
-        { id: 'wb1_l2_d7_e9', type: 'speaking', instruction: 'Say: toes', audioValue: 'toes', correctValue: 'toes' },
+        { id: 'wb1_l2_d7_e8', type: 'identification', instruction: 'What is this?', displayValue: 'fa-foot', audioValue: 'toes', options: ['toes','fingers','nose','foot'], correctValue: 'toes' },
+        { id: 'wb1_l2_d7_e9', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'toes', correctValue: 'toes' },
         { id: 'wb1_l2_d7_e10', type: 'multiple-choice', instruction:'It is ___ orange', options:['a','an'], correctValue:'an', audioValue:'orange' },
-        { id: 'wb1_l2_d7_e11', type: 'writing', instruction: 'Write what you hear:', audioValue: 'sun', correctValue: 'sun' },
-        { id: 'wb1_l2_d7_e12', type: 'writing', instruction: 'Write what you hear:', audioValue: 'tree', correctValue: 'tree' },
-        { id: 'wb1_l2_d7_e13', type: 'writing', instruction: 'Write what you hear:', audioValue: 'apple', correctValue: 'apple' },
-        { id: 'wb1_l2_d7_e14', type: 'writing', instruction: 'Write what you hear:', audioValue: 'water', correctValue: 'water' },
-        { id: 'wb1_l2_d7_e15', type: 'speaking', instruction: 'Repeat the sentence: The sun is shining.', audioValue: 'The sun is shining.', correctValue: 'The sun is shining.' }
+        { id: 'wb1_l2_d7_e11', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'sun', correctValue: 'sun' },
+        { id: 'wb1_l2_d7_e12', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'tree', correctValue: 'tree' },
+        { id: 'wb1_l2_d7_e13', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'apple', correctValue: 'apple' },
+        { id: 'wb1_l2_d7_e14', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'water', correctValue: 'water' },
+        { id: 'wb1_l2_d7_e15', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'The sun is shining.', correctValue: 'The sun is shining.' }
       ]
     }
   ]
