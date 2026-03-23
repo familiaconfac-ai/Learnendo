@@ -328,9 +328,15 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const isShadowing = item.type === 'speaking' &&
       !item.instruction.toLowerCase().includes('listen and answer');
 
+    // Math writing exercises that require a full English sentence answer
+    const isSentenceWriting = item.type === 'writing' &&
+      item.instruction.toLowerCase().includes('full sentence');
+
     // Refs for STT lifecycle — prevents stale callbacks from bleeding across exercises
     const recRef = useRef<any>(null);
     const currentItemIdRef = useRef<string>(item.id);
+    // Stores the onResult action prepared at CHECK time so Continue never reads stale state
+    const pendingOnResultRef = useRef<(() => void) | null>(null);
 
     useEffect(() => {
       // Cancel any ongoing STT from the previous exercise so its callbacks can't
@@ -340,6 +346,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         recRef.current = null;
       }
       currentItemIdRef.current = item.id;
+      pendingOnResultRef.current = null;
 
       setUserInput('');
       setIsListening(false);
@@ -424,6 +431,11 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     };
 
     const handleCheck = () => {
+      // Dismiss keyboard immediately so the footer is at its final position
+      // before the CONTINUE button renders — prevents the "double-tap" ghost click.
+      inputRef.current?.blur();
+      textareaRef.current?.blur();
+
       const rawInput = userInput || selectedOption || '';
 
       // Dictation writing: reject pure numeric input — student must type words
@@ -434,6 +446,37 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         setPraiseText("Type the word!");
         speak("Type the word, not a digit.");
         setHasWrongAttempt(true);
+        return;
+      }
+
+      // Sentence writing (math): answer must be a complete English sentence
+      if (isSentenceWriting) {
+        if (/^\s*\d[\d\s]*$/.test(rawInput)) {
+          setFeedback('wrong');
+          setShowFooter(true);
+          new Audio(ERR_SOUND).play().catch(() => {});
+          setPraiseText("Use a full sentence!");
+          speak("Please write a full sentence.");
+          setHasWrongAttempt(true);
+          return;
+        }
+        const normSentence = (s: string) =>
+          s.trim().toLowerCase().replace(/it'?s\s/g, 'it is ').replace(/[.,!?']/g, '').trim();
+        const isSentenceCorrect = normSentence(rawInput) === normSentence(item.correctValue);
+        setFeedback(isSentenceCorrect ? 'correct' : 'wrong');
+        setShowFooter(true);
+        if (isSentenceCorrect) {
+          pendingOnResultRef.current = () => onResult(true, rawInput);
+          new Audio(SUCCESS_SOUND).play().catch(() => {});
+          const p = ["Excellent!", "Great job!", "Perfect!", "Spot on!"][Math.floor(Math.random() * 4)];
+          setPraiseText(p);
+          speak(p);
+        } else {
+          new Audio(ERR_SOUND).play().catch(() => {});
+          setPraiseText("Try again!");
+          speak("No, that's not it.");
+          setHasWrongAttempt(true);
+        }
         return;
       }
 
@@ -450,6 +493,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       setShowFooter(true);
 
       if (isCorrect) {
+        pendingOnResultRef.current = () => onResult(true, rawInput);
         new Audio(SUCCESS_SOUND).play().catch(() => { });
         const p = ["Excellent!", "Great job!", "Perfect!", "Spot on!"][Math.floor(Math.random() * 4)];
         setPraiseText(p);
@@ -469,7 +513,9 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         if (showFooter) {
           // If feedback is showing, trigger CONTINUE/GOT IT
           if (feedback === 'correct') {
-            onResult(true, userInput || selectedOption || '');
+            const cb = pendingOnResultRef.current;
+            pendingOnResultRef.current = null;
+            cb?.();
           } else {
             setFeedback('none');
             setShowFooter(false);
@@ -544,7 +590,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           </div>
         </div>
 
-        <div className="flex-1 w-full max-w-sm px-6 flex flex-col justify-center pb-40">
+        <div className={`flex-1 w-full max-w-sm px-6 flex flex-col pb-40 ${item.type === 'writing' ? 'justify-start pt-6 overflow-y-auto' : 'justify-center'}`}>
           <div className="relative group mb-8 cursor-help" onClick={() => setShowHint(!showHint)}>
             {item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
@@ -586,12 +632,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           <div className="flex flex-col items-center gap-6">
             {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
-              {item.audioValue && (item.type !== 'writing' || isDictationWriting || hasWrongAttempt) && (
+              {item.audioValue && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
                 <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
                   <img src={speakerIcon} className="w-6 h-6 brightness-0 invert" alt="Play" />
                 </button>
               )}
-              {item.audioValue && (item.type !== 'writing' || isDictationWriting || hasWrongAttempt) && (
+              {item.audioValue && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
                 <button onClick={() => speak(item.audioValue, 0.5)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
                   <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
@@ -686,7 +732,9 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                   <button
                     onClick={() => {
                       if (feedback === 'correct') {
-                        onResult(true, userInput || selectedOption || '');
+                        const cb = pendingOnResultRef.current;
+                        pendingOnResultRef.current = null;
+                        cb?.();
                       } else {
                         setFeedback('none');
                         setShowFooter(false);
