@@ -723,7 +723,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                         className={`rounded-2xl overflow-hidden border-4 transition-all [touch-action:manipulation] ${isSelected ? 'border-blue-400 shadow-lg ring-2 ring-blue-400' : 'border-slate-700 hover:border-blue-400'}`}
                       >
                         {isPureColorListening ? (
-                          <div className="h-24 flex items-center justify-center" style={{ backgroundColor: hex }}>
+                          <div className="h-16 flex items-center justify-center" style={{ backgroundColor: hex }}>
                             {isSelected && (
                               <div className="w-8 h-8 rounded-full bg-black/30 flex items-center justify-center">
                                 <i className="fas fa-check text-white text-sm"></i>
@@ -810,12 +810,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                     )}
                     {/* Show translation on both correct and wrong feedback */}
                     {feedback === 'correct' && translation && (
-                      <div className="text-green-400 font-bold text-xs mt-2 animate-in fade-in italic">
+                      <div className="text-white font-bold text-xs mt-2 animate-in fade-in italic">
                         {translation}
                       </div>
                     )}
                     {feedback === 'wrong' && translation && (
-                      <div className="text-red-300 font-bold text-xs mt-2 animate-in fade-in italic">
+                      <div className="text-white font-bold text-xs mt-2 animate-in fade-in italic">
                         {translation}
                       </div>
                     )}
