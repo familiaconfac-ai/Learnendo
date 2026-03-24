@@ -644,6 +644,14 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                   {item.instruction.replace(/^(Read and write:|Read:)\s*/i, '')}
                 </h2>
               </div>
+            ) : item.type === 'writing' && isSentenceWriting ? (
+              <div className="flex flex-col items-center gap-2">
+                <span className="inline-block px-3 py-1 text-base font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">Writing</span>
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">Answer in a Full Sentence</p>
+                <h2 className="text-xl sm:text-2xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
+                  {item.instruction.replace(/\s*answer in a full sentence\.?/i, '').trim()}
+                </h2>
+              </div>
             ) : item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">Writing</span>

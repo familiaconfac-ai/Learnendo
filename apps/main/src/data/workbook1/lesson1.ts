@@ -41,42 +41,50 @@ export const lesson1: Lesson = {
       id: "wb1_l1_d2",
       type: "practice",
       exercises: [
+        // 3 identification: hear number → pick digit
         { id: 'wb1_l1_d2_e1',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Fourteen',  options: ['4', '14', '40', '44'],  correctValue: '14', isNewVocab: true },
         { id: 'wb1_l1_d2_e2',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Sixteen',   options: ['6', '16', '60', '66'],  correctValue: '16' },
-        { id: 'wb1_l1_d2_e3',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Seventeen', options: ['7', '17', '70', '77'],  correctValue: '17' },
-        { id: 'wb1_l1_d2_e4',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'One',                                         correctValue: 'one'      },
-        { id: 'wb1_l1_d2_e5',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Two',                                         correctValue: 'two'      },
-        { id: 'wb1_l1_d2_e6',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Five',                                        correctValue: 'five'     },
-        { id: 'wb1_l1_d2_e7',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', displayValue: '15', audioValue: 'Fifteen',             correctValue: 'fifteen'  },
-        { id: 'wb1_l1_d2_e8',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', displayValue: '19', audioValue: 'Nineteen',            correctValue: 'nineteen' },
-        { id: 'wb1_l1_d2_e9',  type: 'writing',        instruction: 'What is nine plus nine? Answer in a full sentence.',          audioValue: 'What is nine plus nine',    correctValue: 'it is eighteen' },
-        { id: 'wb1_l1_d2_e10', type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Ten',                                         correctValue: 'ten'      },
-        { id: 'wb1_l1_d2_e11', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Four',  options: ['4', '14', '40', '44'],  correctValue: '4'  },
-        { id: 'wb1_l1_d2_e12', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Six',   options: ['6', '16', '60', '66'],  correctValue: '6'  },
-        { id: 'wb1_l1_d2_e13', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Seven', options: ['7', '17', '70', '77'],  correctValue: '7'  },
-        { id: 'wb1_l1_d2_e14', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Nine',  options: ['9', '19', '90', '99'],  correctValue: '9'  },
-        { id: 'wb1_l1_d2_e15', type: 'writing',        instruction: 'What is six plus nine? Answer in a full sentence.',          audioValue: 'What is six plus nine',     correctValue: 'it is fifteen' }
+        // Sentence shadowing: hear & repeat a complete sentence
+        { id: 'wb1_l1_d2_e3',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', audioValue: "It's fifteen.", correctValue: "it's fifteen" },
+        // Dictation writing: write the word you hear
+        { id: 'wb1_l1_d2_e4',  type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Ten',       correctValue: 'ten' },
+        // Math sentence writing: PLUS (+)
+        { id: 'wb1_l1_d2_e5',  type: 'writing',        instruction: 'What is nine plus nine? Answer in a full sentence.',   audioValue: 'What is nine plus nine',    correctValue: 'it is eighteen' },
+        // Shadowing the full math question
+        { id: 'wb1_l1_d2_e6',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', audioValue: 'What is five plus five?',  correctValue: 'what is five plus five' },
+        // identification
+        { id: 'wb1_l1_d2_e7',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Seventeen', options: ['7', '17', '70', '77'],  correctValue: '17' },
+        // Math sentence writing: MINUS (-)
+        { id: 'wb1_l1_d2_e8',  type: 'writing',        instruction: 'What is twenty minus one? Answer in a full sentence.',  audioValue: 'What is twenty minus one',  correctValue: 'it is nineteen' },
+        // Sentence shadowing
+        { id: 'wb1_l1_d2_e9',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', audioValue: "It's twenty.", correctValue: "it's twenty" },
+        // Dictation writing
+        { id: 'wb1_l1_d2_e10', type: 'writing',        instruction: 'Type in words what you hear.',        audioValue: 'Nineteen',  correctValue: 'nineteen' },
       ]
     },
     {
       id: "wb1_l1_d3",
       type: "practice",
       exercises: [
+        // 3 identification: hear number → pick digit
         { id: 'wb1_l1_d3_e1',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Eleven',    options: ['1', '11', '12', '21'],  correctValue: '11', isNewVocab: true },
         { id: 'wb1_l1_d3_e2',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Twelve',    options: ['2', '12', '20', '22'],  correctValue: '12' },
-        { id: 'wb1_l1_d3_e3',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Thirteen',  options: ['3', '13', '30', '33'],  correctValue: '13' },
-        { id: 'wb1_l1_d3_e4',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Fifteen',   options: ['5', '15', '50', '55'],  correctValue: '15' },
-        { id: 'wb1_l1_d3_e5',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Twenty',    options: ['12', '20', '2', '22'],  correctValue: '20' },
-        { id: 'wb1_l1_d3_e6',  type: 'writing',        instruction: 'What is ten plus five? Answer in a full sentence.',          audioValue: 'What is ten plus five',        correctValue: 'it is fifteen' },
-        { id: 'wb1_l1_d3_e7',  type: 'speaking',        instruction: 'Listen and repeat exactly as you hear.',           displayValue: '20', audioValue: 'Twenty',   correctValue: 'twenty'   },
-        { id: 'wb1_l1_d3_e8',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Fourteen',  options: ['4', '14', '40', '44'],  correctValue: '14' },
-        { id: 'wb1_l1_d3_e9',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Sixteen',   options: ['6', '16', '60', '66'],  correctValue: '16' },
-        { id: 'wb1_l1_d3_e10', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Seventeen', options: ['7', '17', '70', '77'],  correctValue: '17' },
-        { id: 'wb1_l1_d3_e11', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Eighteen',  options: ['8', '18', '80', '88'],  correctValue: '18' },
-        { id: 'wb1_l1_d3_e12', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Nineteen',  options: ['9', '19', '90', '99'],  correctValue: '19' },
-        { id: 'wb1_l1_d3_e13', type: 'writing',        instruction: 'What is eleven plus nine? Answer in a full sentence.',        audioValue: 'What is eleven plus nine',      correctValue: 'it is twenty' },
-        { id: 'wb1_l1_d3_e14', type: 'writing',        instruction: 'What is twelve plus one? Answer in a full sentence.',         audioValue: 'What is twelve plus one',       correctValue: 'it is thirteen' },
-        { id: 'wb1_l1_d3_e15', type: 'writing',        instruction: 'What is fifteen plus two? Answer in a full sentence.',        audioValue: 'What is fifteen plus two',      correctValue: 'it is seventeen' }
+        // Shadowing the full math question (revisits PLUS)
+        { id: 'wb1_l1_d3_e3',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', audioValue: 'What is ten plus five?',    correctValue: 'what is ten plus five' },
+        // Math sentence writing: PLUS (different question from shadow e3)
+        { id: 'wb1_l1_d3_e4',  type: 'writing',        instruction: 'What is eight plus nine? Answer in a full sentence.',       audioValue: 'What is eight plus nine', correctValue: 'it is seventeen' },
+        // identification
+        { id: 'wb1_l1_d3_e5',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Eighteen',  options: ['8', '18', '80', '88'],  correctValue: '18' },
+        // Shadowing: introduces TIMES concept via listening
+        { id: 'wb1_l1_d3_e6',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', audioValue: 'What is three times four?', correctValue: 'what is three times four' },
+        // Math sentence writing: TIMES (different question from shadow e6)
+        { id: 'wb1_l1_d3_e7',  type: 'writing',        instruction: 'What is two times seven? Answer in a full sentence.',  audioValue: 'What is two times seven',  correctValue: 'it is fourteen' },
+        // Sentence shadowing: result
+        { id: 'wb1_l1_d3_e8',  type: 'speaking',       instruction: 'Listen and repeat exactly as you hear.', audioValue: "It's twelve.", correctValue: "it's twelve" },
+        // Math sentence writing: DIVIDED BY
+        { id: 'wb1_l1_d3_e9',  type: 'writing',        instruction: 'What is twenty divided by two? Answer in a full sentence.',   audioValue: 'What is twenty divided by two',   correctValue: 'it is ten' },
+        // identification
+        { id: 'wb1_l1_d3_e10', type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Nineteen',  options: ['9', '19', '90', '99'],  correctValue: '19' },
       ]
     },
     {
