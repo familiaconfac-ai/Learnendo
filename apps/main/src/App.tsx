@@ -30,6 +30,7 @@ import { ensureLessonStarted, completeCourseDay, LessonProgress, DayAnalytics } 
 import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 import { trackLessonCompletion } from './services/progressService';
+import { lesson1NewWords } from './data/workbook1/lesson1';
 
 const DEFAULT_COURSE_ID = 'english';
 const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
@@ -1535,7 +1536,7 @@ const App: React.FC = () => {
           freeze={score?.freeze ?? 0}
           diamonds={score?.diamonds ?? 0}
           stars={score?.stars ?? 0}
-          newWords={progress.currentLesson === 1 ? 23 : 0}
+          newWords={progress.currentLesson === 1 ? lesson1NewWords.length : 0}
           onClose={() => setShowResultAnimation(false)}
         />
       )}

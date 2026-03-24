@@ -176,3 +176,24 @@ export const lesson1: Lesson = {
     }
   ]
 };
+
+/**
+ * Unique vocabulary items introduced in Lesson 1.
+ * Categories: numbers 0–20, colors, greetings/expressions, math operators.
+ * Used to drive the "X new words" counter on the lesson completion popup.
+ * Future lessons can export their own equivalent array.
+ */
+export const lesson1NewWords: string[] = [
+  // Numbers 0–20 (21)
+  'zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+  'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen',
+  'seventeen', 'eighteen', 'nineteen', 'twenty',
+  // Colors (10)
+  'red', 'blue', 'green', 'yellow', 'orange', 'black', 'white', 'purple', 'pink', 'brown',
+  // Greetings & expressions (11)
+  'Hello!', 'Good morning!', 'Good afternoon!', 'Good night!', 'Good evening.',
+  "I'm fine, thank you.", 'My name is...', 'My first name is...', 'My last name is...',
+  'Nice to meet you too.', 'Goodbye!',
+  // Math vocabulary (4)
+  'plus', 'minus', 'times', 'divided by',
+];
