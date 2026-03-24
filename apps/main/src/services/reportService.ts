@@ -10,6 +10,7 @@
 
 import jsPDF from 'jspdf';
 import { TeacherStudentRow } from '../engine/teacherService';
+import { StudentStudyProfile } from '../types';
 import { formatTime, formatAccuracy, MAX_WORKBOOK, MAX_LESSON, MAX_DAY } from '../engine/progressStatsService';
 
 // ─────────────────────────────────────────────────────────────
@@ -145,6 +146,8 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   const ls        = student.currentLesson   ?? 1;
   const dy        = student.currentDay      ?? 1;
   const today     = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+  const courseLabel = student.courseId ?? student.languageCode ?? null;
+  const profile: StudentStudyProfile = student.studyProfile ?? {};
 
   let y = MARGIN;
 
@@ -167,8 +170,10 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   y = sectionHead(doc, '1. Student Information', y);
   labelValue(doc, 'Name',   name,  MARGIN,    y);
   labelValue(doc, 'Email',  email, col2x(),   y);
-  y += 8;
-
+  y += 8;  if (courseLabel) {
+    labelValue(doc, 'Course / Language', courseLabel, MARGIN, y);
+    y += 8;
+  }
   // ── PROGRESS ─────────────────────────────────────────────
   y = sectionHead(doc, '2. Learning Position', y);
   labelValue(doc, 'Workbook', `${wb} / ${MAX_WORKBOOK}`, MARGIN,  y);
@@ -252,7 +257,10 @@ export function generateStudentReport(student: TeacherStudentRow): void {
     y = sectionHead(doc, `${sectionN}. Tests Performance`, y);
 
     if (student.tests?.placement) {
-      labelValue(doc, 'Placement Test', `${student.tests.placement.score}%`, MARGIN, y);
+      const ptLabel = student.tests.placement.level
+        ? `${student.tests.placement.score}% — ${student.tests.placement.level}`
+        : `${student.tests.placement.score}%`;
+      labelValue(doc, 'Placement Test', ptLabel, MARGIN, y);
       y += 8;
     }
 
@@ -269,6 +277,24 @@ export function generateStudentReport(student: TeacherStudentRow): void {
       y += 7;
     }
     y += 4;
+  }
+
+  // ── STUDY PROFILE ─────────────────────────────────────────
+  if (y < 250) {
+    const profileN = hasTestData
+      ? (student.alerts.length > 0 ? '7' : '6')
+      : (student.alerts.length > 0 ? '6' : '5');
+    y = sectionHead(doc, `${profileN}. Study Profile`, y);
+    labelValue(doc, 'Access type',    profile.appAccessType     ?? '—', MARGIN,  y);
+    labelValue(doc, 'PDF workbook',   profile.pdfStatus         ?? '—', col2x(), y);
+    y += 8;
+    labelValue(doc, 'Online classes', profile.onlineClassStatus ?? '—', MARGIN,  y);
+    labelValue(doc, 'Study mode',     profile.studyMode         ?? '—', col2x(), y);
+    y += 8;
+    if (profile.startDate) {
+      labelValue(doc, 'Start date', profile.startDate, MARGIN, y);
+      y += 8;
+    }
   }
 
   // ── FOOTER ────────────────────────────────────────────────

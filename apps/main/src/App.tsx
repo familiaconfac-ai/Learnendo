@@ -32,6 +32,15 @@ import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 import { trackLessonCompletion } from './services/progressService';
 import { lesson1NewWords } from './data/workbook1/lesson1';
 
+/** Accumulated unique word count per lesson number.
+ * Lesson N value = sum of all new words introduced from lesson 1 through N.
+ * Add new entries here as each lesson is authored. */
+const LESSON_WORD_COUNTS: Record<number, number> = {
+  1: lesson1NewWords.length,
+  // 2: lesson1NewWords.length + lesson2NewWords.length,
+  // ...
+};
+
 const DEFAULT_COURSE_ID = 'english';
 const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
@@ -137,6 +146,10 @@ const App: React.FC = () => {
   const stars = Number((progress as any).totalStars ?? (progress.completedActivities || []).length);
   const [sessionCount, setSessionCount] = useState<number>(0);
   const [score, setScore] = useState<ScoreResult | null>(null);
+  /** Per-lesson score accumulator — updated locally on every exercise completion.
+   *  Source of truth for header stats and result popup (no Firebase round-trip needed).
+   *  Reset to zero whenever a new lesson is opened. */
+  const [lessonScore, setLessonScore] = useState<{ correct: number; total: number; completed: number; missed: number }>({ correct: 0, total: 0, completed: 0, missed: 0 });
   /** Progress for the currently open lesson — read from Firestore on lesson open. */
   const [lessonProgress, setLessonProgress] = useState<LessonProgress | null>(null);
   /** Ensures the splash is visible for at least 1.5 s even if Firebase resolves instantly. */
@@ -773,6 +786,9 @@ const App: React.FC = () => {
       setLessonProgress(null);
     }
 
+    // Reset accumulated score so the header and result popup always reflect the
+    // current lesson — not stale data from a previously opened lesson.
+    setLessonScore({ correct: 0, total: 0, completed: 0, missed: 0 });
     setCurrentLessonId(lessonId);
     setCurrentDay(null);
     setCurrentSection(SectionType.LESSON);
@@ -786,15 +802,15 @@ const App: React.FC = () => {
     setCurrentSection(SectionType.PRACTICE);
   };
 
-  const handlePlacementComplete = (score: number) => {
+  const handlePlacementComplete = (score: number, level: string) => {
     const workbook = PlacementEngine.determineWorkbook(score);
     const updated = { ...progress, currentWorkbook: workbook, placementScore: score };
     // DO NOT call setProgress here — let Firestore snapshot update state
     try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
 
-    // Persist placement test result to flat progress doc
+    // Persist placement test result (score + level) to flat progress doc
     if (user?.uid && db) {
-      const placementPayload = { tests: { placement: { score, date: new Date().toISOString() } } };
+      const placementPayload = { tests: { placement: { score, level, date: new Date().toISOString() } } };
       console.log('[WRITE] setDoc', {
         path: `progress/${user.uid}`,
         workbookId: progress.currentWorkbook,
@@ -856,6 +872,19 @@ const App: React.FC = () => {
       ? Math.round((Date.now() - dayStartTimeRef.current) / 1000)
       : undefined;
     dayStartTimeRef.current = null;
+
+    // ── Accumulate local lesson score immediately (no Firebase dependency) ────────
+    // Reverse-engineer the correct count from the percentage score reported by
+    // ExercisePractice.  This runs for BOTH regular exercises and the weekly test
+    // so that the final ResultAnimation shows cumulative lesson totals.
+    const _qCount = Math.max(1, currentDay?.exercises?.length ?? 0);
+    const _cCount = Math.round((score / 100) * _qCount);
+    setLessonScore(prev => ({
+      correct:   prev.correct   + _cCount,
+      total:     prev.total     + _qCount,
+      completed: prev.completed + 1,
+      missed:    prev.missed, // days missed — tracked separately, 0 until implemented
+    }));
 
     if (activeWeeklyTest) {
       const { lessonNumber, lessonId } = activeWeeklyTest;
@@ -1359,6 +1388,7 @@ const App: React.FC = () => {
             lesson={lesson}
             lessonNumber={lessonNumber}
             progress={progress}
+            wordCount={LESSON_WORD_COUNTS[lessonNumber]}
             lessonProgress={lessonProgress}
             currentLanguage={language}
             isAdmin={isAdmin}
@@ -1488,10 +1518,10 @@ const App: React.FC = () => {
                 className="rounded-full block"
               />
             </button>
-            <span className="rounded-lg bg-slate-800 px-1.5 py-1">🔥 {score?.streak ?? 0}</span>
-            <span className="rounded-lg bg-slate-800 px-1.5 py-1">❄️ {score?.freeze ?? 0}</span>
-            <span className="rounded-lg bg-slate-800 px-1.5 py-1">💎 {score?.diamonds ?? 0}</span>
-            <span className="rounded-lg bg-slate-800 px-1.5 py-1">⭐ {score?.stars ?? 0}</span>
+            <span className="rounded-lg bg-slate-800 px-1.5 py-1">🔥 {currentLessonId ? Math.min(1, lessonScore.completed) : (score?.streak ?? 0)}</span>
+            <span className="rounded-lg bg-slate-800 px-1.5 py-1">❄️ {currentLessonId ? lessonScore.missed : (score?.freeze ?? 0)}</span>
+            <span className="rounded-lg bg-slate-800 px-1.5 py-1">💎 {currentLessonId ? lessonScore.total : (score?.diamonds ?? 0)}</span>
+            <span className="rounded-lg bg-slate-800 px-1.5 py-1">⭐ {currentLessonId ? lessonScore.total + Math.min(1, lessonScore.completed) : (score?.stars ?? 0)}</span>
           </div>
 
           <button
@@ -1532,10 +1562,11 @@ const App: React.FC = () => {
       )}
       {showResultAnimation && (
         <ResultAnimation
-          streak={score?.streak ?? 0}
-          freeze={score?.freeze ?? 0}
-          diamonds={score?.diamonds ?? 0}
-          stars={score?.stars ?? 0}
+          streak={Math.min(1, lessonScore.completed)}
+          freeze={lessonScore.missed}
+          diamonds={lessonScore.total}
+          stars={lessonScore.total + Math.min(1, lessonScore.completed)}
+          percentage={lessonScore.total > 0 ? Math.round(lessonScore.correct / lessonScore.total * 100) : 0}
           newWords={progress.currentLesson === 1 ? lesson1NewWords.length : 0}
           onClose={() => setShowResultAnimation(false)}
         />

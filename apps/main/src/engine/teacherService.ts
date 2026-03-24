@@ -70,11 +70,19 @@ function pathLabel(summary: UserProgressSummary): string {
  * Fetch and enrich all student data for the teacher dashboard.
  * Returns students pre-sorted by score (rank 1 first).
  *
+ * Pass `courseId` to get ranking for a specific language/course only.
+ * IMPORTANT: ranking must always be filtered by courseId —
+ * students should only compete with others in the same language/course.
+ *
  * One Firestore fan-out per student (courseProgress subcollection read).
  * Results are not cached — call sparingly or memoize at the component level.
  */
-export async function getTeacherDashboardData(): Promise<TeacherStudentRow[]> {
-  const summaries = await getAllUserProgressSummaries();
+export async function getTeacherDashboardData(courseId?: string): Promise<TeacherStudentRow[]> {
+  const allSummaries = await getAllUserProgressSummaries();
+  // Filter by course when requested — per-course ranking rule
+  const summaries = courseId
+    ? allSummaries.filter(s => !s.courseId || s.courseId === courseId)
+    : allSummaries;
   const ranked = rankStudents(summaries);
   return ranked.map(student => ({
     ...student,
@@ -179,6 +187,10 @@ export function subscribeToTeacherData(
           currentDay:      data.currentDay      ?? 1,
           lastLessonId:    data.lastLesson      ?? undefined,
           lastActivity:    data.lastActivity    ?? undefined,
+          // Course/language context — drives per-course ranking filter
+          courseId:     data.courseId     ?? undefined,
+          languageCode: data.language ?? data.languageCode ?? undefined,
+          studyProfile: data.studyProfile ?? undefined,
         } as UserProgressSummary;
       });
 

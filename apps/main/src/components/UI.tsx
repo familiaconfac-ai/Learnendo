@@ -48,7 +48,13 @@ const TIME_NORMALIZE_MAP: Record<string, string> = {
 };
 
 const normalizeAnswer = (answer: string): string => {
-  let normalized = answer.toLowerCase().trim().replace(/[.,!?;:']/g, "");
+  let normalized = answer.toLowerCase().trim()
+    // Normalize smart/curly apostrophes → ASCII apostrophe BEFORE stripping, so
+    // "it\u2019s fifteen" (smart quote from editor auto-correct) is treated the same
+    // as "it's fifteen" (ASCII). Without this, the prefix-strip regex ("its ") fails
+    // and the speaking match returns false even when the answer is semantically correct.
+    .replace(/[\u2018\u2019\u02BC\u2032]/g, "'")
+    .replace(/[.,!?;:']/g, "");
 
   // Strip sentence prefixes so "It is five." / "It's five." are accepted as "five"
   normalized = normalized.replace(/^(it is |its |the answer is |the result is |the number is )/, '');
@@ -80,6 +86,9 @@ const normalizeAnswer = (answer: string): string => {
 // Pre-processes time expressions for speaking/shadowing BEFORE punctuation stripping
 const normalizeSpeakingAnswer = (answer: string): string => {
   let s = answer.toLowerCase().trim();
+  // Normalize smart/curly apostrophes → ASCII so they are stripped correctly
+  // downstream. This fixes "it\u2019s twenty" (smart quote) = "It's 20" (STT output).
+  s = s.replace(/[\u2018\u2019\u02BC\u2032]/g, "'");
   // Normalize a.m./p.m. dots → am/pm before punctuation is stripped
   s = s.replace(/\ba\.m\.\b/gi, 'am').replace(/\bp\.m\.\b/gi, 'pm');
   // No-space am/pm: "7am" / "8PM" → "7 am" / "8 pm"

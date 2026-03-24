@@ -4,6 +4,10 @@
  * Pure ranking computation for the teacher dashboard leaderboard.
  * Score formula:  (stars × 2) + (diamonds × 3) + (accuracy ÷ 10) + (sessions × 0.2)
  *
+ * IMPORTANT: ranking is per course/language — NEVER global.
+ * Always filter summaries by courseId before calling rankStudents().
+ * Use filterByCourse() as a convenience helper.
+ *
  * All logic is pure and side-effect-free — safe to call in any context.
  */
 
@@ -62,4 +66,16 @@ export function rankMedal(rank: number): string {
   if (rank === 2) return '🥈';
   if (rank === 3) return '🥉';
   return '';
+}
+
+/**
+ * Filter summaries to a single course before ranking.
+ * Always use this (or equivalent courseId filter) before calling rankStudents()
+ * so that English students compete only with English students, etc.
+ */
+export function filterByCourse(
+  summaries: UserProgressSummary[],
+  courseId: string,
+): UserProgressSummary[] {
+  return summaries.filter(s => s.courseId === courseId);
 }

@@ -480,39 +480,84 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
   }
 ];
 
+/** Point weight per CEFR band — harder questions contribute more to the weighted score. */
+const LEVEL_WEIGHTS: Record<string, number> = {
+  A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6,
+};
+
+/**
+ * Classify a student's CEFR level using weighted band scoring.
+ * Each question contributes points proportional to its difficulty band so that
+ * getting easy A1/A2 questions right (even by guessing) cannot inflate the result
+ * to C1. `percentage` returned is the raw % correct (for student display);
+ * the internal `weightedPct` drives level classification.
+ */
+export function classifyPlacementLevel(
+  answers: (number | null)[],
+  questions: PlacementQuestion[],
+): { level: string; percentage: number } {
+  const correctCount = answers.reduce(
+    (n, a, i) => n + (a === questions[i].correctAnswerIndex ? 1 : 0),
+    0,
+  );
+  const rawPercentage = Math.round((correctCount / questions.length) * 100);
+
+  let weightedScore = 0;
+  let maxScore = 0;
+  questions.forEach((q, i) => {
+    const w = LEVEL_WEIGHTS[q.levelBand] ?? 1;
+    maxScore += w;
+    if (answers[i] === q.correctAnswerIndex) weightedScore += w;
+  });
+  const weightedPct = maxScore > 0 ? Math.round((weightedScore / maxScore) * 100) : 0;
+
+  // Cutoffs calibrated against the 40-question, 4-option test:
+  // random guessing ≈ 25 weighted-pct → A1 (never "Beginner" by pure luck)
+  let level: string;
+  if (weightedPct < 20)      level = 'Beginner';
+  else if (weightedPct < 32) level = 'A1';
+  else if (weightedPct < 45) level = 'A2';
+  else if (weightedPct < 58) level = 'B1';
+  else if (weightedPct < 72) level = 'B2';
+  else if (weightedPct < 87) level = 'C1';
+  else                       level = 'C2';
+
+  return { level, percentage: rawPercentage };
+}
+
 export const CEFR_LEVELS = {
   'Beginner': {
-    range: '0-15%',
+    range: '< 25% correct',
     description: 'Complete beginner. You are just starting your English journey. Focus on basic vocabulary and simple sentence structures.',
     recommendation: 'Start with Workbook 1: Units 1 and 2'
   },
   'A1': {
-    range: '15-30%',
+    range: '25–40% correct',
     description: 'Elementary user. You understand very basic English and can introduce yourself. You need to build on fundamentals.',
     recommendation: 'Start with Workbook 1: Units 1 and 2'
   },
   'A2': {
-    range: '30-45%',
+    range: '40–55% correct',
     description: 'Elementary user. You can handle everyday situations and basic conversations. Continue building confidence.',
     recommendation: 'Start with Workbook 2-3: Focus on present and past simple'
   },
   'B1': {
-    range: '45-65%',
+    range: '55–70% correct',
     description: 'Intermediate user. You can discuss most topics and express opinions. Your English is becoming more flexible.',
     recommendation: 'Start with Workbook 4-5: Work on continuous tenses and more complex structures'
   },
   'B2': {
-    range: '65-80%',
+    range: '70–80% correct',
     description: 'Upper-intermediate user. You have a good command of English and can engage in sophisticated discussions.',
     recommendation: 'Start with Workbook 6-7: Focus on perfect tenses, conditionals, and advanced vocabulary'
   },
   'C1': {
-    range: '80-90%',
+    range: '80–90% correct',
     description: 'Advanced user. You can express yourself fluently and spontaneously. You understand subtle meanings in texts.',
     recommendation: 'Start with Workbook 8: Work on nuances, idioms, and specialized topics'
   },
   'C2': {
-    range: '90-100%',
+    range: '≥ 90% correct',
     description: 'Mastery level. You have near-native proficiency. You can understand virtually everything and express yourself with precision.',
     recommendation: 'Challenge yourself with advanced topics and specialized English'
   }

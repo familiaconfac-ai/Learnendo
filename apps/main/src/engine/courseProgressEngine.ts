@@ -546,6 +546,15 @@ export interface UserProgressSummary {
   lastLessonId?: string;
   // Last activity — populated from users/{uid}.lastActive
   lastActivity?: any;      // Firestore Timestamp or ISO string
+  // ── Course / language context (for per-course ranking) ──────────────────
+  // IMPORTANT: ranking must always be filtered by courseId — students should
+  // only compete with others studying the same language/course.
+  /** The course this summary belongs to (matches Course.id, e.g. 'english-native'). */
+  courseId?: string;
+  /** ISO 639-1 language code of the course ('en', 'pt', 'es', 'el', 'he'). */
+  languageCode?: string;
+  /** Optional study profile describing the student's enrolment/access type. */
+  studyProfile?: import('../types').StudentStudyProfile;
 }
 
 /**

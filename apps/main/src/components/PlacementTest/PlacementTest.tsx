@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion } from '../../data/placementTestQuestions';
+import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion, classifyPlacementLevel } from '../../data/placementTestQuestions';
 import { LessonLanguageCode } from '../../types';
 import { auth, db, ensureAnonAuth } from '../../services/firebase';
 import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
@@ -8,7 +8,7 @@ import { doc, setDoc } from 'firebase/firestore';
 
 interface PlacementTestProps {
   currentLanguage?: LessonLanguageCode;
-  onComplete: (score: number) => void;
+  onComplete: (score: number, level: string) => void;
   onTriggerConversion?: (reason?: string) => void;
 }
 
@@ -70,17 +70,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
     }
   };
 
-  const classifyLevel = (correctCount: number, totalQuestions: number): { level: string; percentage: number } => {
-    const percentage = Math.round((correctCount / totalQuestions) * 100);
-
-    if (percentage < 15) return { level: 'Beginner', percentage };
-    if (percentage < 30) return { level: 'A1', percentage };
-    if (percentage < 45) return { level: 'A2', percentage };
-    if (percentage < 65) return { level: 'B1', percentage };
-    if (percentage < 80) return { level: 'B2', percentage };
-    if (percentage < 90) return { level: 'C1', percentage };
-    return { level: 'C2', percentage };
-  };
+  // classifyPlacementLevel is imported from placementTestQuestions.ts (weighted band scoring)
 
   const handleSelectAnswer = (answerIndex: number) => {
     setSelectedAnswer(answerIndex);
@@ -109,7 +99,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
       return count;
     }, 0);
 
-    const { percentage, level } = classifyLevel(correctCount, PLACEMENT_TEST_QUESTIONS.length);
+    const { percentage, level } = classifyPlacementLevel(finalAnswers, PLACEMENT_TEST_QUESTIONS);
     
     // Ensure user is authenticated before saving to Firebase
     let authUser = auth.currentUser;
@@ -191,7 +181,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
       }
       return count;
     }, 0);
-    const { level, percentage } = classifyLevel(correctCount, PLACEMENT_TEST_QUESTIONS.length);
+    const { level, percentage } = classifyPlacementLevel(answers, PLACEMENT_TEST_QUESTIONS);
     const levelInfo = CEFR_LEVELS[level as keyof typeof CEFR_LEVELS];
 
     const handleContactTeacher = () => {
@@ -252,7 +242,7 @@ I would like to receive feedback about my result.`;
               )}
 
               <button
-                onClick={() => onComplete(percentage)}
+                onClick={() => onComplete(percentage, level)}
                 className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
               >
                 Start Learning

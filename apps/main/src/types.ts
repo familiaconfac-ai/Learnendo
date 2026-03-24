@@ -40,6 +40,7 @@ export interface Workbook {
 export interface TestRecord {
   score: number;
   date: string; // ISO string
+  level?: string; // CEFR level, e.g. 'A1', 'B2'
 }
 
 export interface UserTestData {
@@ -87,6 +88,21 @@ export interface AnswerLog {
   correctAnswer: string;
   isCorrect: boolean;
   isFirstTry: boolean;
+}
+
+// ── Study profile — describes how the student accesses Learnendo ─────────────
+// All fields are optional; populate as enrolment / payment data becomes available.
+export interface StudentStudyProfile {
+  /** ISO date string of when the student first used the app (e.g. '2026-01-15'). */
+  startDate?: string;
+  /** Defines the student's subscription / support tier. */
+  appAccessType?: 'free' | 'premium' | 'premium-support';
+  /** Whether the student has access to printable PDF workbooks. */
+  pdfStatus?: 'none' | 'partial' | 'full';
+  /** Whether the student has scheduled online classes. */
+  onlineClassStatus?: 'none' | 'active';
+  /** Primary learning modality for this student. */
+  studyMode?: 'self-guided' | 'class-support' | 'intensive';
 }
 
 // Old types for compatibility

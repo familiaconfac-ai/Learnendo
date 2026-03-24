@@ -6,6 +6,9 @@ interface LessonViewProps {
   lesson: Lesson;
   lessonNumber: number;
   progress: UserProgress;
+  /** Accumulated unique word count up to and including this lesson. Displayed
+   *  below the lesson subtitle as a discrete progress indicator. */
+  wordCount?: number;
   /** Live courseProgress data for this lesson, passed in from App.tsx. When
    *  provided, day status is driven by Firestore data (date-based unlocks &
    *  real completion flags).  Falls back to local completedActivities when null. */
@@ -42,6 +45,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   lesson,
   lessonNumber,
   progress,
+  wordCount,
   lessonProgress,
   currentLanguage = 'en',
   isAdmin = false,
@@ -121,6 +125,11 @@ export const LessonView: React.FC<LessonViewProps> = ({
               <h1 className="text-2xl sm:text-3xl font-black text-yellow-400 leading-tight">{mainTitle}</h1>
               {subtitle && (
                 <p className="text-lg sm:text-xl font-semibold text-white mt-1 leading-snug">{subtitle}</p>
+              )}
+              {!!wordCount && (
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2">
+                  🦉 {wordCount} words
+                </p>
               )}
             </div>
           );

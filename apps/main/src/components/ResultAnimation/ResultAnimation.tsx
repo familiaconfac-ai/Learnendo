@@ -5,6 +5,8 @@ interface ResultAnimationProps {
   freeze: number;
   diamonds: number;
   stars: number;
+  /** Accuracy percentage (0–100). Shown below the stars count when provided. */
+  percentage?: number;
   newWords?: number;
   onClose: () => void;
 }
@@ -67,6 +69,7 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
   freeze,
   diamonds,
   stars,
+  percentage,
   newWords,
   onClose,
 }) => {
@@ -127,6 +130,9 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
             {starsCount}
           </span>
           <span className="text-xs text-slate-500 uppercase tracking-widest mt-1">Stars</span>
+          {percentage !== undefined && (
+            <span className="text-sm font-semibold text-slate-500 mt-2">{percentage}% accuracy</span>
+          )}
         </div>
 
         {/* Continue button */}

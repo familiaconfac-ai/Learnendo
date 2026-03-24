@@ -147,7 +147,7 @@ export const lesson1: Lesson = {
         { id: 'wb1_l1_d7_e6',  type: 'identification', instruction: 'Listen and pick the correct letter.', audioValue: 'B', options: ['B', 'D', 'P', 'V'], correctValue: 'B', translation: 'B = B (como em "Ball")' },
         { id: 'wb1_l1_d7_e11', type: 'identification', instruction: 'Listen and pick the correct letter.', audioValue: 'G', options: ['G', 'J', 'Q', 'C'], correctValue: 'G', translation: 'G = G (como em "Go")' },
         { id: 'wb1_l1_d7_e16', type: 'identification', instruction: 'Listen and pick the correct letter.', audioValue: 'M', options: ['M', 'N', 'W', 'H'], correctValue: 'M', translation: 'M = M (como em "Man")' },
-        { id: 'wb1_l1_d7_e21', type: 'identification', instruction: 'Listen and pick the correct letter.', audioValue: 'S', options: ['S', 'F', 'X', 'Z'], correctValue: 'S', translation: 'S = S (como em "Sun")' },
+        { id: 'wb1_l1_d7_e21', type: 'identification', instruction: 'Listen and pick the correct letter.', audioValue: 'X', options: ['X', 'S', 'Z', 'K'], correctValue: 'X', translation: 'X = X (como em "eXtra")' },
         // --- Numbers (5) ---
         { id: 'wb1_l1_d7_e2',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Eighteen',   options: ['8', '18', '80', '88'],   correctValue: '18',  translation: '18 = Dezoito' },
         { id: 'wb1_l1_d7_e7',  type: 'identification', instruction: 'Listen and pick the correct number.', audioValue: 'Twelve',     options: ['2',  '12', '20', '22'],  correctValue: '12',  translation: '12 = Doze' },
