@@ -93,6 +93,8 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
           cardVisible ? 'opacity-100 scale-100' : 'opacity-0 scale-90'
         }`}
       >
+        {/* Mascot */}
+        <img src="/mascot.png" alt="Learnendo" className="w-16 h-16 object-contain mx-auto mb-3" />
         {/* Title */}
         <p className="text-sm font-semibold text-blue-500 uppercase tracking-widest mb-5">
           Lesson Complete!

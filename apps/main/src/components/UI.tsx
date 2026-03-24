@@ -106,6 +106,17 @@ const normalizeSpeakingAnswer = (answer: string): string => {
   s = s.replace(/\b(\d+)\s*o'clock\b/gi, '$1');
   s = s.replace(/\b(\d+)\s*o\s+clock\b/gi, '$1');
   s = s.replace(/\b(\d+)\s*oclock\b/gi, '$1');
+  // Math operator symbols → word equivalents.
+  // STT on mobile often transcribes "+", "×", "*", "x" etc. instead of spoken words.
+  s = s.replace(/\s*\+\s*/g, ' plus ');
+  s = s.replace(/\s*[*×]\s*/g, ' times ');
+  s = s.replace(/\s*÷\s*/g, ' divided by ');
+  // "/" only when flanked by digits (avoids breaking contractions like "it's")
+  s = s.replace(/(\d)\s*\/\s*(\d)/g, '$1 divided by $2');
+  // standalone "x" or "X" between operands used as multiplication sign
+  s = s.replace(/\b([a-z0-9]+)\s+[xX]\s+([a-z0-9]+)\b/g, '$1 times $2');
+  // collapse any double spaces introduced above
+  s = s.replace(/\s{2,}/g, ' ').trim();
   return normalizeAnswer(s);
 };
 
@@ -594,6 +605,21 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         );
       }
 
+      // Color swatch for writing exercises: displayValue is a bare color name (e.g. 'red').
+      // Renders a solid colored square so the student can identify the color without
+      // seeing the word — keeping the question "What color is it?" genuinely productive.
+      const swatchHex = OPTION_COLOR_HEX[(item.displayValue ?? '').toLowerCase()];
+      if (swatchHex) {
+        return (
+          <div className="flex flex-col items-center animate-in fade-in duration-700">
+            <div
+              className="w-32 h-32 rounded-2xl border-4 border-slate-600 shadow-lg"
+              style={{ backgroundColor: swatchHex }}
+            />
+          </div>
+        );
+      }
+
       return (
         <div className={`text-5xl font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
           {item.displayValue}
@@ -674,13 +700,32 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                 </h2>
               </div>
             ) : (
-              /* multiple-choice and identification → Listening badge */
-              <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">Listening</span>
-                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
-                  {item.instruction}
-                </h2>
-              </div>
+              /* multiple-choice and identification → Listening badge.
+                 Dialogue items (instruction starts with "The teacher") get a
+                 richer layout: subtitle + yellow-highlighted speech. */
+              (() => {
+                const dlg = item.instruction.match(/^(The teacher (?:says|asks)): "(.+?)" —/i);
+                if (dlg) {
+                  return (
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">Listening</span>
+                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">Choose the Correct Response</p>
+                      <p className="text-sm font-semibold text-white text-center mt-1">{dlg[1]}:</p>
+                      <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl">
+                        "{dlg[2]}"
+                      </h2>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">Listening</span>
+                    <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
+                      {item.instruction}
+                    </h2>
+                  </div>
+                );
+              })()
             )}
             {translation && showHint && (
               <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-white text-slate-900 text-[10px] px-3 py-1.5 rounded-lg whitespace-nowrap z-10 animate-in fade-in slide-in-from-top-1 font-bold shadow">
@@ -757,7 +802,9 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                     key={opt}
                     disabled={showFooter && feedback === 'correct'}
                     onClick={() => handleOptionClick(opt)}
-                    className={`p-4 border-2 rounded-3xl font-black uppercase text-xl transition-all flex flex-col items-center gap-1 [touch-action:manipulation] ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-500 shadow-lg' : 'bg-slate-800 border-slate-600 text-white hover:border-blue-500'}`}
+                    className={`p-3 border-2 rounded-3xl font-bold transition-all flex items-center justify-center text-center leading-snug break-words [touch-action:manipulation] min-h-[56px] ${
+                      opt.length > 14 ? 'text-sm normal-case' : 'text-xl font-black uppercase'
+                    } ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-500 shadow-lg' : 'bg-slate-800 border-slate-600 text-white hover:border-blue-500'}`}
                   >
                     {opt}
                   </button>
@@ -803,7 +850,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex flex-col flex-1">
-                    <div className={`font-black uppercase text-lg tracking-widest animate-in slide-in-from-left-2 ${feedback === 'correct' ? 'text-green-400' : 'text-red-400'}`}>
+                    <div className={`font-black uppercase text-lg tracking-widest animate-in slide-in-from-left-2 ${feedback === 'correct' ? 'text-yellow-400' : 'text-red-400'}`}>
                       {praiseText}
                     </div>
                     {feedback === 'wrong' && (
