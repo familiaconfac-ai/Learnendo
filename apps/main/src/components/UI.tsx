@@ -613,7 +613,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         return (
           <div className="flex flex-col items-center animate-in fade-in duration-700">
             <div
-              className="w-32 h-32 rounded-2xl border-4 border-slate-600 shadow-lg"
+              className="w-16 h-16 rounded-full border-4 border-slate-600 shadow-lg"
               style={{ backgroundColor: swatchHex }}
             />
           </div>
@@ -713,6 +713,18 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                       <p className="text-sm font-semibold text-white text-center mt-1">{dlg[1]}:</p>
                       <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl">
                         "{dlg[2]}"
+                      </h2>
+                    </div>
+                  );
+                }
+                // Color swatch question — structured Listening header
+                if (OPTION_COLOR_HEX[(item.displayValue ?? '').toLowerCase()]) {
+                  return (
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">Listening</span>
+                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">Choose the Correct Response</p>
+                      <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
+                        What color is it?
                       </h2>
                     </div>
                   );

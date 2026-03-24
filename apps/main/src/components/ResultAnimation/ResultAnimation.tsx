@@ -5,6 +5,7 @@ interface ResultAnimationProps {
   freeze: number;
   diamonds: number;
   stars: number;
+  newWords?: number;
   onClose: () => void;
 }
 
@@ -66,6 +67,7 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
   freeze,
   diamonds,
   stars,
+  newWords,
   onClose,
 }) => {
   const [overlayVisible, setOverlayVisible] = useState(false);
@@ -96,9 +98,16 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
         {/* Mascot */}
         <img src="/mascot.png" alt="Learnendo" className="w-16 h-16 object-contain mx-auto mb-3" />
         {/* Title */}
-        <p className="text-sm font-semibold text-blue-500 uppercase tracking-widest mb-5">
+        <p className="text-sm font-semibold text-blue-500 uppercase tracking-widest mb-4">
           Lesson Complete!
         </p>
+        {/* New words block */}
+        {!!newWords && (
+          <div className="flex items-center justify-center gap-2 mb-5 bg-amber-50 rounded-xl py-2 px-4 border border-amber-200">
+            <span className="text-xl leading-none">🦉</span>
+            <span className="text-sm font-bold text-amber-700">{newWords} new words</span>
+          </div>
+        )}
 
         {/* Small stats row */}
         <div className="flex justify-around mb-8">
@@ -122,8 +131,8 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
 
         {/* Continue button */}
         <button
-          onClick={onClose}
-          className={`w-full py-3 rounded-xl bg-blue-500 text-white font-bold text-base shadow-md active:scale-95 transition-all duration-300 hover:bg-blue-600 ${
+          onPointerDown={(e) => { e.preventDefault(); onClose(); }}
+          className={`w-full py-3 rounded-xl bg-blue-500 text-white font-bold text-base shadow-md active:scale-95 transition-all duration-300 hover:bg-blue-600 [touch-action:manipulation] ${
             btnVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
           }`}
         >

@@ -1535,6 +1535,7 @@ const App: React.FC = () => {
           freeze={score?.freeze ?? 0}
           diamonds={score?.diamonds ?? 0}
           stars={score?.stars ?? 0}
+          newWords={progress.currentLesson === 1 ? 23 : 0}
           onClose={() => setShowResultAnimation(false)}
         />
       )}
