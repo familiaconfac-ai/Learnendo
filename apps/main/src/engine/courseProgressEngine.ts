@@ -555,6 +555,8 @@ export interface UserProgressSummary {
   languageCode?: string;
   /** Optional study profile describing the student's enrolment/access type. */
   studyProfile?: import('../types').StudentStudyProfile;
+  /** Tests data (placement + lesson tests) from progress/{uid}.tests */
+  tests?: import('../types').UserTestData;
 }
 
 /**
@@ -781,6 +783,7 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           currentDay:      dashboardLastCompletedDay,
           lastLessonId:    typeof flatProgress.lastLesson === 'string' ? flatProgress.lastLesson : undefined,
           lastActivity:    userData.lastActive ?? null,
+          tests:           flatProgress.tests ?? undefined,
         } as UserProgressSummary;
       })
     );

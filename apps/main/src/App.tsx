@@ -808,9 +808,17 @@ const App: React.FC = () => {
     // DO NOT call setProgress here — let Firestore snapshot update state
     try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
 
-    // Persist placement test result (score + level) to flat progress doc
+    // Persist placement test result (score + level) to flat progress doc.
+    // Write both the legacy `placement` key and the per-language `placements[lang]`
+    // key so future multi-language dashboard reads work correctly.
     if (user?.uid && db) {
-      const placementPayload = { tests: { placement: { score, level, date: new Date().toISOString() } } };
+      const placementRecord = { score, level, date: new Date().toISOString(), languageCode: language };
+      const placementPayload = {
+        tests: {
+          placement: placementRecord,
+          placements: { [language]: placementRecord },
+        },
+      };
       console.log('[WRITE] setDoc', {
         path: `progress/${user.uid}`,
         workbookId: progress.currentWorkbook,

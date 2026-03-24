@@ -76,10 +76,9 @@ function labelValue(
   doc.text(value, x + 38, y);
 }
 
-/** Coloured stat box (gamification tiles). */
+/** Coloured stat box (gamification tiles) — text-only, no emoji for PDF compatibility. */
 function statBox(
   doc: jsPDF,
-  emoji: string,
   label: string,
   value: string,
   x: number,
@@ -88,14 +87,12 @@ function statBox(
 ): void {
   roundRect(doc, x, y, 38, 22, 3, bgColour);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(16);
+  doc.setFontSize(14);
   doc.setTextColor('#ffffff');
-  doc.text(emoji, x + 4, y + 12);
-  doc.setFontSize(11);
-  doc.text(value, x + 18, y + 12);
+  doc.text(value, x + 4, y + 13);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
-  doc.text(label, x + 4, y + 19);
+  doc.text(label, x + 4, y + 20);
 }
 
 /** Progress bar (width proportional to pct 0–100). */
@@ -193,15 +190,20 @@ export function generateStudentReport(student: TeacherStudentRow): void {
 
   // ── STATS ─────────────────────────────────────────────────
   y = sectionHead(doc, '3. Performance Statistics', y);
-  labelValue(doc, 'Exercises completed', String(student.daysCompleted),          MARGIN,  y);
-  labelValue(doc, 'Study time today',    formatTime(student.timeSpentToday ?? 0), col2x(), y);
+  const exDone  = student.daysCompleted   > 0 ? String(student.daysCompleted)   : '—';
+  const timeTdy = student.timeSpentToday  ? formatTime(student.timeSpentToday)  : '—';
+  const timeTot = student.totalTimeSpent  > 0 ? formatTime(student.totalTimeSpent) : '—';
+  const attempts = student.totalAttempts  > 0 ? String(student.totalAttempts)   : '—';
+  const errors   = student.totalErrors    > 0 ? String(student.totalErrors)     : '—';
+  labelValue(doc, 'Exercises completed', exDone,   MARGIN,  y);
+  labelValue(doc, 'Study time today',    timeTdy,  col2x(), y);
   y += 8;
-  labelValue(doc, 'Total study time',   formatTime(student.totalTimeSpent),      MARGIN,  y);
-  labelValue(doc, 'Total responses',    String(student.totalAttempts),           col2x(), y);
+  labelValue(doc, 'Total study time',   timeTot,  MARGIN,  y);
+  labelValue(doc, 'Total responses',    attempts, col2x(), y);
   y += 8;
-  labelValue(doc, 'Total errors',       String(student.totalErrors),             MARGIN,  y);
+  labelValue(doc, 'Total errors',       errors,   MARGIN,  y);
   y += 8;
-  progressBar(doc, 'Accuracy',          student.avgAccuracy, MARGIN, y, COL_W - 20);
+  progressBar(doc, 'Accuracy', student.avgAccuracy, MARGIN, y, COL_W - 20);
   y += 12;
 
   // ── GAMIFICATION ──────────────────────────────────────────
@@ -209,18 +211,18 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   const boxY = y;
   // 4 boxes in a row
   const boxGap = (COL_W - 4 * 38) / 3;
-  statBox(doc, '🔥', 'Fire',     String(student.totalFire),     MARGIN,                       boxY, '#f97316');
-  statBox(doc, '❄️',  'Ice',      String(student.totalIce),      MARGIN + 38 + boxGap,         boxY, '#0ea5e9');
-  statBox(doc, '💎', 'Diamonds', String(student.totalDiamonds), MARGIN + 2 * (38 + boxGap),   boxY, '#a855f7');
-  statBox(doc, '⭐', 'Stars',    String(student.totalStars),    MARGIN + 3 * (38 + boxGap),   boxY, '#eab308');
+  statBox(doc, 'Fire',     String(student.totalFire),     MARGIN,                     boxY, '#f97316');
+  statBox(doc, 'Ice',      String(student.totalIce),      MARGIN + 38 + boxGap,       boxY, '#0ea5e9');
+  statBox(doc, 'Diamonds', String(student.totalDiamonds), MARGIN + 2 * (38 + boxGap), boxY, '#a855f7');
+  statBox(doc, 'Stars',    String(student.totalStars),    MARGIN + 3 * (38 + boxGap), boxY, '#eab308');
   y = boxY + 30;
 
-  // Score
+  // Ranking score (formula removed — kept in rankingService.ts)
   roundRect(doc, MARGIN, y, COL_W, 12, 3, '#f1f5f9');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor('#1e293b');
-  doc.text(`Ranking score: ${student.score.toFixed(1)}  ·  Formula: Stars×2 + Diamonds×3 + Accuracy÷10 + Exercises×0.2`, MARGIN + 4, y + 8);
+  doc.text(`Ranking score: ${student.score.toFixed(1)}`, MARGIN + 4, y + 8);
   y += 18;
 
   // ── ALERTS ────────────────────────────────────────────────
@@ -248,21 +250,30 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   }
 
   // ── TESTS PERFORMANCE ─────────────────────────────────────
-  const hasTestData =
-    student.tests?.placement ||
-    Object.keys(student.tests?.lessons ?? {}).length > 0;
-
-  if (hasTestData) {
+  // Always render this section — show "Not Done" when no data exists yet.
+  // Students who completed the test before the mirror-to-progress-doc change
+  // was deployed will show "Not Done" until their doc is back-filled.
+  {
     const sectionN = student.alerts.length > 0 ? '6' : '5';
     y = sectionHead(doc, `${sectionN}. Tests Performance`, y);
 
     if (student.tests?.placement) {
-      const ptLabel = student.tests.placement.level
-        ? `${student.tests.placement.score}% — ${student.tests.placement.level}`
-        : `${student.tests.placement.score}%`;
+      const pt = student.tests.placement;
+      let ptLabel = `${pt.score}%`;
+      if (pt.level) ptLabel += ` — ${pt.level}`;
+      if (pt.date) {
+        try {
+          const d = new Date(pt.date);
+          if (!isNaN(d.getTime())) {
+            ptLabel += ` · ${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+          }
+        } catch { /* ignore unparseable date */ }
+      }
       labelValue(doc, 'Placement Test', ptLabel, MARGIN, y);
-      y += 8;
+    } else {
+      labelValue(doc, 'Placement Test', 'Not Done', MARGIN, y);
     }
+    y += 8;
 
     const lessonTests = Object.entries(student.tests?.lessons ?? {});
     for (const [, test] of lessonTests) {
@@ -280,10 +291,9 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   }
 
   // ── STUDY PROFILE ─────────────────────────────────────────
+  // Tests Performance is always rendered now, so profile is always one section higher.
   if (y < 250) {
-    const profileN = hasTestData
-      ? (student.alerts.length > 0 ? '7' : '6')
-      : (student.alerts.length > 0 ? '6' : '5');
+    const profileN = student.alerts.length > 0 ? '7' : '6';
     y = sectionHead(doc, `${profileN}. Study Profile`, y);
     labelValue(doc, 'Access type',    profile.appAccessType     ?? '—', MARGIN,  y);
     labelValue(doc, 'PDF workbook',   profile.pdfStatus         ?? '—', col2x(), y);

@@ -143,6 +143,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                   <SortHeader col="accuracy"     label="Accuracy"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="lastActivity" label="Last Active"  activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Placement</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold text-white">Report</th>
                 </tr>
               </thead>
@@ -200,6 +201,17 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                             <AlertBadge key={i} type={a.type} message={a.message} />
                           ))}
                         </div>
+                      )}
+                    </td>
+                    {/* Placement Test */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {student.tests?.placement ? (
+                        <span className="inline-flex flex-col">
+                          <span className="text-sm font-bold text-blue-700">{student.tests.placement.level ?? '—'}</span>
+                          <span className="text-xs text-slate-500">{student.tests.placement.score}%</span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-400">not done</span>
                       )}
                     </td>
                     {/* PDF download */}

@@ -525,6 +525,26 @@ export function classifyPlacementLevel(
   return { level, percentage: rawPercentage };
 }
 
+/**
+ * Return the placement test question bank for a given language code.
+ *
+ * Currently only English ('en') has a full bank — every other language falls
+ * back to the English questions until a language-specific bank is authored.
+ * When adding a new language bank, create a dedicated export (e.g.
+ * PLACEMENT_TEST_QUESTIONS_PT) and add a case here.
+ */
+export function getQuestionsForLanguage(languageCode: string): PlacementQuestion[] {
+  switch (languageCode) {
+    // 🇬🇧 English (default bank)
+    case 'en':
+    default:
+      return PLACEMENT_TEST_QUESTIONS;
+    // Stub cases: add language-specific arrays here when ready
+    // case 'pt': return PLACEMENT_TEST_QUESTIONS_PT;
+    // case 'es': return PLACEMENT_TEST_QUESTIONS_ES;
+  }
+}
+
 export const CEFR_LEVELS = {
   'Beginner': {
     range: '< 25% correct',

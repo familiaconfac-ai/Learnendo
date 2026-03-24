@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion, classifyPlacementLevel } from '../../data/placementTestQuestions';
+import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion, classifyPlacementLevel, getQuestionsForLanguage } from '../../data/placementTestQuestions';
 import { LessonLanguageCode } from '../../types';
 import { auth, db, ensureAnonAuth } from '../../services/firebase';
 import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
@@ -13,17 +13,21 @@ interface PlacementTestProps {
 }
 
 export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 'en', onComplete, onTriggerConversion }) => {
+  // Resolve questions for the active language. Falls back to English until
+  // per-language banks are authored. This is the dispatch point for future content.
+  const questions = getQuestionsForLanguage(currentLanguage);
+
   const [studentName, setStudentName] = useState('');
   const [studentWhatsApp, setStudentWhatsApp] = useState('');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<(number | null)[]>(new Array(PLACEMENT_TEST_QUESTIONS.length).fill(null));
+  const [answers, setAnswers] = useState<(number | null)[]>(new Array(questions.length).fill(null));
   const [testStarted, setTestStarted] = useState(false);
   const [testCompleted, setTestCompleted] = useState(false);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
 
-  const currentQuestion = PLACEMENT_TEST_QUESTIONS[currentQuestionIndex];
-  const progress = Math.round(((currentQuestionIndex + 1) / PLACEMENT_TEST_QUESTIONS.length) * 100);
+  const currentQuestion = questions[currentQuestionIndex];
+  const progress = Math.round(((currentQuestionIndex + 1) / questions.length) * 100);
 
   const getEnglishVoice = (): SpeechSynthesisVoice | null => {
     const voices = window.speechSynthesis.getVoices();
@@ -83,7 +87,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
       setAnswers(newAnswers);
       setSelectedAnswer(null);
 
-      if (currentQuestionIndex < PLACEMENT_TEST_QUESTIONS.length - 1) {
+      if (currentQuestionIndex < questions.length - 1) {
         setCurrentQuestionIndex(currentQuestionIndex + 1);
       } else {
         handleCompleteTest(newAnswers);
@@ -93,13 +97,13 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
 
   const handleCompleteTest = async (finalAnswers: (number | null)[]) => {
     const correctCount = finalAnswers.reduce((count, answer, index) => {
-      if (answer === PLACEMENT_TEST_QUESTIONS[index].correctAnswerIndex) {
+      if (answer === questions[index].correctAnswerIndex) {
         return count + 1;
       }
       return count;
     }, 0);
 
-    const { percentage, level } = classifyPlacementLevel(finalAnswers, PLACEMENT_TEST_QUESTIONS);
+    const { percentage, level } = classifyPlacementLevel(finalAnswers, questions);
     
     // Ensure user is authenticated before saving to Firebase
     let authUser = auth.currentUser;
@@ -137,7 +141,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
         level,
         answers: finalAnswers.filter((a): a is number => a !== null),
         correctAnswers: correctCount,
-        totalQuestions: PLACEMENT_TEST_QUESTIONS.length,
+        totalQuestions: questions.length,
         fullName: studentName,
         whatsapp: studentWhatsApp,
       });
@@ -149,7 +153,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
         studentWhatsApp,
         percentage,
         correctCount,
-        PLACEMENT_TEST_QUESTIONS.length,
+        questions.length,
         level,
         authUser.isAnonymous
       );
@@ -164,6 +168,19 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
       // Update user root doc with latest placement score
       if (db) {
         await setDoc(doc(db, 'users', authUser.uid), { placementScore: percentage }, { merge: true }).catch(() => {});
+        // Mirror to flat progress doc: both the legacy `placement` key and the
+        // per-language `placements[languageCode]` key for future multi-course support.
+        const placementRecord = { score: percentage, level, date: new Date().toISOString(), languageCode: currentLanguage };
+        await setDoc(
+          doc(db, 'progress', authUser.uid),
+          {
+            tests: {
+              placement: placementRecord,
+              placements: { [currentLanguage]: placementRecord },
+            },
+          },
+          { merge: true },
+        ).catch(() => {});
       }
     } catch (error) {
       console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);
@@ -176,12 +193,12 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
 
   if (testCompleted) {
     const correctCount = answers.reduce((count, answer, index) => {
-      if (answer === PLACEMENT_TEST_QUESTIONS[index].correctAnswerIndex) {
+      if (answer === questions[index].correctAnswerIndex) {
         return count + 1;
       }
       return count;
     }, 0);
-    const { level, percentage } = classifyPlacementLevel(answers, PLACEMENT_TEST_QUESTIONS);
+    const { level, percentage } = classifyPlacementLevel(answers, questions);
     const levelInfo = CEFR_LEVELS[level as keyof typeof CEFR_LEVELS];
 
     const handleContactTeacher = () => {
@@ -214,7 +231,7 @@ I would like to receive feedback about my result.`;
 
             <div className="bg-blue-50 rounded-2xl p-4 mb-6 border border-blue-200">
               <p className="text-sm font-semibold text-blue-900 mb-2">Your Results</p>
-              <p className="text-2xl font-bold text-blue-600 mb-1">{correctCount}/{PLACEMENT_TEST_QUESTIONS.length} Correct</p>
+              <p className="text-2xl font-bold text-blue-600 mb-1">{correctCount}/{questions.length} Correct</p>
               <p className="text-xs text-slate-600">You got {percentage}% of questions right</p>
             </div>
 
@@ -270,7 +287,7 @@ I would like to receive feedback about my result.`;
             <div className="bg-blue-50 rounded-2xl p-4 mb-6 border border-blue-200 text-left">
               <h2 className="font-bold text-blue-900 text-sm mb-3">What to expect:</h2>
               <ul className="text-sm text-slate-700 space-y-2">
-                <li>✓ 40 questions total</li>
+                <li>✓ {questions.length} questions total</li>
                 <li>✓ Listening, Grammar, Reading & Vocabulary</li>
                 <li>✓ Progressive difficulty (Beginner to C2)</li>
                 <li>✓ Takes about 15-20 minutes</li>
@@ -323,7 +340,7 @@ I would like to receive feedback about my result.`;
         {/* Progress Bar */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold text-slate-700">Question {currentQuestionIndex + 1} of {PLACEMENT_TEST_QUESTIONS.length}</p>
+            <p className="text-sm font-semibold text-slate-700">Question {currentQuestionIndex + 1} of {questions.length}</p>
             <p className="text-sm font-bold text-blue-600">{progress}%</p>
           </div>
           <div className="w-full bg-slate-200 rounded-full h-2">

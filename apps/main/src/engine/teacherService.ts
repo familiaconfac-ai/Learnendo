@@ -89,6 +89,7 @@ export async function getTeacherDashboardData(courseId?: string): Promise<Teache
     alerts:            detectAlerts(student),
     pathLabel:         pathLabel(student),
     lastActivityLabel: relativeDate(student.lastActivity),
+    tests:             student.tests,
   }));
 }
 

@@ -41,10 +41,21 @@ export interface TestRecord {
   score: number;
   date: string; // ISO string
   level?: string; // CEFR level, e.g. 'A1', 'B2'
+  languageCode?: string; // which language this test was taken in
 }
 
 export interface UserTestData {
+  /**
+   * Legacy single placement result (backward compat).
+   * New code should prefer `placements[languageCode]`.
+   */
   placement?: TestRecord;
+  /**
+   * Per-language placement results.
+   * Key = LessonLanguageCode (e.g. 'en', 'pt', 'es').
+   * Populated alongside `placement` so old readers still work.
+   */
+  placements?: Record<string, TestRecord>;
   lessons?: {
     /** Key format: "W{workbook}L{lesson}", e.g. "W1L3" */
     [key: string]: TestRecord & { workbook: number; lesson: number; day: number };
