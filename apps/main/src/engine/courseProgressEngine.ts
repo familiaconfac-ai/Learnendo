@@ -441,6 +441,56 @@ export async function completeCourseDay(
   }
 }
 
+/**
+ * Aggregate cumulative stats across ALL courseProgress subcollection documents for a user.
+ *
+ * Unlike completeCourseDay() which returns per-lesson stats, this function reads
+ * every courseProgress document (one per courseId+bookNumber) and sums all lesson
+ * stats together — giving the true lifetime totals for fire, ice, diamonds, stars,
+ * sessions (days completed), accuracy, etc.
+ *
+ * This is the canonical source for the flat `progress/{uid}` ranking fields so that
+ * ranking is never reset when the student moves from one lesson/workbook to the next.
+ *
+ * Returns EMPTY_STATS if Firestore is unavailable or the user has no data yet.
+ */
+export async function getCumulativeUserStats(uid: string): Promise<LessonStats> {
+  if (!db) return { ...EMPTY_STATS };
+  try {
+    const cpSnap = await getDocs(collection(db!, `users/${uid}/courseProgress`));
+    let fire = 0, ice = 0, diamonds = 0, totalCompleted = 0;
+    let totalTimeSpentSum = 0, totalErrors = 0, totalAttempts = 0;
+    let accSum = 0, accCount = 0;
+
+    for (const cpDoc of cpSnap.docs) {
+      const cpData = cpDoc.data() as CourseProgressDoc;
+      for (const lesson of Object.values(cpData.lessons ?? {})) {
+        // Guard against non-lesson docs (e.g. the legacy "main" nav doc)
+        if (!lesson || !Array.isArray(lesson.days)) continue;
+        const s = rebuildLessonStats(lesson);
+        fire           += s.fire;
+        ice            += s.ice;
+        diamonds       += s.diamonds;
+        totalCompleted += s.totalCompleted;
+        totalTimeSpentSum += s.avgTimeSpent * s.totalCompleted;
+        totalErrors    += s.totalErrors;
+        totalAttempts  += s.totalAttempts;
+        if (s.avgAccuracy > 0) { accSum += s.avgAccuracy; accCount++; }
+      }
+    }
+
+    const stars        = fire + diamonds;
+    const avgTimeSpent = totalCompleted > 0 ? Math.round(totalTimeSpentSum / totalCompleted) : 0;
+    const avgAccuracy  = accCount > 0       ? Math.round(accSum / accCount)                  : 0;
+
+    return { fire, ice, diamonds, stars, totalCompleted, sessions: totalCompleted,
+             avgTimeSpent, totalErrors, totalAttempts, avgAccuracy };
+  } catch (e) {
+    console.error('[CumulativeStats] getCumulativeUserStats failed for uid:', uid, e);
+    return { ...EMPTY_STATS };
+  }
+}
+
 /** Get aggregated stats for a lesson (convenience wrapper). */
 export async function getLessonStats(
   uid: string,

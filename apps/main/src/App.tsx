@@ -26,7 +26,7 @@ import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/week
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
 import { calculateWeeklyScore, DayProgress, ScoreResult } from './engine/scoringEngine';
-import { ensureLessonStarted, completeCourseDay, LessonProgress, DayAnalytics } from './engine/courseProgressEngine';
+import { ensureLessonStarted, completeCourseDay, getCumulativeUserStats, LessonProgress, DayAnalytics } from './engine/courseProgressEngine';
 import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 import { trackLessonCompletion } from './services/progressService';
@@ -1220,16 +1220,19 @@ const App: React.FC = () => {
             accuracy: score,
           };
           completeCourseDay(user.uid, courseId, progress.currentWorkbook, lessonNumber, dayNumber, score, analytics)
-            .then(({ success, stats }) => {
+            .then(async ({ success, stats }) => {
               if (success) {
-                console.log('[SAVE] courseProgress stats:', stats);
+                console.log('[SAVE] courseProgress stats (current lesson):', stats);
                 // Refresh the in-memory lessonProgress so LessonView shows the tick
                 ensureLessonStarted(user.uid!, courseId, progress.currentWorkbook, lessonNumber)
                   .then(lp => { if (lp) setLessonProgress(lp); })
                   .catch(() => {});
 
-                // Write to flat "progress" collection for realtime teacher dashboard
+                // Write to flat "progress" collection for realtime teacher dashboard.
+                // Use CUMULATIVE stats across all lessons/books so the ranking score
+                // never resets when the student moves to a new lesson or workbook.
                 if (db) {
+                  const cumulativeStats = await getCumulativeUserStats(user.uid!);
                   const flatProgressPayload = {
                     uid: user.uid,
                     displayName: user.displayName ?? null,
@@ -1239,15 +1242,15 @@ const App: React.FC = () => {
                     currentLesson: updated.currentLesson,
                     currentDay: updated.currentDay,
                     lastActivity: serverTimestamp(),
-                    totalStars: stats.stars,
-                    totalDiamonds: stats.diamonds,
-                    totalFire: stats.fire,
-                    totalIce: stats.ice,
-                    daysCompleted: stats.sessions,
-                    avgAccuracy: stats.avgAccuracy,
-                    totalTimeSpent: stats.sessions * stats.avgTimeSpent,
-                    totalErrors: stats.totalErrors,
-                    totalAttempts: stats.totalAttempts,
+                    totalStars: cumulativeStats.stars,
+                    totalDiamonds: cumulativeStats.diamonds,
+                    totalFire: cumulativeStats.fire,
+                    totalIce: cumulativeStats.ice,
+                    daysCompleted: cumulativeStats.sessions,
+                    avgAccuracy: cumulativeStats.avgAccuracy,
+                    totalTimeSpent: cumulativeStats.sessions * cumulativeStats.avgTimeSpent,
+                    totalErrors: cumulativeStats.totalErrors,
+                    totalAttempts: cumulativeStats.totalAttempts,
                     lessonsStarted: Math.max(updated.currentLesson, lessonNumber),
                   };
                   console.log('[WRITE] setDoc to progress/{uid} — FLAT DOC (should not affect courseProgress/main)', {

@@ -195,7 +195,16 @@ export function subscribeToTeacherData(
         } as UserProgressSummary;
       });
 
-      const ranked = rankStudents(summaries);
+      // ── Ghost/legacy filter ──────────────────────────────────────────────────
+      // Exclude accounts with zero real activity — they are brand-new sessions,
+      // anonymous logins that never studied, or legacy test accounts.
+      // Rule: must have at least 1 completed day OR 1 star OR 1 answer attempt.
+      // This never deletes data; it only hides accounts from the visible ranking.
+      const activeSummaries = summaries.filter(
+        s => s.daysCompleted > 0 || s.totalStars > 0 || s.totalAttempts > 0,
+      );
+
+      const ranked = rankStudents(activeSummaries);
       const rows: TeacherStudentRow[] = ranked.map(student => {
         const raw = snap.docs.find(d => d.id === student.uid)?.data();
         return {

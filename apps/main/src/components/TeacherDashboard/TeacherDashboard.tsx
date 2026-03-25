@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User } from 'firebase/auth';
 import {
-  getTeacherDashboardData,
+  subscribeToTeacherData,
   sortRows,
   filterRows,
   TeacherStudentRow,
@@ -272,7 +272,7 @@ const RankingTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
   return (
     <div>
       <p className="text-sm text-slate-500 mb-4">
-        Score = Stars + Diamonds + (Exercises × 0.5) &nbsp;·&nbsp; Top 10 shown
+        Score = (Stars×2) + (Diamonds×3) + (Accuracy÷10) + (Days×0.2) &nbsp;·&nbsp; Top 10 shown
       </p>
       {top10.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center text-slate-500">
@@ -362,19 +362,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
     setError(null);
 
-    getTeacherDashboardData()
-      .then(data => { if (!cancelled) setRows(data); })
-      .catch(err  => {
-        if (!cancelled) setError('Failed to load student data. Please try again.');
-        console.error('[TeacherDash]', err);
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    // Use realtime subscription so both the Students table and Ranking tab
+    // always reflect the same live data from the flat `progress` collection,
+    // identical to the data source used by the student-facing RankScreen.
+    const unsub = subscribeToTeacherData((data) => {
+      setRows(data);
+      setLoading(false);
+    });
 
-    return () => { cancelled = true; };
+    return unsub;
   }, [refreshKey]);
 
   // ── Loading state ──────────────────────────────────────────

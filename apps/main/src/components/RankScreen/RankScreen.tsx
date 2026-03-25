@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { subscribeToTeacherData, TeacherStudentRow } from '../../engine/teacherService';
 import { rankMedal } from '../../engine/rankingService';
 
@@ -8,19 +8,23 @@ interface RankScreenProps {
 }
 
 export const RankScreen: React.FC<RankScreenProps> = ({ currentUserId, courseId }) => {
-  const [rows, setRows] = useState<TeacherStudentRow[]>([]);
+  // Keep ALL ranked rows so that the current user's rank is always findable,
+  // even when they are outside the displayed top 10.
+  const [allRows, setAllRows] = useState<TeacherStudentRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const unsub = subscribeToTeacherData((data) => {
-      setRows(data.slice(0, 10)); // top 10
+      setAllRows(data);
       setLoading(false);
     }, courseId);
     return unsub;
   }, [courseId]);
 
+  // Only display the top 10, but look up the current user's rank from the full list.
+  const top10 = useMemo(() => allRows.slice(0, 10), [allRows]);
   const currentUserRank = currentUserId
-    ? rows.find(r => r.uid === currentUserId)?.rank ?? null
+    ? allRows.find(r => r.uid === currentUserId)?.rank ?? null
     : null;
 
   return (
@@ -38,13 +42,13 @@ export const RankScreen: React.FC<RankScreenProps> = ({ currentUserId, courseId 
         <div className="flex justify-center items-center py-16">
           <p className="text-slate-400 text-sm">Loading ranking...</p>
         </div>
-      ) : rows.length === 0 ? (
+      ) : top10.length === 0 ? (
         <div className="flex justify-center items-center py-16">
           <p className="text-slate-400 text-sm">No ranking data yet. Complete some lessons to appear here!</p>
         </div>
       ) : (
         <ol className="space-y-3 max-w-md mx-auto">
-          {rows.map((student) => {
+          {top10.map((student) => {
             const isCurrentUser = student.uid === currentUserId;
             const medal = rankMedal(student.rank);
             const name = student.displayName ?? student.email ?? 'Anonymous';
