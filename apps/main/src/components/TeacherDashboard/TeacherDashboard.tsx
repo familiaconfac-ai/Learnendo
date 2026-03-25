@@ -23,6 +23,7 @@ import {
 import { rankMedal, getTopRanked } from '../../engine/rankingService';
 import { AlertType } from '../../engine/alertService';
 import { generateStudentReport } from '../../services/reportService';
+import { generatePlacementReport } from '../../services/placementReportService';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -86,7 +87,8 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
   const [search, setSearch]         = useState('');
   const [sortCol, setSortCol]       = useState<SortColumn>('score');
   const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
-  const [generating, setGenerating] = useState<string | null>(null);
+  const [generating, setGenerating]           = useState<string | null>(null);
+  const [generatingPlacement, setGeneratingPlacement] = useState<string | null>(null);
 
   const handleSort = (col: SortColumn) => {
     if (col === sortCol) {
@@ -108,6 +110,15 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
       generateStudentReport(student);
     } finally {
       setGenerating(null);
+    }
+  };
+
+  const handlePlacementPdf = (student: TeacherStudentRow) => {
+    setGeneratingPlacement(student.uid);
+    try {
+      generatePlacementReport(student);
+    } finally {
+      setGeneratingPlacement(null);
     }
   };
 
@@ -206,12 +217,20 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     {/* Placement Test */}
                     <td className="px-4 py-3 whitespace-nowrap">
                       {student.tests?.placement ? (
-                        <span className="inline-flex flex-col">
-                          <span className="text-sm font-bold text-blue-700">{student.tests.placement.level ?? '—'}</span>
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-bold text-blue-700">{student.tests.placement.level ?? '—'}</span>
                           <span className="text-xs text-slate-500">{student.tests.placement.score}%</span>
-                        </span>
+                          <button
+                            onClick={() => handlePlacementPdf(student)}
+                            disabled={generatingPlacement === student.uid}
+                            title="Download Placement Test PDF"
+                            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-2 py-1 rounded-md text-xs font-medium transition-all active:scale-95 mt-0.5"
+                          >
+                            {generatingPlacement === student.uid ? '…' : '📋 PDF'}
+                          </button>
+                        </div>
                       ) : (
-                        <span className="text-xs text-slate-400">not done</span>
+                        <span className="text-xs text-slate-400">Not Done</span>
                       )}
                     </td>
                     {/* PDF download */}

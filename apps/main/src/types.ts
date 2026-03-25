@@ -37,11 +37,33 @@ export interface Workbook {
   lessons: Lesson[];
 }
 
+export interface PlacementAnswerItem {
+  questionId: string;
+  prompt: string;
+  studentAnswer: string | null;
+  correctAnswer: string;
+  isCorrect: boolean;
+  explanation: string | null;
+  grammarTopic: string | null;
+  levelBand: string;
+  skillType: string;
+}
+
 export interface TestRecord {
   score: number;
   date: string; // ISO string
   level?: string; // CEFR level, e.g. 'A1', 'B2'
   languageCode?: string; // which language this test was taken in
+  /** Full per-question breakdown — populated by PlacementTest component. */
+  answerBreakdown?: PlacementAnswerItem[];
+  /** Student's full name as entered on the Placement Test form. */
+  fullName?: string;
+  /** Student's WhatsApp as entered on the Placement Test form. */
+  whatsapp?: string;
+  /** Number of correct answers. */
+  correctAnswers?: number;
+  /** Total questions in the test. */
+  totalQuestions?: number;
 }
 
 export interface UserTestData {
