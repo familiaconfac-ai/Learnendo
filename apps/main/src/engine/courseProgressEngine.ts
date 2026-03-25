@@ -607,6 +607,12 @@ export interface UserProgressSummary {
   studyProfile?: import('../types').StudentStudyProfile;
   /** Tests data (placement + lesson tests) from progress/{uid}.tests */
   tests?: import('../types').UserTestData;
+  /**
+   * Active courses map — keyed by courseId.
+   * Populated on every real activity (exercise completion, placement test).
+   * Used by the ranking system and PDF to show per-course progress.
+   */
+  courses?: Record<string, import('../types').ActiveCourse>;
 }
 
 /**

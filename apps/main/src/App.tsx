@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, setDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
-import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
+import { doc, setDoc, updateDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
+import { Course, Day, UserProgress, SectionType, LessonLanguageCode, ActiveCourse } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
 import { BottomNavigation } from './components/BottomNavigation';
@@ -1265,7 +1265,25 @@ const App: React.FC = () => {
                     doc(db, 'progress', user.uid!),
                     flatProgressPayload,
                     { merge: true },
-                  ).catch(e => console.warn('[PROGRESS] flat doc write failed:', e));
+                  ).then(() => {
+                    // Mark this course as active using updateDoc with a dotted field path
+                    // so other courses in the map are never overwritten.
+                    // This is the single write that powers multi-language tracking and
+                    // per-course ranking filters.
+                    const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
+                    const activeCourseEntry: ActiveCourse = {
+                      courseId:        activeCourseId,
+                      languageCode:    COURSE_TO_LANGUAGE[activeCourseId],
+                      lastActivityAt:  new Date().toISOString(),
+                      currentWorkbook: updated.currentWorkbook,
+                      currentLesson:   updated.currentLesson,
+                      currentDay:      updated.currentDay,
+                    };
+                    updateDoc(
+                      doc(db!, 'progress', user.uid!),
+                      { [`courses.${activeCourseId}`]: activeCourseEntry },
+                    ).catch(() => {}); // non-critical — silently ignore
+                  }).catch(e => console.warn('[PROGRESS] flat doc write failed:', e));
 
                   // Update dashboard stats collection with lesson results
                   const safeDiamonds = stats.diamonds ?? 0;

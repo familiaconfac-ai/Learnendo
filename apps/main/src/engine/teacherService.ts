@@ -192,6 +192,8 @@ export function subscribeToTeacherData(
           courseId:     data.courseId     ?? undefined,
           languageCode: data.language ?? data.languageCode ?? undefined,
           studyProfile: data.studyProfile ?? undefined,
+          // Active courses map — preserved across snapshot updates
+          courses:      data.courses ?? undefined,
         } as UserProgressSummary;
       });
 
@@ -212,7 +214,8 @@ export function subscribeToTeacherData(
           alerts:            detectAlerts(student),
           pathLabel:         pathLabel(student),
           lastActivityLabel: relativeDate(student.lastActivity),
-          tests:             raw?.tests ?? undefined,
+          tests:             raw?.tests   ?? undefined,
+          courses:           raw?.courses ?? undefined,
         };
       });
 

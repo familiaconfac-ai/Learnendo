@@ -10,8 +10,19 @@
 
 import jsPDF from 'jspdf';
 import { TeacherStudentRow } from '../engine/teacherService';
-import { StudentStudyProfile } from '../types';
+import { ActiveCourse, StudentStudyProfile } from '../types';
 import { formatTime, formatAccuracy, MAX_WORKBOOK, MAX_LESSON, MAX_DAY } from '../engine/progressStatsService';
+
+// Human-readable labels for course IDs used in the Active Courses section.
+const COURSE_LABELS: Record<string, string> = {
+  'english':               'English',
+  'english-native':        'English (Native)',
+  'portuguese_foreigners': 'Portuguese',
+  'portuguese_native':     'Portuguese (Native)',
+  'spanish':               'Spanish',
+  'greek_koine':           'Greek (Koine)',
+  'hebrew_biblical':       'Hebrew (Biblical)',
+};
 
 // ─────────────────────────────────────────────────────────────
 // Layout constants
@@ -122,6 +133,19 @@ function progressBar(
   doc.setFontSize(8);
   doc.setTextColor('#1e293b');
   doc.text(`${pct}%`, barX + barW + 2, y);
+}
+
+/** Format an ISO date string as a short relative/absolute label for PDF display. */
+function formatRelativeDateShort(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso.slice(0, 10);
+    const days = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+    if (days === 0) return 'Today';
+    if (days === 1) return 'Yesterday';
+    if (days < 30)  return `${days}d ago`;
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch { return ''; }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -253,9 +277,11 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   // Always render this section — show "Not Done" when no data exists yet.
   // Students who completed the test before the mirror-to-progress-doc change
   // was deployed will show "Not Done" until their doc is back-filled.
+  // Running section counter: sections 1-4 are fixed; 5+ are conditional.
+  let nextSection = student.alerts.length > 0 ? 6 : 5;
   {
-    const sectionN = student.alerts.length > 0 ? '6' : '5';
-    y = sectionHead(doc, `${sectionN}. Tests Performance`, y);
+    y = sectionHead(doc, `${nextSection}. Tests Performance`, y);
+    nextSection++;
 
     if (student.tests?.placement) {
       const pt = student.tests.placement;
@@ -290,11 +316,63 @@ export function generateStudentReport(student: TeacherStudentRow): void {
     y += 4;
   }
 
+  // ── ACTIVE COURSES ────────────────────────────────────────
+  // Shows every course the student has had real activity in.
+  // Falls back to the single current courseId for legacy docs with no courses map.
+  const courseEntries: [string, ActiveCourse][] = Object.entries(student.courses ?? {});
+  // Fallback for legacy docs: if no courses map but courseId is set, synthesise one entry.
+  if (courseEntries.length === 0 && student.courseId) {
+    courseEntries.push([student.courseId, {
+      courseId: student.courseId,
+      languageCode: student.languageCode,
+      lastActivityAt: '',
+      currentWorkbook: student.currentWorkbook,
+      currentLesson:   student.currentLesson,
+      currentDay:      student.currentDay,
+    }]);
+  }
+  if (courseEntries.length > 0 && y < 240) {
+    y = sectionHead(doc, `${nextSection}. Active Courses`, y);
+    nextSection++;
+
+    for (const [, entry] of courseEntries) {
+      const courseLabel = COURSE_LABELS[entry.courseId] ?? entry.courseId;
+      // Placement result for this course (check per-language map first)
+      const lc = entry.languageCode;
+      const ptRecord = lc
+        ? (student.tests?.placements?.[lc] ?? null)
+        : (student.tests?.placement ?? null);
+      const placementLabel = ptRecord
+        ? `${ptRecord.score}% — ${ptRecord.level ?? ''}`
+        : 'Not done';
+      const wb  = entry.currentWorkbook ?? 1;
+      const ls  = entry.currentLesson   ?? 1;
+      const dy  = entry.currentDay      ?? 1;
+      const posLabel = `Wbk ${wb}/8 · L${ls}/12 · Ex ${dy}/7`;
+      const lastAct = entry.lastActivityAt ? formatRelativeDateShort(entry.lastActivityAt) : '—';
+
+      // Compact row: bg strip + label left, data right
+      roundRect(doc, MARGIN, y - 3, COL_W, 14, 2, '#f0f9ff');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor('#1e40af');
+      doc.text(courseLabel, MARGIN + 4, y + 3);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor('#1e293b');
+      doc.text(`Placement: ${placementLabel}`, col2x(), y + 3);
+      doc.setTextColor('#475569');
+      doc.text(posLabel, MARGIN + 4, y + 9);
+      doc.text(`Last activity: ${lastAct}`, col2x(), y + 9);
+      y += 17;
+    }
+    y += 2;
+  }
+
   // ── STUDY PROFILE ─────────────────────────────────────────
   // Tests Performance is always rendered now, so profile is always one section higher.
   if (y < 250) {
-    const profileN = student.alerts.length > 0 ? '7' : '6';
-    y = sectionHead(doc, `${profileN}. Study Profile`, y);
+    y = sectionHead(doc, `${nextSection}. Study Profile`, y);
     labelValue(doc, 'Access type',    profile.appAccessType     ?? '—', MARGIN,  y);
     labelValue(doc, 'PDF workbook',   profile.pdfStatus         ?? '—', col2x(), y);
     y += 8;

@@ -84,6 +84,24 @@ export interface UserTestData {
   };
 }
 
+/**
+ * Describes one course in which a student has had real activity (exercise, lesson, or placement test).
+ * Stored in `progress/{uid}.courses` as a map keyed by courseId.
+ * Only actual activity triggers an entry — mere navigation doesn't count.
+ */
+export interface ActiveCourse {
+  /** Matches Course.id (e.g. 'english', 'spanish'). */
+  courseId: string;
+  /** ISO 639-1 code, if known (e.g. 'en', 'pt', 'es'). */
+  languageCode?: string;
+  /** ISO timestamp of the most recent real activity in this course. */
+  lastActivityAt: string;
+  /** Learning position snapshot at the time of last activity. */
+  currentWorkbook?: number;
+  currentLesson?: number;
+  currentDay?: number;
+}
+
 export interface UserProgress {
   userId: string;
   currentCourseId?: string;
