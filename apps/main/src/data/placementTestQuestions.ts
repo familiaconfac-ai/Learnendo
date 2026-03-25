@@ -1,496 +1,506 @@
+﻿// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Placement Test â€” Question bank v2
+//
+// 50 questions across 5 levels (10 each): A1 Â· A2 Â· B1 Â· B2 Â· C1/C2
+// All questions have "I don't know" as the LAST option.
+// "I don't know" is NEVER the correct answer (correctAnswerIndex is always 0â€“3).
+// audioText is NEVER shown in the UI prompt â€” component reads it only for TTS.
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
 export interface PlacementQuestion {
   id: string;
-  part: number; // 1-4
+  part: number; // 1-5
   levelBand: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
   type: 'multiple-choice' | 'listening' | 'reading' | 'vocabulary';
+  /** Shown to the student as the question text. NEVER include audioText here. */
   prompt: string;
-  audioText?: string; // Text to be read aloud for listening questions
+  /** TTS text â€” read aloud. NEVER rendered in the UI. */
+  audioText?: string;
+  /** Always 5 options: 4 real + "I don't know" as index 4. */
   options: string[];
+  /** Index of the correct answer within options[]. Always 0â€“3. */
   correctAnswerIndex: number;
   explanation?: string;
 }
 
+// â”€â”€â”€ HELPER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/** Append "I don't know" to a 4-option list and return a 5-option list. */
+function q(
+  id: string,
+  part: number,
+  levelBand: PlacementQuestion['levelBand'],
+  type: PlacementQuestion['type'],
+  prompt: string,
+  opts4: [string, string, string, string],
+  correctAnswerIndex: number,
+  audioText?: string,
+  explanation?: string,
+): PlacementQuestion {
+  return {
+    id, part, levelBand, type, prompt,
+    audioText,
+    options: [...opts4, "I don't know"],
+    correctAnswerIndex,
+    explanation,
+  };
+}
+
 export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
-  // === PART 1: FOUNDATIONS (A1) ===
-  // Listening
-  {
-    id: 'p1_listen_01',
-    part: 1,
-    levelBand: 'A1',
-    type: 'listening',
-    prompt: 'Listen to the greeting. What do you hear?',
-    audioText: 'Hello. My name is Sarah.',
-    options: [
-      'The person is introducing themselves',
-      'The person is saying goodbye',
-      'The person is asking for help',
-      'The person is ordering food'
-    ],
-    correctAnswerIndex: 0,
-    explanation: 'The speaker says "My name is Sarah" which is a self-introduction.'
-  },
-  {
-    id: 'p1_listen_02',
-    part: 1,
-    levelBand: 'A1',
-    type: 'listening',
-    prompt: 'Listen to the number. Which one do you hear?',
-    audioText: 'Seven.',
-    options: ['7', '5', '9', '11'],
-    correctAnswerIndex: 0,
-    explanation: 'The speaker says "seven" which is the number 7.'
-  },
-  {
-    id: 'p1_listen_03',
-    part: 1,
-    levelBand: 'A1',
-    type: 'listening',
-    prompt: 'What time is mentioned?',
-    audioText: 'It is three o\'clock.',
-    options: ['Two o\'clock', 'Three o\'clock', 'Four o\'clock', 'Five o\'clock'],
-    correctAnswerIndex: 1,
-    explanation: 'The speaker says "three o\'clock."'
-  },
-  {
-    id: 'p1_listen_04',
-    part: 1,
-    levelBand: 'A1',
-    type: 'listening',
-    prompt: 'How does the person feel?',
-    audioText: 'I am very happy today!',
-    options: ['Sad', 'Tired', 'Angry', 'Happy'],
-    correctAnswerIndex: 3,
-    explanation: 'The speaker says "I am very happy" which clearly shows they are happy.'
-  },
-  {
-    id: 'p1_listen_05',
-    part: 1,
-    levelBand: 'A1',
-    type: 'listening',
-    prompt: 'Where is the person?',
-    audioText: 'I am at home with my family.',
-    options: ['At work', 'At school', 'At home', 'At the park'],
-    correctAnswerIndex: 2,
-    explanation: 'The speaker says "I am at home with my family".'
-  },
 
-  // Grammar/Vocabulary - Part 1
-  {
-    id: 'p1_grammar_06',
-    part: 1,
-    levelBand: 'A1',
-    type: 'multiple-choice',
-    prompt: 'What is the opposite of "big"?',
-    options: ['Small', 'Large', 'New', 'Old'],
-    correctAnswerIndex: 0,
-    explanation: '"Small" is the opposite of "big".'
-  },
-  {
-    id: 'p1_grammar_07',
-    part: 1,
-    levelBand: 'A1',
-    type: 'multiple-choice',
-    prompt: 'Choose the correct form: "She ___ a student."',
-    options: ['is', 'are', 'am', 'be'],
-    correctAnswerIndex: 0,
-    explanation: 'With "she" (third person singular), we use "is".'
-  },
-  {
-    id: 'p1_grammar_08',
-    part: 1,
-    levelBand: 'A1',
-    type: 'multiple-choice',
-    prompt: 'Which is a pronoun?',
-    options: ['He', 'Run', 'Happy', 'Book'],
-    correctAnswerIndex: 0,
-    explanation: '"He" is a personal pronoun.'
-  },
-  {
-    id: 'p1_grammar_09',
-    part: 1,
-    levelBand: 'A1',
-    type: 'vocabulary',
-    prompt: 'What do you use to write on paper?',
-    options: ['Knife', 'Cup', 'Door', 'Pen'],
-    correctAnswerIndex: 3,
-    explanation: 'A pen is used for writing.'
-  },
-  {
-    id: 'p1_grammar_10',
-    part: 1,
-    levelBand: 'A1',
-    type: 'vocabulary',
-    prompt: 'Which is a color?',
-    options: ['Apple', 'Red', 'Run', 'Book'],
-    correctAnswerIndex: 1,
-    explanation: '"Red" is a color.'
-  },
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PART 1 â€” A1  (questions 1â€“10)
+  // Coverage: verb to be, subject pronouns, basic vocabulary, listening
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-  // === PART 2: BASIC COMMUNICATION (A2) ===
-  // Listening
-  {
-    id: 'p2_listen_11',
-    part: 2,
-    levelBand: 'A2',
-    type: 'listening',
-    prompt: 'What is the person asking?',
-    audioText: 'Can you help me find the station?',
-    options: ['Can you help with directions?', 'Where is the train?', 'What time is it?', 'How are you?'],
-    correctAnswerIndex: 0,
-    explanation: 'The person is asking for help finding the station.'
-  },
-  {
-    id: 'p2_listen_12',
-    part: 2,
-    levelBand: 'A2',
-    type: 'listening',
-    prompt: 'What does the person like?',
-    audioText: 'I like playing football and reading books.',
-    options: ['Swimming and dancing', 'Writing and cooking', 'Playing football and reading', 'Drawing and singing'],
-    correctAnswerIndex: 2,
-    explanation: 'The speaker says they like playing football and reading books.'
-  },
-  {
-    id: 'p2_listen_13',
-    part: 2,
-    levelBand: 'A2',
-    type: 'listening',
-    prompt: 'How often does the person exercise?',
-    audioText: 'I go to the gym three times a week.',
-    options: ['Once a week', 'Twice a week', 'Three times a week', 'Every day'],
-    correctAnswerIndex: 2,
-    explanation: 'The person says "three times a week".'
-  },
-  {
-    id: 'p2_listen_14',
-    part: 2,
-    levelBand: 'A2',
-    type: 'listening',
-    prompt: 'Where does the person work?',
-    audioText: 'I work in an office downtown near the big park.',
-    options: ['At home', 'In a hospital', 'In an office downtown', 'In a school'],
-    correctAnswerIndex: 2,
-    explanation: 'The speaker says "I work in an office downtown".'
-  },
-  {
-    id: 'p2_listen_15',
-    part: 2,
-    levelBand: 'A2',
-    type: 'listening',
-    prompt: 'What is the person planning to do?',
-    audioText: 'Tomorrow I am going to visit my grandmother.',
-    options: ['Visit a friend', 'Go to school', 'Visit their grandmother', 'Stay at home'],
-    correctAnswerIndex: 2,
-    explanation: 'The speaker says "Tomorrow I am going to visit my grandmother".'
-  },
+  q('a1_01', 1, 'A1', 'listening',
+    'Listen and choose what the speaker says.',
+    ['Hello! My name is Tom.', 'Goodbye! See you tomorrow.', 'Thank you very much.', 'I am sorry, I don\'t understand.'],
+    0,
+    'Hello! My name is Tom.',
+    '"Hello! My name is Tom." is a greeting and self-introduction.',
+  ),
 
-  // Grammar/Use of English - Part 2
-  {
-    id: 'p2_grammar_16',
-    part: 2,
-    levelBand: 'A2',
-    type: 'multiple-choice',
-    prompt: 'Complete: "There ___ three chairs in the room."',
-    options: ['is', 'am', 'are', 'be'],
-    correctAnswerIndex: 2,
-    explanation: '"There are" is used with plural nouns (three chairs).'
-  },
-  {
-    id: 'p2_grammar_17',
-    part: 2,
-    levelBand: 'A2',
-    type: 'multiple-choice',
-    prompt: 'Which sentence is correct?',
-    options: [
-      'I can swim very well',
-      'I can to swim very well',
-      'I can swimming very well',
-      'I can swam very well'
-    ],
-    correctAnswerIndex: 0,
-    explanation: 'Modal verb "can" is followed by the base form of the verb.'
-  },
-  {
-    id: 'p2_grammar_18',
-    part: 2,
-    levelBand: 'A2',
-    type: 'multiple-choice',
-    prompt: 'What is in the room? Complete the question: "___ any books on the table?"',
-    options: ['Do there', 'Does there', 'Are there', 'Is there'],
-    correctAnswerIndex: 2,
-    explanation: '"Are there" is correct with plural "books".'
-  },
-  {
-    id: 'p2_grammar_19',
-    part: 2,
-    levelBand: 'A2',
-    type: 'vocabulary',
-    prompt: 'Which word means "to prepare food for eating"?',
-    options: ['Cook', 'Bake', 'Make', 'Fry'],
-    correctAnswerIndex: 0,
-    explanation: '"Cook" is the general verb for preparing food.'
-  },
-  {
-    id: 'p2_grammar_20',
-    part: 2,
-    levelBand: 'A2',
-    type: 'vocabulary',
-    prompt: 'What is the opposite of "cheap"?',
-    options: ['Free', 'Rich', 'Poor', 'Expensive'],
-    correctAnswerIndex: 3,
-    explanation: '"Expensive" is the opposite of "cheap".'
-  },
+  q('a1_02', 1, 'A1', 'listening',
+    'Listen and choose the correct number.',
+    ['Fifteen', 'Fifty', 'Fourteen', 'Forty'],
+    0,
+    'Fifteen.',
+    'The speaker says "fifteen" â€” 15.',
+  ),
 
-  // === PART 3: INTERMEDIATE (B1/B2) ===
-  // Reading
-  {
-    id: 'p3_reading_21',
-    part: 3,
-    levelBand: 'B1',
-    type: 'reading',
-    prompt: 'Read: "Last summer, I visited my uncle in a small village. The weather was warm and sunny every day. In the evenings, we would sit outside and watch the sunset." What was the weather like?',
-    options: ['Cold and rainy', 'Cold and cloudy', 'Hot and humid', 'Warm and sunny'],
-    correctAnswerIndex: 3,
-    explanation: 'The text states "The weather was warm and sunny every day".'
-  },
-  {
-    id: 'p3_reading_22',
-    part: 3,
-    levelBand: 'B1',
-    type: 'reading',
-    prompt: 'Read: "Although the movie was quite long, it kept my attention from beginning to end. The actors performed brilliantly and the story was compelling." What is the writer\'s opinion?',
-    options: ['The movie was boring', 'The movie was too long', 'The movie was excellent', 'The movie was confusing'],
-    correctAnswerIndex: 2,
-    explanation: 'The positive phrases "kept my attention," "performed brilliantly," and "compelling" show the writer enjoyed it.'
-  },
-  {
-    id: 'p3_reading_23',
-    part: 3,
-    levelBand: 'B1',
-    type: 'reading',
-    prompt: 'Read: "If you want to improve your English, you should practice speaking every day. Many people find that speaking with native speakers helps them gain confidence." What is recommended?',
-    options: ['Practicing speaking daily', 'Reading books daily', 'Watching movies', 'Listening to music'],
-    correctAnswerIndex: 0,
-    explanation: 'The text suggests "practice speaking every day" as a way to improve English.'
-  },
-  {
-    id: 'p3_reading_24',
-    part: 3,
-    levelBand: 'B2',
-    type: 'reading',
-    prompt: 'Read: "The phenomenon of social media addiction has become increasingly prevalent among teenagers. While these platforms offer connectivity, excessive usage can lead to mental health issues including anxiety and depression." What is the main concern?',
-    options: [
-      'Social media is not popular',
-      'Teenagers cannot connect online',
-      'Excessive social media use may harm mental health',
-      'All teenagers are addicted'
-    ],
-    correctAnswerIndex: 2,
-    explanation: 'The passage discusses how excessive social media usage can lead to mental health problems.'
-  },
-  {
-    id: 'p3_reading_25',
-    part: 3,
-    levelBand: 'B2',
-    type: 'reading',
-    prompt: 'Read: "The Renaissance was characterized by a renewed interest in classical learning and a shift towards humanism. Artists and scholars of this period sought to combine artistic excellence with intellectual pursuits." What distinguished the Renaissance?',
-    options: [
-      'Military conquest',
-      'Religious isolation',
-      'Classical learning and humanism',
-      'Agricultural development'
-    ],
-    correctAnswerIndex: 2,
-    explanation: 'The passage mentions "renewed interest in classical learning" and "shift towards humanism" as characteristics.'
-  },
+  q('a1_03', 1, 'A1', 'multiple-choice',
+    'Choose the correct form: "He ___ a teacher."',
+    ['is', 'are', 'am', 'be'],
+    0,
+    undefined,
+    '"He" (3rd person singular) takes "is".',
+  ),
 
-  // Grammar - Part 3
-  {
-    id: 'p3_grammar_26',
-    part: 3,
-    levelBand: 'B1',
-    type: 'multiple-choice',
-    prompt: 'Complete: "She ___ been studying English for five years."',
-    options: ['is', 'was', 'has', 'do'],
-    correctAnswerIndex: 2,
-    explanation: 'Present perfect "has been" is used for actions that started in the past and continue to the present.'
-  },
-  {
-    id: 'p3_grammar_27',
-    part: 3,
-    levelBand: 'B1',
-    type: 'multiple-choice',
-    prompt: 'Which sentence shows past simple?',
-    options: [
-      'I am eating lunch',
-      'I eat lunch every day',
-      'I ate lunch yesterday',
-      'I will eat lunch tomorrow'
-    ],
-    correctAnswerIndex: 2,
-    explanation: '"I ate lunch yesterday" uses past simple tense.'
-  },
-  {
-    id: 'p3_grammar_28',
-    part: 3,
-    levelBand: 'B1',
-    type: 'multiple-choice',
-    prompt: 'Complete: "The car is more expensive ___ the bicycle."',
-    options: ['than', 'as', 'then', 'from'],
-    correctAnswerIndex: 0,
-    explanation: '"Than" is used in comparatives.'
-  },
-  {
-    id: 'p3_grammar_29',
-    part: 3,
-    levelBand: 'B2',
-    type: 'multiple-choice',
-    prompt: 'Complete: "If I ___ known about the party, I would have gone."',
-    options: ['had', 'would have', 'did', 'will'],
-    correctAnswerIndex: 0,
-    explanation: 'Third conditional: "If I had known" (past perfect).'
-  },
-  {
-    id: 'p3_grammar_30',
-    part: 3,
-    levelBand: 'B2',
-    type: 'multiple-choice',
-    prompt: 'Which sentence uses passive voice correctly?',
-    options: [
-      'The letter was written by her',
-      'She written the letter',
-      'The letter is writing',
-      'She was written the letter'
-    ],
-    correctAnswerIndex: 0,
-    explanation: '"The letter was written by her" is correct passive voice.'
-  },
+  q('a1_04', 1, 'A1', 'multiple-choice',
+    '"___ you from Brazil?"',
+    ['Are', 'Is', 'Am', 'Be'],
+    0,
+    undefined,
+    '"Are you" is the correct question form with "you".',
+  ),
 
-  // === PART 4: ADVANCED (B2/C1/C2) ===
-  // Grammar & Discourse
-  {
-    id: 'p4_grammar_31',
-    part: 4,
-    levelBand: 'B2',
-    type: 'multiple-choice',
-    prompt: 'Which phrasal verb means "to stop/end a relationship"?',
-    options: ['Break up', 'Pick up', 'Give up', 'Make up'],
-    correctAnswerIndex: 0,
-    explanation: '"Break up" means to end a romantic relationship.'
-  },
-  {
-    id: 'p4_grammar_32',
-    part: 4,
-    levelBand: 'B2',
-    type: 'multiple-choice',
-    prompt: 'Complete: "Not only ___ he speak three languages, but he also plays the piano."',
-    options: ['does he', 'do', 'is', 'does his'],
-    correctAnswerIndex: 0,
-    explanation: 'Inversion after "Not only" requires "does he" (auxiliary + subject).'
-  },
-  {
-    id: 'p4_grammar_33',
-    part: 4,
-    levelBand: 'C1',
-    type: 'multiple-choice',
-    prompt: 'Which word best completes: "Despite the difficulties, she continued her studies. ___,  she received a scholarship."',
-    options: ['However', 'Moreover', 'Consequently', 'Nevertheless'],
-    correctAnswerIndex: 2,
-    explanation: '"Consequently" shows that her persistence resulted in a scholarship.'
-  },
-  {
-    id: 'p4_grammar_34',
-    part: 4,
-    levelBand: 'C1',
-    type: 'reading',
-    prompt: 'Read: "The hypothesis that quantum entanglement could facilitate instantaneous communication, while theoretically intriguing, has been conclusively refuted by contemporary physics. The no-communication theorem establishes insurmountable constraints on such applications." What is the primary argument?',
-    options: [
-      'Quantum entanglement enables faster communication',
-      'Quantum communication is theoretically possible but impractical',
-      'Quantum entanglement cannot be used for instant communication',
-      'Contemporary physics has enabled quantum communication'
+  q('a1_05', 1, 'A1', 'multiple-choice',
+    'Choose the correct pronoun: "___ is my sister."',
+    ['She', 'Her', 'He', 'Him'],
+    0,
+    undefined,
+    '"She" is the subject pronoun for a female.',
+  ),
+
+  q('a1_06', 1, 'A1', 'vocabulary',
+    'Which word is a DAY of the week?',
+    ['April', 'Monday', 'Summer', 'Morning'],
+    1,
+    undefined,
+    'Monday is a day of the week.',
+  ),
+
+  q('a1_07', 1, 'A1', 'vocabulary',
+    'What do you use to drink water?',
+    ['Plate', 'Fork', 'Glass', 'Pen'],
+    2,
+    undefined,
+    'A glass is used for drinking.',
+  ),
+
+  q('a1_08', 1, 'A1', 'multiple-choice',
+    'Choose the correct negative: "I ___ a doctor."',
+    ['am not', 'are not', 'is not', 'not am'],
+    0,
+    undefined,
+    '"I am not" is the correct negative of "I am".',
+  ),
+
+  q('a1_09', 1, 'A1', 'listening',
+    'Listen and choose where the person is.',
+    ['At school', 'At home', 'At the park', 'At work'],
+    1,
+    'I am at home with my family today.',
+    'The speaker says "at home".',
+  ),
+
+  q('a1_10', 1, 'A1', 'vocabulary',
+    'Which word means "the opposite of hot"?',
+    ['Big', 'Fast', 'Cold', 'Dark'],
+    2,
+    undefined,
+    'Cold is the opposite of hot.',
+  ),
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PART 2 â€” A2  (questions 11â€“20)
+  // Coverage: there is/are, can/can't, present simple, prepositions, listening
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+  q('a2_11', 2, 'A2', 'listening',
+    'Listen and choose what the person can do.',
+    ['She can drive a car.', 'She can play the guitar.', 'She can speak French.', 'She can swim very well.'],
+    3,
+    'She can swim very well.',
+    'The speaker says "she can swim".',
+  ),
+
+  q('a2_12', 2, 'A2', 'multiple-choice',
+    '"___ a supermarket near your house?"',
+    ['Is there', 'Are there', 'There is', 'There are'],
+    0,
+    undefined,
+    '"Is there" is used to ask about a single countable noun.',
+  ),
+
+  q('a2_13', 2, 'A2', 'multiple-choice',
+    '"There ___ five students in the room."',
+    ['is', 'are', 'am', 'be'],
+    1,
+    undefined,
+    '"There are" is used with plural nouns.',
+  ),
+
+  q('a2_14', 2, 'A2', 'multiple-choice',
+    'Complete: "She ___ coffee every morning."',
+    ['drink', 'drinks', 'is drinking', 'drank'],
+    1,
+    undefined,
+    'Present simple 3rd person singular takes -s.',
+  ),
+
+  q('a2_15', 2, 'A2', 'multiple-choice',
+    '"I ___ play chess. I never learned."',
+    ['can', 'can\'t', 'don\'t', 'won\'t'],
+    1,
+    undefined,
+    '"Can\'t" expresses inability.',
+  ),
+
+  q('a2_16', 2, 'A2', 'vocabulary',
+    'Choose the correct preposition: "The cat is ___ the box."',
+    ['on', 'in', 'at', 'to'],
+    1,
+    undefined,
+    '"In the box" means inside.',
+  ),
+
+  q('a2_17', 2, 'A2', 'listening',
+    'Listen and choose how often the person exercises.',
+    ['Every day', 'Never', 'Three times a week', 'Once a month'],
+    2,
+    'I go to the gym three times a week.',
+    'The speaker says "three times a week".',
+  ),
+
+  q('a2_18', 2, 'A2', 'multiple-choice',
+    'Which question is correct?',
+    ['Do she work here?', 'Does she works here?', 'Does she work here?', 'Is she work here?'],
+    2,
+    undefined,
+    '"Does she work?" is correct â€” 3rd person question with base form.',
+  ),
+
+  q('a2_19', 2, 'A2', 'vocabulary',
+    'What is the opposite of "expensive"?',
+    ['Rich', 'Large', 'Cheap', 'Slow'],
+    2,
+    undefined,
+    '"Cheap" is the opposite of "expensive".',
+  ),
+
+  q('a2_20', 2, 'A2', 'multiple-choice',
+    '"They ___ watching TV right now."',
+    ['is', 'are', 'be', 'was'],
+    1,
+    undefined,
+    '"They are" + present continuous (-ing).',
+  ),
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PART 3 â€” B1  (questions 21â€“30)
+  // Coverage: past simple, going to, comparatives, modals, reading, listening
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+  q('b1_21', 3, 'B1', 'multiple-choice',
+    'Complete: "We ___ to Paris last summer."',
+    ['go', 'gone', 'went', 'goes'],
+    2,
+    undefined,
+    '"Went" is the past simple of "go".',
+  ),
+
+  q('b1_22', 3, 'B1', 'multiple-choice',
+    '"___ you ___ the film last night?"',
+    ['Did / see', 'Do / see', 'Did / saw', 'Have / seen'],
+    0,
+    undefined,
+    'Past simple question: "Did + subject + base verb".',
+  ),
+
+  q('b1_23', 3, 'B1', 'multiple-choice',
+    '"We ___ going to visit my parents this weekend."',
+    ['are', 'is', 'will', 'have'],
+    0,
+    undefined,
+    '"Be going to" = future plan. "We are going to".',
+  ),
+
+  q('b1_24', 3, 'B1', 'multiple-choice',
+    '"This bag is ___ than that one."',
+    ['more heavy', 'heavier', 'heaviest', 'heavy'],
+    1,
+    undefined,
+    'One-syllable adjective â†’ add -er for comparative.',
+  ),
+
+  q('b1_25', 3, 'B1', 'multiple-choice',
+    '"You ___ wear a seatbelt. It\'s the law."',
+    ['might', 'must', 'should', 'can'],
+    1,
+    undefined,
+    '"Must" expresses obligation (legal requirement).',
+  ),
+
+  q('b1_26', 3, 'B1', 'listening',
+    'Listen and answer: What is the person going to do tomorrow?',
+    ['Go to the cinema', 'Visit a friend', 'Go to the gym', 'Stay at home'],
+    2,
+    'Tomorrow morning I am going to the gym. I want to get fit.',
+    'The speaker says "going to the gym".',
+  ),
+
+  q('b1_27', 3, 'B1', 'reading',
+    'Read: "Maria left work early because she had a headache. She went home and rested all afternoon." Why did Maria leave early?',
+    ['She was hungry.', 'She had a meeting.', 'She had a headache.', 'She was bored.'],
+    2,
+    undefined,
+    'Text states "because she had a headache".',
+  ),
+
+  q('b1_28', 3, 'B1', 'multiple-choice',
+    '"I ___ my keys. Have you seen them anywhere?"',
+    ['lose', 'lost', 'have lost', 'was losing'],
+    2,
+    undefined,
+    'Present perfect ("have lost") for a recent action with present relevance.',
+  ),
+
+  q('b1_29', 3, 'B1', 'vocabulary',
+    'Choose the word that best completes: "She gave a very ___ speech â€” everyone was moved."',
+    ['boring', 'powerful', 'silent', 'short'],
+    1,
+    undefined,
+    '"Powerful" fits a speech that moved people.',
+  ),
+
+  q('b1_30', 3, 'B1', 'reading',
+    'Read: "If you practise speaking every day, your fluency will improve quickly." What is the condition for improvement?',
+    ['Reading every day', 'Studying grammar', 'Practising speaking daily', 'Watching films'],
+    2,
+    undefined,
+    '"If you practise speaking every day" is the condition stated.',
+  ),
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PART 4 â€” B2  (questions 31â€“40)
+  // Coverage: present perfect continuous, passive, conditionals, listening, reading
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+  q('b2_31', 4, 'B2', 'multiple-choice',
+    '"She ___ been working here for ten years."',
+    ['have', 'has', 'is', 'was'],
+    1,
+    undefined,
+    'Present perfect: "has been" with 3rd person singular.',
+  ),
+
+  q('b2_32', 4, 'B2', 'multiple-choice',
+    '"I ___ waiting for you for an hour! Where were you?"',
+    ['have been', 'had been', 'was', 'am'],
+    0,
+    undefined,
+    'Present perfect continuous ("have been waiting") â€” ongoing action until now.',
+  ),
+
+  q('b2_33', 4, 'B2', 'multiple-choice',
+    '"The report ___ written by the team last week."',
+    ['is', 'was', 'were', 'has'],
+    1,
+    undefined,
+    'Passive voice past: "was written".',
+  ),
+
+  q('b2_34', 4, 'B2', 'multiple-choice',
+    '"If I ___ more money, I would buy a bigger house."',
+    ['have', 'had', 'have had', 'will have'],
+    1,
+    undefined,
+    'Second conditional: "If + past simple, would + base verb".',
+  ),
+
+  q('b2_35', 4, 'B2', 'listening',
+    'Listen and choose the main idea of the message.',
+    ['The meeting has been cancelled.', 'The meeting has been moved to Thursday.', 'There is no meeting this week.', 'The meeting time has been changed to 2 pm.'],
+    1,
+    'Hi, just to let you know that Monday\'s meeting has been moved to Thursday at the same time. Please update your calendar.',
+    'The speaker says the meeting was moved to Thursday.',
+  ),
+
+  q('b2_36', 4, 'B2', 'reading',
+    'Read: "Although social media platforms offer connectivity, excessive use has been linked to increased levels of anxiety and reduced attention spans in adolescents." What is the writer\'s concern?',
+    ['Social media is not popular among teens.', 'Teens cannot connect with each other.', 'Too much social media may harm teenagers\' wellbeing.', 'Social media should be banned in schools.'],
+    2,
+    undefined,
+    'The text links excessive use to anxiety and reduced attention spans.',
+  ),
+
+  q('b2_37', 4, 'B2', 'vocabulary',
+    'What does "meticulous" mean?',
+    ['Careless and rushed', 'Paying very careful attention to detail', 'Loud and aggressive', 'Flexible and easy-going'],
+    1,
+    undefined,
+    '"Meticulous" means very careful and precise.',
+  ),
+
+  q('b2_38', 4, 'B2', 'multiple-choice',
+    '"Not only ___ he speak French, but he also writes it fluently."',
+    ['does', 'do', 'is', 'did'],
+    0,
+    undefined,
+    'Inversion after "Not only": auxiliary + subject.',
+  ),
+
+  q('b2_39', 4, 'B2', 'multiple-choice',
+    'Choose the sentence where "used to" is correct.',
+    ['I used to going to school by bus.', 'She uses to wake up early.', 'They used to live in London when they were children.', 'He use to play football every week.'],
+    2,
+    undefined,
+    '"Used to + base verb" for past habits. Only option C uses this correctly.',
+  ),
+
+  q('b2_40', 4, 'B2', 'vocabulary',
+    'Which word is closest in meaning to "ambiguous"?',
+    ['Clear and direct', 'Open to more than one interpretation', 'Completely false', 'Strongly opinionated'],
+    1,
+    undefined,
+    '"Ambiguous" means having more than one possible meaning.',
+  ),
+
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // PART 5 â€” C1/C2  (questions 41â€“50)
+  // Coverage: modal perfects, inversion, connectors, nuanced reading, listening
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+  q('c1_41', 5, 'C1', 'multiple-choice',
+    '"If only I ___ harder for the exam. I regret it now."',
+    ['study', 'studied', 'had studied', 'would study'],
+    2,
+    undefined,
+    '"If only + past perfect" expresses regret about a past action.',
+  ),
+
+  q('c1_42', 5, 'C1', 'multiple-choice',
+    '"You ___ have called me â€” I was worried about you."',
+    ['should', 'must', 'would', 'might'],
+    0,
+    undefined,
+    '"Should have" expresses criticism or regret about a past action.',
+  ),
+
+  q('c1_43', 5, 'C1', 'multiple-choice',
+    '"___ the weather been better, we would have gone hiking."',
+    ['If', 'Had', 'Should', 'Were'],
+    1,
+    undefined,
+    'Inversion in third conditional: "Had the weather been better" = "If the weather had been better".',
+  ),
+
+  q('c1_44', 5, 'C1', 'multiple-choice',
+    '"She passed the exam. ___, she received a scholarship."',
+    ['However', 'Although', 'Consequently', 'Nevertheless'],
+    2,
+    undefined,
+    '"Consequently" signals a result: passing led to the scholarship.',
+  ),
+
+  q('c1_45', 5, 'C1', 'listening',
+    'Listen and choose the best summary of the speaker\'s argument.',
+    [
+      'Technology always makes learning easier.',
+      'Students should avoid all forms of technology.',
+      'Technology can benefit learning when used critically and selectively.',
+      'Teachers should use technology instead of books.',
     ],
-    correctAnswerIndex: 2,
-    explanation: 'The text explicitly states the hypothesis "has been conclusively refuted" and describes constraints.'
-  },
-  {
-    id: 'p4_grammar_35',
-    part: 4,
-    levelBand: 'C2',
-    type: 'reading',
-    prompt: 'Read: "The obfuscation inherent in postmodern discourse obstructs meaningful hermeneutical engagement with textual primitives. Notwithstanding the proliferation of deconstructionist methodologies, the fundamental epistemological quandaries remain unresolved." What does the author imply?',
-    options: [
-      'Postmodern discourse is clear and helpful',
-      'Deconstructionist methods have solved all philosophical problems',
-      'Postmodern complexity persists despite theoretical efforts',
-      'Hermeneutics is irrelevant to modern philosophy'
+    2,
+    'While technology can certainly enhance learning, it\'s important that students develop the critical skills to evaluate digital information rather than accepting everything they read online. Used wisely, it\'s a powerful tool.',
+    'The speaker advocates critical use of technology, not total avoidance or uncritical acceptance.',
+  ),
+
+  q('c1_46', 5, 'C1', 'reading',
+    'Read: "The no-communication theorem establishes that quantum entanglement, while theoretically intriguing, cannot be exploited to transmit information faster than light, thereby refuting earlier speculation." What is the text\'s main claim?',
+    ['Quantum entanglement enables instant communication.', 'Faster-than-light communication is theoretically possible.', 'A theorem rules out using entanglement for faster-than-light information transfer.', 'Quantum physics is too complex to understand.'],
+    2,
+    undefined,
+    'The theorem "refutes" the speculation â€” it cannot be used for faster-than-light communication.',
+  ),
+
+  q('c1_47', 5, 'C1', 'vocabulary',
+    'What is a synonym for "elucidate"?',
+    ['Obscure', 'Clarify', 'Complicate', 'Contradict'],
+    1,
+    undefined,
+    '"Elucidate" means to make something clear.',
+  ),
+
+  q('c1_48', 5, 'C1', 'vocabulary',
+    '"The company\'s ___ of the scandal damaged public trust irreparably."',
+    ['documentation', 'discovery', 'concealment', 'analysis'],
+    2,
+    undefined,
+    '"Concealment" (hiding information) would damage trust.',
+  ),
+
+  q('c2_49', 5, 'C2', 'reading',
+    'Read: "The obfuscation inherent in postmodern discourse obstructs meaningful hermeneutical engagement with textual primitives. Notwithstanding the proliferation of deconstructionist methodologies, fundamental epistemological quandaries remain unresolved." What does the author imply?',
+    [
+      'Postmodern writing is admirably clear and rigorous.',
+      'Deconstruction has solved the major questions of philosophy.',
+      'Postmodern complexity prevents genuine understanding and leaves key questions open.',
+      'Hermeneutics is no longer a relevant discipline.',
     ],
-    correctAnswerIndex: 2,
-    explanation: 'The author mentions "obfuscation," "quandaries remain unresolved," and "notwithstanding" which indicates persistence despite efforts.'
-  },
-  {
-    id: 'p4_grammar_36',
-    part: 4,
-    levelBand: 'B2',
-    type: 'vocabulary',
-    prompt: 'What does "meticulous" mean?',
-    options: ['Careless', 'Quick', 'Loud', 'Very careful and precise'],
-    correctAnswerIndex: 3,
-    explanation: '"Meticulous" means paying careful attention to detail.'
-  },
-  {
-    id: 'p4_grammar_37',
-    part: 4,
-    levelBand: 'B2',
-    type: 'vocabulary',
-    prompt: 'Which word is closest in meaning to "ambiguous"?',
-    options: ['Clear', 'Direct', 'Simple', 'Uncertain in meaning'],
-    correctAnswerIndex: 3,
-    explanation: '"Ambiguous" means unclear or having multiple possible interpretations.'
-  },
-  {
-    id: 'p4_grammar_38',
-    part: 4,
-    levelBand: 'C1',
-    type: 'vocabulary',
-    prompt: 'What is a synonym for "elucidate"?',
-    options: ['Clarify', 'Confuse', 'Ignore', 'Criticize'],
-    correctAnswerIndex: 0,
-    explanation: '"Elucidate" means to explain clearly.'
-  },
-  {
-    id: 'p4_grammar_39',
-    part: 4,
-    levelBand: 'C1',
-    type: 'vocabulary',
-    prompt: 'Complete: "The company\'s ___ of the scandal damaged its reputation."',
-    options: ['Discovery of', 'Concealment of', 'Documentation of', 'Recording of'],
-    correctAnswerIndex: 1,
-    explanation: '"Concealment of" (hiding the truth) would damage a company\'s reputation. The other options don\'t show wrongdoing.'
-  },
-  {
-    id: 'p4_grammar_40',
-    part: 4,
-    levelBand: 'C2',
-    type: 'vocabulary',
-    prompt: 'Which word means "deliberately unclear or dishonest"?',
-    options: ['Lucid', 'Pellucid', 'Obfuscatory', 'Perspicuous'],
-    correctAnswerIndex: 2,
-    explanation: '"Obfuscatory" means tending to deliberately obscure or confuse.'
-  }
+    2,
+    undefined,
+    '"Obfuscation", "quandaries remain unresolved", and "notwithstanding" all signal that complexity persists despite theoretical efforts.',
+  ),
+
+  q('c2_50', 5, 'C2', 'vocabulary',
+    'Which word means "deliberately unclear or designed to confuse"?',
+    ['Pellucid', 'Perspicuous', 'Obfuscatory', 'Lucid'],
+    2,
+    undefined,
+    '"Obfuscatory" means intended to make something unclear or difficult to understand.',
+  ),
 ];
 
-/** Point weight per CEFR band — harder questions contribute more to the weighted score. */
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Weighted classification
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/** Point weight per CEFR band. Higher bands contribute more so easy guessing cannot inflate the result. */
 const LEVEL_WEIGHTS: Record<string, number> = {
   A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6,
 };
 
 /**
  * Classify a student's CEFR level using weighted band scoring.
- * Each question contributes points proportional to its difficulty band so that
- * getting easy A1/A2 questions right (even by guessing) cannot inflate the result
- * to C1. `percentage` returned is the raw % correct (for student display);
- * the internal `weightedPct` drives level classification.
+ *
+ * - `percentage` = raw % correct (for student display only â€” NOT used to classify).
+ * - `weightedPct` = weighted score / max possible weighted score Ã— 100.
+ * - Cutoffs are calibrated so random guessing (20% on 5-option questions) always
+ *   lands in Beginner or A1.
+ * - "I don't know" (index 4) is never the correct answer, so choosing it always
+ *   counts as wrong, reducing the incentive to guess.
  */
 export function classifyPlacementLevel(
   answers: (number | null)[],
@@ -511,15 +521,14 @@ export function classifyPlacementLevel(
   });
   const weightedPct = maxScore > 0 ? Math.round((weightedScore / maxScore) * 100) : 0;
 
-  // Cutoffs calibrated against the 40-question, 4-option test:
-  // random guessing ≈ 25 weighted-pct → A1 (never "Beginner" by pure luck)
+  // Cutoffs (v2) â€” more rigorous, calibrated for 5-option questions (random â‰ˆ 20%)
   let level: string;
-  if (weightedPct < 20)      level = 'Beginner';
-  else if (weightedPct < 32) level = 'A1';
-  else if (weightedPct < 45) level = 'A2';
-  else if (weightedPct < 58) level = 'B1';
-  else if (weightedPct < 72) level = 'B2';
-  else if (weightedPct < 87) level = 'C1';
+  if      (weightedPct < 25) level = 'Beginner';
+  else if (weightedPct < 41) level = 'A1';
+  else if (weightedPct < 56) level = 'A2';
+  else if (weightedPct < 71) level = 'B1';
+  else if (weightedPct < 83) level = 'B2';
+  else if (weightedPct < 93) level = 'C1';
   else                       level = 'C2';
 
   return { level, percentage: rawPercentage };
@@ -527,19 +536,14 @@ export function classifyPlacementLevel(
 
 /**
  * Return the placement test question bank for a given language code.
- *
- * Currently only English ('en') has a full bank — every other language falls
- * back to the English questions until a language-specific bank is authored.
- * When adding a new language bank, create a dedicated export (e.g.
- * PLACEMENT_TEST_QUESTIONS_PT) and add a case here.
+ * Currently only English ('en') is implemented â€” other languages fall back here
+ * until their own banks are authored.
  */
 export function getQuestionsForLanguage(languageCode: string): PlacementQuestion[] {
   switch (languageCode) {
-    // 🇬🇧 English (default bank)
     case 'en':
     default:
       return PLACEMENT_TEST_QUESTIONS;
-    // Stub cases: add language-specific arrays here when ready
     // case 'pt': return PLACEMENT_TEST_QUESTIONS_PT;
     // case 'es': return PLACEMENT_TEST_QUESTIONS_ES;
   }
@@ -547,38 +551,38 @@ export function getQuestionsForLanguage(languageCode: string): PlacementQuestion
 
 export const CEFR_LEVELS = {
   'Beginner': {
-    range: '< 25% correct',
-    description: 'Complete beginner. You are just starting your English journey. Focus on basic vocabulary and simple sentence structures.',
-    recommendation: 'Start with Workbook 1: Units 1 and 2'
+    range: 'Below A1',
+    description: 'You are at the very beginning of your English journey. Focus on basic words, greetings, and simple sentences.',
+    recommendation: 'Start with Workbook 1 â€” Units 1 and 2.',
   },
   'A1': {
-    range: '25–40% correct',
-    description: 'Elementary user. You understand very basic English and can introduce yourself. You need to build on fundamentals.',
-    recommendation: 'Start with Workbook 1: Units 1 and 2'
+    range: 'Elementary',
+    description: 'You can understand and use very basic English. You can introduce yourself and ask simple questions.',
+    recommendation: 'Start with Workbook 1.',
   },
   'A2': {
-    range: '40–55% correct',
-    description: 'Elementary user. You can handle everyday situations and basic conversations. Continue building confidence.',
-    recommendation: 'Start with Workbook 2-3: Focus on present and past simple'
+    range: 'Pre-Intermediate',
+    description: 'You can handle everyday situations and short conversations. Keep building confidence with new vocabulary and tenses.',
+    recommendation: 'Start with Workbook 2â€“3.',
   },
   'B1': {
-    range: '55–70% correct',
-    description: 'Intermediate user. You can discuss most topics and express opinions. Your English is becoming more flexible.',
-    recommendation: 'Start with Workbook 4-5: Work on continuous tenses and more complex structures'
+    range: 'Intermediate',
+    description: 'You can discuss familiar topics, express opinions, and follow the main points in clear speech.',
+    recommendation: 'Start with Workbook 4â€“5.',
   },
   'B2': {
-    range: '70–80% correct',
-    description: 'Upper-intermediate user. You have a good command of English and can engage in sophisticated discussions.',
-    recommendation: 'Start with Workbook 6-7: Focus on perfect tenses, conditionals, and advanced vocabulary'
+    range: 'Upper-Intermediate',
+    description: 'You have a solid command of English and can engage in more complex discussions with confidence.',
+    recommendation: 'Start with Workbook 6â€“7.',
   },
   'C1': {
-    range: '80–90% correct',
-    description: 'Advanced user. You can express yourself fluently and spontaneously. You understand subtle meanings in texts.',
-    recommendation: 'Start with Workbook 8: Work on nuances, idioms, and specialized topics'
+    range: 'Advanced',
+    description: 'You can express yourself fluently and spontaneously and understand sophisticated texts and conversations.',
+    recommendation: 'Start with Workbook 8.',
   },
   'C2': {
-    range: '≥ 90% correct',
-    description: 'Mastery level. You have near-native proficiency. You can understand virtually everything and express yourself with precision.',
-    recommendation: 'Challenge yourself with advanced topics and specialized English'
-  }
+    range: 'Mastery',
+    description: 'You have near-native proficiency. You can understand virtually anything and express yourself with precision.',
+    recommendation: 'Challenge yourself with advanced and specialised English content.',
+  },
 };

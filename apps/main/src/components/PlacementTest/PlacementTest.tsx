@@ -1,9 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { PLACEMENT_TEST_QUESTIONS, CEFR_LEVELS, PlacementQuestion, classifyPlacementLevel, getQuestionsForLanguage } from '../../data/placementTestQuestions';
+import React, { useState } from 'react';
+import { CEFR_LEVELS, classifyPlacementLevel, getQuestionsForLanguage } from '../../data/placementTestQuestions';
 import { LessonLanguageCode } from '../../types';
 import { auth, db, ensureAnonAuth } from '../../services/firebase';
-import { saveStudentPlacementTest } from '../../engine/weeklyProgressEngine';
-import { savePlacementTestResultForUser } from '../../services/db';
 import { doc, setDoc } from 'firebase/firestore';
 
 interface PlacementTestProps {
@@ -130,47 +128,20 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
       return;
     }
     
-    // Save to Firebase with guaranteed authenticated user
+    // Single authoritative write — all downstream consumers (dashboard, PDF) read from here.
     try {
       console.log('[PlacementTest] Saving to Firebase with uid:', authUser.uid);
-      
-      // Save to new structured architecture
-      await savePlacementTestResultForUser(authUser, {
-        score: percentage,
-        percentage,
-        level,
-        answers: finalAnswers.filter((a): a is number => a !== null),
-        correctAnswers: correctCount,
-        totalQuestions: questions.length,
-        fullName: studentName,
-        whatsapp: studentWhatsApp,
-      });
-      
-      // Also save to legacy structure for backward compatibility
-      await saveStudentPlacementTest(
-        authUser.uid,
-        studentName,
-        studentWhatsApp,
-        percentage,
-        correctCount,
-        questions.length,
-        level,
-        authUser.isAnonymous
-      );
-      console.log('[PlacementTest] ✅ Result saved to Firebase', {
-        uid: authUser.uid,
-        name: studentName,
-        level,
-        percentage,
-        isAnonymous: authUser.isAnonymous
-      });
-
-      // Update user root doc with latest placement score
       if (db) {
-        await setDoc(doc(db, 'users', authUser.uid), { placementScore: percentage }, { merge: true }).catch(() => {});
-        // Mirror to flat progress doc: both the legacy `placement` key and the
-        // per-language `placements[languageCode]` key for future multi-course support.
-        const placementRecord = { score: percentage, level, date: new Date().toISOString(), languageCode: currentLanguage };
+        const placementRecord = {
+          score: percentage,
+          level,
+          date: new Date().toISOString(),
+          languageCode: currentLanguage,
+          correctAnswers: correctCount,
+          totalQuestions: questions.length,
+          fullName: studentName,
+          whatsapp: studentWhatsApp,
+        };
         await setDoc(
           doc(db, 'progress', authUser.uid),
           {
@@ -180,7 +151,8 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
             },
           },
           { merge: true },
-        ).catch(() => {});
+        );
+        console.log('[PlacementTest] ✅ Saved to progress/', authUser.uid, { level, percentage });
       }
     } catch (error) {
       console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);
@@ -205,7 +177,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
       const message = `Hello! I have just completed the Placement Test.
 My name is ${studentName}.
 My WhatsApp number is ${studentWhatsApp}.
-My score was ${correctCount}/${PLACEMENT_TEST_QUESTIONS.length}.
+My score was ${correctCount}/${questions.length}.
 My estimated level was ${level}.
 I would like to receive feedback about my result.`;
 
@@ -363,6 +335,7 @@ I would like to receive feedback about my result.`;
           {/* Audio Button for Listening Questions */}
           {currentQuestion.type === 'listening' && currentQuestion.audioText && (
             <div className="mb-6">
+              {/* audioText is NEVER rendered as text — only used for TTS via playAudio() */}
               <button
                 onClick={() => playAudio(currentQuestion.audioText!)}
                 disabled={isPlayingAudio}
@@ -371,33 +344,42 @@ I would like to receive feedback about my result.`;
                 <span className="text-xl">{isPlayingAudio ? '🔊' : '▶️'}</span>
                 {isPlayingAudio ? 'Playing...' : 'Play Audio'}
               </button>
+              <p className="text-xs text-slate-400 mt-2 text-center">Press Play to hear the audio, then choose your answer.</p>
             </div>
           )}
 
           {/* Answer Options */}
           <div className="space-y-3">
-            {currentQuestion.options.map((option, index) => (
-              <button
-                key={index}
-                onClick={() => handleSelectAnswer(index)}
-                className={`w-full text-left p-4 rounded-xl border-2 transition-all active:scale-95 ${
-                  selectedAnswer === index
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-slate-200 bg-white hover:border-blue-300'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                    selectedAnswer === index
-                      ? 'border-blue-500 bg-blue-500'
-                      : 'border-slate-300'
-                  }`}>
-                    {selectedAnswer === index && <span className="text-white text-sm font-bold">✓</span>}
+            {currentQuestion.options.map((option, index) => {
+              const isIDontKnow = option === "I don't know";
+              const isSelected = selectedAnswer === index;
+              return (
+                <button
+                  key={index}
+                  onClick={() => handleSelectAnswer(index)}
+                  className={`w-full text-left p-4 rounded-xl border-2 transition-all active:scale-95 ${
+                    isSelected
+                      ? 'border-blue-500 bg-blue-50'
+                      : isIDontKnow
+                        ? 'border-slate-200 bg-slate-50 hover:border-slate-400'
+                        : 'border-slate-200 bg-white hover:border-blue-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                      isSelected
+                        ? 'border-blue-500 bg-blue-500'
+                        : 'border-slate-300'
+                    }`}>
+                      {isSelected && <span className="text-white text-sm font-bold">✓</span>}
+                    </div>
+                    <span className={`font-medium ${isIDontKnow ? 'text-slate-400 italic text-sm' : 'text-slate-700'}`}>
+                      {option}
+                    </span>
                   </div>
-                  <span className="text-slate-700 font-medium">{option}</span>
-                </div>
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -420,7 +402,7 @@ I would like to receive feedback about my result.`;
             disabled={selectedAnswer === null}
             className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-400 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl disabled:shadow-none transition-all active:scale-95"
           >
-            {currentQuestionIndex === PLACEMENT_TEST_QUESTIONS.length - 1 ? 'Finish Test' : 'Next'}
+            {currentQuestionIndex === questions.length - 1 ? 'Finish Test' : 'Next'}
           </button>
         </div>
       </div>
