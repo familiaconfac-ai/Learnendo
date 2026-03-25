@@ -331,6 +331,91 @@ export const LearningPathView: React.FC<{
   );
 };
 
+// ── PracticeSection localised labels ───────────────────────────────
+const PRACTICE_LABELS = {
+  en: {
+    praise: ['Excellent!', 'Great job!', 'Perfect!', 'Spot on!'],
+    tryAgain: 'Try again!',
+    speakNoMatch: "No, that's not it.",
+    typeWord: 'Type the word!',
+    typeWordFull: 'Type the word, not a digit.',
+    fullSentence: 'Use a full sentence!',
+    fullSentenceFull: 'Please write a full sentence.',
+    correctAnswer: 'The correct answer is:',
+    listenHint: '🔊 Listen to the audio for help!',
+    continueBtn: 'CONTINUE',
+    gotItBtn: 'GOT IT',
+    lessonLabel: (id: number) => `Lesson ${id}`,
+    exerciseLabel: (day: number, total: number) => `Exercise ${day} of ${total}`,
+    exerciseIdxLabel: (idx: number, total: number) => `Exercise ${idx + 1} of ${total}`,
+    // Section badges
+    badgeReading: 'Reading',
+    badgeWriting: 'Writing',
+    badgeShadowing: 'Shadowing',
+    badgeSpeaking: 'Speaking',
+    badgeListening: 'Listening',
+    answerFullSentence: 'Answer in a Full Sentence',
+    chooseCorrect: 'Choose the Correct Response',
+    listenAndAnswer: 'Listen and answer',
+    whatColor: 'What color is it?',
+  },
+  pt: {
+    praise: ['Excelente!', 'Muito bem!', 'Perfeito!', 'Correto!'],
+    tryAgain: 'Tente novamente!',
+    speakNoMatch: 'Não, não é isso.',
+    typeWord: 'Digite a palavra!',
+    typeWordFull: 'Digite a palavra, não um número.',
+    fullSentence: 'Use uma frase completa!',
+    fullSentenceFull: 'Por favor, escreva uma frase completa.',
+    correctAnswer: 'A resposta correta é:',
+    listenHint: '🔊 Ouça o áudio para ajuda!',
+    continueBtn: 'CONTINUAR',
+    gotItBtn: 'ENTENDI',
+    lessonLabel: (id: number) => `Lição ${id}`,
+    exerciseLabel: (day: number, total: number) => `Exercício ${day} de ${total}`,
+    exerciseIdxLabel: (idx: number, total: number) => `Exercício ${idx + 1} de ${total}`,
+    // Section badges
+    badgeReading: 'Leitura',
+    badgeWriting: 'Escrita',
+    badgeShadowing: 'Repetição',
+    badgeSpeaking: 'Fala',
+    badgeListening: 'Escuta',
+    answerFullSentence: 'Responda em uma frase completa',
+    chooseCorrect: 'Escolha a resposta correta',
+    listenAndAnswer: 'Ouça e responda',
+    whatColor: 'Qual é a cor?',
+  },
+  es: {
+    praise: ['¡Excelente!', '¡Muy bien!', '¡Perfecto!', '¡Correcto!'],
+    tryAgain: '¡Inténtalo de nuevo!',
+    speakNoMatch: 'No, eso no es correcto.',
+    typeWord: '¡Escribe la palabra!',
+    typeWordFull: 'Escribe la palabra, no un número.',
+    fullSentence: '¡Usa una oración completa!',
+    fullSentenceFull: 'Por favor, escribe una oración completa.',
+    correctAnswer: 'La respuesta correcta es:',
+    listenHint: '🔊 ¡Escucha el audio para ayuda!',
+    continueBtn: 'CONTINUAR',
+    gotItBtn: 'ENTENDIDO',
+    lessonLabel: (id: number) => `Lección ${id}`,
+    exerciseLabel: (day: number, total: number) => `Ejercicio ${day} de ${total}`,
+    exerciseIdxLabel: (idx: number, total: number) => `Ejercicio ${idx + 1} de ${total}`,
+    // Section badges
+    badgeReading: 'Lectura',
+    badgeWriting: 'Escritura',
+    badgeShadowing: 'Repetición',
+    badgeSpeaking: 'Habla',
+    badgeListening: 'Escucha',
+    answerFullSentence: 'Responde con una oración completa',
+    chooseCorrect: 'Elige la respuesta correcta',
+    listenAndAnswer: 'Escucha y responde',
+    whatColor: '¿De qué color es?',
+  },
+} as const;
+type PracticeLang = keyof typeof PRACTICE_LABELS;
+const getPL = (lang: string) =>
+  PRACTICE_LABELS[(lang as PracticeLang) in PRACTICE_LABELS ? (lang as PracticeLang) : 'en'];
+
 export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; dayNumber?: number; totalDays?: number; currentLanguage?: string; }> =
   ({ item, onResult, currentIdx, totalItems, lessonId, onBack, dayNumber, totalDays, currentLanguage = 'en' }) => {
     const [userInput, setUserInput] = useState('');
@@ -341,6 +426,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const [praiseText, setPraiseText] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const PL = getPL(currentLanguage);
 
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
@@ -484,8 +570,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         setFeedback('wrong');
         setShowFooter(true);
         new Audio(ERR_SOUND).play().catch(() => {});
-        setPraiseText("Type the word!");
-        speak("Type the word, not a digit.");
+        setPraiseText(PL.typeWord);
+        speak(PL.typeWordFull);
         setHasWrongAttempt(true);
         return;
       }
@@ -496,8 +582,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           setFeedback('wrong');
           setShowFooter(true);
           new Audio(ERR_SOUND).play().catch(() => {});
-          setPraiseText("Use a full sentence!");
-          speak("Please write a full sentence.");
+          setPraiseText(PL.fullSentence);
+          speak(PL.fullSentenceFull);
           setHasWrongAttempt(true);
           return;
         }
@@ -509,13 +595,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         if (isSentenceCorrect) {
           pendingOnResultRef.current = () => onResult(true, rawInput);
           new Audio(SUCCESS_SOUND).play().catch(() => {});
-          const p = ["Excellent!", "Great job!", "Perfect!", "Spot on!"][Math.floor(Math.random() * 4)];
+          const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
           setPraiseText(p);
           speak(p);
         } else {
           new Audio(ERR_SOUND).play().catch(() => {});
-          setPraiseText("Try again!");
-          speak("No, that's not it.");
+          setPraiseText(PL.tryAgain);
+          speak(PL.speakNoMatch);
           setHasWrongAttempt(true);
         }
         return;
@@ -536,13 +622,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       if (isCorrect) {
         pendingOnResultRef.current = () => onResult(true, rawInput);
         new Audio(SUCCESS_SOUND).play().catch(() => { });
-        const p = ["Excellent!", "Great job!", "Perfect!", "Spot on!"][Math.floor(Math.random() * 4)];
+        const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
         setPraiseText(p);
         speak(p);
       } else {
         new Audio(ERR_SOUND).play().catch(() => { });
-        setPraiseText("Try again!");
-        speak("No, that's not it.");
+        setPraiseText(PL.tryAgain);
+        speak(PL.speakNoMatch);
         if (item.type === 'writing') setHasWrongAttempt(true);
       }
     };
@@ -658,48 +744,48 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         <div className="flex-1 w-full max-w-sm px-6 flex flex-col items-center pt-4 pb-40 overflow-y-auto no-scrollbar">
           {/* Lesson + exercise context header — scrolls with content */}
           <div className="flex flex-col items-center mb-3 w-full">
-            <span className="text-2xl font-black text-yellow-400 tracking-tight leading-tight">Lesson {lessonId}</span>
+            <span className="text-2xl font-black text-yellow-400 tracking-tight leading-tight">{PL.lessonLabel(lessonId)}</span>
             <span className="text-sm font-semibold text-white uppercase tracking-widest mt-0.5">
               {dayNumber != null && totalDays != null
-                ? `Exercise ${dayNumber} of ${totalDays}`
-                : `Exercise ${currentIdx + 1} of ${totalItems}`}
+                ? PL.exerciseLabel(dayNumber, totalDays)
+                : PL.exerciseIdxLabel(currentIdx, totalItems)}
             </span>
           </div>
           <div className="relative group mb-4 cursor-help w-full" onClick={() => setShowHint(!showHint)}>
             {isReadingExercise ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">Reading</span>
+                <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">{PL.badgeReading}</span>
                 <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
                   {item.instruction.replace(/^(Read and write:|Read:)\s*/i, '')}
                 </h2>
               </div>
             ) : item.type === 'writing' && isSentenceWriting ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-base font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">Writing</span>
-                <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">Answer in a Full Sentence</p>
+                <span className="inline-block px-3 py-1 text-base font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.answerFullSentence}</p>
                 <h2 className="text-xl sm:text-2xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
                   {item.instruction.replace(/\s*answer in a full sentence\.?/i, '').trim()}
                 </h2>
               </div>
             ) : item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">Writing</span>
+                <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
                 <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
                   {item.instruction}
                 </h2>
               </div>
             ) : item.type === 'speaking' && !item.instruction.toLowerCase().includes('listen and answer') ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">Shadowing</span>
+                <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">{PL.badgeShadowing}</span>
                 <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
                   {item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, '')}
                 </h2>
               </div>
             ) : item.type === 'speaking' ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-sm font-black text-orange-300 bg-orange-900/60 border border-orange-700 rounded-full uppercase tracking-widest">Speaking</span>
+                <span className="inline-block px-3 py-1 text-sm font-black text-orange-300 bg-orange-900/60 border border-orange-700 rounded-full uppercase tracking-widest">{PL.badgeSpeaking}</span>
                 <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
-                  Listen and answer
+                  {PL.listenAndAnswer}
                 </h2>
               </div>
             ) : (
@@ -711,8 +797,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                 if (dlg) {
                   return (
                     <div className="flex flex-col items-center gap-2">
-                      <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">Listening</span>
-                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">Choose the Correct Response</p>
+                      <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.chooseCorrect}</p>
                       <p className="text-sm font-semibold text-white text-center mt-1">{dlg[1]}:</p>
                       <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl">
                         "{dlg[2]}"
@@ -724,17 +810,17 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                 if (OPTION_COLOR_HEX[(item.displayValue ?? '').toLowerCase()]) {
                   return (
                     <div className="flex flex-col items-center gap-2">
-                      <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">Listening</span>
-                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">Choose the Correct Response</p>
+                      <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.chooseCorrect}</p>
                       <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
-                        What color is it?
+                        {PL.whatColor}
                       </h2>
                     </div>
                   );
                 }
                 return (
                   <div className="flex flex-col items-center gap-2">
-                    <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">Listening</span>
+                    <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
                     <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
                       {item.instruction}
                     </h2>
@@ -870,12 +956,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                     </div>
                     {feedback === 'wrong' && (
                       <div className="text-red-300 font-bold text-xs mt-1 animate-in fade-in">
-                        The correct answer is: <span className="font-black text-sm uppercase underline decoration-2">{item.correctValue}</span>
+                        {PL.correctAnswer} <span className="font-black text-sm uppercase underline decoration-2">{item.correctValue}</span>
                       </div>
                     )}
                     {feedback === 'wrong' && item.type === 'writing' && item.audioValue && hasWrongAttempt && (
                       <div className="text-blue-400 font-bold text-xs mt-1 animate-in fade-in">
-                        🔊 Listen to the audio for help!
+                        {PL.listenHint}
                       </div>
                     )}
                     {/* Show translation on both correct and wrong feedback */}
@@ -904,7 +990,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                     }}
                     className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0 [touch-action:manipulation]`}
                   >
-                    {feedback === 'correct' ? 'CONTINUE' : 'GOT IT'}
+                    {feedback === 'correct' ? PL.continueBtn : PL.gotItBtn}
                   </button>
                 </div>
               </div>

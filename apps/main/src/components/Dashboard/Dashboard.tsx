@@ -9,8 +9,77 @@ interface DashboardProps {
   isAdmin?: boolean;
   /** Firebase UID — required to load real progress data. */
   userId?: string | null;
+  currentLanguage?: 'en' | 'pt' | 'es';
+  /** Authenticated user identity — shown as the student card */
+  currentUser?: { displayName?: string | null; email?: string | null };
   onNavigate: (section: SectionType, params?: any) => void;
 }
+
+const DASHBOARD_LABELS = {
+  en: {
+    title: 'Your Progress',
+    noCourse: 'No course selected',
+    book: 'Book',
+    currentPos: 'Current position',
+    workbook: 'Workbook',
+    lesson: 'Lesson',
+    day: 'Day',
+    fire: 'Fire',
+    ice: 'Ice',
+    diamonds: 'Diamonds',
+    stars: 'Stars',
+    sessions: 'Sessions',
+    avgTime: 'Avg time',
+    accuracy: 'Accuracy',
+    continueBtn: (wb: number, ls: number) => `Continue — Book ${wb}, Lesson ${ls}`,
+    daysDone: (n: number) => `${n}/7 days done`,
+    books: 'Books',
+    student: 'Student',
+    anonymous: 'Anonymous',
+  },
+  pt: {
+    title: 'Seu Progresso',
+    noCourse: 'Nenhum curso selecionado',
+    book: 'Livro',
+    currentPos: 'Posição atual',
+    workbook: 'Caderno',
+    lesson: 'Lição',
+    day: 'Dia',
+    fire: 'Fogo',
+    ice: 'Gelo',
+    diamonds: 'Diamantes',
+    stars: 'Estrelas',
+    sessions: 'Sessões',
+    avgTime: 'Tempo médio',
+    accuracy: 'Precisão',
+    continueBtn: (wb: number, ls: number) => `Continuar — Livro ${wb}, Lição ${ls}`,
+    daysDone: (n: number) => `${n}/7 dias feitos`,
+    books: 'Livros',
+    student: 'Aluno',
+    anonymous: 'Anônimo',
+  },
+  es: {
+    title: 'Tu Progreso',
+    noCourse: 'Ningún curso seleccionado',
+    book: 'Libro',
+    currentPos: 'Posición actual',
+    workbook: 'Cuaderno',
+    lesson: 'Lección',
+    day: 'Día',
+    fire: 'Fuego',
+    ice: 'Hielo',
+    diamonds: 'Diamantes',
+    stars: 'Estrellas',
+    sessions: 'Sesiones',
+    avgTime: 'Tiempo medio',
+    accuracy: 'Precisión',
+    continueBtn: (wb: number, ls: number) => `Continuar — Libro ${wb}, Lección ${ls}`,
+    daysDone: (n: number) => `${n}/7 días hechos`,
+    books: 'Libros',
+    student: 'Estudiante',
+    anonymous: 'Anónimo',
+  },
+} as const;
 
 const TOTAL_BOOKS = 8;
 
@@ -19,8 +88,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   currentCourse,
   isAdmin = false,
   userId,
+  currentLanguage = 'en',
+  currentUser,
   onNavigate,
 }) => {
+  const L = DASHBOARD_LABELS[currentLanguage] ?? DASHBOARD_LABELS.en;
   const [stats, setStats] = useState<LessonStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
 
@@ -50,36 +122,50 @@ export const Dashboard: React.FC<DashboardProps> = ({
   return (
     <div className="min-h-screen bg-blue-50 pb-28 px-4 pt-6">
       {/* ── Header ──────────────────────────────────── */}
-      <h1 className="text-2xl font-bold text-blue-900 mb-1">Your Progress</h1>
-      <p className="text-sm text-slate-500 mb-6">
-        {currentCourse?.title ?? 'No course selected'} · Book {progress.currentWorkbook}
+      <h1 className="text-2xl font-bold text-blue-900 mb-1">{L.title}</h1>
+      <p className="text-sm text-slate-500 mb-4">
+        {currentCourse?.title ?? L.noCourse} · {L.book} {progress.currentWorkbook}
       </p>
+
+      {/* ── Student identity card ───────────────────── */}
+      <div className="bg-white rounded-2xl shadow-sm px-5 py-3 mb-4 flex items-center gap-3">
+        <span className="text-2xl">👤</span>
+        <div className="min-w-0">
+          <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold">{L.student}</p>
+          <p className="text-sm font-bold text-slate-800 truncate">
+            {currentUser?.displayName ?? L.anonymous}
+          </p>
+          {currentUser?.email && (
+            <p className="text-xs text-slate-500 truncate">{currentUser.email}</p>
+          )}
+        </div>
+      </div>
 
       {/* ── Current position card ───────────────────── */}
       <div className="bg-white rounded-2xl shadow-sm px-5 py-4 mb-4 flex items-center gap-4">
         <span className="text-2xl">📍</span>
         <div>
-          <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold">Current position</p>
+          <p className="text-xs text-slate-500 uppercase tracking-wide font-semibold">{L.currentPos}</p>
           <p className="text-base font-bold text-slate-800">
-            Workbook {path.workbook} · Lesson {path.lesson} · Day {path.day}
+            {L.workbook} {path.workbook} · {L.lesson} {path.lesson} · {L.day} {path.day}
           </p>
         </div>
       </div>
 
       {/* ── Stats row ───────────────────────────────── */}
       <div className="flex justify-around bg-white rounded-2xl shadow-sm px-4 py-4 mb-4">
-        <StatBadge emoji="🔥" label="Fire"     value={loadingStats ? '…' : String(stats?.fire     ?? 0)} />
-        <StatBadge emoji="❄️"  label="Ice"      value={loadingStats ? '…' : String(stats?.ice      ?? 0)} />
-        <StatBadge emoji="💎" label="Diamonds" value={loadingStats ? '…' : String(stats?.diamonds ?? 0)} />
-        <StatBadge emoji="⭐" label="Stars"    value={loadingStats ? '…' : String(stats?.stars    ?? 0)} />
+        <StatBadge emoji="🔥" label={L.fire}     value={loadingStats ? '…' : String(stats?.fire     ?? 0)} />
+        <StatBadge emoji="❄️"  label={L.ice}      value={loadingStats ? '…' : String(stats?.ice      ?? 0)} />
+        <StatBadge emoji="💎" label={L.diamonds} value={loadingStats ? '…' : String(stats?.diamonds ?? 0)} />
+        <StatBadge emoji="⭐" label={L.stars}    value={loadingStats ? '…' : String(stats?.stars    ?? 0)} />
       </div>
 
       {/* ── Analytics row ─────────────────────────────────── */}
       {(stats?.sessions ?? 0) > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <AnalyticsBadge label="Sessions"  value={String(stats!.sessions)} />
-          <AnalyticsBadge label="Avg time"  value={formatTime(stats!.avgTimeSpent)} />
-          <AnalyticsBadge label="Accuracy"  value={formatAccuracy(stats!.avgAccuracy)} />
+          <AnalyticsBadge label={L.sessions}  value={String(stats!.sessions)} />
+          <AnalyticsBadge label={L.avgTime}   value={formatTime(stats!.avgTimeSpent)} />
+          <AnalyticsBadge label={L.accuracy}  value={formatAccuracy(stats!.avgAccuracy)} />
         </div>
       )}
 
@@ -88,16 +174,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
         className="w-full bg-blue-500 text-white font-bold py-3 rounded-2xl shadow-[0_4px_0_0_#1d4ed8] active:translate-y-1 active:shadow-none transition-transform mb-6"
         onClick={() => onNavigate(SectionType.WORKBOOK, { workbookId: progress.currentWorkbook })}
       >
-        Continue — Book {progress.currentWorkbook}, Lesson {progress.currentLesson}
+        {L.continueBtn(progress.currentWorkbook, progress.currentLesson)}
         {(stats?.totalCompleted ?? 0) > 0 && (
           <span className="ml-2 text-blue-200 font-normal text-sm">
-            ({stats!.totalCompleted}/7 days done)
+            ({L.daysDone(stats!.totalCompleted)})
           </span>
         )}
       </button>
 
       {/* ── Books grid ────────────────────────────────── */}
-      <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">Books</h2>
+      <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">{L.books}</h2>
       <div className="grid grid-cols-4 gap-3">
         {Array.from({ length: TOTAL_BOOKS }, (_, i) => i + 1).map(bookNum => {
           const isCompleted = bookNum < progress.currentWorkbook;
@@ -123,7 +209,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <span className="text-lg mb-1">
                 {isLocked ? '🔒' : isCompleted ? '✅' : isCurrent ? '📖' : '📘'}
               </span>
-              <span>Book {bookNum}</span>
+              <span>{L.book} {bookNum}</span>
             </button>
           );
         })}

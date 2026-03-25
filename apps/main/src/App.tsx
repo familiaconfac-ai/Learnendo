@@ -95,8 +95,23 @@ const App: React.FC = () => {
     setLanguageState(newLanguage);
     if (typeof window !== 'undefined') {
       localStorage.setItem(LANGUAGE_STORAGE_KEY, newLanguage);
+      // Persist base UI language (non-biblical) so Greek/Hebrew courses can inherit it
+      if (newLanguage !== 'el' && newLanguage !== 'he') {
+        localStorage.setItem('learnendo_base_ui_lang', newLanguage);
+      }
     }
   }, []);
+
+  // UI language: Greek and Hebrew are content-only languages; the app shell stays
+  // in the last modern language the user had (or English as fallback).
+  const uiLanguage: 'en' | 'pt' | 'es' = (() => {
+    if (language !== 'el' && language !== 'he') return language as 'en' | 'pt' | 'es';
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('learnendo_base_ui_lang');
+      if (stored === 'pt' || stored === 'es') return stored;
+    }
+    return 'en';
+  })();
 
   // ===== APP STATE =====
   const [progress, setProgress] = useState<UserProgress>({
@@ -1394,6 +1409,8 @@ const App: React.FC = () => {
             currentCourse={activeCourse}
             isAdmin={isAdmin}
             userId={user?.uid ?? null}
+            currentLanguage={uiLanguage}
+            currentUser={user ? { displayName: user.displayName, email: user.email } : undefined}
             onNavigate={handleNavigate}
           />
         );
@@ -1449,10 +1466,33 @@ const App: React.FC = () => {
         );
       }
       case SectionType.SETTINGS:
-      case SectionType.HELP:
         return (
           <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
             <p className="text-slate-300 font-semibold">This feature is under construction</p>
+          </div>
+        );
+      case SectionType.HELP:
+        return (
+          <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center px-6 text-center gap-6">
+            <h1 className="text-2xl font-black text-white">
+              {uiLanguage === 'pt' ? 'Ajuda & Suporte' : uiLanguage === 'es' ? 'Ayuda y Soporte' : 'Help & Support'}
+            </h1>
+            <p className="text-slate-300 font-semibold max-w-sm">
+              {uiLanguage === 'pt'
+                ? 'Entre em contato com seu professor para tirar dúvidas ou relatar problemas.'
+                : uiLanguage === 'es'
+                ? 'Contacta a tu profesor para resolver dudas o reportar problemas.'
+                : 'Contact your teacher for questions or to report issues.'}
+            </p>
+            <a
+              href="https://wa.me/5517991010930"
+              target="_blank"
+              rel="noreferrer"
+              className="flex items-center gap-3 bg-green-600 text-white font-black px-8 py-4 rounded-2xl shadow-[0_4px_0_0_#15803d] active:translate-y-1 transition-all"
+            >
+              <i className="fab fa-whatsapp text-2xl"></i>
+              <span>WhatsApp — Learnendo</span>
+            </a>
           </div>
         );
       case SectionType.PRACTICE: {

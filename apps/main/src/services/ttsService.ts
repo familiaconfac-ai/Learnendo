@@ -65,18 +65,66 @@ if (typeof window !== 'undefined') {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Voice gender resolution
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Heuristic gender classification based on common voice names across
+ * Chrome/macOS/iOS/Android. Returns 'female', 'male', or 'unknown'.
+ *
+ * This is best-effort — browsers do not expose a gender field on
+ * SpeechSynthesisVoice, so we rely on well-known name substrings.
+ */
+function detectVoiceGender(voice: SpeechSynthesisVoice): 'female' | 'male' | 'unknown' {
+  const n = voice.name.toLowerCase();
+
+  // Explicit gender markers in the name string (Chrome, Edge)
+  if (n.includes('female') || n.includes('woman') || n.includes('femenina') || n.includes('feminina')) return 'female';
+  if (n.includes('male')   || n.includes('man')   || n.includes('masculino') || n.includes('masculina')) return 'male';
+
+  // Known female voice names (macOS / iOS / Google)
+  const knownFemale = [
+    'samantha', 'victoria', 'karen', 'tessa', 'moira', 'veena',
+    'luciana', 'monica', 'monica', 'paulina', 'milena',
+    'ting-ting', 'sin-ji', 'mei-jia',
+    'google us english',              // Google's default EN voice tends to be female
+    'google português do brasil',
+    'google español',
+    'google deutsch',
+    'google italiano',
+    'google français',
+  ];
+
+  // Known male voice names (macOS / iOS / Windows)
+  const knownMale = [
+    'alex', 'daniel', 'fred', 'thomas', 'lee', 'yuri', 'luca',
+    'diego', 'alejandro', 'jorge', 'carlos', 'felipe',
+    'google uk english male',
+    'microsoft david', 'microsoft mark', 'microsoft zira',
+  ];
+
+  if (knownFemale.some(f => n.includes(f))) return 'female';
+  if (knownMale.some(m => n.includes(m))) return 'male';
+
+  return 'unknown';
+}
+
+// ─────────────────────────────────────────────────────────────
 // Voice resolution
 // ─────────────────────────────────────────────────────────────
 
 /**
- * Pick the best available voice for a BCP-47 locale.
+ * Pick the best available voice for a BCP-47 locale, optionally
+ * preferring a specific gender.
  *
  * Priority order:
- *   1. Exact match              — e.g. "pt-BR"
- *   2. Same language, any region — e.g. "pt-PT" when "pt-BR" is unavailable
- *   3. First available voice    — last-resort fallback
+ *   1. Exact locale match  + requested gender
+ *   2. Exact locale match  (any gender)
+ *   3. Same language prefix + requested gender
+ *   4. Same language prefix (any gender)
+ *   5. First available voice (last-resort fallback)
  */
-function pickVoice(bcp47: string): SpeechSynthesisVoice | null {
+function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any'): SpeechSynthesisVoice | null {
   // Re-read from synthesis API in case the cache is still empty (first render race).
   const voices = _voices.length
     ? _voices
@@ -84,20 +132,25 @@ function pickVoice(bcp47: string): SpeechSynthesisVoice | null {
 
   if (!voices.length) return null;
 
-  // Exact match
-  const exact = voices.find(v => v.lang === bcp47);
-  if (exact) return exact;
+  /** Helper: voices matching the locale exactly */
+  const exactMatches  = voices.filter(v => v.lang === bcp47);
+  /** Helper: voices for same language prefix (e.g. "pt" for "pt-BR") */
+  const langPrefix    = bcp47.slice(0, 2);
+  const prefixMatches = voices.filter(v => v.lang.startsWith(langPrefix));
 
-  // Spanish: prefer es-MX when es-ES is unavailable (common on macOS/iOS)
-  if (bcp47 === 'es-ES') {
-    const esMx = voices.find(v => v.lang === 'es-MX');
-    if (esMx) return esMx;
+  // Spanish: also consider es-MX when es-ES list is slim
+  const spanishExtra = bcp47 === 'es-ES' ? voices.filter(v => v.lang === 'es-MX') : [];
+  const candidatesByLocale = [...exactMatches, ...spanishExtra, ...prefixMatches];
+
+  if (genderPref !== 'any') {
+    // Try to find a voice of the requested gender among locale candidates
+    const gendered = candidatesByLocale.find(v => detectVoiceGender(v) === genderPref);
+    if (gendered) return gendered;
+    // Fall through to any-gender candidate below
   }
 
-  // Same language prefix (first two chars)
-  const langPrefix = bcp47.slice(0, 2);
-  const partial = voices.find(v => v.lang.startsWith(langPrefix));
-  if (partial) return partial;
+  // Best locale match regardless of gender
+  if (candidatesByLocale.length) return candidatesByLocale[0];
 
   // Last-resort fallback: first available voice
   return voices[0];
@@ -114,6 +167,11 @@ export interface SpeakOptions {
   pitch?: number;
   /** Volume — 0 to 1, default 1 */
   volume?: number;
+  /**
+   * Preferred voice gender when multiple voices are available for the locale.
+   * Falls back gracefully if only one gender is available.
+   */
+  voicePreference?: 'male' | 'female';
   /** Called when the utterance finishes normally */
   onEnd?: () => void;
   /** Called when synthesis fails */
@@ -146,11 +204,48 @@ export function speak(
   u.pitch  = options.pitch  ?? 1;
   u.volume = options.volume ?? 1;
 
-  const voice = pickVoice(bcp47);
+  const voice = pickVoice(bcp47, options.voicePreference ?? 'any');
   if (voice) u.voice = voice;
 
   if (options.onEnd)   u.onend   = options.onEnd;
   if (options.onError) u.onerror = options.onError;
 
   window.speechSynthesis.speak(u);
+}
+
+/**
+ * Convenience helper that plays a dialogue exchange using two different
+ * voices when possible (one male, one female).  Each entry is an object
+ * with `text` and optional `gender` ('male' | 'female').
+ *
+ * Falls back gracefully if only one voice is available for the locale.
+ */
+export function speakDialogue(
+  lines: Array<{ text: string; gender?: 'male' | 'female' }>,
+  langCode: string = 'en',
+  options: Omit<SpeakOptions, 'voicePreference' | 'onEnd' | 'onError'> = {},
+): void {
+  if (!lines.length || !('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+
+  const bcp47 = appLangToTts(langCode);
+  const voices = _voices.length ? _voices : window.speechSynthesis.getVoices();
+
+  // Resolve a distinct voice per requested gender so dialogue alternates.
+  const voiceFor = (gender?: 'male' | 'female'): SpeechSynthesisVoice | null =>
+    pickVoice(bcp47, gender ?? 'any');
+
+  // Queue all utterances without inter-utterance gap
+  lines.forEach((line, i) => {
+    const u = new SpeechSynthesisUtterance(line.text);
+    u.lang   = bcp47;
+    u.rate   = options.rate   ?? 1;
+    u.pitch  = options.pitch  ?? 1;
+    u.volume = options.volume ?? 1;
+    const voice = voiceFor(line.gender);
+    if (voice) u.voice = voice;
+    window.speechSynthesis.speak(u);
+    void voices; // suppress unused warning
+    void i;
+  });
 }
