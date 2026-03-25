@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { speak as ttsSpeakImpl, appLangToTts } from '../services/ttsService';
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
@@ -296,8 +297,8 @@ export const LearningPathView: React.FC<{
   );
 };
 
-export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; }> =
-  ({ item, onResult, currentIdx, totalItems, lessonId, onBack }) => {
+export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; currentLanguage?: string; }> =
+  ({ item, onResult, currentIdx, totalItems, lessonId, onBack, currentLanguage = 'en' }) => {
     const [userInput, setUserInput] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [feedback, setFeedback] = useState<'none' | 'correct' | 'wrong'>('none');
@@ -354,20 +355,14 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       }
     };
 
-    const speak = (text: string, rate = 1) => {
-      if (!text) return;
-      window.speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'en-US';
-      u.rate = rate;
-      window.speechSynthesis.speak(u);
-    };
+    const speak = (text: string, rate = 1) =>
+      ttsSpeakImpl(text, currentLanguage, { rate });
 
     const handleSTT = () => {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) return alert("Mic not supported");
       const rec = new SpeechRecognition();
-      rec.lang = 'en-US';
+      rec.lang = appLangToTts(currentLanguage);
       rec.onstart = () => setIsListening(true);
 
       // ✅ FIX: guard against empty results

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { speak as ttsSpeakImpl, appLangToTts } from '../services/ttsService';
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
@@ -330,8 +331,8 @@ export const LearningPathView: React.FC<{
   );
 };
 
-export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; dayNumber?: number; totalDays?: number; }> =
-  ({ item, onResult, currentIdx, totalItems, lessonId, onBack, dayNumber, totalDays }) => {
+export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; dayNumber?: number; totalDays?: number; currentLanguage?: string; }> =
+  ({ item, onResult, currentIdx, totalItems, lessonId, onBack, dayNumber, totalDays, currentLanguage = 'en' }) => {
     const [userInput, setUserInput] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [feedback, setFeedback] = useState<'none' | 'correct' | 'wrong'>('none');
@@ -431,17 +432,10 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       }
     };
 
-    const speak = (text: string, rate = 1) => {
-      if (!text) return;
-      window.speechSynthesis.cancel();
-      // Some browsers pause synthesis after inactivity (e.g. Chrome on Android).
-      // Resuming first prevents the audio from silently failing.
-      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = 'en-US';
-      u.rate = rate;
-      window.speechSynthesis.speak(u);
-    };
+    // Thin wrapper so existing call sites don't need changing.
+    // Language comes from the currentLanguage prop set by ExercisePractice.
+    const speak = (text: string, rate = 1) =>
+      ttsSpeakImpl(text, currentLanguage, { rate });
 
     const handleSTT = () => {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -455,7 +449,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       const capturedItemId = item.id; // capture for stale-closure guard below
       const rec = new SpeechRecognition();
       recRef.current = rec;
-      rec.lang = 'en-US';
+      rec.lang = appLangToTts(currentLanguage);
       rec.onstart = () => setIsListening(true);
 
       rec.onresult = (e: any) => {

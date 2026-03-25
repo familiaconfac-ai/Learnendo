@@ -88,6 +88,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       onBack={onBack}
       dayNumber={dayNumber}
       totalDays={totalDays}
+      currentLanguage={currentLanguage}
     />
   );
 };

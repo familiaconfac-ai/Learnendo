@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { speak } from '../../services/ttsService';
 
 interface PronunciationTrainerProps {
   onFinish: () => void;

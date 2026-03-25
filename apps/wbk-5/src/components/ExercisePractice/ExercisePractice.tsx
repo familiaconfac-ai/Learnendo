@@ -73,6 +73,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       totalItems={exercises.length}
       lessonId={1}
       onBack={onBack}
+      currentLanguage={currentLanguage}
     />
   );
 };

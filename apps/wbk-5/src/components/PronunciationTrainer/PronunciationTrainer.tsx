@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { speak } from '../../services/ttsService';
 
 interface PronunciationTrainerProps {
   onFinish: () => void;
@@ -68,14 +69,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
     streamRef.current = null;
   };
 
-  const playTTS = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = 'en-US';
-    utt.rate = 0.85;
-    window.speechSynthesis.speak(utt);
-  };
+  const playTTS = (text: string) => speak(text, 'en', { rate: 0.85 });
 
   const startRecording = async () => {
     if (isRecording) return;
