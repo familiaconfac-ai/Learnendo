@@ -139,6 +139,19 @@ export function filterRows(rows: TeacherStudentRow[], query: string): TeacherStu
 }
 
 // ─────────────────────────────────────────────────────────────
+// Course → language code mapping (mirrors App.tsx COURSE_TO_LANGUAGE)
+// Used to match legacy Firestore docs that stored languageCode instead of courseId.
+// ─────────────────────────────────────────────────────────────
+const COURSE_LANGUAGE_MAP: Record<string, string> = {
+  english:               'en',
+  portuguese_foreigners: 'pt',
+  portuguese_native:     'pt',
+  spanish:               'es',
+  greek_koine:           'el',
+  hebrew_biblical:       'he',
+};
+
+// ─────────────────────────────────────────────────────────────
 // Realtime subscription (flat "progress" collection)
 // ─────────────────────────────────────────────────────────────
 
@@ -219,7 +232,12 @@ export function subscribeToTeacherData(
       const activeSummaries = summaries.filter(s => {
         const hasActivity = s.daysCompleted > 0 || s.totalStars > 0 || s.totalAttempts > 0;
         if (!hasActivity) return false;
-        // Keep student only if they have a real name OR a verified email.
+        // Any student who has completed at least one day is a confirmed real learner.
+        // Anonymous students (Player_XXXXXX names, no email) must NOT be filtered here —
+        // they are ordinary app users who chose not to register.
+        if (s.daysCompleted >= 1) return true;
+        // For sessions with zero completed days (only stars/attempts in-progress),
+        // apply identity filter to hide pure bot/ghost sessions.
         const hasValidIdentity = !isGhostName(s.displayName) || (!!s.email && s.email.includes('@'));
         return hasValidIdentity;
       });
@@ -230,10 +248,17 @@ export function subscribeToTeacherData(
       //   1. root courseId field  — legacy docs (single course)
       //   2. courses map key      — multi-language docs (new format)
       // This guarantees English students compete only with English students, etc.
+      // Per-course filter: check courseId (root, legacy), courses map (multi-language),
+      // AND languageCode (for old docs that stored language code but not courseId).
       const forRanking = courseId
-        ? activeSummaries.filter(
-            s => s.courseId === courseId || s.courses?.[courseId] !== undefined,
-          )
+        ? activeSummaries.filter(s => {
+            if (s.courseId === courseId) return true;
+            if (s.courses?.[courseId] !== undefined) return true;
+            // Fallback: legacy docs may have only languageCode without courseId
+            const expectedLang = COURSE_LANGUAGE_MAP[courseId];
+            if (expectedLang && s.languageCode === expectedLang) return true;
+            return false;
+          })
         : activeSummaries;
 
       const ranked = rankStudents(forRanking);

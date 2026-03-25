@@ -286,7 +286,14 @@ const App: React.FC = () => {
           });
           setDoc(
             doc(db, 'progress', authenticatedUser.uid),
-            { displayName, email: authenticatedUser.email ?? null, courseId: currentCourseId ?? DEFAULT_COURSE_ID },
+            {
+              displayName,
+              email: authenticatedUser.email ?? null,
+              courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+              // Stamp lastActivity on every app open so the teacher dashboard
+              // shows "Today" even for students who logged in but didn't complete a day.
+              lastActivity: serverTimestamp(),
+            },
             { merge: true },
           ).catch(e => console.warn('[App] progress profile write failed:', e));
         }

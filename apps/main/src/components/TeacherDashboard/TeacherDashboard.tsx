@@ -18,7 +18,6 @@ import {
   TeacherStudentRow,
   SortColumn,
   formatAccuracy,
-  formatTime,
 } from '../../engine/teacherService';
 import { rankMedal, getTopRanked } from '../../engine/rankingService';
 import { AlertType } from '../../engine/alertService';
@@ -177,9 +176,9 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-mono text-xs">
                       {student.pathLabel}
                     </td>
-                    {/* Accuracy badge — green ≥ 80 %, red < 80 %, dash if no data */}
+                    {/* Accuracy badge — green ≥ 80 %, red < 80 %, dash if no real data */}
                     <td className="px-4 py-3">
-                      {student.totalAttempts > 0 ? (
+                      {student.avgAccuracy > 0 ? (
                         <span
                           className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
                             student.avgAccuracy >= 80
@@ -196,7 +195,9 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     {/* Last active */}
                     <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
                       <div>{student.lastActivityLabel}</div>
-                      <div className="text-[11px] text-slate-400">Today: {formatTime(student.timeSpentToday ?? 0)}</div>
+                      {student.lastActivityLabel === 'Today' && (
+                        <div className="text-[11px] text-green-600 font-medium">✓ Active today</div>
+                      )}
                     </td>
                     {/* Alerts */}
                     <td className="px-4 py-3">
