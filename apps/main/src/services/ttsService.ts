@@ -85,26 +85,36 @@ function detectVoiceGender(voice: SpeechSynthesisVoice): 'female' | 'male' | 'un
   // Known female voice names (macOS / iOS / Google)
   const knownFemale = [
     'samantha', 'victoria', 'karen', 'tessa', 'moira', 'veena',
-    'luciana', 'monica', 'monica', 'paulina', 'milena',
+    'luciana', 'monica', 'paulina', 'milena',
+    'mar\u00eda',                              // es-ES Spanish female iOS/macOS
+    'marisol', 'pilar', 'isabel', 'elena',
+    'microsoft helena',                        // es-ES Windows female
     'ting-ting', 'sin-ji', 'mei-jia',
     'google us english',              // Google's default EN voice tends to be female
-    'google português do brasil',
-    'google español',
+    'google portugu\u00eas do brasil',
+    'google espa\u00f1ol',
     'google deutsch',
     'google italiano',
-    'google français',
+    'google fran\u00e7ais',
   ];
 
   // Known male voice names (macOS / iOS / Windows)
   const knownMale = [
     'alex', 'daniel', 'fred', 'thomas', 'lee', 'yuri', 'luca',
-    'diego', 'alejandro', 'jorge', 'carlos', 'felipe',
+    'diego', 'alejandro', 'jorge', 'carlos', 'felipe', 'juan',
+    'enrique', 'miguel',                       // common ES male voice names
     'google uk english male',
     'microsoft david', 'microsoft mark', 'microsoft zira',
+    'microsoft pablo', 'microsoft jorge', 'microsoft raul',
   ];
 
   if (knownFemale.some(f => n.includes(f))) return 'female';
   if (knownMale.some(m => n.includes(m))) return 'male';
+
+  // Additional heuristics based on voice name patterns not covered above
+  // e.g. "Microsoft Helena Desktop" (es-ES female), TTS-Compact-xxx, etc.
+  if (n.includes('helena') || n.includes('esperanza') || n.includes('conchita')) return 'female';
+  if (n.includes('stefan') || n.includes('antonio') || n.includes('miguel')) return 'male';
 
   return 'unknown';
 }
@@ -146,7 +156,14 @@ function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any')
     // Try to find a voice of the requested gender among locale candidates
     const gendered = candidatesByLocale.find(v => detectVoiceGender(v) === genderPref);
     if (gendered) return gendered;
-    // Fall through to any-gender candidate below
+    // Positional fallback when no gendered voice is identified:
+    // Use index 0 for one gender and index 1 for the other so that even when
+    // gender detection fails, prompt and feedback voices are at least different
+    // (avoids the same voice playing for both in every exercise).
+    if (candidatesByLocale.length >= 2) {
+      return candidatesByLocale[genderPref === 'female' ? 0 : 1];
+    }
+    // Only one candidate — fall through to return it below
   }
 
   // Best locale match regardless of gender

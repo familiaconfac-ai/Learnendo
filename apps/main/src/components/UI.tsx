@@ -128,7 +128,12 @@ const normalizeSpeakingAnswer = (answer: string, lang?: string): string => {
   }
   // Strip common PT/ES sentence-result prefixes (é/es) so "é 15" and "15" are equal
   if (lang === 'pt') s = s.replace(/^\u00e9\s+/, '');
-  if (lang === 'es') s = s.replace(/^es\s+/, '');
+  if (lang === 'es') {
+    s = s.replace(/^es\s+/, '');
+    // Defensive: if PT prefix "é " leaked into ES data, strip it too so normalization
+    // still produces the right digit and the comparison doesn't silently fail.
+    s = s.replace(/^\u00e9\s+/, '');
+  }
   // Lang-specific math-operator symbols → word forms used in correctValue strings
   if (lang === 'pt') {
     s = s.replace(/\s*\+\s*/g, ' mais ');
@@ -574,7 +579,20 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     // voicePref allows callers to request a specific gender; falls back safely.
     const speak = (text: string, rate = 1, voicePref?: 'male' | 'female') => {
       // Debug: verify localized audio matches visible content (remove after confirming fix).
-      console.log('[TTS debug]', { lang: currentLanguage, id: item.id, text, rate, voice: voicePref });
+      // For Spanish exercises, also log normalized form so contamination is immediately visible.
+      if (currentLanguage === 'es') {
+        console.log('[TTS debug ES]', {
+          lang: currentLanguage,
+          id: item.id,
+          text,
+          normalizedText: text ? normalizeSpeakingAnswer(text, 'es') : null,
+          rate,
+          voice: voicePref,
+          correctValueRaw: item.correctValue,
+        });
+      } else {
+        console.log('[TTS debug]', { lang: currentLanguage, id: item.id, text, rate, voice: voicePref });
+      }
       return ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
     };
 

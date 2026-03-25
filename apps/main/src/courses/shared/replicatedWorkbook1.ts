@@ -384,11 +384,12 @@ function replaceText(value: string | undefined, replacements: Array<[string, str
   let nextValue = value;
   for (const [from, to] of replacements) {
     const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    // Multi-word phrases: case-insensitive global match — surrounding spaces already
-    // delimit the match so no \b needed and it avoids breaking phrase replacements.
-    // Single words: add \b word boundaries to prevent partial hits inside longer
-    // words (e.g. "Ten" must not corrupt "listen", "attention", "fourteen" → fourdez).
-    const pattern = from.trim().includes(' ')
+    // Use `from.includes(' ')` — NOT `from.trim().includes(' ')` — so that phrases
+    // with leading/trailing spaces (e.g. "It's ", " plus ") are correctly classified
+    // as multi-word and get the simple /gi pattern instead of \b...\b.  The \b
+    // word-boundary variant can behave unexpectedly when the pattern starts or ends
+    // with a non-word character like an apostrophe or a space, causing silent misses.
+    const pattern = from.includes(' ')
       ? new RegExp(escaped, 'gi')
       : new RegExp(`\\b${escaped}\\b`, 'gi');
     nextValue = nextValue.replace(pattern, to);
