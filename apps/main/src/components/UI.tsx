@@ -491,9 +491,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const [hasWrongAttempt, setHasWrongAttempt] = useState(false);
 
     // Dictation exercises: audio should be visible from the start; digits rejected
-    // Catches both "what you hear" and "you hear" (e.g. "Type the color you hear.")
+    // Catches English "you hear", Portuguese "ouvir", and Spanish "oyes" phrasings
+    // so that the audio button is immediately available in all three languages.
     const isDictationWriting = item.type === 'writing' &&
-      item.instruction.toLowerCase().includes('you hear');
+      (item.instruction.toLowerCase().includes('you hear') ||
+       item.instruction.toLowerCase().includes('ouvir') ||
+       item.instruction.toLowerCase().includes('oyes'));
 
     // Shadowing exercises: "speaking" type that is NOT a free-answer exercise
     const isShadowing = item.type === 'speaking' &&

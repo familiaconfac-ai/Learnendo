@@ -88,7 +88,7 @@ function detectVoiceGender(voice: SpeechSynthesisVoice): 'female' | 'male' | 'un
     'luciana', 'monica', 'paulina', 'milena',
     'mar\u00eda',                              // es-ES Spanish female iOS/macOS
     'marisol', 'pilar', 'isabel', 'elena',
-    'microsoft helena',                        // es-ES Windows female
+    'microsoft helena', 'microsoft zira',          // common Windows female voices
     'ting-ting', 'sin-ji', 'mei-jia',
     'google us english',              // Google's default EN voice tends to be female
     'google portugu\u00eas do brasil',
@@ -104,7 +104,7 @@ function detectVoiceGender(voice: SpeechSynthesisVoice): 'female' | 'male' | 'un
     'diego', 'alejandro', 'jorge', 'carlos', 'felipe', 'juan',
     'enrique', 'miguel',                       // common ES male voice names
     'google uk english male',
-    'microsoft david', 'microsoft mark', 'microsoft zira',
+    'microsoft david', 'microsoft mark',
     'microsoft pablo', 'microsoft jorge', 'microsoft raul',
   ];
 
@@ -150,7 +150,16 @@ function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any')
 
   // Spanish: also consider es-MX when es-ES list is slim
   const spanishExtra = bcp47 === 'es-ES' ? voices.filter(v => v.lang === 'es-MX') : [];
-  const candidatesByLocale = [...exactMatches, ...spanishExtra, ...prefixMatches];
+  // Deduplicate: exactMatches is a strict subset of prefixMatches, so naïvely
+  // concatenating all three lists produces duplicates.  With duplicates present
+  // the positional fallback (index 0 vs index 1) resolves to the SAME voice for
+  // both female and male requests, breaking alternation even when 2+ voices exist.
+  const seen = new Set<string>();
+  const candidatesByLocale = [...exactMatches, ...spanishExtra, ...prefixMatches].filter(v => {
+    if (seen.has(v.name)) return false;
+    seen.add(v.name);
+    return true;
+  });
 
   if (genderPref !== 'any') {
     // Try to find a voice of the requested gender among locale candidates
