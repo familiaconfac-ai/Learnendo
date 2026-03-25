@@ -214,7 +214,32 @@ export function speak(
 }
 
 /**
- * Convenience helper that plays a dialogue exchange using two different
+ * Returns the deterministic prompt/feedback voice pair for a given exercise.
+ *
+ * Rule (1-indexed exercise numbers):
+ *   odd  exercises → female prompt + male   feedback
+ *   even exercises → male   prompt + female feedback
+ *
+ * This is stable: same index always produces the same pair, regardless of
+ * re-renders, so no flicker or unexpected audio changes occur.
+ *
+ * Falls back gracefully if only one voice gender is available on the device —
+ * pickVoice() handles that transparently.
+ */
+export function exerciseVoices(exerciseIdx: number): {
+  prompt: 'female' | 'male';
+  feedback: 'male' | 'female';
+} {
+  // exerciseIdx is 0-based; exercise #1 (idx 0) is "odd" → female prompt
+  const promptIsFemale = exerciseIdx % 2 === 0;
+  return {
+    prompt:   promptIsFemale ? 'female' : 'male',
+    feedback: promptIsFemale ? 'male'   : 'female',
+  };
+}
+
+/**
+ * Speaks a multi-line dialogue using alternating
  * voices when possible (one male, one female).  Each entry is an object
  * with `text` and optional `gender` ('male' | 'female').
  *

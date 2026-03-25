@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { speak as ttsSpeakImpl, appLangToTts } from '../services/ttsService';
+import { speak as ttsSpeakImpl, appLangToTts, exerciseVoices } from '../services/ttsService';
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
@@ -427,6 +427,8 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const PL = getPL(currentLanguage);
+    // Deterministic voice pair for this exercise: odd #→ female prompt, even #→ male prompt
+    const { prompt: promptVoice, feedback: feedbackVoice } = exerciseVoices(currentIdx);
 
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
@@ -489,13 +491,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       }
 
       if (item.audioValue && item.type !== 'speaking' && item.type !== 'writing') {
-        speak(item.audioValue);
+        speak(item.audioValue, 1, promptVoice);
       } else if (item.audioValue && item.type === 'speaking') {
         // ✅ Auto-play audio for speaking/shadowing exercises
-        setTimeout(() => speak(item.audioValue), 500);
+        setTimeout(() => speak(item.audioValue, 1, promptVoice), 500);
       } else if (item.audioValue && isDictationWriting) {
         // Dictation writing: play audio upfront so students can hear before typing
-        speak(item.audioValue);
+        speak(item.audioValue, 1, promptVoice);
       }
       // non-dictation writing: audio is only revealed after the first wrong attempt
 
@@ -520,8 +522,9 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
     // Thin wrapper so existing call sites don't need changing.
     // Language comes from the currentLanguage prop set by ExercisePractice.
-    const speak = (text: string, rate = 1) =>
-      ttsSpeakImpl(text, currentLanguage, { rate });
+    // voicePref allows callers to request a specific gender; falls back safely.
+    const speak = (text: string, rate = 1, voicePref?: 'male' | 'female') =>
+      ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
 
     const handleSTT = () => {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -571,7 +574,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         setShowFooter(true);
         new Audio(ERR_SOUND).play().catch(() => {});
         setPraiseText(PL.typeWord);
-        speak(PL.typeWordFull);
+        speak(PL.typeWordFull, 1, feedbackVoice);
         setHasWrongAttempt(true);
         return;
       }
@@ -583,7 +586,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           setShowFooter(true);
           new Audio(ERR_SOUND).play().catch(() => {});
           setPraiseText(PL.fullSentence);
-          speak(PL.fullSentenceFull);
+          speak(PL.fullSentenceFull, 1, feedbackVoice);
           setHasWrongAttempt(true);
           return;
         }
@@ -597,11 +600,11 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           new Audio(SUCCESS_SOUND).play().catch(() => {});
           const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
           setPraiseText(p);
-          speak(p);
+          speak(p, 1, feedbackVoice);
         } else {
           new Audio(ERR_SOUND).play().catch(() => {});
           setPraiseText(PL.tryAgain);
-          speak(PL.speakNoMatch);
+          speak(PL.speakNoMatch, 1, feedbackVoice);
           setHasWrongAttempt(true);
         }
         return;
@@ -624,11 +627,11 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         new Audio(SUCCESS_SOUND).play().catch(() => { });
         const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
         setPraiseText(p);
-        speak(p);
+        speak(p, 1, feedbackVoice);
       } else {
         new Audio(ERR_SOUND).play().catch(() => { });
         setPraiseText(PL.tryAgain);
-        speak(PL.speakNoMatch);
+        speak(PL.speakNoMatch, 1, feedbackVoice);
         if (item.type === 'writing') setHasWrongAttempt(true);
       }
     };
@@ -659,7 +662,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const handleOptionClick = (opt: string) => {
       if (showFooter && feedback === 'correct') return;
       setSelectedOption(opt);
-      speak(opt);
+      speak(opt, 1, promptVoice);
       if (feedback === 'wrong') {
         setShowFooter(false);
         setFeedback('none');
@@ -838,12 +841,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
             {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
               {item.audioValue && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
-                <button onClick={() => speak(item.audioValue)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
+                <button onClick={() => speak(item.audioValue, 1, promptVoice)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
                   <img src={speakerIcon} className="w-6 h-6 brightness-0 invert" alt="Play" />
                 </button>
               )}
               {item.audioValue && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
-                <button onClick={() => speak(item.audioValue, 0.5)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
+                <button onClick={() => speak(item.audioValue, 0.5, feedbackVoice)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
                   <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
               )}
