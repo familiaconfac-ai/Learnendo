@@ -37,6 +37,24 @@ const NUMBER_MAP: Record<string, string> = {
   'one hundred': '100', 'one thousand': '1000'
 };
 
+// Portuguese and Spanish number-word → digit maps used in speaking/shadowing
+// normalization so that STT digit output ("é 15") matches stored word form ("é quinze").
+const PT_NUMBER_MAP: Record<string, string> = {
+  'zero': '0', 'um': '1', 'uma': '1', 'dois': '2', 'duas': '2',
+  'tres': '3', 'tr\u00eas': '3', 'quatro': '4', 'cinco': '5', 'seis': '6',
+  'sete': '7', 'oito': '8', 'nove': '9', 'dez': '10', 'onze': '11',
+  'doze': '12', 'treze': '13', 'quatorze': '14', 'quinze': '15',
+  'dezesseis': '16', 'dezessete': '17', 'dezoito': '18', 'dezenove': '19',
+  'vinte': '20',
+};
+const ES_NUMBER_MAP: Record<string, string> = {
+  'cero': '0', 'uno': '1', 'una': '1', 'dos': '2', 'tres': '3',
+  'cuatro': '4', 'cinco': '5', 'seis': '6', 'siete': '7', 'ocho': '8',
+  'nueve': '9', 'diez': '10', 'once': '11', 'doce': '12', 'trece': '13',
+  'catorce': '14', 'quince': '15', 'diecis\u00e9is': '16', 'dieciseis': '16',
+  'diecisiete': '17', 'dieciocho': '18', 'diecinueve': '19', 'veinte': '20',
+};
+
 const TIME_NORMALIZE_MAP: Record<string, string> = {
   '7:00': 'seven o clock', '7 o clock': 'seven o clock', 'seven oclock': 'seven o clock', '7 oclock': 'seven o clock',
   '7:30': 'seven thirty', '7 thirty': 'seven thirty', 'seven 30': 'seven thirty',
@@ -55,7 +73,7 @@ const normalizeAnswer = (answer: string): string => {
     // as "it's fifteen" (ASCII). Without this, the prefix-strip regex ("its ") fails
     // and the speaking match returns false even when the answer is semantically correct.
     .replace(/[\u2018\u2019\u02BC\u2032]/g, "'")
-    .replace(/[.,!?;:']/g, "");
+    .replace(/[.,!?;:'\u00bf\u00a1]/g, "");  // \u00bf = \u00bf, \u00a1 = \u00a1
 
   // Strip sentence prefixes so "It is five." / "It's five." are accepted as "five"
   normalized = normalized.replace(/^(it is |its |the answer is |the result is |the number is )/, '');
@@ -85,7 +103,7 @@ const normalizeAnswer = (answer: string): string => {
 };
 
 // Pre-processes time expressions for speaking/shadowing BEFORE punctuation stripping
-const normalizeSpeakingAnswer = (answer: string): string => {
+const normalizeSpeakingAnswer = (answer: string, lang?: string): string => {
   let s = answer.toLowerCase().trim();
   // Normalize smart/curly apostrophes → ASCII so they are stripped correctly
   // downstream. This fixes "it\u2019s twenty" (smart quote) = "It's 20" (STT output).
@@ -98,6 +116,29 @@ const normalizeSpeakingAnswer = (answer: string): string => {
   Object.entries(NUMBER_MAP).forEach(([word, digit]) => {
     s = s.replace(new RegExp(`\\b${word}\\b`, 'g'), digit);
   });
+  // Apply language-specific number-word maps.  This converts PT/ES spoken forms
+  // ("quinze", "quince") to digits so they match STT digit output ("15").
+  // Both the stored correctValue and the STT transcript go through this so the
+  // comparison is symmetric: "é quinze" → "15", "é 15" → "15" → equal. ✓
+  const langNumMap = lang === 'pt' ? PT_NUMBER_MAP : lang === 'es' ? ES_NUMBER_MAP : null;
+  if (langNumMap) {
+    Object.entries(langNumMap).forEach(([word, digit]) => {
+      s = s.replace(new RegExp(`\\b${word}\\b`, 'gi'), digit);
+    });
+  }
+  // Strip common PT/ES sentence-result prefixes (é/es) so "é 15" and "15" are equal
+  if (lang === 'pt') s = s.replace(/^\u00e9\s+/, '');
+  if (lang === 'es') s = s.replace(/^es\s+/, '');
+  // Lang-specific math-operator symbols → word forms used in correctValue strings
+  if (lang === 'pt') {
+    s = s.replace(/\s*\+\s*/g, ' mais ');
+    s = s.replace(/\s*[*\u00d7]\s*/g, ' vezes ');
+    s = s.replace(/\s*\u00f7\s*/g, ' dividido por ');
+  } else if (lang === 'es') {
+    s = s.replace(/\s*\+\s*/g, ' m\u00e1s ');
+    s = s.replace(/\s*[*\u00d7]\s*/g, ' por ');
+    s = s.replace(/\s*\u00f7\s*/g, ' entre ');
+  }
   // H:00 am/pm → H am/pm  ("7:00 am" → "7 am")
   s = s.replace(/\b(\d+):00\s*(am|pm)\b/gi, '$1 $2');
   // H:30 am/pm → H thirty am/pm  (before generic H:MM so "7:30 am" → "7 thirty am")
@@ -118,9 +159,13 @@ const normalizeSpeakingAnswer = (answer: string): string => {
   s = s.replace(/\b(\d+)\s*oclock\b/gi, '$1');
   // Math operator symbols → word equivalents.
   // STT on mobile often transcribes "+", "×", "*", "x" etc. instead of spoken words.
-  s = s.replace(/\s*\+\s*/g, ' plus ');
-  s = s.replace(/\s*[*×]\s*/g, ' times ');
-  s = s.replace(/\s*÷\s*/g, ' divided by ');
+  // For PT/ES the operator mappings differ (mais/más, vezes/por, etc.) and are
+  // already handled by the lang-specific block above — skip English ones for those.
+  if (!lang || (lang !== 'pt' && lang !== 'es')) {
+    s = s.replace(/\s*\+\s*/g, ' plus ');
+    s = s.replace(/\s*[*×]\s*/g, ' times ');
+    s = s.replace(/\s*÷\s*/g, ' divided by ');
+  }
   // "/" only when flanked by digits (avoids breaking contractions like "it's")
   s = s.replace(/(\d)\s*\/\s*(\d)/g, '$1 divided by $2');
   // standalone "x" or "X" between operands used as multiplication sign
@@ -132,9 +177,10 @@ const normalizeSpeakingAnswer = (answer: string): string => {
 
 // Returns true when a speaking/shadowing response is semantically equivalent to the target.
 // Accepts AM/PM variants and o'clock as interchangeable; rejects explicit AM↔PM swaps.
-const isSpeakingMatch = (response: string, target: string): boolean => {
-  const normResp = normalizeSpeakingAnswer(response);
-  const normTarget = normalizeSpeakingAnswer(target);
+// lang: pass the active course language ('pt'/'es'/'en') for number-word equivalence.
+const isSpeakingMatch = (response: string, target: string, lang?: string): boolean => {
+  const normResp = normalizeSpeakingAnswer(response, lang);
+  const normTarget = normalizeSpeakingAnswer(target, lang);
   if (normResp === normTarget) return true;
   // Explicit AM vs PM conflict → fail
   const hasAm = (s: string) => /\b\d+\s+am\b/.test(s);
@@ -345,6 +391,7 @@ const PRACTICE_LABELS = {
     listenHint: '🔊 Listen to the audio for help!',
     continueBtn: 'CONTINUE',
     gotItBtn: 'GOT IT',
+    speakPlaceholder: 'Say something or type...',
     lessonLabel: (id: number) => `Lesson ${id}`,
     exerciseLabel: (day: number, total: number) => `Exercise ${day} of ${total}`,
     exerciseIdxLabel: (idx: number, total: number) => `Exercise ${idx + 1} of ${total}`,
@@ -371,6 +418,7 @@ const PRACTICE_LABELS = {
     listenHint: '🔊 Ouça o áudio para ajuda!',
     continueBtn: 'CONTINUAR',
     gotItBtn: 'ENTENDI',
+    speakPlaceholder: 'Fale ou escreva...',
     lessonLabel: (id: number) => `Lição ${id}`,
     exerciseLabel: (day: number, total: number) => `Exercício ${day} de ${total}`,
     exerciseIdxLabel: (idx: number, total: number) => `Exercício ${idx + 1} de ${total}`,
@@ -397,6 +445,7 @@ const PRACTICE_LABELS = {
     listenHint: '🔊 ¡Escucha el audio para ayuda!',
     continueBtn: 'CONTINUAR',
     gotItBtn: 'ENTENDIDO',
+    speakPlaceholder: 'Di algo o escribe...',
     lessonLabel: (id: number) => `Lección ${id}`,
     exerciseLabel: (day: number, total: number) => `Ejercicio ${day} de ${total}`,
     exerciseIdxLabel: (idx: number, total: number) => `Ejercicio ${idx + 1} de ${total}`,
@@ -617,7 +666,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       const cleanTarget = normalizeAnswer(item.correctValue);
 
       const isCorrect = item.type === 'speaking'
-        ? isSpeakingMatch(rawInput, item.correctValue)
+        ? isSpeakingMatch(rawInput, item.correctValue, currentLanguage)
         : (response === cleanTarget) ||
           (NUMBER_MAP[response] === cleanTarget) ||
           (NUMBER_MAP[cleanTarget] === response);
@@ -928,7 +977,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                   value={userInput}
                   onChange={handleTextareaChange}
                   onKeyDown={handleKeyDown}
-                  placeholder="Say something or type..."
+                  placeholder={PL.speakPlaceholder}
                   style={{ height: 'auto' }}
                 />
               </div>
