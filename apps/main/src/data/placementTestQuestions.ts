@@ -1,10 +1,10 @@
 ﻿// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Placement Test â€” Question bank v2
+// Placement Test — Question bank v2
 //
-// 50 questions across 5 levels (10 each): A1 Â· A2 Â· B1 Â· B2 Â· C1/C2
+// 50 questions across 5 levels (10 each): A1 · A2 · B1 · B2 · C1/C2
 // All questions have "I don't know" as the LAST option.
-// "I don't know" is NEVER the correct answer (correctAnswerIndex is always 0â€“3).
-// audioText is NEVER shown in the UI prompt â€” component reads it only for TTS.
+// "I don't know" is NEVER the correct answer (correctAnswerIndex is always 0–3).
+// audioText is NEVER shown in the UI prompt — component reads it only for TTS.
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export interface PlacementQuestion {
@@ -14,13 +14,16 @@ export interface PlacementQuestion {
   type: 'multiple-choice' | 'listening' | 'reading' | 'vocabulary';
   /** Shown to the student as the question text. NEVER include audioText here. */
   prompt: string;
-  /** TTS text â€” read aloud. NEVER rendered in the UI. */
+  /** TTS text — read aloud. NEVER rendered in the UI. */
   audioText?: string;
   /** Always 5 options: 4 real + "I don't know" as index 4. */
   options: string[];
-  /** Index of the correct answer within options[]. Always 0â€“3. */
+  /** Index of the correct answer within options[]. Always 0–3. */
   correctAnswerIndex: number;
+  /** Short explanation of why the correct answer is right. Used in PDF/report. */
   explanation?: string;
+  /** Grammar or vocabulary topic tested (e.g. "Present Perfect", "Modal Verbs"). Used in PDF/report. */
+  grammarTopic?: string;
 }
 
 // â”€â”€â”€ HELPER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -35,6 +38,7 @@ function q(
   correctAnswerIndex: number,
   audioText?: string,
   explanation?: string,
+  grammarTopic?: string,
 ): PlacementQuestion {
   return {
     id, part, levelBand, type, prompt,
@@ -42,13 +46,14 @@ function q(
     options: [...opts4, "I don't know"],
     correctAnswerIndex,
     explanation,
+    grammarTopic,
   };
 }
 
 export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 1 â€” A1  (questions 1â€“10)
+  // PART 1 — A1  (questions 1–10)
   // Coverage: verb to be, subject pronouns, basic vocabulary, listening
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -58,6 +63,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     'Hello! My name is Tom.',
     '"Hello! My name is Tom." is a greeting and self-introduction.',
+    'Listening Comprehension',
   ),
 
   q('a1_02', 1, 'A1', 'listening',
@@ -65,7 +71,8 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     ['Fifteen', 'Fifty', 'Fourteen', 'Forty'],
     0,
     'Fifteen.',
-    'The speaker says "fifteen" â€” 15.',
+    'The speaker says "fifteen" — 15.',
+    'Numbers (Listening)',
   ),
 
   q('a1_03', 1, 'A1', 'multiple-choice',
@@ -74,6 +81,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     undefined,
     '"He" (3rd person singular) takes "is".',
+    'Verb To Be',
   ),
 
   q('a1_04', 1, 'A1', 'multiple-choice',
@@ -82,6 +90,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     undefined,
     '"Are you" is the correct question form with "you".',
+    'Verb To Be — Questions',
   ),
 
   q('a1_05', 1, 'A1', 'multiple-choice',
@@ -90,6 +99,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     undefined,
     '"She" is the subject pronoun for a female.',
+    'Subject Pronouns',
   ),
 
   q('a1_06', 1, 'A1', 'vocabulary',
@@ -98,6 +108,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     'Monday is a day of the week.',
+    'Days of the Week',
   ),
 
   q('a1_07', 1, 'A1', 'vocabulary',
@@ -106,6 +117,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     'A glass is used for drinking.',
+    'Everyday Vocabulary',
   ),
 
   q('a1_08', 1, 'A1', 'multiple-choice',
@@ -114,6 +126,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     undefined,
     '"I am not" is the correct negative of "I am".',
+    'Verb To Be — Negatives',
   ),
 
   q('a1_09', 1, 'A1', 'listening',
@@ -122,6 +135,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     'I am at home with my family today.',
     'The speaker says "at home".',
+    'Prepositions of Place (Listening)',
   ),
 
   q('a1_10', 1, 'A1', 'vocabulary',
@@ -130,10 +144,11 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     'Cold is the opposite of hot.',
+    'Antonyms — Basic Adjectives',
   ),
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 2 â€” A2  (questions 11â€“20)
+  // PART 2 — A2  (questions 11–20)
   // Coverage: there is/are, can/can't, present simple, prepositions, listening
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -143,6 +158,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     3,
     'She can swim very well.',
     'The speaker says "she can swim".',
+    'Modal Verbs — Can (Listening)',
   ),
 
   q('a2_12', 2, 'A2', 'multiple-choice',
@@ -151,6 +167,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     undefined,
     '"Is there" is used to ask about a single countable noun.',
+    'There Is / There Are',
   ),
 
   q('a2_13', 2, 'A2', 'multiple-choice',
@@ -159,6 +176,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     '"There are" is used with plural nouns.',
+    'There Is / There Are',
   ),
 
   q('a2_14', 2, 'A2', 'multiple-choice',
@@ -167,6 +185,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     'Present simple 3rd person singular takes -s.',
+    'Present Simple — 3rd Person',
   ),
 
   q('a2_15', 2, 'A2', 'multiple-choice',
@@ -175,6 +194,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     '"Can\'t" expresses inability.',
+    'Modal Verbs — Can / Cannot',
   ),
 
   q('a2_16', 2, 'A2', 'vocabulary',
@@ -183,6 +203,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     '"In the box" means inside.',
+    'Prepositions of Place',
   ),
 
   q('a2_17', 2, 'A2', 'listening',
@@ -191,6 +212,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     'I go to the gym three times a week.',
     'The speaker says "three times a week".',
+    'Adverbs of Frequency (Listening)',
   ),
 
   q('a2_18', 2, 'A2', 'multiple-choice',
@@ -198,7 +220,8 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     ['Do she work here?', 'Does she works here?', 'Does she work here?', 'Is she work here?'],
     2,
     undefined,
-    '"Does she work?" is correct â€” 3rd person question with base form.',
+    '"Does she work?" is correct — 3rd person question with base form.',
+    'Present Simple — Questions',
   ),
 
   q('a2_19', 2, 'A2', 'vocabulary',
@@ -207,6 +230,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     '"Cheap" is the opposite of "expensive".',
+    'Antonyms — Adjectives',
   ),
 
   q('a2_20', 2, 'A2', 'multiple-choice',
@@ -215,10 +239,11 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     '"They are" + present continuous (-ing).',
+    'Present Continuous',
   ),
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 3 â€” B1  (questions 21â€“30)
+  // PART 3 — B1  (questions 21–30)
   // Coverage: past simple, going to, comparatives, modals, reading, listening
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -228,6 +253,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     '"Went" is the past simple of "go".',
+    'Past Simple — Irregular Verbs',
   ),
 
   q('b1_22', 3, 'B1', 'multiple-choice',
@@ -236,6 +262,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     undefined,
     'Past simple question: "Did + subject + base verb".',
+    'Past Simple — Questions',
   ),
 
   q('b1_23', 3, 'B1', 'multiple-choice',
@@ -244,6 +271,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     undefined,
     '"Be going to" = future plan. "We are going to".',
+    'Future — Be Going To',
   ),
 
   q('b1_24', 3, 'B1', 'multiple-choice',
@@ -251,7 +279,8 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     ['more heavy', 'heavier', 'heaviest', 'heavy'],
     1,
     undefined,
-    'One-syllable adjective â†’ add -er for comparative.',
+    'One-syllable adjective → add -er for comparative.',
+    'Comparative Adjectives',
   ),
 
   q('b1_25', 3, 'B1', 'multiple-choice',
@@ -260,6 +289,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     '"Must" expresses obligation (legal requirement).',
+    'Modal Verbs — Must / Should',
   ),
 
   q('b1_26', 3, 'B1', 'listening',
@@ -268,6 +298,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     'Tomorrow morning I am going to the gym. I want to get fit.',
     'The speaker says "going to the gym".',
+    'Future Plans (Listening)',
   ),
 
   q('b1_27', 3, 'B1', 'reading',
@@ -276,6 +307,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     'Text states "because she had a headache".',
+    'Reading Comprehension — Cause & Effect',
   ),
 
   q('b1_28', 3, 'B1', 'multiple-choice',
@@ -284,14 +316,16 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     'Present perfect ("have lost") for a recent action with present relevance.',
+    'Present Perfect',
   ),
 
   q('b1_29', 3, 'B1', 'vocabulary',
-    'Choose the word that best completes: "She gave a very ___ speech â€” everyone was moved."',
+    'Choose the word that best completes: "She gave a very ___ speech — everyone was moved."',
     ['boring', 'powerful', 'silent', 'short'],
     1,
     undefined,
     '"Powerful" fits a speech that moved people.',
+    'Vocabulary in Context',
   ),
 
   q('b1_30', 3, 'B1', 'reading',
@@ -300,10 +334,11 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     '"If you practise speaking every day" is the condition stated.',
+    'Conditional Sentences — First Conditional (Reading)',
   ),
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 4 â€” B2  (questions 31â€“40)
+  // PART 4 — B2  (questions 31–40)
   // Coverage: present perfect continuous, passive, conditionals, listening, reading
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -313,6 +348,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     'Present perfect: "has been" with 3rd person singular.',
+    'Present Perfect',
   ),
 
   q('b2_32', 4, 'B2', 'multiple-choice',
@@ -320,7 +356,8 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     ['have been', 'had been', 'was', 'am'],
     0,
     undefined,
-    'Present perfect continuous ("have been waiting") â€” ongoing action until now.',
+    'Present perfect continuous ("have been waiting") — ongoing action until now.',
+    'Present Perfect Continuous',
   ),
 
   q('b2_33', 4, 'B2', 'multiple-choice',
@@ -329,6 +366,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     'Passive voice past: "was written".',
+    'Passive Voice — Past Simple',
   ),
 
   q('b2_34', 4, 'B2', 'multiple-choice',
@@ -337,6 +375,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     'Second conditional: "If + past simple, would + base verb".',
+    'Second Conditional',
   ),
 
   q('b2_35', 4, 'B2', 'listening',
@@ -345,6 +384,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     'Hi, just to let you know that Monday\'s meeting has been moved to Thursday at the same time. Please update your calendar.',
     'The speaker says the meeting was moved to Thursday.',
+    'Passive Voice (Listening)',
   ),
 
   q('b2_36', 4, 'B2', 'reading',
@@ -353,6 +393,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     'The text links excessive use to anxiety and reduced attention spans.',
+    'Reading Comprehension — Critical Analysis',
   ),
 
   q('b2_37', 4, 'B2', 'vocabulary',
@@ -361,6 +402,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     '"Meticulous" means very careful and precise.',
+    'Advanced Vocabulary',
   ),
 
   q('b2_38', 4, 'B2', 'multiple-choice',
@@ -369,6 +411,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     0,
     undefined,
     'Inversion after "Not only": auxiliary + subject.',
+    'Inversion — Not Only',
   ),
 
   q('b2_39', 4, 'B2', 'multiple-choice',
@@ -377,6 +420,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     '"Used to + base verb" for past habits. Only option C uses this correctly.',
+    'Used To — Past Habits',
   ),
 
   q('b2_40', 4, 'B2', 'vocabulary',
@@ -385,10 +429,11 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     '"Ambiguous" means having more than one possible meaning.',
+    'Synonyms — Advanced',
   ),
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 5 â€” C1/C2  (questions 41â€“50)
+  // PART 5 — C1/C2  (questions 41–50)
   // Coverage: modal perfects, inversion, connectors, nuanced reading, listening
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
@@ -398,14 +443,16 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     '"If only + past perfect" expresses regret about a past action.',
+    'If Only — Past Perfect (Regret)',
   ),
 
   q('c1_42', 5, 'C1', 'multiple-choice',
-    '"You ___ have called me â€” I was worried about you."',
+    '"You ___ have called me — I was worried about you."',
     ['should', 'must', 'would', 'might'],
     0,
     undefined,
     '"Should have" expresses criticism or regret about a past action.',
+    'Modal Perfects — Should Have',
   ),
 
   q('c1_43', 5, 'C1', 'multiple-choice',
@@ -414,14 +461,16 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     'Inversion in third conditional: "Had the weather been better" = "If the weather had been better".',
+    'Third Conditional — Inversion',
   ),
 
   q('c1_44', 5, 'C1', 'multiple-choice',
-    '"She passed the exam. ___, she received a scholarship."',
-    ['However', 'Although', 'Consequently', 'Nevertheless'],
+    '"The factory failed to meet safety regulations. ___, it was shut down by the authorities."',
+    ['Despite', 'Although', 'Consequently', 'Nevertheless'],
     2,
     undefined,
-    '"Consequently" signals a result: passing led to the scholarship.',
+    '"Consequently" expresses a direct causal result: the violation caused the shutdown. "Despite" requires a noun/gerund phrase, not an independent clause. "Although" must introduce a subordinate clause, not a standalone sentence. "Nevertheless" signals contrast or concession, not cause-and-effect.',
+    'Discourse Markers — Cause & Effect',
   ),
 
   q('c1_45', 5, 'C1', 'listening',
@@ -435,6 +484,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     'While technology can certainly enhance learning, it\'s important that students develop the critical skills to evaluate digital information rather than accepting everything they read online. Used wisely, it\'s a powerful tool.',
     'The speaker advocates critical use of technology, not total avoidance or uncritical acceptance.',
+    'Extended Listening Comprehension',
   ),
 
   q('c1_46', 5, 'C1', 'reading',
@@ -442,7 +492,8 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     ['Quantum entanglement enables instant communication.', 'Faster-than-light communication is theoretically possible.', 'A theorem rules out using entanglement for faster-than-light information transfer.', 'Quantum physics is too complex to understand.'],
     2,
     undefined,
-    'The theorem "refutes" the speculation â€” it cannot be used for faster-than-light communication.',
+    'The theorem "refutes" the speculation — it cannot be used for faster-than-light communication.',
+    'Reading Comprehension — Academic / Scientific Text',
   ),
 
   q('c1_47', 5, 'C1', 'vocabulary',
@@ -451,6 +502,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     1,
     undefined,
     '"Elucidate" means to make something clear.',
+    'Advanced Vocabulary — Synonyms',
   ),
 
   q('c1_48', 5, 'C1', 'vocabulary',
@@ -459,6 +511,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     '"Concealment" (hiding information) would damage trust.',
+    'Vocabulary in Context — Advanced',
   ),
 
   q('c2_49', 5, 'C2', 'reading',
@@ -472,6 +525,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     '"Obfuscation", "quandaries remain unresolved", and "notwithstanding" all signal that complexity persists despite theoretical efforts.',
+    'Reading Comprehension — Postmodern / Academic Prose',
   ),
 
   q('c2_50', 5, 'C2', 'vocabulary',
@@ -480,6 +534,7 @@ export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
     2,
     undefined,
     '"Obfuscatory" means intended to make something unclear or difficult to understand.',
+    'Advanced Vocabulary — Register',
   ),
 ];
 
@@ -495,8 +550,8 @@ const LEVEL_WEIGHTS: Record<string, number> = {
 /**
  * Classify a student's CEFR level using weighted band scoring.
  *
- * - `percentage` = raw % correct (for student display only â€” NOT used to classify).
- * - `weightedPct` = weighted score / max possible weighted score Ã— 100.
+ * - `percentage` = raw % correct (for student display only — NOT used to classify).
+ * - `weightedPct` = weighted score / max possible weighted score × 100.
  * - Cutoffs are calibrated so random guessing (20% on 5-option questions) always
  *   lands in Beginner or A1.
  * - "I don't know" (index 4) is never the correct answer, so choosing it always
@@ -521,7 +576,7 @@ export function classifyPlacementLevel(
   });
   const weightedPct = maxScore > 0 ? Math.round((weightedScore / maxScore) * 100) : 0;
 
-  // Cutoffs (v2) â€” more rigorous, calibrated for 5-option questions (random â‰ˆ 20%)
+  // Cutoffs (v2) — more rigorous, calibrated for 5-option questions (random ≈ 20%)
   let level: string;
   if      (weightedPct < 25) level = 'Beginner';
   else if (weightedPct < 41) level = 'A1';
@@ -536,7 +591,7 @@ export function classifyPlacementLevel(
 
 /**
  * Return the placement test question bank for a given language code.
- * Currently only English ('en') is implemented â€” other languages fall back here
+ * Currently only English ('en') is implemented — other languages fall back here
  * until their own banks are authored.
  */
 export function getQuestionsForLanguage(languageCode: string): PlacementQuestion[] {
@@ -553,36 +608,43 @@ export const CEFR_LEVELS = {
   'Beginner': {
     range: 'Below A1',
     description: 'You are at the very beginning of your English journey. Focus on basic words, greetings, and simple sentences.',
-    recommendation: 'Start with Workbook 1 â€” Units 1 and 2.',
+    recommendation: 'Start at the very beginning — basic greetings, numbers, and everyday words.',
+    entryPoint: 'Workbook 1 / Unit 1',
   },
   'A1': {
     range: 'Elementary',
     description: 'You can understand and use very basic English. You can introduce yourself and ask simple questions.',
-    recommendation: 'Start with Workbook 1.',
+    recommendation: 'Begin with foundational grammar: the verb "to be", pronouns, and present simple.',
+    entryPoint: 'Workbook 1 / Unit 2',
   },
   'A2': {
     range: 'Pre-Intermediate',
     description: 'You can handle everyday situations and short conversations. Keep building confidence with new vocabulary and tenses.',
-    recommendation: 'Start with Workbook 2â€“3.',
+    recommendation: 'Continue with past simple, can/could, present continuous, and everyday conversations.',
+    entryPoint: 'Workbook 2 / Unit 1',
   },
   'B1': {
     range: 'Intermediate',
     description: 'You can discuss familiar topics, express opinions, and follow the main points in clear speech.',
-    recommendation: 'Start with Workbook 4â€“5.',
+    recommendation: 'Focus on present perfect, conditionals, modal verbs, and reading longer texts.',
+    entryPoint: 'Workbook 4 / Unit 1',
   },
   'B2': {
     range: 'Upper-Intermediate',
     description: 'You have a solid command of English and can engage in more complex discussions with confidence.',
-    recommendation: 'Start with Workbook 6â€“7.',
+    recommendation: 'Work on passive voice, advanced conditionals, discourse markers, and academic vocabulary.',
+    entryPoint: 'Workbook 6 / Unit 1',
   },
   'C1': {
     range: 'Advanced',
     description: 'You can express yourself fluently and spontaneously and understand sophisticated texts and conversations.',
-    recommendation: 'Start with Workbook 8.',
+    recommendation: 'Strengthen modal perfects, inversion, nuanced vocabulary, and extended listening.',
+    entryPoint: 'Workbook 8 / Unit 1',
   },
   'C2': {
     range: 'Mastery',
     description: 'You have near-native proficiency. You can understand virtually anything and express yourself with precision.',
     recommendation: 'Challenge yourself with advanced and specialised English content.',
+    entryPoint: 'Advanced & Specialised Content',
   },
 };

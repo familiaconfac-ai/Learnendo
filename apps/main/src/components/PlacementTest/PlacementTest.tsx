@@ -132,6 +132,18 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
     try {
       console.log('[PlacementTest] Saving to Firebase with uid:', authUser.uid);
       if (db) {
+        const answerBreakdown = finalAnswers.map((ans, i) => ({
+          questionId: questions[i].id,
+          prompt: questions[i].prompt,
+          studentAnswer: ans !== null ? questions[i].options[ans] : null,
+          correctAnswer: questions[i].options[questions[i].correctAnswerIndex],
+          isCorrect: ans === questions[i].correctAnswerIndex,
+          explanation: questions[i].explanation ?? null,
+          grammarTopic: questions[i].grammarTopic ?? null,
+          levelBand: questions[i].levelBand,
+          skillType: questions[i].type,
+        }));
+
         const placementRecord = {
           score: percentage,
           level,
@@ -141,6 +153,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
           totalQuestions: questions.length,
           fullName: studentName,
           whatsapp: studentWhatsApp,
+          answerBreakdown,
         };
         await setDoc(
           doc(db, 'progress', authUser.uid),
@@ -174,12 +187,15 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
     const levelInfo = CEFR_LEVELS[level as keyof typeof CEFR_LEVELS];
 
     const handleContactTeacher = () => {
-      const message = `Hello! I have just completed the Placement Test.
-My name is ${studentName}.
-My WhatsApp number is ${studentWhatsApp}.
-My score was ${correctCount}/${questions.length}.
-My estimated level was ${level}.
-I would like to receive feedback about my result.`;
+      const message = `Hello! I have just completed the English Placement Test.
+
+Name: ${studentName}
+WhatsApp: ${studentWhatsApp}
+Score: ${correctCount}/${questions.length} (${percentage}%)
+Estimated Level: ${level} — ${levelInfo.range}
+Recommended Starting Point: ${levelInfo.entryPoint}
+
+I completed the placement test and would like to receive my detailed PDF report with my answers, mistakes, and level analysis.`;
 
       const encodedMessage = encodeURIComponent(message);
       const teacherWhatsAppUrl = `https://wa.me/5517991010930?text=${encodedMessage}`;
@@ -208,8 +224,9 @@ I would like to receive feedback about my result.`;
             </div>
 
             <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200 mb-6">
-              <p className="text-sm font-semibold text-amber-900 mb-2">Recommended Starting Point</p>
-              <p className="text-sm text-amber-800">{levelInfo.recommendation}</p>
+              <p className="text-sm font-semibold text-amber-900 mb-1">📍 Recommended Starting Point</p>
+              <p className="text-lg font-bold text-amber-700 mb-2">{levelInfo.entryPoint}</p>
+              <p className="text-xs text-amber-800">{levelInfo.recommendation}</p>
             </div>
 
             <div className="space-y-3">
