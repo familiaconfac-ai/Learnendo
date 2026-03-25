@@ -523,8 +523,11 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     // Thin wrapper so existing call sites don't need changing.
     // Language comes from the currentLanguage prop set by ExercisePractice.
     // voicePref allows callers to request a specific gender; falls back safely.
-    const speak = (text: string, rate = 1, voicePref?: 'male' | 'female') =>
-      ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
+    const speak = (text: string, rate = 1, voicePref?: 'male' | 'female') => {
+      // Debug: verify localized audio matches visible content (remove after confirming fix).
+      console.log('[TTS debug]', { lang: currentLanguage, id: item.id, text, rate, voice: voicePref });
+      return ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
+    };
 
     const handleSTT = () => {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;

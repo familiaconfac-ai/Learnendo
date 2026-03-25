@@ -106,6 +106,18 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       ['apple', 'maçã'],
       ['orange', 'laranja'],
       ['toes', 'dedos do pe'],
+      // ── Math / sentence-level hooks (audioValues in speaking/shadowing/writing) ──
+      // These translate sentence fragments that contain lowercase number words,
+      // arithmetic operators and sentence starters — none of which are caught by
+      // the capitalized single-word entries below (e.g. 'Fifteen' does NOT match
+      // the "fifteen" inside "It's fifteen." without case-insensitive replacement).
+      ['What is ', 'Quanto é '],          // "What is nine plus nine" → "Quanto é nove mais nove"
+      ["It's ", 'É '],                    // "It's fifteen." → "É quinze."
+      ['It is ', 'É '],                   // "It is eighteen." → "É dezoito."
+      [' plus ', ' mais '],               // arithmetic operators
+      [' minus ', ' menos '],
+      [' times ', ' vezes '],
+      [' divided by ', ' dividido por '],
       ['Zero', 'zero'],
       ['One', 'um'],
       ['Two', 'dois'],
@@ -135,6 +147,7 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       ['Purple', 'roxo'],
       ['Black', 'preto'],
       ['White', 'branco'],
+      ['Pink', 'rosa'],
       ['Long', 'Longa'],
       ['Short', 'Curta'],
     ],
@@ -222,6 +235,14 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       ['apple', 'manzana'],
       ['orange', 'naranja'],
       ['toes', 'dedos del pie'],
+      // ── Math / sentence-level hooks (audioValues in speaking/shadowing/writing) ──
+      ['What is ', '¿Cuánto es '],        // "What is five plus five?" → "¿Cuánto es cinco más cinco?"
+      ["It's ", 'Es '],                   // "It's fifteen." → "Es quince."
+      ['It is ', 'Es '],
+      [' plus ', ' más '],                // arithmetic operators
+      [' minus ', ' menos '],
+      [' times ', ' por '],
+      [' divided by ', ' entre '],
       ['Zero', 'cero'],
       ['One', 'uno'],
       ['Two', 'dos'],
@@ -251,6 +272,7 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       ['Purple', 'morado'],
       ['Black', 'negro'],
       ['White', 'blanco'],
+      ['Pink', 'rosa'],
       ['Long', 'Larga'],
       ['Short', 'Corta'],
     ],
@@ -361,7 +383,15 @@ function replaceText(value: string | undefined, replacements: Array<[string, str
   if (!value) return value;
   let nextValue = value;
   for (const [from, to] of replacements) {
-    nextValue = nextValue.split(from).join(to);
+    const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Multi-word phrases: case-insensitive global match — surrounding spaces already
+    // delimit the match so no \b needed and it avoids breaking phrase replacements.
+    // Single words: add \b word boundaries to prevent partial hits inside longer
+    // words (e.g. "Ten" must not corrupt "listen", "attention", "fourteen" → fourdez).
+    const pattern = from.trim().includes(' ')
+      ? new RegExp(escaped, 'gi')
+      : new RegExp(`\\b${escaped}\\b`, 'gi');
+    nextValue = nextValue.replace(pattern, to);
   }
   return nextValue;
 }
