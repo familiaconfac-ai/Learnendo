@@ -7,7 +7,7 @@
  * Components import from here — never from the lower-level engines directly.
  */
 
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, onSnapshot } from 'firebase/firestore';
 import { getAllUserProgressSummaries, UserProgressSummary } from './courseProgressEngine';
 import { detectAlerts, StudentAlert } from './alertService';
 import { rankStudents, RankedStudent, computeScore } from './rankingService';
@@ -158,9 +158,12 @@ export function subscribeToTeacherData(
     return () => {};
   }
 
-  const progressQuery = courseId
-    ? query(collection(db, 'progress'), where('courseId', '==', courseId))
-    : collection(db, 'progress');
+  // Always subscribe to the full progress collection.
+  // Per-course filtering is done client-side so that the courses map
+  // (students active in multiple languages) is respected correctly.
+  // Firestore compound-index filters on a single courseId field would miss
+  // students who have since switched their active course.
+  const progressQuery = collection(db, 'progress');
 
   const unsub = onSnapshot(
     progressQuery,
@@ -206,7 +209,19 @@ export function subscribeToTeacherData(
         s => s.daysCompleted > 0 || s.totalStars > 0 || s.totalAttempts > 0,
       );
 
-      const ranked = rankStudents(activeSummaries);
+      // ── Per-course filter ──────────────────────────────────────────────────
+      // When a courseId is requested (from RankScreen), keep only students who
+      // have had real activity in that course.  We check:
+      //   1. root courseId field  — legacy docs (single course)
+      //   2. courses map key      — multi-language docs (new format)
+      // This guarantees English students compete only with English students, etc.
+      const forRanking = courseId
+        ? activeSummaries.filter(
+            s => s.courseId === courseId || s.courses?.[courseId] !== undefined,
+          )
+        : activeSummaries;
+
+      const ranked = rankStudents(forRanking);
       const rows: TeacherStudentRow[] = ranked.map(student => {
         const raw = snap.docs.find(d => d.id === student.uid)?.data();
         return {

@@ -259,8 +259,28 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
 // Ranking Tab
 // ─────────────────────────────────────────────────────────────
 
+/** Course options shown in the RankingTab selector — must match courseId values in Firestore. */
+const RANKING_COURSE_OPTIONS = [
+  { id: '',                     label: 'All Courses' },
+  { id: 'english',              label: '🇺🇸 English' },
+  { id: 'portuguese_foreigners',label: '🇧🇷 Portuguese' },
+  { id: 'spanish',              label: '🇪🇸 Spanish' },
+  { id: 'greek_koine',          label: '🇬🇷 Greek' },
+  { id: 'hebrew_biblical',      label: '🇮🇱 Hebrew' },
+] as const;
+
 const RankingTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
-  const top10 = useMemo(() => getTopRanked(rows, 10), [rows]);
+  const [courseFilter, setCourseFilter] = useState('');
+
+  // Same dual-check used in subscribeToTeacherData: root courseId (legacy) + courses map (new).
+  const filteredRows = useMemo(() => {
+    if (!courseFilter) return rows;
+    return rows.filter(
+      r => r.courseId === courseFilter || r.courses?.[courseFilter] !== undefined,
+    );
+  }, [rows, courseFilter]);
+
+  const top10 = useMemo(() => getTopRanked(filteredRows, 10), [filteredRows]);
 
   const podiumColour = (rank: number) => {
     if (rank === 1) return 'bg-yellow-50 border-yellow-300';
@@ -271,6 +291,22 @@ const RankingTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
 
   return (
     <div>
+      {/* Course selector */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        {RANKING_COURSE_OPTIONS.map(opt => (
+          <button
+            key={opt.id}
+            onClick={() => setCourseFilter(opt.id)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+              courseFilter === opt.id
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-slate-600 border-slate-300 hover:border-blue-400'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
       <p className="text-sm text-slate-500 mb-4">
         Score = (Stars×2) + (Diamonds×3) + (Accuracy÷10) + (Days×0.2) &nbsp;·&nbsp; Top 10 shown
       </p>
