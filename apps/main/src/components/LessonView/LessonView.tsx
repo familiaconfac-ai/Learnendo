@@ -25,6 +25,13 @@ interface LessonViewProps {
 
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
 
+/** Localized label for a completed exercise button (the green circle). */
+function getDoneLabel(lang: string): string {
+  if (lang === 'pt') return 'Feito';
+  if (lang === 'es') return 'Hecho';
+  return 'Done';
+}
+
 /**
  * Returns the localised label for an exercise ("Exercise" / "Exercício" / "Ejercicio").
  * 'el' and 'he' are biblical study languages with no UI text — they fall back to
@@ -62,7 +69,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
   const lessonDays = lesson.days || [];
   const firstSixDays = Array.from({ length: 6 }, (_, index) => lessonDays[index] ?? null);
   const daySeven = lessonDays[6] ?? null;
-  const testMarker = `${LESSON_TEST_PREFIX}${lessonNumber}`;
+  // Build a course-qualified marker so English 'lesson_test_passed_1' never
+  // appears as completed when viewing the PT or ES course, and vice-versa.
+  const langSuffix = currentLanguage !== 'en' ? `${currentLanguage}_` : '';
+  const testMarker = `${LESSON_TEST_PREFIX}${langSuffix}${lessonNumber}`;
   const hasPassedTest = testPassed || completed.includes(testMarker);
 
   const isExerciseCompleted = (dayId: string | null, index: number): boolean => {
@@ -172,7 +182,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                     onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                   />
                   <span className="relative z-10">
-                    {isCompleted ? 'Done' : isLocked ? 'Lock' : dayNumber}
+                    {isCompleted ? getDoneLabel(currentLanguage) : isLocked ? '🔒' : dayNumber}
                   </span>
                 </button>
                 <p className={`text-center text-xs mt-2 leading-tight ${isLocked ? 'text-slate-600' : 'text-slate-300'}`}>

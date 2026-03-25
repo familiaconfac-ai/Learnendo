@@ -2,17 +2,22 @@ import { Exercise, Lesson } from '../../types';
 import { lesson1 as englishLesson1 } from '../../data/workbook1/lesson1';
 import { lesson2 as englishLesson2 } from '../../data/workbook1/lesson2';
 import { lesson3 as englishLesson3 } from '../../data/workbook1/lesson3';
+import { lesson4 as englishLesson4 } from '../../data/workbook1/lesson4';
+import { lesson5 as englishLesson5 } from '../../data/workbook1/lesson5';
 
 type LanguageKey = 'pt' | 'es' | 'el' | 'he';
 
 interface LanguagePack {
   workbookId: string;
   workbookTitle: string;
-  lessonTitles: [string, string, string];
+  lessonTitles: string[];
   replacements: Array<[string, string]>;
 }
 
-const BASE_LESSONS: [Lesson, Lesson, Lesson] = [englishLesson1, englishLesson2, englishLesson3];
+// English files are the authoritative source. When a new lesson is added or
+// corrected in English, add it here and extend every language pack's lessonTitles
+// and replacements accordingly (mirrored multilingual workflow).
+const BASE_LESSONS: Lesson[] = [englishLesson1, englishLesson2, englishLesson3, englishLesson4, englishLesson5];
 
 const languagePacks: Record<LanguageKey, LanguagePack> = {
   pt: {
@@ -22,8 +27,42 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Licao 1: Alfabeto e Numeros',
       'Licao 2: Vogais e Leitura Inicial',
       'Licao 3: Rotina Diaria e Atividades',
+      'Licao 4: Placeholder',
+      'Licao 5: Placeholder',
     ],
     replacements: [
+      // ── Lesson 1: alphabet & number instructions ─────────────────────────
+      ['What are you listening to?', 'O que voce esta ouvindo?'],
+      ['Listen and tap the correct color.', 'Escute e toque na cor correta.'],
+      ['Listen and pick the correct letter.', 'Escute e escolha a letra correta.'],
+      ['Listen and pick the correct number.', 'Escute e escolha o numero correto.'],
+      ['Listen and repeat exactly as you hear.', 'Escute e repita exatamente como voce ouve.'],
+      ['What color is it? Answer in a full sentence.', 'Qual e a cor? Responda com uma frase completa.'],
+      ['What color is it?', 'Qual e a cor?'],
+      ['Answer in a full sentence.', 'Responda com uma frase completa.'],
+      ['The teacher asks: ', 'O professor pergunta: '],
+      ['The teacher says: ', 'O professor diz: '],
+      [' — Choose the correct response.', ' — Escolha a resposta correta.'],
+      ['Type in words what you hear.', 'Escreva por extenso o que voce ouvir.'],
+      // ── Lesson 2: vowels & reading instructions ───────────────────────────
+      ['Listen and pick the correct word.', 'Escute e escolha a palavra correta.'],
+      ['Teacher: What vowel letter is in ', 'Professor: Qual letra vogal esta em '],
+      ['Teacher: What is the letter name?', 'Professor: Qual e o nome da letra?'],
+      ['Is the vowel in ', 'A vogal em '],
+      ['" short or long?', '" e curta ou longa?'],
+      // ── Lesson 3: daily routines instructions ─────────────────────────────
+      ['Listen and pick the correct answer.', 'Escute e escolha a resposta correta.'],
+      ['Listen: ', 'Escute: '],
+      ['What does Daniel do in the morning?', 'O que Daniel faz de manha?'],
+      ['What does Sarah do before breakfast?', 'O que Sarah faz antes do cafe da manha?'],
+      ['What does Tom do with his breakfast?', 'O que Tom faz com o cafe da manha?'],
+      ['What does Lisa do before school?', 'O que Lisa faz antes da escola?'],
+      ['What does Mark do to go to school?', 'Como Mark vai para a escola?'],
+      ['Which shows what you do at school?', 'Qual mostra o que voce faz na escola?'],
+      ['Which shows what you do in the afternoon?', 'Qual mostra o que voce faz a tarde?'],
+      ['Which shows what you do before bed?', 'Qual mostra o que voce faz antes de dormir?'],
+      ['What do you do before sleeping?', 'O que voce faz antes de dormir?'],
+      // ── General / originally present ──────────────────────────────────────
       ['Lesson ', 'Licao '],
       ['Which letter has the same vowel sound?', 'Qual letra tem o mesmo som vocalico?'],
       ['Listen and pick the correct number:', 'Escute e escolha o numero correto:'],
@@ -107,8 +146,42 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Leccion 1: Alfabeto y Numeros',
       'Leccion 2: Vocales y Lectura Inicial',
       'Leccion 3: Rutinas Diarias y Actividades',
+      'Leccion 4: Placeholder',
+      'Leccion 5: Placeholder',
     ],
     replacements: [
+      // ── Lesson 1: alphabet & number instructions ─────────────────────────
+      ['What are you listening to?', 'Que estas escuchando?'],
+      ['Listen and tap the correct color.', 'Escucha y toca el color correcto.'],
+      ['Listen and pick the correct letter.', 'Escucha y elige la letra correcta.'],
+      ['Listen and pick the correct number.', 'Escucha y elige el numero correcto.'],
+      ['Listen and repeat exactly as you hear.', 'Escucha y repite exactamente lo que oyes.'],
+      ['What color is it? Answer in a full sentence.', 'De que color es? Responde con una oracion completa.'],
+      ['What color is it?', 'De que color es?'],
+      ['Answer in a full sentence.', 'Responde con una oracion completa.'],
+      ['The teacher asks: ', 'El profesor pregunta: '],
+      ['The teacher says: ', 'El profesor dice: '],
+      [' — Choose the correct response.', ' — Elige la respuesta correcta.'],
+      ['Type in words what you hear.', 'Escribe con palabras lo que oyes.'],
+      // ── Lesson 2: vowels & reading instructions ───────────────────────────
+      ['Listen and pick the correct word.', 'Escucha y elige la palabra correcta.'],
+      ['Teacher: What vowel letter is in ', 'Profesor: Que letra vocal esta en '],
+      ['Teacher: What is the letter name?', 'Profesor: Cual es el nombre de la letra?'],
+      ['Is the vowel in ', 'La vocal en '],
+      ['" short or long?', '" es corta o larga?'],
+      // ── Lesson 3: daily routines instructions ─────────────────────────────
+      ['Listen and pick the correct answer.', 'Escucha y elige la respuesta correcta.'],
+      ['Listen: ', 'Escucha: '],
+      ['What does Daniel do in the morning?', 'Que hace Daniel en la manana?'],
+      ['What does Sarah do before breakfast?', 'Que hace Sarah antes del desayuno?'],
+      ['What does Tom do with his breakfast?', 'Que hace Tom con su desayuno?'],
+      ['What does Lisa do before school?', 'Que hace Lisa antes de la escuela?'],
+      ['What does Mark do to go to school?', 'Como va Mark a la escuela?'],
+      ['Which shows what you do at school?', 'Cual muestra lo que haces en la escuela?'],
+      ['Which shows what you do in the afternoon?', 'Cual muestra lo que haces por la tarde?'],
+      ['Which shows what you do before bed?', 'Cual muestra lo que haces antes de acostarse?'],
+      ['What do you do before sleeping?', 'Que haces antes de acostarte?'],
+      // ── General / originally present ──────────────────────────────────────
       ['Lesson ', 'Leccion '],
       ['Which letter has the same vowel sound?', 'Que letra tiene el mismo sonido vocalico?'],
       ['Listen and pick the correct number:', 'Escucha y elige el numero correcto:'],
@@ -188,8 +261,8 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
     lessonTitles: [
       'Mathima 1: Alfavito kai Arithmoi',
       'Mathima 2: Fonienta kai Proti Anagnosi',
-      'Mathima 3: Kathimerines Routines kai Drastiriotites',
-    ],
+      'Mathima 3: Kathimerines Routines kai Drastiriotites',      'Mathima 4: Placeholder',
+      'Mathima 5: Placeholder',    ],
     replacements: [
       ['Lesson ', 'Mathima '],
       ['Which letter has the same vowel sound?', 'Poio gramma exei ton idio fthinoggo?'],
@@ -238,6 +311,8 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Shiur 1: Alefbet VeMisparim',
       'Shiur 2: Tnuot VeKriah Rishonit',
       'Shiur 3: Seder Yom VePeulot',
+      'Shiur 4: Placeholder',
+      'Shiur 5: Placeholder',
     ],
     replacements: [
       ['Lesson ', 'Shiur '],
@@ -302,13 +377,22 @@ function transformExercise(exercise: Exercise, replacements: Array<[string, stri
   };
 }
 
-function transformLesson(lesson: Lesson, title: string, replacements: Array<[string, string]>): Lesson {
+// Prefix lesson/day/exercise IDs with the language code so that progress keys
+// (stored in the Firestore `days` map) are unique per course.  English lessons
+// use their original IDs (wb1_l1_d1), PT/ES/etc. get e.g. pt_wb1_l1_d1.
+function transformLesson(lesson: Lesson, title: string, langKey: LanguageKey, replacements: Array<[string, string]>): Lesson {
+  const prefix = `${langKey}_`;
   return {
     ...lesson,
+    id: `${prefix}${lesson.id}`,
     title,
     days: lesson.days.map((day) => ({
       ...day,
-      exercises: day.exercises.map((exercise) => transformExercise(exercise, replacements)),
+      id: `${prefix}${day.id}`,
+      exercises: day.exercises.map((exercise) => ({
+        ...transformExercise(exercise, replacements),
+        id: `${prefix}${exercise.id}`,
+      })),
     })),
   };
 }
@@ -320,7 +404,7 @@ export function buildReplicatedWorkbook1(language: LanguageKey) {
     id: pack.workbookId,
     title: pack.workbookTitle,
     lessons: BASE_LESSONS.map((lesson, index) =>
-      transformLesson(lesson, pack.lessonTitles[index], pack.replacements),
+      transformLesson(lesson, pack.lessonTitles[index], language, pack.replacements),
     ),
   };
 }

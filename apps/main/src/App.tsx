@@ -134,9 +134,14 @@ const App: React.FC = () => {
   const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
   const activeCourse = COURSES.find((course) => course.id === activeCourseId) ?? null;
+  // Qualify the lesson-test prefix with the current language so that English
+  // completions ('lesson_test_passed_1') never appear as completed in PT/ES
+  // ('lesson_test_passed_pt_1' / 'lesson_test_passed_es_1') and vice-versa.
+  const langTestSuffix = language !== 'en' ? `${language}_` : '';
+  const fullLessonTestPrefix = `${LESSON_TEST_PREFIX}${langTestSuffix}`;
   const completedLessonNumbers = (progress.completedActivities || [])
-    .filter((activityId) => activityId.startsWith(LESSON_TEST_PREFIX))
-    .map((activityId) => Number(activityId.replace(LESSON_TEST_PREFIX, '')))
+    .filter((activityId) => activityId.startsWith(fullLessonTestPrefix))
+    .map((activityId) => Number(activityId.replace(fullLessonTestPrefix, '')))
     .filter((value) => Number.isFinite(value));
   const completedLessonSet = new Set(completedLessonNumbers);
   const completedLessonCount = completedLessonSet.size;
@@ -909,7 +914,7 @@ const App: React.FC = () => {
       setActiveWeeklyTest(null);
 
       if (score === 100) {
-        const testMarker = `${LESSON_TEST_PREFIX}${lessonNumber}`;
+        const testMarker = `${fullLessonTestPrefix}${lessonNumber}`;
         const alreadyDone = progress.completedActivities.includes(testMarker);
         const nextLesson = Math.min(12, lessonNumber + 1);
         const updated: UserProgress = {
@@ -1405,6 +1410,7 @@ const App: React.FC = () => {
             progress={progress}
             onSelectLesson={openLesson}
             isAdmin={isAdmin}
+            currentLanguage={language}
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
         );

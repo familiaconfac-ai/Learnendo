@@ -7,12 +7,15 @@ interface WorkbookViewProps {
   progress: UserProgress;
   onSelectLesson: (lessonId: string) => void;
   isAdmin?: boolean;
+  /** Current app language — used to filter course-qualified lesson-test markers
+   *  so that English completions don't bleed into PT/ES progress and vice-versa. */
+  currentLanguage?: string;
   onBack: () => void;
 }
 
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
 
-export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons, progress, onSelectLesson, isAdmin = false, onBack }) => {
+export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons, progress, onSelectLesson, isAdmin = false, currentLanguage = 'en', onBack }) => {
   const completed = progress.completedActivities || [];
   const totalIslands = workbookId === 1 ? 12 : Math.max(lessons.length, 1);
   const islandSlots = Array.from({ length: totalIslands }, (_, index) => {
@@ -25,10 +28,14 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
     } as Lesson;
   });
 
+  // Build a course-qualified prefix so that 'lesson_test_passed_1' (English)
+  // is never confused with 'lesson_test_passed_pt_1' (Portuguese) etc.
+  const langSuffix = currentLanguage !== 'en' ? `${currentLanguage}_` : '';
+  const fullPrefix = `${LESSON_TEST_PREFIX}${langSuffix}`;
   const completedLessonSet = new Set(
     completed
-      .filter((activityId) => activityId.startsWith(LESSON_TEST_PREFIX))
-      .map((activityId) => Number(activityId.replace(LESSON_TEST_PREFIX, '')))
+      .filter((activityId) => activityId.startsWith(fullPrefix))
+      .map((activityId) => Number(activityId.replace(fullPrefix, '')))
       .filter((value) => Number.isFinite(value)),
   );
   const getLessonStatus = (index: number): 'completed' | 'in-progress' | 'locked' => {
