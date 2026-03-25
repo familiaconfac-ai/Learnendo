@@ -200,14 +200,29 @@ export function subscribeToTeacherData(
         } as UserProgressSummary;
       });
 
+      // ── Ghost/anonymous name detection ────────────────────────────────────────
+      // Matches auto-generated names like "Player_aWPbCH", "Anonymous", blank, "—".
+      // A student with a ghost name is excluded UNLESS they have a verified email.
+      const ghostNameRe = /^(player_|user_|anonymous$)/i;
+      const isGhostName = (name: string | undefined): boolean => {
+        if (!name) return true;
+        const n = name.trim();
+        return !n || n === '—' || ghostNameRe.test(n);
+      };
+
       // ── Ghost/legacy filter ──────────────────────────────────────────────────
       // Exclude accounts with zero real activity — they are brand-new sessions,
       // anonymous logins that never studied, or legacy test accounts.
       // Rule: must have at least 1 completed day OR 1 star OR 1 answer attempt.
+      // Also exclude ghost/auto-generated names without a verified email.
       // This never deletes data; it only hides accounts from the visible ranking.
-      const activeSummaries = summaries.filter(
-        s => s.daysCompleted > 0 || s.totalStars > 0 || s.totalAttempts > 0,
-      );
+      const activeSummaries = summaries.filter(s => {
+        const hasActivity = s.daysCompleted > 0 || s.totalStars > 0 || s.totalAttempts > 0;
+        if (!hasActivity) return false;
+        // Keep student only if they have a real name OR a verified email.
+        const hasValidIdentity = !isGhostName(s.displayName) || (!!s.email && s.email.includes('@'));
+        return hasValidIdentity;
+      });
 
       // ── Per-course filter ──────────────────────────────────────────────────
       // When a courseId is requested (from RankScreen), keep only students who

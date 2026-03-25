@@ -177,25 +177,21 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-mono text-xs">
                       {student.pathLabel}
                     </td>
-                    {/* Accuracy bar */}
+                    {/* Accuracy badge — green ≥ 80 %, red < 80 %, dash if no data */}
                     <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 bg-slate-200 rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full ${
-                              student.avgAccuracy >= 80
-                                ? 'bg-green-500'
-                                : student.avgAccuracy >= 60
-                                ? 'bg-yellow-400'
-                                : 'bg-red-400'
-                            }`}
-                            style={{ width: `${student.avgAccuracy}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-medium text-slate-700">
+                      {student.totalAttempts > 0 ? (
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                            student.avgAccuracy >= 80
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-red-100 text-red-700'
+                          }`}
+                        >
                           {formatAccuracy(student.avgAccuracy)}
                         </span>
-                      </div>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
                     </td>
                     {/* Last active */}
                     <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">

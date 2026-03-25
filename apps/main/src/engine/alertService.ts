@@ -75,8 +75,11 @@ export function detectAlerts(summary: UserProgressSummary): StudentAlert[] {
   }
 
   // ── Low accuracy check ──────────────────────────────────────
+  // Requires real answer attempts — avgAccuracy of 0 without attempts is
+  // a missing-data sentinel, NOT a true zero-accuracy score.
   if (
     summary.daysCompleted >= MIN_DAYS_FOR_ACCURACY_CHECK &&
+    summary.totalAttempts > 0 &&
     summary.avgAccuracy < LOW_ACCURACY_THRESHOLD
   ) {
     alerts.push({
