@@ -7,6 +7,9 @@
 // audioText is NEVER shown in the UI prompt — component reads it only for TTS.
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
+import { PLACEMENT_TEST_QUESTIONS_PT } from './placementTestQuestions_pt';
+import { PLACEMENT_TEST_QUESTIONS_ES } from './placementTestQuestions_es';
+
 export interface PlacementQuestion {
   id: string;
   part: number; // 1-5
@@ -591,16 +594,18 @@ export function classifyPlacementLevel(
 
 /**
  * Return the placement test question bank for a given language code.
- * Currently only English ('en') is implemented — other languages fall back here
- * until their own banks are authored.
+ * 'pt' and 'es' return their own pedagogically-adapted banks.
+ * All other languages fall back to English.
  */
 export function getQuestionsForLanguage(languageCode: string): PlacementQuestion[] {
   switch (languageCode) {
+    case 'pt':
+      return PLACEMENT_TEST_QUESTIONS_PT;
+    case 'es':
+      return PLACEMENT_TEST_QUESTIONS_ES;
     case 'en':
     default:
       return PLACEMENT_TEST_QUESTIONS;
-    // case 'pt': return PLACEMENT_TEST_QUESTIONS_PT;
-    // case 'es': return PLACEMENT_TEST_QUESTIONS_ES;
   }
 }
 
