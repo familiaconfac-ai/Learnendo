@@ -62,6 +62,11 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       ['Which shows what you do in the afternoon?', 'Qual mostra o que você faz à tarde?'],
       ['Which shows what you do before bed?', 'Qual mostra o que você faz antes de dormir?'],
       ['What do you do before sleeping?', 'O que você faz antes de dormir?'],
+      // ── Lesson 3: reading, comparison & knowledge check ───────────────────
+      ['Are they the same or different?', 'São iguais ou diferentes?'],
+      ['Read paragraph ', 'Leia o parágrafo '],
+      ['Read: ', 'Leia: '],
+      ['Question: ', 'Pergunta: '],
       // ── General / originally present ──────────────────────────────────────
       ['Lesson ', 'Lição '],
       ['Which letter has the same vowel sound?', 'Qual letra tem o mesmo som vocálico?'],
@@ -148,6 +153,8 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       ['Black', 'preto'],
       ['White', 'branco'],
       ['Pink', 'rosa'],
+      ['same', 'igual'],
+      ['different', 'diferente'],
       ['Long', 'Longa'],
       ['Short', 'Curta'],
     ],
@@ -194,6 +201,11 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       ['Which shows what you do in the afternoon?', '¿Cuál muestra lo que haces por la tarde?'],
       ['Which shows what you do before bed?', '¿Cuál muestra lo que haces antes de acostarse?'],
       ['What do you do before sleeping?', '¿Qué haces antes de acostarte?'],
+      // ── Lesson 3: reading, comparison & knowledge check ───────────────────
+      ['Are they the same or different?', '¿Son iguales o diferentes?'],
+      ['Read paragraph ', 'Lee el párrafo '],
+      ['Read: ', 'Lee: '],
+      ['Question: ', 'Pregunta: '],
       // ── General / originally present ──────────────────────────────────────
       ['Lesson ', 'Lección '],
       ['Which letter has the same vowel sound?', '¿Qué letra tiene el mismo sonido vocálico?'],
@@ -273,6 +285,8 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       ['Black', 'negro'],
       ['White', 'blanco'],
       ['Pink', 'rosa'],
+      ['same', 'igual'],
+      ['different', 'diferente'],
       ['Long', 'Larga'],
       ['Short', 'Corta'],
     ],
