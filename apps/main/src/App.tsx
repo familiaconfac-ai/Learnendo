@@ -754,8 +754,10 @@ const App: React.FC = () => {
     }
 
     if (section === SectionType.WORKBOOK) {
-      // Multi-workbook course: show the picker when no specific workbook was requested.
-      if (!params?.workbookId) {
+      // Show the workbook picker only when no workbook is currently known AND the course
+      // has multiple workbooks.  Once a workbook is active (progress.currentWorkbook ≥ 1),
+      // navigate directly to it so the bottom-nav icon reliably opens the island map.
+      if (!params?.workbookId && !(currentWorkbookId || progress.currentWorkbook)) {
         const _courseId = currentCourseId ?? DEFAULT_COURSE_ID;
         const _registry = COURSE_WORKBOOKS[_courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
         if (Object.keys(_registry).length > 1) {
@@ -763,7 +765,7 @@ const App: React.FC = () => {
           return;
         }
       }
-      const workbookId = Number(params?.workbookId || progress.currentWorkbook || 1);
+      const workbookId = Number(params?.workbookId || currentWorkbookId || progress.currentWorkbook || 1);
       console.log('SET WORKBOOK ID', workbookId, '← handleNavigate WORKBOOK', params); console.trace('TRACE WORKBOOK ID');
       setCurrentWorkbookId(workbookId);
 
