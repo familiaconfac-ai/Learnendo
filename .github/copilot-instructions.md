@@ -138,6 +138,33 @@ configures `process.env.API_KEY` from `GEMINI_API_KEY` for use by `ai.ts`.
   with `score` and `feedback`.  The code currently pins `gemini-3-pro-preview`.
   Error handling includes rate‑limit fallbacks.
 
+## Multilingual lesson workflow
+
+English lesson files are the **authoritative source** for all lesson structure.
+Portuguese, Spanish, Greek and Hebrew versions are produced automatically by
+`apps/main/src/courses/shared/replicatedWorkbook1.ts`, which imports each
+English lesson and applies per-language text replacement tables.
+
+**Rule – every English lesson change must be mirrored immediately:**
+
+1. If a new English lesson file is created, add its import and append it to
+   `BASE_LESSONS` in `replicatedWorkbook1.ts`.
+2. Extend the `lessonTitles` array in **every** language pack (pt, es, el, he)
+   with an appropriate translated title.
+3. Add any new vocabulary or instruction strings that appear in the lesson to
+   every language pack's `replacements` array.
+4. Verify with `npm run lint` in `apps/main` before committing.
+
+**Key files:**
+* English source: `apps/main/src/data/workbook1/lesson{N}.ts`
+* Sync hub: `apps/main/src/courses/shared/replicatedWorkbook1.ts`
+* PT consumer: `apps/main/src/courses/portuguese_foreigners/workbook1.ts`
+* ES consumer: `apps/main/src/courses/spanish/workbook1.ts`
+
+Lessons 4 and 5 are currently placeholder stubs wired into the sync hub with
+placeholder titles.  When their real content is written in English, apply the
+full workflow above — do not create the lesson in only one language.
+
 ## Maintenance notes
 
 * When fixing a bug or adding a feature, check both `apps/main` and

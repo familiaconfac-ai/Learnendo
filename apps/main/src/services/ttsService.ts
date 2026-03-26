@@ -41,22 +41,57 @@ export function appLangToTts(lang: string | undefined): string {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Debug flag — set to false to silence all [TTS] console output
+// ─────────────────────────────────────────────────────────────
+const TTS_DEBUG = true;
+
+// ─────────────────────────────────────────────────────────────
 // Voice cache + initialisation
 // ─────────────────────────────────────────────────────────────
 
 let _voices: SpeechSynthesisVoice[] = [];
+
+function logVoiceList(label: string): void {
+  if (!TTS_DEBUG) return;
+  const voices = _voices;
+  const byLang: Record<string, string[]> = {};
+  voices.forEach(v => {
+    const k = v.lang.slice(0, 5);
+    if (!byLang[k]) byLang[k] = [];
+    byLang[k].push(`${v.name} [${detectVoiceGender(v)}]`);
+  });
+  console.group(`[TTS] ${label} — ${voices.length} voices loaded`);
+  Object.entries(byLang).sort().forEach(([lang, vs]) =>
+    console.log(`  ${lang}: ${vs.join(' | ')}`)
+  );
+  console.groupEnd();
+}
 
 function loadVoices(): void {
   if (!('speechSynthesis' in window)) return;
   const loaded = window.speechSynthesis.getVoices();
   if (loaded.length) {
     _voices = loaded;
+    // Defer log so detectVoiceGender (defined later) is available
+    setTimeout(() => logVoiceList('voices loaded synchronously'), 0);
     return;
   }
   // Chrome defers voice population; the event fires once the list is ready.
-  window.speechSynthesis.addEventListener('voiceschanged', () => {
-    _voices = window.speechSynthesis.getVoices();
-  }, { once: true });
+  const onVoicesChanged = () => {
+    const v = window.speechSynthesis.getVoices();
+    if (v.length) {
+      _voices = v;
+      logVoiceList('voiceschanged event');
+    } else {
+      // Rare: event fired but list still empty — retry once
+      if (TTS_DEBUG) console.warn('[TTS] voiceschanged fired with empty list — retrying in 200ms');
+      setTimeout(() => {
+        _voices = window.speechSynthesis.getVoices();
+        logVoiceList('voiceschanged retry');
+      }, 200);
+    }
+  };
+  window.speechSynthesis.addEventListener('voiceschanged', onVoicesChanged, { once: true });
 }
 
 // Prime the cache as soon as this module is imported.
@@ -140,7 +175,10 @@ function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any')
     ? _voices
     : window.speechSynthesis.getVoices();
 
-  if (!voices.length) return null;
+  if (!voices.length) {
+    if (TTS_DEBUG) console.warn('[TTS] pickVoice: NO voices loaded yet — browser will use default');
+    return null;
+  }
 
   /** Helper: voices matching the locale exactly */
   const exactMatches  = voices.filter(v => v.lang === bcp47);
@@ -150,10 +188,7 @@ function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any')
 
   // Spanish: also consider es-MX when es-ES list is slim
   const spanishExtra = bcp47 === 'es-ES' ? voices.filter(v => v.lang === 'es-MX') : [];
-  // Deduplicate: exactMatches is a strict subset of prefixMatches, so naïvely
-  // concatenating all three lists produces duplicates.  With duplicates present
-  // the positional fallback (index 0 vs index 1) resolves to the SAME voice for
-  // both female and male requests, breaking alternation even when 2+ voices exist.
+  // Deduplicate so positional fallback (index 0 vs index 1) maps to distinct voices.
   const seen = new Set<string>();
   const candidatesByLocale = [...exactMatches, ...spanishExtra, ...prefixMatches].filter(v => {
     if (seen.has(v.name)) return false;
@@ -161,25 +196,48 @@ function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any')
     return true;
   });
 
+  if (TTS_DEBUG) {
+    const candidateSummary = candidatesByLocale.map(
+      v => `"${v.name}" (${v.lang}, ${detectVoiceGender(v)})`
+    );
+    console.log(
+      `[TTS] pickVoice bcp47="${bcp47}" gender="${genderPref}" — ` +
+      `${candidatesByLocale.length} candidate(s): ${candidateSummary.join(', ') || 'NONE'}`
+    );
+  }
+
+  let selected: SpeechSynthesisVoice | null = null;
+  let reason = '';
+
   if (genderPref !== 'any') {
     // Try to find a voice of the requested gender among locale candidates
     const gendered = candidatesByLocale.find(v => detectVoiceGender(v) === genderPref);
-    if (gendered) return gendered;
-    // Positional fallback when no gendered voice is identified:
-    // Use index 0 for one gender and index 1 for the other so that even when
-    // gender detection fails, prompt and feedback voices are at least different
-    // (avoids the same voice playing for both in every exercise).
-    if (candidatesByLocale.length >= 2) {
-      return candidatesByLocale[genderPref === 'female' ? 0 : 1];
+    if (gendered) {
+      selected = gendered;
+      reason = `gendered match`;
+    } else if (candidatesByLocale.length >= 2) {
+      // Positional fallback: different index for each gender → distinct voices even
+      // when gender detection fails (avoids same voice for both in every exercise).
+      selected = candidatesByLocale[genderPref === 'female' ? 0 : 1];
+      reason = `positional fallback (${genderPref}=index ${genderPref === 'female' ? 0 : 1}, 2+ candidates)`;
+    } else if (candidatesByLocale.length === 1) {
+      selected = candidatesByLocale[0];
+      reason = `only 1 candidate — NO gender alternation possible for "${bcp47}"`;
     }
-    // Only one candidate — fall through to return it below
   }
 
-  // Best locale match regardless of gender
-  if (candidatesByLocale.length) return candidatesByLocale[0];
+  if (!selected) {
+    selected = candidatesByLocale.length ? candidatesByLocale[0] : voices[0];
+    reason = candidatesByLocale.length ? 'any-gender, first candidate' : 'global fallback';
+  }
 
-  // Last-resort fallback: first available voice
-  return voices[0];
+  if (TTS_DEBUG) {
+    console.log(
+      `[TTS]   → selected: "${selected?.name}" (${selected?.lang}, ${selected ? detectVoiceGender(selected) : 'n/a'}) — ${reason}`
+    );
+  }
+
+  return selected;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -224,14 +282,23 @@ export function speak(
   if (window.speechSynthesis.paused) window.speechSynthesis.resume();
 
   const bcp47 = appLangToTts(langCode);
+  const genderReq = options.voicePreference ?? 'any';
   const u = new SpeechSynthesisUtterance(text);
   u.lang = bcp47;
   u.rate   = options.rate   ?? 1;
   u.pitch  = options.pitch  ?? 1;
   u.volume = options.volume ?? 1;
 
-  const voice = pickVoice(bcp47, options.voicePreference ?? 'any');
+  const voice = pickVoice(bcp47, genderReq);
   if (voice) u.voice = voice;
+
+  if (TTS_DEBUG) {
+    console.log(
+      `[TTS] SPEAK | lang=${langCode}→${bcp47} | gender=${genderReq} | rate=${u.rate}` +
+      ` | voice=${voice ? `"${voice.name}" (${voice.lang}, ${detectVoiceGender(voice)})` : 'NULL→browser default'}` +
+      ` | text="${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`
+    );
+  }
 
   if (options.onEnd)   u.onend   = options.onEnd;
   if (options.onError) u.onerror = options.onError;

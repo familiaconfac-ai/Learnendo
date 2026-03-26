@@ -581,21 +581,12 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     // Language comes from the currentLanguage prop set by ExercisePractice.
     // voicePref allows callers to request a specific gender; falls back safely.
     const speak = (text: string, rate = 1, voicePref?: 'male' | 'female') => {
-      // Debug: verify localized audio matches visible content (remove after confirming fix).
-      // For Spanish exercises, also log normalized form so contamination is immediately visible.
-      if (currentLanguage === 'es') {
-        console.log('[TTS debug ES]', {
-          lang: currentLanguage,
-          id: item.id,
-          text,
-          normalizedText: text ? normalizeSpeakingAnswer(text, 'es') : null,
-          rate,
-          voice: voicePref,
-          correctValueRaw: item.correctValue,
-        });
-      } else {
-        console.log('[TTS debug]', { lang: currentLanguage, id: item.id, text, rate, voice: voicePref });
-      }
+      console.log(
+        `[EXERCISE SPEAK] ex#${currentIdx} lang=${currentLanguage}` +
+        ` | voicePair=(prompt:${promptVoice}, feedback:${feedbackVoice})` +
+        ` | requested=${voicePref ?? 'any'} | rate=${rate}` +
+        ` | text="${text.slice(0, 50)}${text.length > 50 ? '\u2026' : ''}"`
+      );
       return ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
     };
 

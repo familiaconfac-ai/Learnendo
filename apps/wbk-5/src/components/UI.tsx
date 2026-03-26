@@ -357,8 +357,15 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       }
     };
 
-    const speak = (text: string, rate = 1, voicePref?: 'male' | 'female') =>
-      ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
+    const speak = (text: string, rate = 1, voicePref?: 'male' | 'female') => {
+      console.log(
+        `[EXERCISE SPEAK] ex#${currentIdx} lang=${currentLanguage}` +
+        ` | voicePair=(prompt:${promptVoice}, feedback:${feedbackVoice})` +
+        ` | requested=${voicePref ?? 'any'} | rate=${rate}` +
+        ` | text="${text.slice(0, 50)}${text.length > 50 ? '\u2026' : ''}"`
+      );
+      return ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
+    };
 
     const handleSTT = () => {
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
