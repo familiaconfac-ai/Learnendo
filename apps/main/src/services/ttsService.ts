@@ -202,7 +202,7 @@ function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any')
     );
     console.log(
       `[TTS] pickVoice bcp47="${bcp47}" gender="${genderPref}" — ` +
-      `${candidatesByLocale.length} candidate(s): ${candidateSummary.join(', ') || 'NONE'}`
+      `${voices.length} total on device, ${candidatesByLocale.length} candidate(s): ${candidateSummary.join(', ') || 'NONE'}`
     );
   }
 

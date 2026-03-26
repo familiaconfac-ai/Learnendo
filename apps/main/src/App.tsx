@@ -148,6 +148,12 @@ const App: React.FC = () => {
   const [showGrammarModal, setShowGrammarModal] = useState(false);
   const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
+  const hasPlacementDone = progressLoaded && (
+    (progress.placementScore != null) ||
+    (user?.uid ? !!localStorage.getItem(`learnendo_placement_${user.uid}`) : false)
+  );
+  const showPlacementBanner = progressLoaded && !hasPlacementDone &&
+    !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON] as string[]).includes(currentSection);
   const activeCourse = COURSES.find((course) => course.id === activeCourseId) ?? null;
   // Qualify the lesson-test prefix with the current language so that English
   // completions ('lesson_test_passed_1') never appear as completed in PT/ES
@@ -733,6 +739,15 @@ const App: React.FC = () => {
     }
 
     if (section === SectionType.WORKBOOK) {
+      // Multi-workbook course: show the picker when no specific workbook was requested.
+      if (!params?.workbookId) {
+        const _courseId = currentCourseId ?? DEFAULT_COURSE_ID;
+        const _registry = COURSE_WORKBOOKS[_courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+        if (Object.keys(_registry).length > 1) {
+          setCurrentSection(SectionType.WORKBOOK_LIST);
+          return;
+        }
+      }
       const workbookId = Number(params?.workbookId || progress.currentWorkbook || 1);
       console.log('SET WORKBOOK ID', workbookId, '← handleNavigate WORKBOOK', params); console.trace('TRACE WORKBOOK ID');
       setCurrentWorkbookId(workbookId);
@@ -759,6 +774,23 @@ const App: React.FC = () => {
     }
 
     setCurrentSection(section);
+  };
+
+  const handleSelectWorkbook = (workbookId: number) => {
+    const updated = { ...progress, currentWorkbook: workbookId };
+    setProgress(updated);
+    setCurrentWorkbookId(workbookId);
+    try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
+    if (user?.uid && db) {
+      const now = new Date().toISOString();
+      lastLocalUpdateRef.current = now;
+      setDoc(
+        doc(db, 'users', user.uid, 'courseProgress', 'main'),
+        { currentWorkbook: workbookId, lastUpdated: now },
+        { merge: true },
+      ).catch(e => console.warn('[WORKBOOK] persist workbook selection failed:', e));
+    }
+    handleNavigate(SectionType.WORKBOOK, { workbookId });
   };
 
   const canOpenLessonToday = (lessonNumber: number) => {
@@ -840,8 +872,14 @@ const App: React.FC = () => {
   const handlePlacementComplete = (score: number, level: string) => {
     const workbook = PlacementEngine.determineWorkbook(score);
     const updated = { ...progress, currentWorkbook: workbook, placementScore: score };
-    // DO NOT call setProgress here — let Firestore snapshot update state
+    setProgress(updated);
+    setCurrentWorkbookId(workbook);
     try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
+
+    // Mark placement as done in localStorage so the gate banner disappears immediately.
+    if (user?.uid) {
+      localStorage.setItem(`learnendo_placement_${user.uid}`, '1');
+    }
 
     // Persist placement test result (score + level) to flat progress doc.
     // Write both the legacy `placement` key and the per-language `placements[lang]`
@@ -866,9 +904,19 @@ const App: React.FC = () => {
         placementPayload,
         { merge: true },
       ).catch(e => console.warn('[PROGRESS] placement test save failed:', e));
+
+      // Also persist placementScore + determined workbook to courseProgress/main
+      // so the Firestore snapshot re-hydrates these fields on the next session.
+      const now = new Date().toISOString();
+      lastLocalUpdateRef.current = now;
+      setDoc(
+        doc(db, 'users', user.uid, 'courseProgress', 'main'),
+        { placementScore: score, currentWorkbook: workbook, lastUpdated: now },
+        { merge: true },
+      ).catch(e => console.warn('[PROGRESS] courseProgress/main placement persist failed:', e));
     }
 
-    setCurrentSection(SectionType.WORKBOOK);
+    handleNavigate(SectionType.WORKBOOK, { workbookId: workbook });
   };
 
   const handleShare = async () => {
@@ -1423,6 +1471,70 @@ const App: React.FC = () => {
           />
         );
       }
+      case SectionType.WORKBOOK_LIST: {
+        const _courseId = currentCourseId ?? DEFAULT_COURSE_ID;
+        const _registry = COURSE_WORKBOOKS[_courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+        const workbookIds = Object.keys(_registry).map(Number).sort((a, b) => a - b);
+        const currentWbkId = currentWorkbookId || progress.currentWorkbook || 1;
+        return (
+          <div className="min-h-screen bg-slate-900 pb-28 px-4 pt-6">
+            <button
+              onClick={() => handleNavigate(SectionType.COURSES)}
+              className="mb-5 text-white font-bold text-base flex items-center gap-1"
+            >
+              ← {uiLanguage === 'pt' ? 'Cursos' : uiLanguage === 'es' ? 'Cursos' : 'Courses'}
+            </button>
+            <h1 className="text-2xl font-black text-yellow-400 mb-6">
+              {uiLanguage === 'pt' ? 'Cadernos' : uiLanguage === 'es' ? 'Libros de trabajo' : 'Workbooks'}
+            </h1>
+            {!hasPlacementDone && (
+              <div className="mb-5 bg-amber-400/10 border border-amber-400 rounded-2xl p-4 flex items-center justify-between gap-3">
+                <p className="text-amber-300 text-sm font-semibold">
+                  {uiLanguage === 'pt'
+                    ? '📝 Faça seu teste de nivelamento para descobrir o caderno ideal.'
+                    : uiLanguage === 'es'
+                    ? '📝 Haz tu prueba de nivel para encontrar tu libro ideal.'
+                    : '📝 Take your placement test to find your ideal workbook.'}
+                </p>
+                <button
+                  onClick={() => setCurrentSection(SectionType.PLACEMENT_TEST)}
+                  className="shrink-0 bg-amber-400 text-slate-900 font-bold text-xs px-3 py-1.5 rounded-full active:scale-95"
+                >
+                  {uiLanguage === 'pt' ? 'Iniciar' : uiLanguage === 'es' ? 'Iniciar' : 'Start'}
+                </button>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {workbookIds.map(id => (
+                <button
+                  key={id}
+                  onClick={() => handleSelectWorkbook(id)}
+                  className={`flex flex-col items-center justify-center gap-2 py-5 px-4 rounded-2xl border-2 transition-all active:scale-95 ${
+                    currentWbkId === id
+                      ? 'bg-blue-600 border-blue-400 text-white'
+                      : 'bg-slate-800 border-slate-600 text-slate-200 hover:border-blue-500'
+                  }`}
+                >
+                  <img
+                    src={`/islands/workbook/wbk${id}.png`}
+                    alt={`Workbook ${id}`}
+                    className="w-14 h-14 object-contain"
+                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                  />
+                  <span className="font-bold text-lg">
+                    {uiLanguage === 'pt' ? `Caderno ${id}` : uiLanguage === 'es' ? `Libro ${id}` : `Workbook ${id}`}
+                  </span>
+                  {currentWbkId === id && (
+                    <span className="text-xs font-semibold opacity-75">
+                      {uiLanguage === 'pt' ? '✓ atual' : uiLanguage === 'es' ? '✓ actual' : '✓ current'}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      }
       case SectionType.PLACEMENT_TEST:
         return <PlacementTest currentLanguage={language} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
       case SectionType.WORKBOOK:
@@ -1726,6 +1838,23 @@ const App: React.FC = () => {
           </div>
         );
       })()}
+      {showPlacementBanner && (
+        <div className="fixed top-[68px] left-0 right-0 z-40 bg-amber-400 text-slate-900 flex items-center justify-between gap-2 px-4 py-2.5 shadow-lg">
+          <span className="text-sm font-bold">
+            {uiLanguage === 'pt'
+              ? '📝 Faça seu teste de nivelamento'
+              : uiLanguage === 'es'
+              ? '📝 Haz tu prueba de nivel'
+              : '📝 Take your placement test'}
+          </span>
+          <button
+            onClick={() => setCurrentSection(SectionType.PLACEMENT_TEST)}
+            className="shrink-0 bg-slate-900 text-amber-400 font-bold text-xs px-3 py-1.5 rounded-full active:scale-95"
+          >
+            {uiLanguage === 'pt' ? 'Começar' : uiLanguage === 'es' ? 'Empezar' : 'Start'}
+          </button>
+        </div>
+      )}
       <BottomNavigation
         currentSection={currentSection}
         onNavigate={handleNavigate}
