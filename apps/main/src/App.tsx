@@ -819,6 +819,14 @@ const App: React.FC = () => {
     setCurrentLessonId(lessonId);
     setCurrentDay(null);
     setCurrentSection(SectionType.LESSON);
+
+    // Auto-show grammar on first visit to this lesson.
+    const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
+    const grammarKey = `grammar_seen_${courseId}_${progress.currentWorkbook}_${lessonNumber}`;
+    if (!localStorage.getItem(grammarKey)) {
+      localStorage.setItem(grammarKey, '1');
+      setShowGrammarModal(true);
+    }
   };
 
   const startWeeklyTest = (lessonId: string, lessonNumber: number, day: Day) => {
@@ -1462,6 +1470,7 @@ const App: React.FC = () => {
             }}
             onStartWeeklyTest={(day: Day) => { dayStartTimeRef.current = Date.now(); startWeeklyTest(lesson.id, lessonNumber, day); }}
             onBack={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook })}
+            onGrammar={() => setShowGrammarModal(true)}
           />
         );
       }
@@ -1506,6 +1515,7 @@ const App: React.FC = () => {
             progress={progress}
             onComplete={handleDayComplete}
             totalDays={practiceTotalDays}
+            onGrammar={() => setShowGrammarModal(true)}
             onBack={() => {
               setCurrentDay(null);
               setActiveWeeklyTest(null);
@@ -1672,7 +1682,7 @@ const App: React.FC = () => {
         </div>
       )}
       {showGrammarModal && (() => {
-        const lessonNum = progress.currentLesson || 1;
+        const lessonNum = getLessonNumberFromId(currentLessonId) || progress.currentLesson || 1;
         const entries = Object.entries(GRAMMAR_GUIDES).filter(([k]) => k.startsWith(`L${lessonNum}_`));
         return (
           <div
@@ -1720,8 +1730,6 @@ const App: React.FC = () => {
         currentSection={currentSection}
         onNavigate={handleNavigate}
         onShare={handleShare}
-        onGrammar={() => setShowGrammarModal(true)}
-        currentLessonNumber={progress.currentLesson || null}
       />
     </div>
   );

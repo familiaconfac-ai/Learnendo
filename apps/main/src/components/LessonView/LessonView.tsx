@@ -21,6 +21,7 @@ interface LessonViewProps {
   testScore?: number;
   testPassed?: boolean;
   onBack: () => void;
+  onGrammar?: () => void;
 }
 
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
@@ -62,6 +63,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   testScore,
   testPassed = false,
   onBack,
+  onGrammar,
 }) => {
   const completed = progress.completedActivities || [];
   const completedFromMap = Object.keys(progress.days ?? {}).filter((id) => progress.days?.[id] === true);
@@ -144,6 +146,15 @@ export const LessonView: React.FC<LessonViewProps> = ({
             </div>
           );
         })()}
+        {onGrammar && (
+          <button
+            onClick={onGrammar}
+            className="w-full flex items-center justify-center gap-2 mb-4 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-blue-500 text-slate-300 hover:text-blue-300 rounded-2xl text-sm font-semibold transition-colors"
+          >
+            <span>📖</span>
+            <span>Lesson {lessonNumber} Grammar</span>
+          </button>
+        )}
         <div className="flex flex-col items-center gap-4 sm:gap-6">
           {firstSixDays.map((day, index) => {
             const status = getDayStatus(day?.id || null, index);

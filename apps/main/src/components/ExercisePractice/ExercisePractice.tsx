@@ -14,6 +14,7 @@ interface ExercisePracticeProps {
   onBack: () => void;
   /** Total number of days in this lesson — used for the visible exercise header. */
   totalDays?: number;
+  onGrammar?: () => void;
 }
 
 export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
@@ -23,6 +24,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   onComplete,
   onBack,
   totalDays,
+  onGrammar,
 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
@@ -79,16 +81,27 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   };
 
   return (
-    <PracticeSection
-      item={practiceItem as any}
-      onResult={handleResult}
-      currentIdx={currentIdx}
-      totalItems={exercises.length}
-      lessonId={1}
-      onBack={onBack}
-      dayNumber={dayNumber}
-      totalDays={totalDays}
-      currentLanguage={currentLanguage}
-    />
+    <>
+      {onGrammar && (
+        <button
+          onClick={onGrammar}
+          className="fixed top-4 right-4 z-50 flex items-center gap-1.5 text-xs bg-slate-800/90 border border-slate-600 hover:border-blue-500 text-slate-300 hover:text-blue-300 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm transition-colors"
+          aria-label="Open lesson grammar"
+        >
+          📖 <span>Grammar</span>
+        </button>
+      )}
+      <PracticeSection
+        item={practiceItem as any}
+        onResult={handleResult}
+        currentIdx={currentIdx}
+        totalItems={exercises.length}
+        lessonId={1}
+        onBack={onBack}
+        dayNumber={dayNumber}
+        totalDays={totalDays}
+        currentLanguage={currentLanguage}
+      />
+    </>
   );
 };
