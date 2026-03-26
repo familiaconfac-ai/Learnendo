@@ -367,3 +367,46 @@ export function speakDialogue(
     void i;
   });
 }
+
+// ─────────────────────────────────────────────────────────────
+// Voice-readiness helpers — safe to use without touching frozen TTS logic
+// ─────────────────────────────────────────────────────────────
+
+/** Returns the number of voices currently in the cache (0 = still loading). */
+export function getVoiceCount(): number {
+  return _voices.length;
+}
+
+/**
+ * Calls `cb` immediately if voices are already cached, otherwise defers the
+ * call until the voiceschanged event fires (or at most 1.5 s, whichever comes
+ * first).  Returns a cancel function so callers can prevent the deferred call
+ * when the exercise unmounts before voices arrive.
+ *
+ * Does NOT touch pickVoice / detectVoiceGender / exerciseVoices.
+ */
+export function onVoicesReady(cb: () => void): () => void {
+  if (_voices.length > 0) {
+    cb();
+    return () => {};
+  }
+  let alive = true;
+  const guard = () => { if (alive) { alive = false; cb(); } };
+  // Re-populate cache and fire when the browser has the list ready
+  const handler = () => {
+    const v = window.speechSynthesis.getVoices();
+    if (v.length) _voices = v;
+    guard();
+  };
+  window.speechSynthesis.addEventListener('voiceschanged', handler, { once: true });
+  // Safety net: some browsers never fire voiceschanged — call after 1.5 s.
+  const t = setTimeout(() => {
+    window.speechSynthesis.removeEventListener('voiceschanged', handler);
+    guard();
+  }, 1500);
+  return () => {
+    alive = false;
+    clearTimeout(t);
+    window.speechSynthesis.removeEventListener('voiceschanged', handler);
+  };
+}

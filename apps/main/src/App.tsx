@@ -522,6 +522,21 @@ const App: React.FC = () => {
           // courseProgress/{courseId}_{bookNumber} document after logout/login.
           if (data.courseId) {
             setCurrentCourseId(data.courseId);
+            // ── COLD-START FIX: sync language to match the restored course ──────
+            // handleCourseChange() does this on user interaction, but the Firestore
+            // restore path previously skipped it.  On a cold start (cleared storage),
+            // language defaults to 'en' while courseId may be e.g.
+            // 'portuguese_foreigners' → TTS and UI stayed in English.
+            const restoredLanguage = COURSE_TO_LANGUAGE[data.courseId];
+            console.log('[COLD-START INIT] Firestore courseId→language sync', {
+              courseId: data.courseId,
+              restoredLanguage,
+              prevLanguage: language,
+              willUpdate: !!restoredLanguage && restoredLanguage !== language,
+            });
+            if (restoredLanguage && restoredLanguage !== language) {
+              setLanguage(restoredLanguage);
+            }
             // Backfill courseId on the flat progress doc for returning users whose
             // doc predates the courseId field (written via merge so nothing else changes).
             if (db && user?.uid) {

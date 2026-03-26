@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { speak as ttsSpeakImpl, appLangToTts, exerciseVoices } from '../services/ttsService';
+import { speak as ttsSpeakImpl, appLangToTts, exerciseVoices, getVoiceCount, onVoicesReady } from '../services/ttsService';
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
@@ -547,14 +547,35 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         setShuffledOptions([]);
       }
 
+      // ── Diagnostic: log every autoplay trigger so cold-start issues are traceable ──
+      if (item.audioValue) {
+        const vc = getVoiceCount();
+        console.log('[AUTOPLAY]', {
+          origin: 'autoplay',
+          exerciseId: item.id,
+          type: item.type,
+          currentLanguage,
+          audioText: item.audioValue.slice(0, 60),
+          voicesReady: vc > 0,
+          voiceCount: vc,
+          promptVoice,
+          feedbackVoice,
+        });
+      }
+
+      const _cleanups: Array<() => void> = [];
+
       if (item.audioValue && item.type !== 'speaking' && item.type !== 'writing') {
-        speak(item.audioValue, 1, promptVoice);
+        _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
       } else if (item.audioValue && item.type === 'speaking') {
         // ✅ Auto-play audio for speaking/shadowing exercises
-        setTimeout(() => speak(item.audioValue, 1, promptVoice), 500);
+        const t = setTimeout(() => {
+          _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
+        }, 500);
+        _cleanups.push(() => clearTimeout(t));
       } else if (item.audioValue && isDictationWriting) {
         // Dictation writing: play audio upfront so students can hear before typing
-        speak(item.audioValue, 1, promptVoice);
+        _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
       }
       // non-dictation writing: audio is only revealed after the first wrong attempt
 
@@ -565,6 +586,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           inputRef.current?.focus();
         }
       }, 200);
+      return () => _cleanups.forEach(c => c());
     }, [item.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
     // Auto-grow textarea
@@ -580,11 +602,13 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     // Thin wrapper so existing call sites don't need changing.
     // Language comes from the currentLanguage prop set by ExercisePractice.
     // voicePref allows callers to request a specific gender; falls back safely.
-    const speak = (text: string, rate = 1, voicePref?: 'male' | 'female') => {
+    const speak = (text: string, rate = 1, voicePref?: 'male' | 'female', origin = 'interaction') => {
+      const vc = getVoiceCount();
       console.log(
         `[EXERCISE SPEAK] ex#${currentIdx} lang=${currentLanguage}` +
         ` | voicePair=(prompt:${promptVoice}, feedback:${feedbackVoice})` +
         ` | requested=${voicePref ?? 'any'} | rate=${rate}` +
+        ` | voiceCount=${vc} | origin=${origin}` +
         ` | text="${text.slice(0, 50)}${text.length > 50 ? '\u2026' : ''}"`
       );
       return ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
