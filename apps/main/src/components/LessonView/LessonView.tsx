@@ -128,6 +128,15 @@ export const LessonView: React.FC<LessonViewProps> = ({
     <div className="lesson-view min-h-screen bg-slate-900 pb-28 w-full overflow-x-hidden">
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
         <button onClick={onBack} className="mb-4 text-white font-bold text-base flex items-center gap-1" aria-label="Back">← Back</button>
+        {onGrammar && (
+          <button
+            onClick={onGrammar}
+            className="w-full flex items-center justify-center gap-2 mb-4 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-blue-500 text-slate-300 hover:text-blue-300 rounded-2xl text-sm font-semibold transition-colors"
+          >
+            <span>📖</span>
+            <span>Lesson {lessonNumber} Grammar</span>
+          </button>
+        )}
         {(() => {
           const colonIdx = lesson.title.indexOf(':');
           const mainTitle = colonIdx > -1 ? lesson.title.slice(0, colonIdx) : lesson.title;
@@ -146,15 +155,6 @@ export const LessonView: React.FC<LessonViewProps> = ({
             </div>
           );
         })()}
-        {onGrammar && (
-          <button
-            onClick={onGrammar}
-            className="w-full flex items-center justify-center gap-2 mb-4 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-blue-500 text-slate-300 hover:text-blue-300 rounded-2xl text-sm font-semibold transition-colors"
-          >
-            <span>📖</span>
-            <span>Lesson {lessonNumber} Grammar</span>
-          </button>
-        )}
         <div className="flex flex-col items-center gap-4 sm:gap-6">
           {firstSixDays.map((day, index) => {
             const status = getDayStatus(day?.id || null, index);

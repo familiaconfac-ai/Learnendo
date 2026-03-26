@@ -82,15 +82,6 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
 
   return (
     <>
-      {onGrammar && (
-        <button
-          onClick={onGrammar}
-          className="fixed top-4 right-4 z-50 flex items-center gap-1.5 text-xs bg-slate-800/90 border border-slate-600 hover:border-blue-500 text-slate-300 hover:text-blue-300 px-3 py-1.5 rounded-full shadow-lg backdrop-blur-sm transition-colors"
-          aria-label="Open lesson grammar"
-        >
-          📖 <span>Grammar</span>
-        </button>
-      )}
       <PracticeSection
         item={practiceItem as any}
         onResult={handleResult}
