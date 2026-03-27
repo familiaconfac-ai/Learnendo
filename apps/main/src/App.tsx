@@ -1652,7 +1652,12 @@ const App: React.FC = () => {
         );
       }
       case SectionType.PRONUNCIATION:
-        return <PronunciationTrainer onFinish={() => handleNavigate(SectionType.COURSES)} />;
+        return <PronunciationTrainer
+          onFinish={() => handleNavigate(SectionType.COURSES)}
+          courseId={currentCourseId ?? 'english'}
+          workbookId={currentWorkbookId || progress.currentWorkbook || 1}
+          uiLanguage={uiLanguage}
+        />;
       case SectionType.TEACHER_DASHBOARD:
         return user && isAdmin ? (
           <TeacherDashboard user={user} />
@@ -1874,6 +1879,7 @@ const App: React.FC = () => {
         currentSection={currentSection}
         onNavigate={handleNavigate}
         onShare={handleShare}
+        uiLanguage={uiLanguage}
       />
     </div>
   );

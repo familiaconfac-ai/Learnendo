@@ -1,29 +1,104 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { speak } from '../../services/ttsService';
+import { getPronounceItems, getTTSLang, PronounceItem } from '../../data/pronounceItems';
+
+type UILang = 'en' | 'pt' | 'es';
 
 interface PronunciationTrainerProps {
   onFinish: () => void;
+  courseId?: string;
+  workbookId?: number;
+  uiLanguage?: UILang;
 }
 
-// Difficult sounds for Portuguese speakers + tricky numbers
-const ITEMS = ['G', 'Q', 'W', 'X', 'D', 'H', '3', '8', '13', '30'];
+// ── Localized UI strings ─────────────────────────────────────────────────────
 
-// Spoken form for TTS and speech recognition matching
-const SPOKEN_LABEL: Record<string, string> = {
-  '3': 'Three',
-  '8': 'Eight',
-  '13': 'Thirteen',
-  '30': 'Thirty',
+const UI = {
+  en: {
+    title: 'Pronunciation Trainer',
+    stage1: 'Stage 1 — Listen & Repeat',
+    stage2: 'Stage 2 — Speech Recognition',
+    itemOf: (i: number, total: number) => `Item ${i} of ${total}`,
+    listen: 'Listen',
+    listenAgain: 'Listen again',
+    record: 'Record',
+    recordAgain: 'Record again',
+    stop: 'Stop',
+    skip: 'Skip',
+    tryAgain: (left: number) => `Try again (${left} left)`,
+    speakNow: 'Speak now',
+    listening: 'Listening…',
+    youSaid: 'You said:',
+    correct: 'Correct!',
+    notQuite: 'Not quite — keep trying!',
+    continue: 'Continue',
+    notSupported: '(not supported in this browser)',
+    couldNotHear: '(could not hear you)',
+  },
+  pt: {
+    title: 'Treinamento de Pronúncia',
+    stage1: 'Etapa 1 — Ouça e repita',
+    stage2: 'Etapa 2 — Reconhecimento de fala',
+    itemOf: (i: number, total: number) => `Item ${i} de ${total}`,
+    listen: 'Ouvir',
+    listenAgain: 'Ouvir novamente',
+    record: 'Gravar',
+    recordAgain: 'Gravar novamente',
+    stop: 'Parar',
+    skip: 'Pular',
+    tryAgain: (left: number) => `Tentar novamente (${left} restante${left !== 1 ? 's' : ''})`,
+    speakNow: 'Falar agora',
+    listening: 'Ouvindo…',
+    youSaid: 'Você disse:',
+    correct: 'Correto!',
+    notQuite: 'Quase — continue tentando!',
+    continue: 'Continuar',
+    notSupported: '(não suportado neste navegador)',
+    couldNotHear: '(não consegui ouvir)',
+  },
+  es: {
+    title: 'Entrenamiento de Pronunciación',
+    stage1: 'Etapa 1 — Escucha y repite',
+    stage2: 'Etapa 2 — Reconocimiento de voz',
+    itemOf: (i: number, total: number) => `Ítem ${i} de ${total}`,
+    listen: 'Escuchar',
+    listenAgain: 'Escuchar de nuevo',
+    record: 'Grabar',
+    recordAgain: 'Grabar de nuevo',
+    stop: 'Detener',
+    skip: 'Saltar',
+    tryAgain: (left: number) => `Intentar de nuevo (${left} restante${left !== 1 ? 's' : ''})`,
+    speakNow: 'Hablar ahora',
+    listening: 'Escuchando…',
+    youSaid: 'Dijiste:',
+    correct: '¡Correcto!',
+    notQuite: 'Casi — ¡sigue intentando!',
+    continue: 'Continuar',
+    notSupported: '(no compatible con este navegador)',
+    couldNotHear: '(no pude escucharte)',
+  },
 };
-
-const getSpokenLabel = (item: string) => SPOKEN_LABEL[item] ?? item;
-
-const normalize = (text: string) =>
-  text.toLowerCase().replace(/[^a-z0-9]/g, '').trim();
 
 const MAX_ATTEMPTS = 3;
 
-export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFinish }) => {
+const normalize = (text: string) =>
+  text
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // strip diacritics
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+
+export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({
+  onFinish,
+  courseId = 'english',
+  workbookId = 1,
+  uiLanguage = 'en',
+}) => {
+  const ui = UI[uiLanguage] ?? UI.en;
+  const ttsLang = getTTSLang(courseId);
+  const ITEMS: PronounceItem[] = getPronounceItems(courseId, workbookId);
+
   const [stage, setStage] = useState<'listen-repeat' | 'speech-recognition'>('listen-repeat');
   const [itemIndex, setItemIndex] = useState(0);
 
@@ -43,8 +118,9 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
   const recognitionRef = useRef<any>(null);
 
   const item = ITEMS[itemIndex];
-  const spokenLabel = getSpokenLabel(item);
-  const isNumber = item !== spokenLabel;
+  const spokenLabel = item?.spoken ?? item?.text ?? '';
+  const displayText = item?.text ?? '';
+  const isNumericDisplay = displayText !== spokenLabel && /^\d+$/.test(displayText);
 
   // Keep ref in sync for cleanup
   useEffect(() => {
@@ -78,7 +154,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = 'en-US';
+    utt.lang = ttsLang;
     utt.rate = 0.85;
     window.speechSynthesis.speak(utt);
   };
@@ -125,7 +201,6 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
   };
 
   const advanceItem = useCallback(() => {
-    // Clean up recording URL via ref (avoids stale closure)
     if (recordingUrlRef.current) {
       URL.revokeObjectURL(recordingUrlRef.current);
       recordingUrlRef.current = null;
@@ -145,7 +220,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
     } else {
       setItemIndex((i) => i + 1);
     }
-  }, [itemIndex, stage, onFinish]);
+  }, [itemIndex, stage, onFinish, ITEMS.length]);
 
   // Stage 2: speech recognition
   const startListening = () => {
@@ -153,14 +228,14 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognitionAPI) {
-      setDetectedWord('(not supported in this browser)');
+      setDetectedWord(ui.notSupported);
       setIsCorrect(false);
       setFailedAttempts((n) => n + 1);
       return;
     }
 
     const recognition = new SpeechRecognitionAPI();
-    recognition.lang = 'en-US';
+    recognition.lang = ttsLang;
     recognition.interimResults = false;
     recognition.maxAlternatives = 3;
     recognitionRef.current = recognition;
@@ -179,7 +254,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
     };
 
     recognition.onerror = () => {
-      setDetectedWord('(could not hear you)');
+      setDetectedWord(ui.couldNotHear);
       setIsCorrect(false);
       setFailedAttempts((n) => n + 1);
       setIsListening(false);
@@ -197,20 +272,22 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
     playTTS(spokenLabel);
   };
 
+  if (!item) return null;
+
   return (
     <div className="min-h-screen bg-slate-900 pb-32">
       <div className="max-w-[420px] mx-auto px-4 pt-6">
-        <h1 className="text-2xl font-bold text-center text-white">Pronunciation Trainer</h1>
+        <h1 className="text-2xl font-bold text-center text-white">{ui.title}</h1>
         <p className="mt-1 text-center text-[11px] font-bold uppercase tracking-wide text-blue-400">
-          {stage === 'listen-repeat' ? 'Stage 1 — Listen & Repeat' : 'Stage 2 — Speech Recognition'}
+          {stage === 'listen-repeat' ? ui.stage1 : ui.stage2}
         </p>
         <p className="mt-1 text-center text-sm text-slate-400">
-          Item {itemIndex + 1} of {ITEMS.length}
+          {ui.itemOf(itemIndex + 1, ITEMS.length)}
         </p>
 
         <div className="mt-6 rounded-3xl bg-slate-800 border border-slate-700 p-6 shadow-sm text-center">
-          <p className="text-5xl font-black text-white tracking-wide">{item}</p>
-          {isNumber && (
+          <p className="text-5xl font-black text-white tracking-wide">{displayText}</p>
+          {isNumericDisplay && (
             <p className="mt-1 text-base italic text-slate-400">"{spokenLabel}"</p>
           )}
 
@@ -221,7 +298,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                 onClick={() => playTTS(spokenLabel)}
                 className="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_0_#1d4ed8] active:translate-y-0.5"
               >
-                Listen
+                {ui.listen}
               </button>
 
               {!isRecording ? (
@@ -230,7 +307,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                   onClick={startRecording}
                   className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_0_#047857] active:translate-y-0.5"
                 >
-                  {recordingUrl ? 'Record again' : 'Record'}
+                  {recordingUrl ? ui.recordAgain : ui.record}
                 </button>
               ) : (
                 <button
@@ -238,7 +315,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                   onClick={stopRecording}
                   className="w-full rounded-2xl bg-amber-500 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_0_#b45309] active:translate-y-0.5"
                 >
-                  Stop
+                  {ui.stop}
                 </button>
               )}
 
@@ -251,14 +328,14 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                       onClick={clearRecording}
                       className="rounded-2xl bg-slate-700 px-4 py-3 text-sm font-bold text-slate-200 active:scale-[0.98]"
                     >
-                      Try again
+                      {ui.tryAgain(MAX_ATTEMPTS)}
                     </button>
                     <button
                       type="button"
                       onClick={advanceItem}
                       className="rounded-2xl bg-blue-500 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_0_#1d4ed8] active:translate-y-0.5"
                     >
-                      Continue
+                      {ui.continue}
                     </button>
                   </div>
                 </>
@@ -270,7 +347,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                   onClick={advanceItem}
                   className="w-full rounded-2xl bg-slate-700 px-4 py-3 text-sm font-semibold text-slate-300 active:scale-[0.98]"
                 >
-                  Skip
+                  {ui.skip}
                 </button>
               )}
             </div>
@@ -281,7 +358,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                 onClick={() => playTTS(spokenLabel)}
                 className="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_0_#1d4ed8] active:translate-y-0.5"
               >
-                Listen again
+                {ui.listenAgain}
               </button>
 
               {detectedWord === null && !isListening && (
@@ -290,13 +367,13 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                   onClick={startListening}
                   className="w-full rounded-2xl bg-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_0_#047857] active:translate-y-0.5"
                 >
-                  Speak now
+                  {ui.speakNow}
                 </button>
               )}
 
               {isListening && (
                 <div className="rounded-2xl border border-emerald-700 bg-emerald-900/40 px-4 py-3 text-sm font-semibold text-emerald-300">
-                  Listening...
+                  {ui.listening}
                 </div>
               )}
 
@@ -306,12 +383,12 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                     isCorrect ? 'border-green-700 bg-green-900/40' : 'border-red-700 bg-red-900/40'
                   }`}
                 >
-                  <p className="text-xs text-slate-400">You said:</p>
+                  <p className="text-xs text-slate-400">{ui.youSaid}</p>
                   <p className="mt-1 text-lg font-bold text-white">"{detectedWord}"</p>
                   <p className={`mt-1 text-sm font-semibold ${
                     isCorrect ? 'text-green-400' : 'text-red-400'
                   }`}>
-                    {isCorrect ? 'Correct!' : 'Not quite — keep trying!'}
+                    {isCorrect ? ui.correct : ui.notQuite}
                   </p>
                 </div>
               )}
@@ -322,7 +399,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                   onClick={handleTryAgain}
                   className="w-full rounded-2xl bg-amber-500 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_0_#b45309] active:translate-y-0.5"
                 >
-                  Try again ({MAX_ATTEMPTS - failedAttempts} left)
+                  {ui.tryAgain(MAX_ATTEMPTS - failedAttempts)}
                 </button>
               )}
 
@@ -332,7 +409,7 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
                   onClick={advanceItem}
                   className="w-full rounded-2xl bg-blue-500 px-4 py-3 text-sm font-bold text-white shadow-[0_4px_0_0_#1d4ed8] active:translate-y-0.5"
                 >
-                  Continue
+                  {ui.continue}
                 </button>
               )}
             </div>
@@ -342,3 +419,4 @@ export const PronunciationTrainer: React.FC<PronunciationTrainerProps> = ({ onFi
     </div>
   );
 };
+
