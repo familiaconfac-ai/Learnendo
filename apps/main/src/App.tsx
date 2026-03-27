@@ -1469,6 +1469,11 @@ const App: React.FC = () => {
               handleCourseChange(id);
               setCurrentLessonId(null);
               setCurrentDay(null);
+              // Null out the workbook ID so the loadWorkbook effect returns early
+              // (it guards on !currentWorkbookId) and cannot override the
+              // WORKBOOK_LIST section we set below. Normal continue-flow restores
+              // the workbook ID via onAuthStateChanged / Firestore snapshot.
+              setCurrentWorkbookId(null);
               setCurrentSection(SectionType.WORKBOOK_LIST);
             }}
           />

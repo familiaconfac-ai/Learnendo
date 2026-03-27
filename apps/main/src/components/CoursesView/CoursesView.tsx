@@ -37,9 +37,9 @@ const COURSE_DISPLAY: Record<UILang, Record<string, { title: string; subtitle: s
     spanish:              { title: 'Spanish',    subtitle: 'Learn Spanish with Learnendo' },
   },
   pt: {
-    english:              { title: 'Inglês',     subtitle: 'Aprenda inglês com a Learnendo' },
-    portuguese_foreigners:{ title: 'Português',  subtitle: 'Aprenda português com a Learnendo' },
-    spanish:              { title: 'Espanhol',   subtitle: 'Aprenda espanhol com a Learnendo' },
+    english:              { title: 'Inglês',     subtitle: 'Aprenda inglês com Learnendo' },
+    portuguese_foreigners:{ title: 'Português',  subtitle: 'Aprenda português com Learnendo' },
+    spanish:              { title: 'Espanhol',   subtitle: 'Aprenda espanhol com Learnendo' },
   },
   es: {
     english:              { title: 'Inglés',     subtitle: 'Aprende inglés con Learnendo' },
