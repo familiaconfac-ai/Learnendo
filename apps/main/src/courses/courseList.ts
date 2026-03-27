@@ -11,17 +11,17 @@ export const COURSES: Course[] = [
   },
   {
     id: 'portuguese_foreigners',
-    title: 'Portuguese for Foreigners',
+    title: 'Portuguese',
     flag: '🇧🇷',
     category: 'modern',
-    description: 'Learn Brazilian Portuguese — coming soon',
+    description: 'Learn Portuguese with Learnendo',
   },
   {
     id: 'spanish',
     title: 'Spanish',
     flag: '🇪🇸',
     category: 'modern',
-    description: 'Learn Spanish — coming soon',
+    description: 'Learn Spanish with Learnendo',
   },
   // ── Biblical Languages ────────────────────────────────────────────────────
   {
@@ -43,7 +43,7 @@ export const COURSES: Course[] = [
     title: 'Portuguese Grammar',
     flag: '🇧🇷',
     category: 'biblical',
-    description: 'Grammar for native speakers — coming soon',
+    description: 'Grammar for native speakers',
   },
 ];
 

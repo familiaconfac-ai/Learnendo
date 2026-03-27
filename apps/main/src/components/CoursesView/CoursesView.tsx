@@ -10,15 +10,18 @@ interface CoursesViewProps {
   onLogoClick?: () => void;
 }
 
+type UILang = 'en' | 'pt' | 'es';
 type CategoryKey = 'modern' | 'biblical' | 'track';
 
-const CATEGORY_LABELS: Record<CategoryKey, string> = {
-  modern: 'Main Courses',
-  biblical: 'Advanced Studies',
-  track: 'Special Study Track',
+// ── Category headings localized by UI language ────────────────────────────────
+const CATEGORY_LABELS: Record<UILang, Record<CategoryKey, string>> = {
+  en: { modern: 'Main Courses', biblical: 'Advanced Studies', track: 'Special Study Track' },
+  pt: { modern: 'Cursos Principais', biblical: 'Estudos Avançados', track: 'Trilha de Estudo Especial' },
+  es: { modern: 'Cursos Principales', biblical: 'Estudios Avanzados', track: 'Pista de Estudio Especial' },
 };
 
-const CHOOSE_LANGUAGE_LABEL: Record<LessonLanguageCode, string> = {
+// ── "Choose your language" prompt ─────────────────────────────────────────────
+const CHOOSE_LABEL: Record<LessonLanguageCode, string> = {
   en: 'Choose your language',
   pt: 'Escolha seu idioma',
   es: 'Elige tu idioma',
@@ -26,15 +29,36 @@ const CHOOSE_LANGUAGE_LABEL: Record<LessonLanguageCode, string> = {
   he: 'בחר שפה',
 };
 
+// ── Localized display for the three main courses ──────────────────────────────
+const COURSE_DISPLAY: Record<UILang, Record<string, { title: string; subtitle: string }>> = {
+  en: {
+    english:              { title: 'English',    subtitle: 'Learn English with Learnendo' },
+    portuguese_foreigners:{ title: 'Portuguese', subtitle: 'Learn Portuguese with Learnendo' },
+    spanish:              { title: 'Spanish',    subtitle: 'Learn Spanish with Learnendo' },
+  },
+  pt: {
+    english:              { title: 'Inglês',     subtitle: 'Aprenda inglês com a Learnendo' },
+    portuguese_foreigners:{ title: 'Português',  subtitle: 'Aprenda português com a Learnendo' },
+    spanish:              { title: 'Espanhol',   subtitle: 'Aprenda espanhol com a Learnendo' },
+  },
+  es: {
+    english:              { title: 'Inglés',     subtitle: 'Aprende inglés con Learnendo' },
+    portuguese_foreigners:{ title: 'Portugués',  subtitle: 'Aprende portugués con Learnendo' },
+    spanish:              { title: 'Español',    subtitle: 'Aprende español con Learnendo' },
+  },
+};
+
 export const CoursesView: React.FC<CoursesViewProps> = ({
   courses,
   currentCourseId,
   currentLanguage = 'en',
-  onLanguageChange,
+  onLanguageChange: _onLanguageChange,
   onSelectCourse,
   onLogoClick,
 }) => {
+  const uiLang: UILang = currentLanguage === 'pt' ? 'pt' : currentLanguage === 'es' ? 'es' : 'en';
   const categories: CategoryKey[] = ['modern', 'biblical'];
+  const catLabels = CATEGORY_LABELS[uiLang];
 
   return (
     <div className="min-h-screen bg-slate-900 pb-28 w-full overflow-x-hidden">
@@ -50,7 +74,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
               style={{ width: 'min(160px, 80vw)', marginBottom: '8px' }}
             />
           </button>
-          <p className="text-slate-400 font-semibold text-xs sm:text-sm mt-1">{CHOOSE_LANGUAGE_LABEL[currentLanguage]}</p>
+          <p className="text-slate-400 font-semibold text-xs sm:text-sm mt-1">{CHOOSE_LABEL[currentLanguage]}</p>
         </div>
 
         {/* Category sections */}
@@ -61,12 +85,15 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
           return (
             <div key={cat} className="mb-7">
               <h2 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3 px-1">
-                {CATEGORY_LABELS[cat]}
+                {catLabels[cat]}
               </h2>
 
               <div className="flex flex-col gap-3">
                 {catCourses.map(course => {
                   const isActive = course.id === currentCourseId;
+                  const display = COURSE_DISPLAY[uiLang][course.id] ?? null;
+                  const title = display?.title ?? course.title;
+                  const subtitle = display?.subtitle ?? course.description ?? '';
 
                   return (
                     <button
@@ -76,7 +103,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
                         'w-full rounded-2xl p-4 text-left border transition-all duration-150 active:scale-[0.98]',
                         isActive
                           ? 'bg-blue-600 border-blue-700 shadow-[0_4px_0_0_#1e40af]'
-                          : 'bg-slate-800 border-slate-700 shadow-sm hover:border-blue-500',
+                          : 'bg-white border-slate-200 shadow-sm hover:border-blue-300',
                       ].join(' ')}
                     >
                       <div className="flex items-center gap-4">
@@ -85,29 +112,17 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
                         </span>
 
                         <div className="flex-1 min-w-0">
-                          <div
-                            className={`font-black text-base leading-tight ${
-                              isActive ? 'text-white' : 'text-slate-100'
-                            }`}
-                          >
-                            {course.title}
+                          <div className={`font-black text-base leading-tight ${isActive ? 'text-white' : 'text-slate-800'}`}>
+                            {title}
                           </div>
-                          {course.description && (
-                            <div
-                              className={`text-xs mt-0.5 truncate ${
-                                isActive ? 'text-blue-200' : 'text-slate-400'
-                              }`}
-                            >
-                              {course.description}
+                          {subtitle && (
+                            <div className={`text-xs mt-0.5 truncate ${isActive ? 'text-blue-200' : 'text-slate-500'}`}>
+                              {subtitle}
                             </div>
                           )}
                         </div>
 
-                        <i
-                          className={`fas fa-chevron-right text-sm flex-shrink-0 ${
-                            isActive ? 'text-blue-200' : 'text-slate-500'
-                          }`}
-                        />
+                        <i className={`fas fa-chevron-right text-sm flex-shrink-0 ${isActive ? 'text-blue-200' : 'text-slate-400'}`} />
                       </div>
                     </button>
                   );

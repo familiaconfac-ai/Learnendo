@@ -1462,16 +1462,14 @@ const App: React.FC = () => {
           <CoursesView
             courses={COURSES}
             currentCourseId={currentCourseId}
-            currentLanguage={language}
+            currentLanguage={uiLanguage}
             onLanguageChange={setLanguage}
             onLogoClick={() => handleNavigate(SectionType.WORKBOOK)}
             onSelectCourse={(id) => {
               handleCourseChange(id);
-              console.log('SET WORKBOOK ID', 1, '← CoursesView onSelectCourse'); console.trace('TRACE WORKBOOK ID');
-              setCurrentWorkbookId(1);
               setCurrentLessonId(null);
               setCurrentDay(null);
-              setCurrentSection(SectionType.WORKBOOK);
+              setCurrentSection(SectionType.WORKBOOK_LIST);
             }}
           />
         );
