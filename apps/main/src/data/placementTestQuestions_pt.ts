@@ -26,6 +26,7 @@ function q(
   audioText?: string,
   explanation?: string,
   grammarTopic?: string,
+  explanationTranslations?: { en: string; es: string },
 ): PlacementQuestion {
   return {
     id, part, levelBand, type, prompt,
@@ -34,6 +35,7 @@ function q(
     correctAnswerIndex,
     explanation,
     grammarTopic,
+    explanationTranslations,
   };
 }
 
@@ -52,6 +54,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     'Olá! Meu nome é Tom.',
     '"Olá! Meu nome é Tom." é uma saudação e apresentação.',
     'Compreensão Auditiva',
+    { en: '"Olá! Meu nome é Tom." is a greeting and self-introduction.', es: '"Olá! Meu nome é Tom." es un saludo y una presentación personal.' },
   ),
 
   // [A] Tradução direta — números em audição
@@ -62,6 +65,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     'Quinze.',
     'O falante diz "quinze" — 15.',
     'Números (Audição)',
+    { en: 'The speaker says "quinze" — 15.', es: 'El hablante dice "quinze" — 15.' },
   ),
 
   // [B] Adaptação — verbo ser (3ª pessoa)
@@ -72,6 +76,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Ele" (3ª pessoa singular) usa "é" do verbo ser.',
     'Verbo Ser — 3ª Pessoa',
+    { en: '"Ele" (3rd person singular) uses "é" from the verb ser.', es: '"Ele" (3ª persona singular) usa "é" del verbo ser.' },
   ),
 
   // [B] Adaptação — verbo ser em perguntas
@@ -82,6 +87,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Você é do Brasil?" é a pergunta correta com "você".',
     'Verbo Ser — Perguntas',
+    { en: '"Você é do Brasil?" is the correct question form with "você".', es: '"Você é do Brasil?" es la forma correcta de pregunta con "você".' },
   ),
 
   // [B] Adaptação — pronomes sujeito
@@ -92,6 +98,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Ela" é o pronome sujeito feminino.',
     'Pronomes Pessoais — Sujeito',
+    { en: '"Ela" is the feminine subject pronoun.', es: '"Ela" es el pronombre sujeto femenino.' },
   ),
 
   // [A] Tradução direta — dias da semana
@@ -102,6 +109,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     'Segunda-feira é um dia da semana.',
     'Dias da Semana',
+    { en: '"Segunda-feira" is a day of the week.', es: '"Segunda-feira" es un día de la semana.' },
   ),
 
   // [A] Tradução direta — vocabulário cotidiano
@@ -112,6 +120,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     'Um copo é usado para beber.',
     'Vocabulário Cotidiano',
+    { en: 'A glass is used for drinking.', es: 'Un vaso se usa para beber.' },
   ),
 
   // [B] Adaptação — negativa do verbo ser
@@ -122,6 +131,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Eu não sou" é a forma negativa correta de "eu sou".',
     'Verbo Ser — Negativas',
+    { en: '"Eu não sou" is the correct negative form of "eu sou".', es: '"Eu não sou" es la forma negativa correcta de "eu sou".' },
   ),
 
   // [A] Tradução direta — preposição de lugar em audição
@@ -132,6 +142,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     'Estou em casa com minha família hoje.',
     'O falante diz "em casa".',
     'Preposições de Lugar (Audição)',
+    { en: 'The speaker says "em casa" (at home).', es: 'El hablante dice "em casa" (en casa).' },
   ),
 
   // [A] Tradução direta — antônimos básicos
@@ -142,6 +153,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     'Frio é o oposto de quente.',
     'Antônimos — Adjetivos Básicos',
+    { en: '"Frio" (cold) is the opposite of "quente" (hot).', es: '"Frio" (frío) es el opuesto de "quente" (caliente).' },
   ),
 
   // ══════════════════════════════════════════════════════════════════════
@@ -157,6 +169,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     'Ela sabe nadar muito bem.',
     'O falante diz "ela sabe nadar".',
     'Verbos Modais — Saber/Conseguir (Audição)',
+    { en: 'The speaker says "ela sabe nadar" (she knows how to swim).', es: 'El hablante dice "ela sabe nadar" (ella sabe nadar).' },
   ),
 
   // [C] Substituição — "there is" não existe em PT; testa ser vs. estar para estados temporários (A2)
@@ -167,6 +180,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Estar" é usado para estados temporários. "Está doente" indica condição passageira.',
     'Ser vs. Estar — Estados Temporários',
+    { en: '"Estar" is used for temporary states. "Está doente" indicates a passing condition.', es: '"Estar" se usa para estados temporales. "Está doente" indica una condición pasajera.' },
   ),
 
   // [C] Substituição — "there are + plural" → concordância verbal com sujeito plural (A2)
@@ -177,6 +191,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Os alunos" é plural; o verbo concorda: "estão".',
     'Concordância Verbal — Plural',
+    { en: '"Os alunos" is plural; the verb agrees: "estão".', es: '"Os alunos" es plural; el verbo concuerda: "estão".' },
   ),
 
   // [B] Adaptação — presente simples 3ª pessoa
@@ -187,6 +202,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Ela toma" — presente simples na 3ª pessoa do singular.',
     'Presente Simples — 3ª Pessoa',
+    { en: '"Ela toma" — simple present in the 3rd person singular.', es: '"Ela toma" — presente simple en la 3ª persona del singular.' },
   ),
 
   // [C] Substituição — "can't" → "não saber" para habilidade não adquirida (mais natural em PT)
@@ -197,6 +213,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Não sei jogar" expressa incapacidade por falta de aprendizado.',
     'Verbos Modais — Saber / Não Saber',
+    { en: '"Não sei jogar" expresses inability due to lack of learning.', es: '"Não sei jogar" expresa incapacidad por falta de aprendizaje.' },
   ),
 
   // [B] Adaptação — preposições de lugar
@@ -207,6 +224,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Dentro da caixa" significa no interior.',
     'Preposições de Lugar',
+    { en: '"Dentro da caixa" means inside the box.', es: '"Dentro da caixa" significa en el interior de la caja.' },
   ),
 
   // [A] Tradução direta — frequência em audição
@@ -217,6 +235,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     'Vou à academia três vezes por semana.',
     'O falante diz "três vezes por semana".',
     'Advérbios de Frequência (Audição)',
+    { en: 'The speaker says "três vezes por semana" (three times a week).', es: 'El hablante dice "três vezes por semana" (tres veces a la semana).' },
   ),
 
   // [C] Substituição — "Does she work here?" → forma correta de pergunta no presente em PT
@@ -227,6 +246,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Você trabalha aqui?" é o único com conjugação correta para "você".',
     'Presente Simples — Perguntas',
+    { en: '"Você trabalha aqui?" is the only option with correct conjugation for "você".', es: '"Você trabalha aqui?" es la única opción con conjugación correcta para "você".' },
   ),
 
   // [A] Tradução direta — antônimo de "caro"
@@ -237,6 +257,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Barato" é o oposto de "caro".',
     'Antônimos — Adjetivos',
+    { en: '"Barato" (cheap) is the opposite of "caro" (expensive).', es: '"Barato" (barato) es el opuesto de "caro" (caro).' },
   ),
 
   // [B] Adaptação — presente contínuo (gerúndio)
@@ -247,6 +268,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Eles estão" + gerúndio (-ndo) para ação em progresso.',
     'Presente Contínuo — Gerúndio',
+    { en: '"Eles estão" + gerund (-ndo) for an action in progress.', es: '"Eles estão" + gerundio (-ndo) para una acción en progreso.' },
   ),
 
   // ══════════════════════════════════════════════════════════════════════
@@ -262,6 +284,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Fomos" é o pretérito perfeito de "ir" na 1ª pessoa do plural.',
     'Pretérito Perfeito — Verbos Irregulares',
+    { en: '"Fomos" is the preterite of "ir" in the 1st person plural.', es: '"Fomos" es el pretérito perfecto de "ir" en la 1ª persona del plural.' },
   ),
 
   // [C] Substituição — PT não usa auxiliar "did"; testa pergunta correta no pretérito perfeito (B1)
@@ -272,6 +295,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Você foi ao cinema ontem?" usa corretamente o pretérito perfeito de "ir".',
     'Pretérito Perfeito — Perguntas',
+    { en: '"Você foi ao cinema ontem?" correctly uses the preterite of "ir".', es: '"Você foi ao cinema ontem?" usa correctamente el pretérito perfecto de "ir".' },
   ),
 
   // [C] Substituição — "be going to" → "ir + infinitivo" para planos futuros (B1)
@@ -282,6 +306,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Ir + infinitivo" (vamos visitar) expresa plano futuro imediato.',
     'Futuro com Ir + Infinitivo',
+    { en: '"Ir + infinitivo" (vamos visitar) expresses an immediate future plan.', es: '"Ir + infinitivo" (vamos visitar) expresa un plan futuro inmediato.' },
   ),
 
   // [B] Adaptação — adjetivos comparativos
@@ -292,6 +317,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Mais pesada" é a forma comparativa correta em português.',
     'Adjetivos Comparativos',
+    { en: '"Mais pesada" is the correct comparative form in Portuguese.', es: '"Mais pesada" es la forma comparativa correcta en portugués.' },
   ),
 
   // [C] Substituição — "must" → "ter que" para obrigação (B1)
@@ -302,6 +328,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Ter que" expressa obrigação (lei). "Deve" expressa conselho ou probabilidade.',
     'Verbos Modais — Ter Que / Dever',
+    { en: '"Ter que" expresses obligation (law). "Deve" expresses advice or probability.', es: '"Ter que" expresa obligación (ley). "Deve" expresa consejo o probabilidad.' },
   ),
 
   // [A] Tradução direta — planos futuros em audição
@@ -312,6 +339,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     'Amanhã de manhã vou à academia. Quero me manter em forma.',
     'O falante diz "vou à academia".',
     'Planos Futuros (Audição)',
+    { en: 'The speaker says "vou à academia" (I\'m going to the gym).', es: 'El hablante dice "vou à academia" (voy al gimnasio).' },
   ),
 
   // [A] Tradução direta — compreensão de leitura, causa e efeito
@@ -322,6 +350,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     'O texto diz "porque estava com dor de cabeça".',
     'Compreensão de Leitura — Causa e Efeito',
+    { en: 'The text says "because she had a headache".', es: 'El texto dice "porque estava com dor de cabeça" (porque tenía dolor de cabeza).' },
   ),
 
   // [C] Substituição — present perfect → pretérito perfeito para ação recente com relevância presente (B1 no PT brasileiro)
@@ -332,6 +361,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Perdi" (pretérito perfeito) expressa ação recente com relevância presente no português brasileiro.',
     'Pretérito Perfeito — Relevância Presente',
+    { en: '"Perdi" (preterite) expresses a recent action with present relevance in Brazilian Portuguese.', es: '"Perdi" (pretérito perfecto) expresa una acción reciente con relevancia presente en el portugués brasileño.' },
   ),
 
   // [B] Adaptação — vocabulário em contexto
@@ -342,6 +372,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Poderoso" é adequado para um discurso que emocionou pessoas.',
     'Vocabulário em Contexto',
+    { en: '"Poderoso" (powerful) is appropriate for a speech that moved people.', es: '"Poderoso" (poderoso) es adecuado para un discurso que emocionó a las personas.' },
   ),
 
   // [B] Adaptação — período condicional (leitura)
@@ -352,6 +383,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Se você praticar falar todos os dias" é a condição expressa no texto.',
     'Período Condicional — 1ª Condicional (Leitura)',
+    { en: '"Se você praticar falar todos os dias" (if you practice speaking every day) is the condition expressed in the text.', es: '"Se você praticar falar todos os dias" (si practicas hablar todos los días) es la condición expresada en el texto.' },
   ),
 
   // ══════════════════════════════════════════════════════════════════════
@@ -367,6 +399,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Há + tempo" indica duração de ação que continua no presente.',
     'Preposição Há — Duração',
+    { en: '"Há + time" indicates the duration of an action that continues in the present.', es: '"Há + tiempo" indica la duración de una acción que continúa en el presente.' },
   ),
 
   // [C] Substituição — present perfect continuous → "faz ... que" para duração em progresso (B2 em PT)
@@ -377,6 +410,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Faz + tempo + que" expressa duração de ação em curso — equivalente ao present perfect continuous inglês.',
     'Faz... Que — Duração Contínua',
+    { en: '"Faz + time + que" expresses the duration of an ongoing action — equivalent to the English present perfect continuous.', es: '"Faz + tiempo + que" expresa la duración de una acción en curso — equivalente al present perfect continuous del inglés.' },
   ),
 
   // [A] Tradução direta — voz passiva pretérito perfeito
@@ -387,6 +421,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Foi escrito" — voz passiva no pretérito perfeito.',
     'Voz Passiva — Pretérito Perfeito',
+    { en: '"Foi escrito" — passive voice in the preterite.', es: '"Foi escrito" — voz pasiva en el pretérito perfecto.' },
   ),
 
   // [B] Adaptação — período hipotético com subjuntivo imperfeito (2ª condicional)
@@ -397,6 +432,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Se + imperfeito do subjuntivo, condicional" — período hipotético.',
     'Período Hipotético — Subjuntivo Imperfeito',
+    { en: '"Se + imperfect subjunctive, conditional" — hypothetical sentence.', es: '"Se + imperfecto del subjuntivo, condicional" — oración hipotética.' },
   ),
 
   // [A] Tradução direta — voz passiva em audição
@@ -407,6 +443,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     'Oi, só para avisar que a reunião de segunda foi transferida para quinta-feira, no mesmo horário. Por favor, atualize sua agenda.',
     'O falante diz "a reunião foi transferida para quinta-feira".',
     'Voz Passiva (Audição)',
+    { en: 'The speaker says "a reunião foi transferida para quinta-feira" (the meeting was moved to Thursday).', es: 'El hablante dice "a reunião foi transferida para quinta-feira" (la reunión fue trasladada al jueves).' },
   ),
 
   // [A] Tradução direta — compreensão crítica (leitura)
@@ -417,6 +454,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     'O texto associa o uso excessivo à ansiedade e redução da atenção.',
     'Compreensão de Leitura — Análise Crítica',
+    { en: 'The text associates excessive use with anxiety and reduced attention span.', es: 'El texto asocia el uso excesivo con la ansiedad y la reducción de la atención.' },
   ),
 
   // [B] Adaptação — vocabulário avançado (meticuloso existe em PT)
@@ -427,6 +465,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Meticuloso" significa muito cuidadoso e preciso.',
     'Vocabulário Avançado',
+    { en: '"Meticuloso" (meticulous) means very careful and precise.', es: '"Meticuloso" (meticuloso) significa muy cuidadoso y preciso.' },
   ),
 
   // [C] Substituição — "Not only..." inversion → "embora" + subjuntivo para orações concessivas (B2 em PT)
@@ -437,6 +476,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Embora" exige subjuntivo presente. "Embora ele seja" = estrutura concessiva hipotética.',
     'Subjuntivo — Orações Concessivas com Embora',
+    { en: '"Embora" requires the present subjunctive. "Embora ele seja" = hypothetical concessive structure.', es: '"Embora" exige subjuntivo presente. "Embora ele seja" = estructura concesiva hipotética.' },
   ),
 
   // [C] Substituição — "used to" → imperfeito para hábitos passados (B2 em PT)
@@ -447,6 +487,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Brincávamos" (imperfeito) expressa hábito passado. "Brincamos" indicaria ação pontual e concluída.',
     'Imperfeito — Hábitos Passados',
+    { en: '"Brincávamos" (imperfect) expresses a past habit. "Brincamos" would indicate a one-time completed action.', es: '"Brincávamos" (imperfecto) expresa un hábito pasado. "Brincamos" indicaría una acción puntual y concluida.' },
   ),
 
   // [B] Adaptação — sinônimo de "ambíguo" (palavra existe em PT)
@@ -457,6 +498,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Ambíguo" significa ter mais de um significado possível.',
     'Sinônimos — Avançado',
+    { en: '"Ambíguo" (ambiguous) means having more than one possible meaning.', es: '"Ambíguo" (ambiguo) significa tener más de un significado posible.' },
   ),
 
   // ══════════════════════════════════════════════════════════════════════
@@ -473,6 +515,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Tivesse estudado" (mais-que-perfeito do subjuntivo) expressa arrependimento sobre ação passada.',
     'Mais-que-perfeito do Subjuntivo — Arrependimento',
+    { en: '"Tivesse estudado" (pluperfect subjunctive) expresses regret about a past action.', es: '"Tivesse estudado" (pluscuamperfecto del subjuntivo) expresa arrepentimiento sobre una acción pasada.' },
   ),
 
   // [B] Adaptação — "should have" → "deveria ter" para crítica/arrependimento sobre o passado (C1)
@@ -483,6 +526,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Deveria ter ligado" expressa crítica ou arrependimento sobre ação passada não realizada.',
     'Condicional Composto — Dever',
+    { en: '"Deveria ter ligado" expresses criticism or regret about a past action that was not carried out.', es: '"Deveria ter ligado" expresa crítica o arrepentimiento sobre una acción pasada que no se realizó.' },
   ),
 
   // [C] Substituição — inversion in 3rd conditional → "para que + subjuntivo" para orações finais com sujeitos diferentes (C1)
@@ -493,6 +537,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Para que" + subjuntivo expresa finalidade com sujeitos diferentes. "Para" + infinitivo só funciona com o mesmo sujeito.',
     'Orações Finais — Para Que + Subjuntivo',
+    { en: '"Para que" + subjunctive expresses purpose with different subjects. "Para" + infinitive only works with the same subject.', es: '"Para que" + subjuntivo expresa finalidad con sujetos diferentes. "Para" + infinitivo solo funciona con el mismo sujeto.' },
   ),
 
   // [A] Tradução direta — marcadores discursivos (causa → consequência)
@@ -503,6 +548,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Consequentemente" indica resultado direto. "Apesar disso" e "No entanto" expressam contraste; "Embora" exige oração subordinada.',
     'Marcadores Discursivos — Causa e Efeito',
+    { en: '"Consequentemente" (consequently) indicates a direct result. "Apesar disso" and "No entanto" express contrast; "Embora" requires a subordinate clause.', es: '"Consequentemente" (consecuentemente) indica un resultado directo. "Apesar disso" y "No entanto" expresan contraste; "Embora" requiere una oración subordinada.' },
   ),
 
   // [A] Tradução direta — compreensão auditiva extendida
@@ -518,6 +564,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     'Embora a tecnologia possa certamente melhorar o aprendizado, é importante que os alunos desenvolvam habilidades críticas para avaliar a informação digital, em vez de aceitar tudo o que leem online. Usada com sabedoria, é uma ferramenta poderosa.',
     'O falante defende o uso crítico da tecnologia, não a rejeição total.',
     'Compreensão Auditiva Extendida',
+    { en: 'The speaker advocates for the critical use of technology, not total rejection.', es: 'El hablante defiende el uso crítico de la tecnología, no el rechazo total.' },
   ),
 
   // [A] Tradução direta — texto científico/acadêmico (leitura)
@@ -528,6 +575,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     'O teorema "refuta" a especulação — o entrelaçamento não pode ser usado para comunicação superluminal.',
     'Compreensão de Leitura — Texto Acadêmico/Científico',
+    { en: 'The theorem "refutes" the speculation — entanglement cannot be used for superluminal communication.', es: 'El teorema "refuta" la especulación — el entrelazamiento no puede usarse para comunicación superluminal.' },
   ),
 
   // [B] Adaptação — sinônimo de "elucidar" (palavra existe em PT)
@@ -538,6 +586,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Elucidar" significa tornar algo claro e compreensível.',
     'Vocabulário Avançado — Sinônimos',
+    { en: '"Elucidar" (to elucidate) means to make something clear and understandable.', es: '"Elucidar" (elucidar) significa hacer algo claro y comprensible.' },
   ),
 
   // [B] Adaptação — vocabulário em contexto avançado ("encobrimento")
@@ -548,6 +597,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Encobrimento" (ocultar informação) é o que prejudicaria a confiança pública.',
     'Vocabulário em Contexto — Avançado',
+    { en: '"Encobrimento" (cover-up — hiding information) is what would damage public trust.', es: '"Encobrimento" (encubrimiento — ocultar información) es lo que perjudicaría la confianza pública.' },
   ),
 
   // [A] Tradução direta — prosa acadêmica/pós-moderna (leitura C2)
@@ -563,6 +613,7 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Ofuscação", "permanecem irresolutas" e "não obstante" indicam que a complexidade persiste apesar dos esforços teóricos.',
     'Compreensão de Leitura — Prosa Acadêmica/Pós-Moderna',
+    { en: '"Ofuscação" (obfuscation), "permanecem irresolutas" (remain unresolved), and "não obstante" (notwithstanding) indicate that complexity persists despite theoretical efforts.', es: '"Ofuscação" (ofuscación), "permanecem irresolutas" (permanecen sin resolver) y "não obstante" (no obstante) indican que la complejidad persiste a pesar de los esfuerzos teóricos.' },
   ),
 
   // [B] Adaptação — vocabulário de registro elevado ("ofuscatório")
@@ -573,5 +624,6 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
     undefined,
     '"Ofuscatório" significa feito para tornar algo difícil de compreender.',
     'Vocabulário Avançado — Registro',
+    { en: '"Ofuscatório" (obfuscatory) means made to make something difficult to understand.', es: '"Ofuscatório" (ofuscatorio) significa hecho para hacer algo difícil de comprender.' },
   ),
 ];

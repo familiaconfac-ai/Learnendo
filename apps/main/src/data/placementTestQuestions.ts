@@ -27,6 +27,8 @@ export interface PlacementQuestion {
   explanation?: string;
   /** Grammar or vocabulary topic tested (e.g. "Present Perfect", "Modal Verbs"). Used in PDF/report. */
   grammarTopic?: string;
+  /** Faithful translations of the explanation into other languages. Used in localized PDF reports. */
+  explanationTranslations?: { en: string; es: string };
 }
 
 // â”€â”€â”€ HELPER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

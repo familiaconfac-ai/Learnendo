@@ -40,6 +40,7 @@ const PLACEMENT_UI = {
     createAccount: '📧 Create Account',
     startLearning: 'Start Learning',
     idontknow: "I don't know",
+    partLabel: (n: number) => `Part ${n}`,
     whatsappMessage: (name: string, wa: string, correct: number, total: number, pct: number, level: string, range: string, entry: string) =>
       `Hello! I have just completed the English Placement Test.\n\nName: ${name}\nWhatsApp: ${wa}\nScore: ${correct}/${total} (${pct}%)\nEstimated Level: ${level} — ${range}\nRecommended Starting Point: ${entry}\n\nI completed the placement test and would like to receive my detailed PDF report with my answers, mistakes, and level analysis.`,
     cefrDescription: (level: string) => CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.description ?? '',
@@ -79,6 +80,7 @@ const PLACEMENT_UI = {
     createAccount: '📧 Criar Conta',
     startLearning: 'Começar a Aprender',
     idontknow: 'Não sei.',
+    partLabel: (n: number) => `Parte ${n}`,
     whatsappMessage: (name: string, wa: string, correct: number, total: number, pct: number, level: string, range: string, entry: string) =>
       `Olá! Acabei de completar o Teste de Nivelamento de Inglês.\n\nNome: ${name}\nWhatsApp: ${wa}\nPontuação: ${correct}/${total} (${pct}%)\nNível Estimado: ${level} — ${range}\nPonto de Partida Recomendado: ${entry}\n\nConcluí o teste e gostaria de receber meu relatório PDF detalhado com minhas respostas, erros e análise de nível.`,
     cefrDescription: (level: string) => ({
@@ -134,6 +136,7 @@ const PLACEMENT_UI = {
     createAccount: '📧 Crear Cuenta',
     startLearning: 'Empezar a Aprender',
     idontknow: 'No sé.',
+    partLabel: (n: number) => `Parte ${n}`,
     whatsappMessage: (name: string, wa: string, correct: number, total: number, pct: number, level: string, range: string, entry: string) =>
       `¡Hola! Acabo de completar la Prueba de Nivel de Inglés.\n\nNombre: ${name}\nWhatsApp: ${wa}\nPuntuación: ${correct}/${total} (${pct}%)\nNivel Estimado: ${level} — ${range}\nPunto de Partida Recomendado: ${entry}\n\nCompletó la prueba y me gustaría recibir mi informe PDF detallado con mis respuestas, errores y análisis de nivel.`,
     cefrDescription: (level: string) => ({
@@ -463,7 +466,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
           {/* Part Badge */}
           <div className="inline-block mb-4">
             <span className="text-xs font-bold text-white bg-blue-500 px-3 py-1 rounded-full">
-              Part {currentQuestion.part} - {ui.skillType[currentQuestion.type as keyof typeof ui.skillType] ?? currentQuestion.type}
+              {ui.partLabel(currentQuestion.part)} - {ui.skillType[currentQuestion.type as keyof typeof ui.skillType] ?? currentQuestion.type}
             </span>
           </div>
 

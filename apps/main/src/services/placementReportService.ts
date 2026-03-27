@@ -15,6 +15,7 @@ import jsPDF from 'jspdf';
 import { TeacherStudentRow } from '../engine/teacherService';
 import { PlacementAnswerItem } from '../types';
 import { CEFR_LEVELS } from '../data/placementTestQuestions';
+import { PLACEMENT_TEST_QUESTIONS_PT } from '../data/placementTestQuestions_pt';
 
 // ─────────────────────────────────────────────────────────────
 // Layout constants
@@ -25,6 +26,9 @@ const PAGE_H   = 297;
 const MARGIN   = 16;
 const COL_W    = PAGE_W - MARGIN * 2;
 const HALF_W   = COL_W / 2;
+
+// Fast lookup for PT question translations (by question ID)
+const ptQuestionMap = new Map(PLACEMENT_TEST_QUESTIONS_PT.map(q => [q.id, q]));
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -82,17 +86,17 @@ function progressBar(doc: jsPDF, label: string, pct: number, x: number, y: numbe
 }
 
 /** Ensure y does not overflow the page; adds a new page if needed. Returns new y. */
-function checkPage(doc: jsPDF, y: number, needed = 20): number {
+function checkPage(doc: jsPDF, y: number, footerLabel: string, pageLabel: string, needed = 20): number {
   if (y + needed > PAGE_H - 16) {
     doc.addPage();
     // Footer on each page
-    addFooter(doc);
+    addFooter(doc, footerLabel, pageLabel);
     return MARGIN + 8;
   }
   return y;
 }
 
-function addFooter(doc: jsPDF): void {
+function addFooter(doc: jsPDF, reportLabel: string, pageLabel: string): void {
   const footerY = 291;
   doc.setDrawColor('#e2e8f0');
   doc.setLineWidth(0.3);
@@ -100,8 +104,8 @@ function addFooter(doc: jsPDF): void {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
   doc.setTextColor('#94a3b8');
-  doc.text('Learnendo  ·  Placement Test Report  ·  Confidential', MARGIN, footerY + 2);
-  doc.text(`Page ${doc.getNumberOfPages()}`, PAGE_W - MARGIN - 14, footerY + 2);
+  doc.text(reportLabel, MARGIN, footerY + 2);
+  doc.text(`${pageLabel} ${doc.getNumberOfPages()}`, PAGE_W - MARGIN - 14, footerY + 2);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -140,17 +144,69 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
-  const name      = pt.fullName || student.displayName || 'Student';
+  const isPT = (pt.languageCode ?? 'en') === 'pt';
+  const locale = isPT ? 'pt-BR' : 'en-GB';
+
+  // ── Localised string table ────────────────────────────────
+  const L = isPT ? {
+    footerLabel:    'Learnendo  ·  Relatório de Teste de Nivelamento  ·  Confidencial',
+    pageLabel:      'Página',
+    headerTitle:    'Teste de Nivelamento  ·  Relatório Detalhado',
+    generatedOn:    (d: string) => `Gerado em ${d}  ·  Learnendo`,
+    s1:             '1. Informações do Aluno e do Teste',
+    lblStudent:     'Aluno',
+    lblTestDate:    'Data do Teste',
+    lblWhatsApp:    'WhatsApp',
+    lblLanguage:    'Idioma',
+    s2:             '2. Resumo dos Resultados',
+    correctBox:     (c: number, t: number) => `${c} / ${t} correto(s)`,
+    entryBox:       'Ponto de Partida Recomendado',
+    labelOverall:   'Pontuação geral',
+    s3:             '3. Desempenho por Habilidade',
+    skillLabels:    { listening: 'Escuta', 'multiple-choice': 'Gramática', reading: 'Compreensão de Leitura', vocabulary: 'Vocabulário' } as Record<string, string>,
+    s4:             (wrong: number, tot: number) => `4. Questões Respondidas Incorretamente  (${wrong} de ${tot})`,
+    perfect:        'Pontuação perfeita — nenhuma resposta incorreta!',
+    yourAnswer:     'Sua resposta:',
+    correctAnswer:  'Resposta correta:',
+    noAnswer:       'Sem resposta',
+    s5:             '5. Registro Completo das Questões',
+    tableHeaders:   ['#', 'Questão', 'Resposta do Aluno', 'Resposta Correta', 'Resultado'],
+  } : {
+    footerLabel:    'Learnendo  ·  Placement Test Report  ·  Confidential',
+    pageLabel:      'Page',
+    headerTitle:    'Placement Test  ·  Detailed Report',
+    generatedOn:    (d: string) => `Generated on ${d}  ·  Learnendo`,
+    s1:             '1. Student & Test Information',
+    lblStudent:     'Student',
+    lblTestDate:    'Test Date',
+    lblWhatsApp:    'WhatsApp',
+    lblLanguage:    'Language',
+    s2:             '2. Result Summary',
+    correctBox:     (c: number, t: number) => `${c} / ${t} correct`,
+    entryBox:       'Recommended Entry Point',
+    labelOverall:   'Overall score',
+    s3:             '3. Skill Breakdown',
+    skillLabels:    { listening: 'Listening', 'multiple-choice': 'Grammar', reading: 'Reading Comprehension', vocabulary: 'Vocabulary' } as Record<string, string>,
+    s4:             (wrong: number, tot: number) => `4. Questions Answered Incorrectly  (${wrong} of ${tot})`,
+    perfect:        'Perfect score — no incorrect answers!',
+    yourAnswer:     'Your answer:',
+    correctAnswer:  'Correct answer:',
+    noAnswer:       'No answer',
+    s5:             '5. Full Question Log',
+    tableHeaders:   ['#', 'Question (prompt)', 'Student Answer', 'Correct Answer', 'Result'],
+  };
+
+  const name      = pt.fullName || student.displayName || (isPT ? 'Aluno' : 'Student');
   const level     = pt.level ?? '—';
   const score     = pt.score ?? 0;
   const correct   = pt.correctAnswers ?? 0;
   const total     = pt.totalQuestions ?? 50;
-  const today     = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+  const today     = new Date().toLocaleDateString(locale, { day: '2-digit', month: 'long', year: 'numeric' });
   const testDate  = pt.date
     ? (() => {
         try {
           const d = new Date(pt.date);
-          return isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+          return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(locale, { day: '2-digit', month: 'long', year: 'numeric' });
         } catch { return '—'; }
       })()
     : '—';
@@ -170,29 +226,29 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(17);
   doc.setTextColor('#ffffff');
-  doc.text('Placement Test  ·  Detailed Report', MARGIN, 15);
+  doc.text(L.headerTitle, MARGIN, 15);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.setTextColor('#bfdbfe');
-  doc.text(`Generated on ${today}  ·  Learnendo`, MARGIN, 24);
+  doc.text(L.generatedOn(today), MARGIN, 24);
   doc.setFontSize(10.5);
   doc.setTextColor('#ffffff');
   doc.text(name, MARGIN, 35);
   y = 50;
 
-  addFooter(doc);
+  addFooter(doc, L.footerLabel, L.pageLabel);
 
   // ── 1. STUDENT & TEST INFO ────────────────────────────────
-  y = sectionHead(doc, '1. Student & Test Information', y);
-  labelValue(doc, 'Student',    name,               MARGIN,   y);
-  labelValue(doc, 'Test Date',  testDate,            col2x(), y);
+  y = sectionHead(doc, L.s1, y);
+  labelValue(doc, L.lblStudent,   name,               MARGIN,   y);
+  labelValue(doc, L.lblTestDate,  testDate,            col2x(), y);
   y += 8;
-  labelValue(doc, 'WhatsApp',   pt.whatsapp ?? '—', MARGIN,   y);
-  labelValue(doc, 'Language',   pt.languageCode?.toUpperCase() ?? 'EN', col2x(), y);
+  labelValue(doc, L.lblWhatsApp,  pt.whatsapp ?? '—', MARGIN,   y);
+  labelValue(doc, L.lblLanguage,  pt.languageCode?.toUpperCase() ?? 'EN', col2x(), y);
   y += 12;
 
   // ── 2. RESULT SUMMARY ────────────────────────────────────
-  y = sectionHead(doc, '2. Result Summary', y);
+  y = sectionHead(doc, L.s2, y);
 
   // Level badge
   roundRect(doc, MARGIN, y - 2, 45, 20, 3, '#1e40af');
@@ -212,55 +268,49 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
   doc.text(`${score}%`, MARGIN + 54, y + 10);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
-  doc.text(`${correct} / ${total} correct`, MARGIN + 54, y + 17);
+  doc.text(L.correctBox(correct, total), MARGIN + 54, y + 17);
 
   // Entry point box
   roundRect(doc, MARGIN + 100, y - 2, COL_W - 100, 20, 3, '#92400e');
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8);
   doc.setTextColor('#ffffff');
-  doc.text('Recommended Entry Point', MARGIN + 104, y + 6);
+  doc.text(L.entryBox, MARGIN + 104, y + 6);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
   doc.text(entryPoint, MARGIN + 104, y + 14);
 
   y += 26;
-  progressBar(doc, 'Overall score', score, MARGIN, y, COL_W - 20);
+  progressBar(doc, L.labelOverall, score, MARGIN, y, COL_W - 20);
   y += 14;
 
   // ── 3. SKILL BREAKDOWN ───────────────────────────────────
-  y = checkPage(doc, y, 40);
-  y = sectionHead(doc, '3. Skill Breakdown', y);
+  y = checkPage(doc, y, L.footerLabel, L.pageLabel, 40);
+  y = sectionHead(doc, L.s3, y);
 
   const skillOrder = ['listening', 'multiple-choice', 'reading', 'vocabulary'];
-  const skillLabels: Record<string, string> = {
-    'listening':       'Listening',
-    'multiple-choice': 'Grammar',
-    'reading':         'Reading Comprehension',
-    'vocabulary':      'Vocabulary',
-  };
 
   for (const skill of skillOrder) {
     const stat = skillStats[skill];
     if (!stat) continue;
     const pct = Math.round((stat.correct / stat.total) * 100);
-    const label = skillLabels[skill] ?? skill;
+    const label = L.skillLabels[skill] ?? skill;
     const detail = `${stat.correct}/${stat.total}`;
-    y = checkPage(doc, y, 12);
+    y = checkPage(doc, y, L.footerLabel, L.pageLabel, 12);
     progressBar(doc, `${label} (${detail})`, pct, MARGIN, y, COL_W - 50);
     y += 11;
   }
   y += 4;
 
   // ── 4. TOP ERRORS (wrong answers) ────────────────────────
-  y = checkPage(doc, y, 20);
-  y = sectionHead(doc, `4. Questions Answered Incorrectly  (${wrongItems.length} of ${total})`, y);
+  y = checkPage(doc, y, L.footerLabel, L.pageLabel, 20);
+  y = sectionHead(doc, L.s4(wrongItems.length, total), y);
 
   if (wrongItems.length === 0) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor('#16a34a');
-    doc.text('Perfect score — no incorrect answers!', MARGIN, y);
+    doc.text(L.perfect, MARGIN, y);
     y += 12;
   } else {
     for (let i = 0; i < wrongItems.length; i++) {
@@ -270,9 +320,11 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
       const promptLen = item.prompt.length;
       const promptLines = Math.ceil(promptLen / 90) + 1;
       const explanationLines = item.explanation ? Math.ceil(item.explanation.length / 90) + 1 : 0;
-      const blockH = 8 + promptLines * 5 + 14 + (item.grammarTopic ? 6 : 0) + explanationLines * 5 + 6;
+      // PT explanations render in 3 languages — allocate ~3.5× the single-language height
+      const explanationBlockH = explanationLines * 5 * (isPT ? 3.5 : 1) + (isPT && item.explanation ? 18 : 0);
+      const blockH = 8 + promptLines * 5 + 14 + (item.grammarTopic ? 6 : 0) + explanationBlockH + 6;
 
-      y = checkPage(doc, y, blockH);
+      y = checkPage(doc, y, L.footerLabel, L.pageLabel, blockH);
 
       // Question number + topic badge
       roundRect(doc, MARGIN, y - 3, COL_W, blockH, 3, '#fff7ed');
@@ -308,9 +360,9 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor('#b91c1c');
-      doc.text('Your answer:', MARGIN + 6, y + 2);
+      doc.text(L.yourAnswer, MARGIN + 6, y + 2);
       doc.setFont('helvetica', 'normal');
-      const wrongAns = item.studentAnswer ?? 'No answer';
+      const wrongAns = item.studentAnswer ?? L.noAnswer;
       const wrongWrapped = doc.splitTextToSize(wrongAns, (COL_W - 10) / 2 - 8);
       doc.text(wrongWrapped, MARGIN + 6, y + 6);
 
@@ -320,7 +372,7 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor('#15803d');
-      doc.text('Correct answer:', cx + 3, y + 2);
+      doc.text(L.correctAnswer, cx + 3, y + 2);
       doc.setFont('helvetica', 'normal');
       const correctWrapped = doc.splitTextToSize(item.correctAnswer, (COL_W - 10) / 2 - 10);
       doc.text(correctWrapped, cx + 3, y + 6);
@@ -329,12 +381,60 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
 
       // Explanation
       if (item.explanation) {
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(7.5);
-        doc.setTextColor('#475569');
-        const explWrapped = doc.splitTextToSize(`Note: ${item.explanation}`, COL_W - 10);
-        doc.text(explWrapped, MARGIN + 3, y);
-        y += explWrapped.length * 4 + 2;
+        if (isPT) {
+          // ── Trilingual explanation block ──────────────────
+          const ptTranslations = ptQuestionMap.get(item.questionId)?.explanationTranslations;
+
+          // Nota (Português):
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(7.5);
+          doc.setTextColor('#1e40af');
+          doc.text('Nota (Português):', MARGIN + 3, y);
+          y += 4;
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(7.5);
+          doc.setTextColor('#475569');
+          const ptWrapped = doc.splitTextToSize(item.explanation, COL_W - 10);
+          doc.text(ptWrapped, MARGIN + 3, y);
+          y += ptWrapped.length * 4 + 3;
+
+          if (ptTranslations) {
+            y = checkPage(doc, y, L.footerLabel, L.pageLabel, 14);
+            // English:
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor('#166534');
+            doc.text('English:', MARGIN + 3, y);
+            y += 4;
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(7.5);
+            doc.setTextColor('#475569');
+            const enWrapped = doc.splitTextToSize(ptTranslations.en, COL_W - 10);
+            doc.text(enWrapped, MARGIN + 3, y);
+            y += enWrapped.length * 4 + 3;
+
+            y = checkPage(doc, y, L.footerLabel, L.pageLabel, 14);
+            // Español:
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(7.5);
+            doc.setTextColor('#7c3aed');
+            doc.text('Español:', MARGIN + 3, y);
+            y += 4;
+            doc.setFont('helvetica', 'italic');
+            doc.setFontSize(7.5);
+            doc.setTextColor('#475569');
+            const esWrapped = doc.splitTextToSize(ptTranslations.es, COL_W - 10);
+            doc.text(esWrapped, MARGIN + 3, y);
+            y += esWrapped.length * 4 + 2;
+          }
+        } else {
+          doc.setFont('helvetica', 'italic');
+          doc.setFontSize(7.5);
+          doc.setTextColor('#475569');
+          const explWrapped = doc.splitTextToSize(`Note: ${item.explanation}`, COL_W - 10);
+          doc.text(explWrapped, MARGIN + 3, y);
+          y += explWrapped.length * 4 + 2;
+        }
       }
 
       y += 6;
@@ -343,14 +443,14 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
 
   // ── 5. SUMMARY TABLE (all questions) ─────────────────────
   if (breakdown.length > 0) {
-    y = checkPage(doc, y, 30);
-    y = sectionHead(doc, '5. Full Question Log', y);
+    y = checkPage(doc, y, L.footerLabel, L.pageLabel, 30);
+    y = sectionHead(doc, L.s5, y);
 
     // Table header
     const colWidths = [10, 88, 30, 30, 16];
     const colX = [MARGIN, MARGIN + 10, MARGIN + 98, MARGIN + 128, MARGIN + 158];
     roundRect(doc, MARGIN, y - 3, COL_W, 8, 1, '#1e40af');
-    const headers = ['#', 'Question (prompt)', 'Student Answer', 'Correct Answer', 'Result'];
+    const headers = L.tableHeaders;
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7);
     doc.setTextColor('#ffffff');
@@ -361,7 +461,7 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
 
     for (let i = 0; i < breakdown.length; i++) {
       const item = breakdown[i];
-      y = checkPage(doc, y, 8);
+      y = checkPage(doc, y, L.footerLabel, L.pageLabel, 8);
 
       const rowH = 7;
       roundRect(doc, MARGIN, y - 3, COL_W, rowH, 0, i % 2 === 0 ? '#f8fafc' : '#ffffff');
