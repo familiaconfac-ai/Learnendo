@@ -15,8 +15,8 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
     <div className="bottom-navigation fixed bottom-0 left-0 right-0 z-40 bg-slate-900 border-t border-slate-700 flex justify-around items-center py-2 px-1 overflow-x-hidden max-w-full">
       {/* Workbooks */}
       <button
-        onClick={() => onNavigate('WORKBOOK')}
-        className={`flex flex-col items-center gap-0.5 px-1.5 sm:px-2 text-xs flex-shrink-0 ${currentSection === 'WORKBOOK' ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400 transition-colors'}`}
+        onClick={() => onNavigate('WORKBOOK_LIST')}
+        className={`flex flex-col items-center gap-0.5 px-1.5 sm:px-2 text-xs flex-shrink-0 ${currentSection === 'WORKBOOK_LIST' || currentSection === 'WORKBOOK' ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400 transition-colors'}`}
         title="Workbooks"
       >
         <span className="text-lg">📚</span>
