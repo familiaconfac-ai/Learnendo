@@ -264,11 +264,11 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
   q('pt_a2_20', 2, 'A2', 'multiple-choice',
     '"Eles ___ assistindo TV agora."',
     ['estão', 'são', 'está', 'eram'],
-    1,
+    0,
     undefined,
-    '"Eles estão" + gerúndio (-ndo) para ação em progresso.',
+    'Em português, usamos "estar + gerúndio" para indicar ação em andamento: "Eles estão assistindo TV agora." "São" está incorreto nesta frase porque o verbo "ser" não forma a construção progressiva.',
     'Presente Contínuo — Gerúndio',
-    { en: '"Eles estão" + gerund (-ndo) for an action in progress.', es: '"Eles estão" + gerundio (-ndo) para una acción en progreso.' },
+    { en: 'In Portuguese, we use "estar + gerúndio" to indicate an action in progress: "Eles estão assistindo TV agora." "São" is incorrect here because "ser" does not form this progressive construction.', es: 'En portugués, usamos "estar + gerúndio" para indicar una acción en progreso: "Eles estão assistindo TV agora." "São" es incorrecto aquí porque el verbo "ser" no forma esta construcción progresiva.' },
   ),
 
   // ══════════════════════════════════════════════════════════════════════
@@ -394,12 +394,12 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
   // [C] Substituição — present perfect + duration → "há" para duração contínua (B2 em PT)
   q('pt_b2_31', 4, 'B2', 'multiple-choice',
     '"Ela trabalha aqui ___ dez anos."',
-    ['há', 'faz', 'desde', 'por'],
+    ['há', 'faz', 'a', 'à'],
     0,
     undefined,
-    '"Há + tempo" indica duração de ação que continua no presente.',
+    '"Há + tempo" indica duração de ação que continua no presente: "há dez anos". "Faz" é usado na estrutura "faz ... que" ("faz dez anos que ela trabalha aqui"). "A" e "à" não se usam para expressar duração de tempo.',
     'Preposição Há — Duração',
-    { en: '"Há + time" indicates the duration of an action that continues in the present.', es: '"Há + tiempo" indica la duración de una acción que continúa en el presente.' },
+    { en: '"Há + time" indicates the duration of an ongoing action: "há dez anos" (for ten years). "Faz" is used in the "faz ... que" structure. "A" and "à" are not used for duration.', es: '"Há + tiempo" indica la duración de una acción en curso: "há dez anos" (hace diez años). "Faz" se usa en la estructura "faz ... que". "A" y "à" no se usan para expresar duración.' },
   ),
 
   // [C] Substituição — present perfect continuous → "faz ... que" para duração em progresso (B2 em PT)
@@ -482,12 +482,12 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
   // [C] Substituição — "used to" → imperfeito para hábitos passados (B2 em PT)
   q('pt_b2_39', 4, 'B2', 'multiple-choice',
     'Qual frase usa corretamente o imperfeito para hábitos passados?',
-    ['Quando éramos crianças, brincávamos na rua todo dia.', 'Quando éramos crianças, brincamos na rua todo dia.', 'Quando erámos crianças, brincávamos na rua.', 'Quando seríamos crianças, brincávamos na rua.'],
+    ['Quando éramos crianças, brincávamos na rua todo dia.', 'Quando éramos crianças, brincamos na rua todo dia.', 'Quando fomos crianças, brincávamos na rua todo dia.', 'Quando seríamos crianças, brincaríamos na rua todo dia.'],
     0,
     undefined,
-    '"Brincávamos" (imperfeito) expressa hábito passado. "Brincamos" indicaria ação pontual e concluída.',
+    '"Éramos" + "brincávamos" (ambos no imperfeito) expressam corretamente hábito passado contínuo. "Brincamos" (pretérito perfeito) indicaria ação pontual e concluída. "Fomos" (pretérito perfeito de ser/ir) não é a forma correta para o contexto habitual. "Seríamos/brincaríamos" (condicional) é incorreto para fatos passados.',
     'Imperfeito — Hábitos Passados',
-    { en: '"Brincávamos" (imperfect) expresses a past habit. "Brincamos" would indicate a one-time completed action.', es: '"Brincávamos" (imperfecto) expresa un hábito pasado. "Brincamos" indicaría una acción puntual y concluida.' },
+    { en: '"Éramos" + "brincávamos" (both imperfect) correctly express a continuous past habit. "Brincamos" (preterite) would indicate a one-time completed action. "Fomos" (preterite of ser/ir) is wrong for a habitual context. "Seríamos/brincaríamos" (conditional) is incorrect for past facts.', es: '"Éramos" + "brincávamos" (ambos en imperfecto) expresan correctamente un hábito pasado continuo. "Brincamos" (pretérito) indicaría una acción puntual y concluida. "Fomos" (pretérito de ser/ir) es incorrecto para un contexto habitual. "Seríamos/brincaríamos" (condicional) es incorrecto para hechos pasados.' },
   ),
 
   // [B] Adaptação — sinônimo de "ambíguo" (palavra existe em PT)
@@ -509,13 +509,13 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
 
   // [B] Adaptação — "if only + past perfect" → mais-que-perfeito do subjuntivo (arrependimento) (C1)
   q('pt_c1_41', 5, 'C1', 'multiple-choice',
-    '"Se eu ___ mais para a prova. Me arrependo agora."',
-    ['estudar', 'estudei', 'tivesse estudado', 'estivesse estudando'],
-    2,
+    '"Se eu ___ mais para a prova, não me arrependeria agora."',
+    ['tivesse estudado', 'estudei', 'estudar', 'estivesse estudando'],
+    0,
     undefined,
-    '"Tivesse estudado" (mais-que-perfeito do subjuntivo) expressa arrependimento sobre ação passada.',
+    '"Se eu tivesse estudado" + condicional ("não me arrependeria") forma a 3ª condicional em português — usada para exprimir arrependimento sobre o passado. "Estudei" (pretérito) não forma um período condicional. "Estudar" (infinitivo) não cabe aqui. "Estivesse estudando" não combina com o condicional perfeito da oração principal.',
     'Mais-que-perfeito do Subjuntivo — Arrependimento',
-    { en: '"Tivesse estudado" (pluperfect subjunctive) expresses regret about a past action.', es: '"Tivesse estudado" (pluscuamperfecto del subjuntivo) expresa arrepentimiento sobre una acción pasada.' },
+    { en: '"Se eu tivesse estudado" + conditional ("não me arrependeria") forms the 3rd conditional in Portuguese — used to express regret about the past. "Estudei" (preterite) does not form a conditional sentence. "Estudar" (infinitive) does not fit here. "Estivesse estudando" does not match the perfect conditional in the main clause.', es: '"Se eu tivesse estudado" + condicional ("não me arrependeria") forma la 3ª condicional en portugués — usada para expresar arrepentimiento sobre el pasado. "Estudei" (pretérito) no forma una oración condicional. "Estudar" (infinitivo) no encaja aquí. "Estivesse estudando" no coincide con el condicional perfecto de la oración principal.' },
   ),
 
   // [B] Adaptação — "should have" → "deveria ter" para crítica/arrependimento sobre o passado (C1)
@@ -592,12 +592,12 @@ export const PLACEMENT_TEST_QUESTIONS_PT: PlacementQuestion[] = [
   // [B] Adaptação — vocabulário em contexto avançado ("encobrimento")
   q('pt_c1_48', 5, 'C1', 'vocabulary',
     '"O ___ do escândalo pela empresa prejudicou irreparavelmente a confiança pública."',
-    ['documentação', 'descoberta', 'encobrimento', 'análise'],
+    ['levantamento', 'relato', 'encobrimento', 'relatório'],
     2,
     undefined,
-    '"Encobrimento" (ocultar informação) é o que prejudicaria a confiança pública.',
+    '"Encobrimento" significa ocultar deliberadamente informações comprometedoras — o único ato que destruiria a confiança pública. "Levantamento" é uma pesquisa ou levantamento de dados. "Relato" é um relato ou descrição. "Relatório" é um documento formal de resultados.',
     'Vocabulário em Contexto — Avançado',
-    { en: '"Encobrimento" (cover-up — hiding information) is what would damage public trust.', es: '"Encobrimento" (encubrimiento — ocultar información) es lo que perjudicaría la confianza pública.' },
+    { en: '"Encobrimento" (cover-up) means deliberately hiding compromising information — the only act that would destroy public trust. "Levantamento" is a survey or data gathering. "Relato" is an account or description. "Relatório" is a formal results document.', es: '"Encobrimento" (encubrimiento) significa ocultar deliberadamente información comprometedora — el único acto que destruiría la confianza pública. "Levantamento" es una encuesta o recopilación de datos. "Relato" es un relato o descripción. "Relatório" es un documento formal de resultados.' },
   ),
 
   // [A] Tradução direta — prosa acadêmica/pós-moderna (leitura C2)
