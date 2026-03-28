@@ -111,7 +111,6 @@ export interface LiveClass {
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
   meetingLink: string;
-  materialLink?: string;
   whatsappLink?: string;
   description?: string;
   status: LiveClassStatus;
@@ -126,10 +125,8 @@ export interface LiveClassInput {
   date: string;
   time: string;
   meetingLink: string;
-  materialLink?: string;
   whatsappLink?: string;
   description?: string;
-  status: LiveClassStatus;
 }
 
 export interface LiveClassMessage {

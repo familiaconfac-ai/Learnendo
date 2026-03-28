@@ -11,7 +11,7 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { getAllUserProgressSummaries, UserProgressSummary } from './courseProgressEngine';
 import { detectAlerts, StudentAlert } from './alertService';
 import { rankStudents, RankedStudent, computeScore } from './rankingService';
-import { formatTime, formatAccuracy, MAX_WORKBOOK, MAX_LESSON, MAX_DAY } from './progressStatsService';
+import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
 
@@ -39,6 +39,7 @@ export interface TeacherStudentRow extends RankedStudent {
   selectedLanguageCode?: string;
   selectedLanguageLabel: string;
   lessonsCompleted: number;
+  lessonsLabel: string;
   placementLabel: string;
 }
 
@@ -60,14 +61,24 @@ function relativeDate(value: any): string {
     const date: Date = typeof value.toDate === 'function' ? value.toDate() : new Date(value);
     if (isNaN(date.getTime())) return '—';
     const days = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
-    if (days === 0)  return 'Today';
-    if (days === 1)  return 'Yesterday';
-    if (days < 30)   return `${days} days ago`;
-    if (days < 365)  return `${Math.floor(days / 30)} mo ago`;
-    return `${Math.floor(days / 365)} yr ago`;
+    if (days <= 0) return '⏱ 0d';
+    if (days < 30) return `⏱ ${days}d`;
+    if (days < 365) return `⏱ ${Math.floor(days / 30)}mo`;
+    return `⏱ ${Math.floor(days / 365)}y`;
   } catch {
     return '—';
   }
+}
+
+function formatProgressLabel(summary: UserProgressSummary, dashboardStatus: TeacherStudentRow['dashboardStatus']): string {
+  if (dashboardStatus === 'Placement Done') return 'PT ✔';
+  if (dashboardStatus === 'Not Started') return 'Ready';
+  if (dashboardStatus === 'Registered') return 'New';
+
+  const workbook = summary.currentWorkbook ?? 1;
+  const lesson = summary.currentLesson ?? 1;
+  const exercise = summary.currentDay ?? 1;
+  return `W${workbook} L${lesson} E${exercise}`;
 }
 
 const COURSE_LABELS: Record<string, string> = {
@@ -150,21 +161,20 @@ function formatPlacementLabel(placement?: PlacementRecord): string {
 }
 
 function pathLabel(summary: UserProgressSummary, dashboardStatus: TeacherStudentRow['dashboardStatus']): string {
-  if (dashboardStatus !== 'Active') {
-    if (dashboardStatus === 'Placement Done') return 'Placement completed';
-    if (dashboardStatus === 'Not Started') return 'Waiting for first lesson';
-    return 'Registered only';
-  }
-  const wb = summary.currentWorkbook ?? 1;
-  const ls = summary.currentLesson   ?? 1;
-  const dy = summary.currentDay      ?? 1;
-  return `Workbook ${wb}/${MAX_WORKBOOK} • Lesson ${ls}/${MAX_LESSON} • Exercise ${dy}/${MAX_DAY}`;
+  return formatProgressLabel(summary, dashboardStatus);
+}
+
+function formatLessonsLabel(student: RankedStudent & UserProgressSummary, lessonsCompleted: number): string {
+  if (lessonsCompleted > 0) return `${lessonsCompleted}L`;
+  if ((student.daysCompleted ?? 0) > 0) return `${student.daysCompleted}E`;
+  return '0E';
 }
 
 function buildTeacherRow(student: RankedStudent & UserProgressSummary, raw?: DashboardSource): TeacherStudentRow {
   const placement = getPlacementRecord(raw);
   const lessonsCompleted = getLessonsCompleted(raw);
   const dashboardStatus = getDashboardStatus(student, placement, lessonsCompleted);
+  const rankedStudent = { ...student, dashboardStatus } as RankedStudent & UserProgressSummary & { dashboardStatus: TeacherStudentRow['dashboardStatus'] };
   const selectedCourseId = student.courseId;
   const selectedLanguageCode = student.languageCode ?? placement?.languageCode;
 
@@ -180,6 +190,7 @@ function buildTeacherRow(student: RankedStudent & UserProgressSummary, raw?: Das
     selectedLanguageCode,
     selectedLanguageLabel: formatLanguageLabel(selectedLanguageCode),
     lessonsCompleted,
+    lessonsLabel: formatLessonsLabel(rankedStudent, lessonsCompleted),
     placementLabel: formatPlacementLabel(placement),
   };
 }

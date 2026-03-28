@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
   onSnapshot,
@@ -15,6 +16,44 @@ import { LiveClass, LiveClassInput, LiveClassMessage } from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 
+function deriveLiveClassStatus(date: string, time: string): LiveClass['status'] {
+  if (!date || !time) return 'upcoming';
+
+  const start = new Date(`${date}T${time}:00`);
+  if (Number.isNaN(start.getTime())) return 'upcoming';
+
+  const end = new Date(start.getTime() + (60 * 60 * 1000));
+  const now = new Date();
+
+  if (now < start) return 'upcoming';
+  if (now <= end) return 'live';
+  return 'finished';
+}
+
+function sortLiveClasses(classes: LiveClass[]): LiveClass[] {
+  return [...classes].sort((a, b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+}
+
+function normalizeExternalLink(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
+function buildLiveClassPayload(input: LiveClassInput) {
+  return {
+    title: input.title.trim(),
+    teacherName: input.teacherName.trim(),
+    date: input.date,
+    time: input.time,
+    meetingLink: normalizeExternalLink(input.meetingLink),
+    whatsappLink: normalizeExternalLink(input.whatsappLink ?? ''),
+    description: input.description?.trim() ?? '',
+    status: deriveLiveClassStatus(input.date, input.time),
+  };
+}
+
 const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   id,
   title: data.title ?? 'Untitled class',
@@ -22,10 +61,9 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   date: data.date ?? '',
   time: data.time ?? '',
   meetingLink: data.meetingLink ?? '',
-  materialLink: data.materialLink ?? '',
   whatsappLink: data.whatsappLink ?? '',
   description: data.description ?? '',
-  status: data.status ?? 'upcoming',
+  status: deriveLiveClassStatus(data.date ?? '', data.time ?? ''),
   createdBy: data.createdBy ?? '',
   createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
   updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
@@ -49,15 +87,22 @@ export function subscribeLiveClasses(
   }
 
   const classesRef = collection(db, LIVE_CLASSES_COLLECTION);
-  const classesQuery = query(classesRef, orderBy('date', 'asc'), orderBy('time', 'asc'));
 
   return onSnapshot(
-    classesQuery,
+    classesRef,
     (snapshot) => {
-      const classes = snapshot.docs.map((d) => mapLiveClass(d.id, d.data() as Record<string, any>));
+      const classes = sortLiveClasses(
+        snapshot.docs.map((d) => mapLiveClass(d.id, d.data() as Record<string, any>)),
+      );
+      console.log('[LiveClassesService] subscribeLiveClasses snapshot', {
+        collection: LIVE_CLASSES_COLLECTION,
+        fetchedCount: snapshot.docs.length,
+        visibleCount: classes.length,
+      });
       onData(classes);
     },
     (error) => {
+      console.warn('[LiveClassesService] subscribeLiveClasses failed', error);
       if (onError) onError(error);
     },
   );
@@ -101,23 +146,47 @@ export async function createLiveClass(createdBy: string, input: LiveClassInput):
   if (!db) throw new Error('Firestore is not initialized');
 
   const payload = {
-    ...input,
+    ...buildLiveClassPayload(input),
     createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 
+  console.log('[LiveClassesService] createLiveClass payload', {
+    collection: LIVE_CLASSES_COLLECTION,
+    payload,
+  });
+
   const docRef = await addDoc(collection(db, LIVE_CLASSES_COLLECTION), payload);
+  console.log('[LiveClassesService] createLiveClass success', {
+    collection: LIVE_CLASSES_COLLECTION,
+    documentId: docRef.id,
+  });
   return docRef.id;
 }
 
 export async function updateLiveClass(classId: string, input: Partial<LiveClassInput>): Promise<void> {
   if (!db) throw new Error('Firestore is not initialized');
   const classRef = doc(db, LIVE_CLASSES_COLLECTION, classId);
-  await updateDoc(classRef, {
-    ...input,
+  const payload = {
+    ...buildLiveClassPayload({
+      title: input.title ?? '',
+      teacherName: input.teacherName ?? '',
+      date: input.date ?? '',
+      time: input.time ?? '',
+      meetingLink: input.meetingLink ?? '',
+      whatsappLink: input.whatsappLink ?? '',
+      description: input.description ?? '',
+    }),
+    materialLink: deleteField(),
     updatedAt: serverTimestamp(),
+  };
+  console.log('[LiveClassesService] updateLiveClass payload', {
+    collection: LIVE_CLASSES_COLLECTION,
+    classId,
+    payload: { ...payload, materialLink: '[deleteField]' },
   });
+  await updateDoc(classRef, payload);
 }
 
 export async function ensureLiveClassSession(classId: string): Promise<void> {

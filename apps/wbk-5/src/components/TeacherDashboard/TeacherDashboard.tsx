@@ -62,6 +62,8 @@ const STATUS_STYLES: Record<TeacherStudentRow['dashboardStatus'], string> = {
   Active: 'bg-green-100 text-green-700',
 };
 
+const rowBackgroundClass = (index: number) => index % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+
 // ─────────────────────────────────────────────────────────────
 // Sortable column header
 // ─────────────────────────────────────────────────────────────
@@ -123,7 +125,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
       <div className="flex items-center gap-3 mb-4">
         <input
           type="search"
-          placeholder="Search by name or email…"
+          placeholder="Search students…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="w-full max-w-sm px-4 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
@@ -143,88 +145,76 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
             <table className="w-full text-sm">
               <thead className="bg-gradient-to-r from-blue-600 to-blue-700">
                 <tr>
-                  <SortHeader col="name"         label="Name"         activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="email"        label="Email"        activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Status</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Course</th>
-                  <SortHeader col="path"         label="Position"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Lessons</th>
-                  <SortHeader col="lastActivity" label="Last Active"  activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Placement</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-white">Report</th>
+                  <SortHeader col="name" label="Student" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Status</th>
+                  <SortHeader col="path" label="Progress" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Work</th>
+                  <SortHeader col="lastActivity" label="Active" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="alerts" label="Alerts" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">PT</th>
+                  <th className="px-3 py-3 text-center text-sm font-semibold text-white">PDF</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visible.map((student, idx) => (
                   <tr
                     key={student.uid}
-                    className={idx % 2 === 0 ? 'bg-white hover:bg-blue-50' : 'bg-slate-50 hover:bg-blue-50'}
+                    className={`${rowBackgroundClass(idx)} hover:bg-blue-50`}
                   >
-                    {/* Name + rank medal */}
-                    <td className="px-4 py-3 font-semibold text-slate-800 whitespace-nowrap">
-                      <span className="mr-1 text-base">{rankMedal(student.rank)}</span>
-                      {student.displayName || '—'}
+                    <td className={`sticky left-0 z-10 px-3 py-3 font-semibold text-slate-800 whitespace-nowrap ${rowBackgroundClass(idx)}`}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{rankMedal(student.rank)}</span>
+                        <div className="min-w-0">
+                          <div className="max-w-[150px] truncate">{student.displayName || '—'}</div>
+                          <div className="text-[11px] font-medium text-slate-500">{student.selectedCourseLabel}</div>
+                        </div>
+                      </div>
                     </td>
-                    {/* Email */}
-                    <td className="px-4 py-3 text-slate-500 max-w-[180px] truncate">
-                      {student.email || '—'}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLES[student.dashboardStatus]}`}>
+                    <td className="px-3 py-3 whitespace-nowrap align-top">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${STATUS_STYLES[student.dashboardStatus]}`}>
                         {student.dashboardStatus}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
-                      <div className="font-medium">{student.selectedCourseLabel}</div>
-                      <div className="text-xs text-slate-500">{student.selectedLanguageLabel}</div>
-                    </td>
-                    {/* Current position */}
-                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-mono text-xs">
-                      {student.pathLabel}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
-                      <div className="font-semibold">{student.lessonsCompleted}</div>
-                      <div className="text-xs text-slate-500">
-                        {student.avgAccuracy > 0 ? formatAccuracy(student.avgAccuracy) : 'No accuracy yet'}
+                    <td className="px-3 py-3 text-slate-700 whitespace-nowrap font-mono text-xs align-top">
+                      <div>{student.pathLabel}</div>
+                      <div className="mt-1 font-sans text-[11px] font-semibold text-emerald-600">
+                        {student.avgAccuracy > 0 ? `✔ ${Math.round(student.avgAccuracy)}%` : '✔ 0%'}
                       </div>
                     </td>
-                    {/* Last active */}
-                    <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
-                      <div>{student.lastActivityLabel}</div>
-                      {student.lastActivityLabel === 'Today' && (
-                        <div className="text-[11px] text-green-600 font-medium">✓ Active today</div>
-                      )}
+                    <td className="px-3 py-3 text-slate-700 whitespace-nowrap align-top">
+                      <div className="font-semibold">{student.lessonsLabel}</div>
+                      <div className="text-[11px] text-slate-500">{student.selectedLanguageLabel}</div>
                     </td>
-                    {/* Alerts */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-3 text-slate-500 text-xs whitespace-nowrap align-top">
+                      {student.lastActivityLabel}
+                    </td>
+                    <td className="px-3 py-3 align-top">
                       {student.alerts.length === 0 ? (
-                        <span className="text-xs text-green-600 font-medium">✓ OK</span>
+                        <span className="text-xs text-green-600 font-medium">✓</span>
                       ) : (
                         <div className="flex flex-col gap-1">
-                          {student.alerts.map((a, i) => (
-                            <AlertBadge key={i} type={a.type} message={a.message} />
+                          {student.alerts.slice(0, 2).map((alert, index) => (
+                            <AlertBadge key={index} type={alert.type} message={alert.message} />
                           ))}
                         </div>
                       )}
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
+                    <td className="px-3 py-3 whitespace-nowrap align-top">
                       {student.tests?.placement ? (
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-0.5">
                           <span className="text-xs font-bold text-blue-700">{student.tests.placement.level ?? '—'}</span>
-                          <span className="text-xs text-slate-500">{student.tests.placement.score}%</span>
+                          <span className="text-[11px] text-slate-500">{student.tests.placement.score}%</span>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-400">{student.placementLabel}</span>
+                        <span className="text-[11px] text-slate-400">{student.placementLabel}</span>
                       )}
                     </td>
-                    {/* PDF download */}
-                    <td className="px-4 py-3 text-center">
+                    <td className="px-3 py-3 text-center align-top">
                       <button
                         onClick={() => handlePdf(student)}
                         disabled={generating === student.uid}
                         title="Download PDF report"
-                        className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-95"
+                        className="bg-slate-700 hover:bg-slate-800 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all active:scale-95"
                       >
                         {generating === student.uid ? '…' : '📄 PDF'}
                       </button>

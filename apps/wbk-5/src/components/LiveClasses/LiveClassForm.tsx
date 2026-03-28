@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { LiveClassInput, LiveClassStatus } from '../../types';
+import { LiveClassInput } from '../../types';
 
 interface LiveClassFormProps {
   initialValue?: Partial<LiveClassInput>;
@@ -14,17 +14,9 @@ const DEFAULT_FORM: LiveClassInput = {
   date: '',
   time: '',
   meetingLink: '',
-  materialLink: '',
   whatsappLink: '',
   description: '',
-  status: 'upcoming',
 };
-
-const STATUS_OPTIONS: { value: LiveClassStatus; label: string }[] = [
-  { value: 'upcoming', label: 'Upcoming' },
-  { value: 'live', label: 'Live' },
-  { value: 'finished', label: 'Finished' },
-];
 
 export const LiveClassForm: React.FC<LiveClassFormProps> = ({
   initialValue,
@@ -66,7 +58,6 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
       title: form.title.trim(),
       teacherName: form.teacherName.trim(),
       meetingLink: form.meetingLink.trim(),
-      materialLink: form.materialLink?.trim() ?? '',
       whatsappLink: form.whatsappLink?.trim() ?? '',
       description: form.description?.trim() ?? '',
     });
@@ -117,14 +108,6 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
 
       <input
         type="url"
-        value={form.materialLink ?? ''}
-        onChange={(e) => setField('materialLink', e.target.value)}
-        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="PDF material link"
-      />
-
-      <input
-        type="url"
         value={form.whatsappLink ?? ''}
         onChange={(e) => setField('whatsappLink', e.target.value)}
         className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
@@ -137,18 +120,6 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         className="h-24 w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
         placeholder="Class description"
       />
-
-      <select
-        value={form.status}
-        onChange={(e) => setField('status', e.target.value as LiveClassStatus)}
-        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-      >
-        {STATUS_OPTIONS.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
 
       {error && <p className="text-sm font-semibold text-red-300">{error}</p>}
 

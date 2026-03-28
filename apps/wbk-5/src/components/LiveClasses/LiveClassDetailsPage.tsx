@@ -19,6 +19,13 @@ const statusClassMap: Record<LiveClass['status'], string> = {
   finished: 'bg-slate-600 text-white',
 };
 
+const openExternalLink = (rawUrl: string) => {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return;
+  const target = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  window.open(target, '_blank', 'noopener,noreferrer');
+};
+
 export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   liveClass,
   user,
@@ -42,7 +49,8 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
     return unsubscribe;
   }, [liveClass.id]);
 
-  const canEnterClass = useMemo(() => !!liveClass.meetingLink, [liveClass.meetingLink]);
+  const canEnterClass = useMemo(() => !!liveClass.meetingLink.trim(), [liveClass.meetingLink]);
+  const canOpenWhatsapp = useMemo(() => !!(liveClass.whatsappLink ?? '').trim(), [liveClass.whatsappLink]);
 
   return (
     <div className="min-h-screen bg-slate-900 px-3 pb-28 pt-6 sm:px-4">
@@ -60,11 +68,11 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
         <p className="text-sm text-slate-300">Date: {liveClass.date} • {liveClass.time}</p>
         {liveClass.description && <p className="mt-3 text-sm text-slate-200">{liveClass.description}</p>}
 
-        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <a
-            href={canEnterClass ? liveClass.meetingLink : '#'}
-            target="_blank"
-            rel="noopener noreferrer"
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => openExternalLink(liveClass.meetingLink)}
+            disabled={!canEnterClass}
             className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
               canEnterClass
                 ? 'bg-emerald-500 text-slate-900 shadow-[0_4px_0_0_#059669]'
@@ -72,33 +80,20 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
             }`}
           >
             Enter Class
-          </a>
+          </button>
 
-          <a
-            href={liveClass.materialLink || '#'}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => openExternalLink(liveClass.whatsappLink ?? '')}
+            disabled={!canOpenWhatsapp}
             className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
-              liveClass.materialLink
-                ? 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
-                : 'bg-slate-700 text-slate-400'
-            }`}
-          >
-            Open Material
-          </a>
-
-          <a
-            href={liveClass.whatsappLink || '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
-              liveClass.whatsappLink
+              canOpenWhatsapp
                 ? 'bg-emerald-600 text-white shadow-[0_4px_0_0_#047857]'
                 : 'bg-slate-700 text-slate-400'
             }`}
           >
             Open WhatsApp
-          </a>
+          </button>
         </div>
 
         {isTeacher && (
