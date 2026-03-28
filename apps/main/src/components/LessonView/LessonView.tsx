@@ -84,14 +84,21 @@ export const LessonView: React.FC<LessonViewProps> = ({
     return completedByMainProgress || completedByLessonProgress;
   };
 
-  const firstIncompleteIndex = firstSixDays.findIndex((day, index) => day && !isExerciseCompleted(day.id, index));
-  const nextOpenIndex = firstIncompleteIndex === -1 ? firstSixDays.length : firstIncompleteIndex;
+  const isDefaultFirstExercise = (index: number): boolean => lessonNumber === 1 && index === 0;
+
+  const isUnlockedByPreviousCompletion = (index: number): boolean => {
+    if (index === 0) return true;
+    const previousDay = firstSixDays[index - 1];
+    if (!previousDay) return false;
+    return isExerciseCompleted(previousDay.id, index - 1);
+  };
 
   const canOpenExercise = (dayId: string | null, index: number): boolean => {
     if (!dayId) return false;
     if (isAdmin) return true;
     if (isExerciseCompleted(dayId, index)) return true;
-    return index === nextOpenIndex;
+    if (isDefaultFirstExercise(index)) return true;
+    return isUnlockedByPreviousCompletion(index);
   };
 
   const getDayStatus = (dayId: string | null, index: number): 'completed' | 'in-progress' | 'locked' => {

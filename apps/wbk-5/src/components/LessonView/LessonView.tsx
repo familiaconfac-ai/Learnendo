@@ -45,10 +45,21 @@ export const LessonView: React.FC<LessonViewProps> = ({
     .map((day, i) => (day && completed.includes(day.id) ? i + 1 : null))
     .filter((n): n is number => n !== null);
 
+  const isDefaultFirstExercise = (index: number): boolean => lessonNumber === 1 && index === 0;
+
+  const isUnlockedByPreviousCompletion = (index: number): boolean => {
+    if (index === 0) return true;
+    const previousDay = firstSixDays[index - 1];
+    if (!previousDay) return false;
+    return completed.includes(previousDay.id);
+  };
+
   const getDayStatus = (dayId: string | null, index: number): 'completed' | 'in-progress' | 'locked' => {
     if (!dayId) return 'locked';
     if (completed.includes(dayId)) return 'completed';
     if (isAdmin) return 'in-progress';
+    if (isDefaultFirstExercise(index)) return 'in-progress';
+    if (isUnlockedByPreviousCompletion(index)) return 'in-progress';
     return canAccessDay(index + 1, completedDays) ? 'in-progress' : 'locked';
   };
 
