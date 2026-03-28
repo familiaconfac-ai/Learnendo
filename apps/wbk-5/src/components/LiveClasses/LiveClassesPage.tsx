@@ -212,7 +212,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
                   setSelectedClass(liveClass);
                 }
               }}
-              className="w-full rounded-2xl border border-slate-700 bg-slate-800 p-4 text-left transition hover:border-blue-500"
+              className="w-full rounded-2xl border border-slate-700 bg-slate-800 p-4 text-left shadow-lg shadow-blue-500/10 transition hover:border-blue-500"
               role="button"
               tabIndex={0}
             >
@@ -223,9 +223,18 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
                 </span>
               </div>
 
-              <p className="text-sm text-slate-300">{liveClass.teacherName}</p>
+              <p className="text-sm font-semibold text-slate-200">{liveClass.teacherName}</p>
               <p className="text-sm text-slate-300">{liveClass.date} • {liveClass.time}</p>
-              {liveClass.description && <p className="mt-2 line-clamp-2 text-sm text-slate-400">{liveClass.description}</p>}
+
+              <div className="my-4 flex justify-center">
+                <img src="/logo.png" alt="Learnendo" className="w-24 opacity-70" />
+              </div>
+
+              {liveClass.description && (
+                <p className="mt-2 max-w-2xl text-lg leading-relaxed text-white">
+                  {liveClass.description}
+                </p>
+              )}
 
               <div className="mt-3 flex justify-end">
                 <button
