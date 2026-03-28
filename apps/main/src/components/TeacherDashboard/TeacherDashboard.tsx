@@ -56,6 +56,13 @@ const AlertBadge: React.FC<{ type: AlertType; message: string }> = ({ type, mess
   );
 };
 
+const STATUS_STYLES: Record<TeacherStudentRow['dashboardStatus'], string> = {
+  Registered: 'bg-slate-100 text-slate-700',
+  'Placement Done': 'bg-blue-100 text-blue-700',
+  'Not Started': 'bg-amber-100 text-amber-700',
+  Active: 'bg-green-100 text-green-700',
+};
+
 // ─────────────────────────────────────────────────────────────
 // Sortable column header
 // ─────────────────────────────────────────────────────────────
@@ -149,8 +156,10 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                 <tr>
                   <SortHeader col="name"         label="Name"         activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="email"        label="Email"        activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Course</th>
                   <SortHeader col="path"         label="Position"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="accuracy"     label="Accuracy"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Lessons</th>
                   <SortHeader col="lastActivity" label="Last Active"  activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Placement</th>
@@ -172,25 +181,24 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     <td className="px-4 py-3 text-slate-500 max-w-[180px] truncate">
                       {student.email || '—'}
                     </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLES[student.dashboardStatus]}`}>
+                        {student.dashboardStatus}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                      <div className="font-medium">{student.selectedCourseLabel}</div>
+                      <div className="text-xs text-slate-500">{student.selectedLanguageLabel}</div>
+                    </td>
                     {/* Current position */}
                     <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-mono text-xs">
                       {student.pathLabel}
                     </td>
-                    {/* Accuracy badge — green ≥ 80 %, red < 80 %, dash if no real data */}
-                    <td className="px-4 py-3">
-                      {student.avgAccuracy > 0 ? (
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                            student.avgAccuracy >= 80
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-700'
-                          }`}
-                        >
-                          {formatAccuracy(student.avgAccuracy)}
-                        </span>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                      <div className="font-semibold">{student.lessonsCompleted}</div>
+                      <div className="text-xs text-slate-500">
+                        {student.avgAccuracy > 0 ? formatAccuracy(student.avgAccuracy) : 'No accuracy yet'}
+                      </div>
                     </td>
                     {/* Last active */}
                     <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
@@ -227,7 +235,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                           </button>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-400">Not Done</span>
+                        <span className="text-xs text-slate-400">{student.placementLabel}</span>
                       )}
                     </td>
                     {/* PDF download */}
@@ -277,7 +285,12 @@ const RankingTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
     );
   }, [rows, courseFilter]);
 
-  const top10 = useMemo(() => getTopRanked(filteredRows, 10), [filteredRows]);
+  const rankingRows = useMemo(
+    () => filteredRows.filter((row) => row.dashboardStatus === 'Active' || row.score > 0),
+    [filteredRows],
+  );
+
+  const top10 = useMemo(() => getTopRanked(rankingRows, 10), [rankingRows]);
 
   const podiumColour = (rank: number) => {
     if (rank === 1) return 'bg-yellow-50 border-yellow-300';

@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { User } from 'firebase/auth';
 import {
-  getTeacherDashboardData,
+  subscribeToTeacherData,
   sortRows,
   filterRows,
   TeacherStudentRow,
@@ -53,6 +53,13 @@ const AlertBadge: React.FC<{ type: AlertType; message: string }> = ({ type, mess
       {s.icon} {message}
     </span>
   );
+};
+
+const STATUS_STYLES: Record<TeacherStudentRow['dashboardStatus'], string> = {
+  Registered: 'bg-slate-100 text-slate-700',
+  'Placement Done': 'bg-blue-100 text-blue-700',
+  'Not Started': 'bg-amber-100 text-amber-700',
+  Active: 'bg-green-100 text-green-700',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -138,11 +145,13 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                 <tr>
                   <SortHeader col="name"         label="Name"         activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="email"        label="Email"        activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Status</th>
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Course</th>
                   <SortHeader col="path"         label="Position"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="sessions"     label="Sessions"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="accuracy"     label="Accuracy"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Lessons</th>
                   <SortHeader col="lastActivity" label="Last Active"  activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <th className="px-4 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Placement</th>
                   <th className="px-4 py-3 text-center text-sm font-semibold text-white">Report</th>
                 </tr>
               </thead>
@@ -161,39 +170,31 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                     <td className="px-4 py-3 text-slate-500 max-w-[180px] truncate">
                       {student.email || '—'}
                     </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLES[student.dashboardStatus]}`}>
+                        {student.dashboardStatus}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                      <div className="font-medium">{student.selectedCourseLabel}</div>
+                      <div className="text-xs text-slate-500">{student.selectedLanguageLabel}</div>
+                    </td>
                     {/* Current position */}
                     <td className="px-4 py-3 text-slate-700 whitespace-nowrap font-mono text-xs">
                       {student.pathLabel}
                     </td>
-                    {/* Sessions */}
-                    <td className="px-4 py-3 text-center">
-                      <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
-                        {student.daysCompleted}
-                      </span>
-                    </td>
-                    {/* Accuracy bar */}
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 bg-slate-200 rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full ${
-                              student.avgAccuracy >= 80
-                                ? 'bg-green-500'
-                                : student.avgAccuracy >= 60
-                                ? 'bg-yellow-400'
-                                : 'bg-red-400'
-                            }`}
-                            style={{ width: `${student.avgAccuracy}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-medium text-slate-700">
-                          {formatAccuracy(student.avgAccuracy)}
-                        </span>
+                    <td className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                      <div className="font-semibold">{student.lessonsCompleted}</div>
+                      <div className="text-xs text-slate-500">
+                        {student.avgAccuracy > 0 ? formatAccuracy(student.avgAccuracy) : 'No accuracy yet'}
                       </div>
                     </td>
                     {/* Last active */}
                     <td className="px-4 py-3 text-slate-500 text-xs whitespace-nowrap">
-                      {student.lastActivityLabel}
+                      <div>{student.lastActivityLabel}</div>
+                      {student.lastActivityLabel === 'Today' && (
+                        <div className="text-[11px] text-green-600 font-medium">✓ Active today</div>
+                      )}
                     </td>
                     {/* Alerts */}
                     <td className="px-4 py-3">
@@ -205,6 +206,16 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                             <AlertBadge key={i} type={a.type} message={a.message} />
                           ))}
                         </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {student.tests?.placement ? (
+                        <div className="flex flex-col gap-1">
+                          <span className="text-xs font-bold text-blue-700">{student.tests.placement.level ?? '—'}</span>
+                          <span className="text-xs text-slate-500">{student.tests.placement.score}%</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-400">{student.placementLabel}</span>
                       )}
                     </td>
                     {/* PDF download */}
@@ -234,7 +245,12 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
 // ─────────────────────────────────────────────────────────────
 
 const RankingTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
-  const top10 = useMemo(() => getTopRanked(rows, 10), [rows]);
+  const rankingRows = useMemo(
+    () => rows.filter((row) => row.dashboardStatus === 'Active' || row.score > 0),
+    [rows],
+  );
+
+  const top10 = useMemo(() => getTopRanked(rankingRows, 10), [rankingRows]);
 
   const podiumColour = (rank: number) => {
     if (rank === 1) return 'bg-yellow-50 border-yellow-300';
@@ -336,19 +352,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
     setError(null);
 
-    getTeacherDashboardData()
-      .then(data => { if (!cancelled) setRows(data); })
-      .catch(err  => {
-        if (!cancelled) setError('Failed to load student data. Please try again.');
-        console.error('[TeacherDash]', err);
-      })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    const unsub = subscribeToTeacherData((data) => {
+      setRows(data);
+      setLoading(false);
+    });
 
-    return () => { cancelled = true; };
+    return unsub;
   }, [refreshKey]);
 
   // ── Loading state ──────────────────────────────────────────

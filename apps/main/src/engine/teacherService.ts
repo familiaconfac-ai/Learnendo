@@ -33,7 +33,22 @@ export interface TeacherStudentRow extends RankedStudent {
   pathLabel: string;           // e.g. "Wbk 2 · L3 · D5"
   lastActivityLabel: string;   // human-readable relative date
   tests?: UserTestData;
+  dashboardStatus: 'Registered' | 'Placement Done' | 'Not Started' | 'Active';
+  selectedCourseId?: string;
+  selectedCourseLabel: string;
+  selectedLanguageCode?: string;
+  selectedLanguageLabel: string;
+  lessonsCompleted: number;
+  placementLabel: string;
 }
+
+type DashboardSource = Record<string, any>;
+type PlacementRecord = {
+  score?: number;
+  level?: string;
+  date?: string;
+  languageCode?: string;
+};
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -55,11 +70,118 @@ function relativeDate(value: any): string {
   }
 }
 
-function pathLabel(summary: UserProgressSummary): string {
+const COURSE_LABELS: Record<string, string> = {
+  english: 'English',
+  portuguese_foreigners: 'Portuguese',
+  portuguese_native: 'Portuguese Native',
+  spanish: 'Spanish',
+  greek_koine: 'Greek',
+  hebrew_biblical: 'Hebrew',
+};
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  pt: 'Portuguese',
+  es: 'Spanish',
+  el: 'Greek',
+  he: 'Hebrew',
+};
+
+function getPlacementRecord(raw?: DashboardSource): PlacementRecord | undefined {
+  const tests = raw?.tests;
+  if (tests?.placement) return tests.placement as PlacementRecord;
+  const placements = tests?.placements;
+  if (!placements || typeof placements !== 'object') return undefined;
+  const records = Object.values(placements)
+    .filter((value): value is PlacementRecord => !!value && typeof value === 'object');
+  if (records.length === 0) return undefined;
+  return records.sort((a, b) => {
+    const aTime = a.date ? new Date(a.date).getTime() : 0;
+    const bTime = b.date ? new Date(b.date).getTime() : 0;
+    return bTime - aTime;
+  })[0];
+}
+
+function getLessonsCompleted(raw?: DashboardSource): number {
+  const lessons = raw?.tests?.lessons;
+  if (!lessons || typeof lessons !== 'object') return 0;
+  return Object.values(lessons).filter((value) => !!value && typeof value === 'object').length;
+}
+
+function formatCourseLabel(courseId?: string): string {
+  if (!courseId) return '—';
+  return COURSE_LABELS[courseId] ?? courseId.replace(/_/g, ' ');
+}
+
+function formatLanguageLabel(languageCode?: string): string {
+  if (!languageCode) return '—';
+  return LANGUAGE_LABELS[languageCode] ?? languageCode.toUpperCase();
+}
+
+function getDashboardStatus(
+  summary: UserProgressSummary,
+  placement: PlacementRecord | undefined,
+  lessonsCompleted: number,
+): TeacherStudentRow['dashboardStatus'] {
+  const hasActiveProgress =
+    summary.daysCompleted > 0 ||
+    summary.totalStars > 0 ||
+    summary.totalAttempts > 0 ||
+    summary.lessonsStarted > 0 ||
+    lessonsCompleted > 0;
+  const hasStudyContext =
+    !!summary.courseId ||
+    !!summary.languageCode ||
+    Object.keys(summary.courses ?? {}).length > 0;
+
+  if (hasActiveProgress) return 'Active';
+  if (placement) return 'Placement Done';
+  if (hasStudyContext) return 'Not Started';
+  return 'Registered';
+}
+
+function formatPlacementLabel(placement?: PlacementRecord): string {
+  if (!placement) return 'Not Done';
+  const level = placement.level?.trim();
+  if (level && placement.score != null) return `${level} (${placement.score}%)`;
+  if (level) return level;
+  if (placement.score != null) return `${placement.score}%`;
+  return 'Done';
+}
+
+function pathLabel(summary: UserProgressSummary, dashboardStatus: TeacherStudentRow['dashboardStatus']): string {
+  if (dashboardStatus !== 'Active') {
+    if (dashboardStatus === 'Placement Done') return 'Placement completed';
+    if (dashboardStatus === 'Not Started') return 'Waiting for first lesson';
+    return 'Registered only';
+  }
   const wb = summary.currentWorkbook ?? 1;
   const ls = summary.currentLesson   ?? 1;
   const dy = summary.currentDay      ?? 1;
   return `Workbook ${wb}/${MAX_WORKBOOK} • Lesson ${ls}/${MAX_LESSON} • Exercise ${dy}/${MAX_DAY}`;
+}
+
+function buildTeacherRow(student: RankedStudent & UserProgressSummary, raw?: DashboardSource): TeacherStudentRow {
+  const placement = getPlacementRecord(raw);
+  const lessonsCompleted = getLessonsCompleted(raw);
+  const dashboardStatus = getDashboardStatus(student, placement, lessonsCompleted);
+  const selectedCourseId = student.courseId;
+  const selectedLanguageCode = student.languageCode ?? placement?.languageCode;
+
+  return {
+    ...student,
+    alerts: detectAlerts(student),
+    pathLabel: pathLabel(student, dashboardStatus),
+    lastActivityLabel: relativeDate(student.lastActivity),
+    tests: raw?.tests ?? student.tests,
+    dashboardStatus,
+    selectedCourseId,
+    selectedCourseLabel: formatCourseLabel(selectedCourseId),
+    selectedLanguageCode,
+    selectedLanguageLabel: formatLanguageLabel(selectedLanguageCode),
+    lessonsCompleted,
+    placementLabel: formatPlacementLabel(placement),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -84,13 +206,7 @@ export async function getTeacherDashboardData(courseId?: string): Promise<Teache
     ? allSummaries.filter(s => !s.courseId || s.courseId === courseId)
     : allSummaries;
   const ranked = rankStudents(summaries);
-  return ranked.map(student => ({
-    ...student,
-    alerts:            detectAlerts(student),
-    pathLabel:         pathLabel(student),
-    lastActivityLabel: relativeDate(student.lastActivity),
-    tests:             student.tests,
-  }));
+  return ranked.map(student => buildTeacherRow(student, { tests: student.tests }));
 }
 
 /**
@@ -171,110 +287,104 @@ export function subscribeToTeacherData(
     return () => {};
   }
 
-  // Always subscribe to the full progress collection.
-  // Per-course filtering is done client-side so that the courses map
-  // (students active in multiple languages) is respected correctly.
-  // Firestore compound-index filters on a single courseId field would miss
-  // students who have since switched their active course.
   const progressQuery = collection(db, 'progress');
+  const usersQuery = collection(db, 'users');
+  let progressDocs = new Map<string, DashboardSource>();
+  let userDocs = new Map<string, DashboardSource>();
 
-  const unsub = onSnapshot(
+  const buildRows = () => {
+    const allUids = new Set<string>([
+      ...progressDocs.keys(),
+      ...userDocs.keys(),
+    ]);
+
+    const ghostNameRe = /^(player_|user_|anonymous$)/i;
+    const isGhostName = (name: string | undefined): boolean => {
+      if (!name) return true;
+      const normalized = name.trim();
+      return !normalized || normalized === '—' || ghostNameRe.test(normalized);
+    };
+
+    const summaries: UserProgressSummary[] = Array.from(allUids).map((uid) => {
+      const progressData = progressDocs.get(uid) ?? {};
+      const userData = userDocs.get(uid) ?? {};
+      const placement = getPlacementRecord(progressData);
+
+      return {
+        uid,
+        displayName: progressData.displayName ?? userData.displayName ?? userData.name ?? undefined,
+        email: progressData.email ?? userData.email ?? undefined,
+        group: progressData.group ?? userData.group ?? undefined,
+        totalStars: progressData.totalStars ?? 0,
+        totalFire: progressData.totalFire ?? 0,
+        totalIce: progressData.totalIce ?? 0,
+        totalDiamonds: progressData.totalDiamonds ?? 0,
+        lessonsStarted: progressData.lessonsStarted ?? 0,
+        daysCompleted: progressData.daysCompleted ?? 0,
+        totalTimeSpent: progressData.totalTimeSpent ?? 0,
+        timeSpentToday: progressData.timeSpentToday ?? 0,
+        totalErrors: progressData.totalErrors ?? 0,
+        totalAttempts: progressData.totalAttempts ?? 0,
+        avgAccuracy: progressData.avgAccuracy ?? 0,
+        currentWorkbook: progressData.currentWorkbook ?? 1,
+        currentLesson: progressData.currentLesson ?? 1,
+        currentDay: progressData.currentDay ?? 1,
+        lastLessonId: progressData.lastLesson ?? undefined,
+        lastActivity:
+          progressData.lastActivity ??
+          userData.lastActive ??
+          userData.lastLoginAt ??
+          userData.createdAt ??
+          undefined,
+        courseId: progressData.courseId ?? userData.courseId ?? undefined,
+        languageCode:
+          progressData.language ??
+          progressData.languageCode ??
+          userData.languageCode ??
+          placement?.languageCode ??
+          undefined,
+        studyProfile: progressData.studyProfile ?? userData.studyProfile ?? undefined,
+        tests: progressData.tests ?? undefined,
+        courses: progressData.courses ?? undefined,
+      } as UserProgressSummary;
+    }).filter((summary) => {
+      const progressData = progressDocs.get(summary.uid) ?? {};
+      const hasIdentity = !isGhostName(summary.displayName) || (!!summary.email && summary.email.includes('@'));
+      const hasStudySignals =
+        summary.daysCompleted > 0 ||
+        summary.totalStars > 0 ||
+        summary.totalAttempts > 0 ||
+        summary.lessonsStarted > 0 ||
+        getLessonsCompleted(progressData) > 0 ||
+        !!getPlacementRecord(progressData) ||
+        !!summary.courseId ||
+        !!summary.languageCode ||
+        Object.keys(summary.courses ?? {}).length > 0;
+
+      return hasStudySignals || hasIdentity;
+    });
+
+    const forDashboard = courseId
+      ? summaries.filter((summary) => {
+          if (summary.courseId === courseId) return true;
+          if (summary.courses?.[courseId] !== undefined) return true;
+          const expectedLang = COURSE_LANGUAGE_MAP[courseId];
+          if (expectedLang && summary.languageCode === expectedLang) return true;
+          const placementLanguage = getPlacementRecord(progressDocs.get(summary.uid))?.languageCode;
+          if (expectedLang && placementLanguage === expectedLang) return true;
+          return false;
+        })
+      : summaries;
+
+    const ranked = rankStudents(forDashboard);
+    cb(ranked.map((student) => buildTeacherRow(student, progressDocs.get(student.uid))));
+  };
+
+  const unsubProgress = onSnapshot(
     progressQuery,
     (snap) => {
-      const summaries: UserProgressSummary[] = snap.docs.map(d => {
-        const data = d.data();
-        return {
-          uid:           d.id,
-          displayName:   data.displayName   ?? undefined,
-          email:         data.email         ?? undefined,
-          group:         data.group         ?? undefined,
-          totalStars:    data.totalStars    ?? 0,
-          totalFire:     data.totalFire     ?? 0,
-          totalIce:      data.totalIce      ?? 0,
-          totalDiamonds: data.totalDiamonds ?? 0,
-          lessonsStarted:data.lessonsStarted ?? 0,
-          daysCompleted: data.daysCompleted ?? 0,
-          totalTimeSpent:data.totalTimeSpent ?? 0,
-          timeSpentToday:data.timeSpentToday ?? 0,
-          totalErrors:   data.totalErrors   ?? 0,
-          totalAttempts: data.totalAttempts ?? 0,
-          avgAccuracy:   data.avgAccuracy   ?? 0,
-          currentWorkbook: data.currentWorkbook ?? 1,
-          currentLesson:   data.currentLesson   ?? 1,
-          currentDay:      data.currentDay      ?? 1,
-          lastLessonId:    data.lastLesson      ?? undefined,
-          lastActivity:    data.lastActivity    ?? undefined,
-          // Course/language context — drives per-course ranking filter
-          courseId:     data.courseId     ?? undefined,
-          languageCode: data.language ?? data.languageCode ?? undefined,
-          studyProfile: data.studyProfile ?? undefined,
-          // Active courses map — preserved across snapshot updates
-          courses:      data.courses ?? undefined,
-        } as UserProgressSummary;
-      });
-
-      // ── Ghost/anonymous name detection ────────────────────────────────────────
-      // Matches auto-generated names like "Player_aWPbCH", "Anonymous", blank, "—".
-      // A student with a ghost name is excluded UNLESS they have a verified email.
-      const ghostNameRe = /^(player_|user_|anonymous$)/i;
-      const isGhostName = (name: string | undefined): boolean => {
-        if (!name) return true;
-        const n = name.trim();
-        return !n || n === '—' || ghostNameRe.test(n);
-      };
-
-      // ── Ghost/legacy filter ──────────────────────────────────────────────────
-      // Exclude accounts with zero real activity — they are brand-new sessions,
-      // anonymous logins that never studied, or legacy test accounts.
-      // Rule: must have at least 1 completed day OR 1 star OR 1 answer attempt.
-      // Also exclude ghost/auto-generated names without a verified email.
-      // This never deletes data; it only hides accounts from the visible ranking.
-      const activeSummaries = summaries.filter(s => {
-        const hasActivity = s.daysCompleted > 0 || s.totalStars > 0 || s.totalAttempts > 0;
-        if (!hasActivity) return false;
-        // Any student who has completed at least one day is a confirmed real learner.
-        // Anonymous students (Player_XXXXXX names, no email) must NOT be filtered here —
-        // they are ordinary app users who chose not to register.
-        if (s.daysCompleted >= 1) return true;
-        // For sessions with zero completed days (only stars/attempts in-progress),
-        // apply identity filter to hide pure bot/ghost sessions.
-        const hasValidIdentity = !isGhostName(s.displayName) || (!!s.email && s.email.includes('@'));
-        return hasValidIdentity;
-      });
-
-      // ── Per-course filter ──────────────────────────────────────────────────
-      // When a courseId is requested (from RankScreen), keep only students who
-      // have had real activity in that course.  We check:
-      //   1. root courseId field  — legacy docs (single course)
-      //   2. courses map key      — multi-language docs (new format)
-      // This guarantees English students compete only with English students, etc.
-      // Per-course filter: check courseId (root, legacy), courses map (multi-language),
-      // AND languageCode (for old docs that stored language code but not courseId).
-      const forRanking = courseId
-        ? activeSummaries.filter(s => {
-            if (s.courseId === courseId) return true;
-            if (s.courses?.[courseId] !== undefined) return true;
-            // Fallback: legacy docs may have only languageCode without courseId
-            const expectedLang = COURSE_LANGUAGE_MAP[courseId];
-            if (expectedLang && s.languageCode === expectedLang) return true;
-            return false;
-          })
-        : activeSummaries;
-
-      const ranked = rankStudents(forRanking);
-      const rows: TeacherStudentRow[] = ranked.map(student => {
-        const raw = snap.docs.find(d => d.id === student.uid)?.data();
-        return {
-          ...student,
-          alerts:            detectAlerts(student),
-          pathLabel:         pathLabel(student),
-          lastActivityLabel: relativeDate(student.lastActivity),
-          tests:             raw?.tests   ?? undefined,
-          courses:           raw?.courses ?? undefined,
-        };
-      });
-
-      cb(rows);
+      progressDocs = new Map(snap.docs.map((docSnap) => [docSnap.id, docSnap.data()]));
+      buildRows();
     },
     (err) => {
       console.error('[TeacherService] onSnapshot error:', err);
@@ -282,5 +392,20 @@ export function subscribeToTeacherData(
     },
   );
 
-  return unsub;
+  const unsubUsers = onSnapshot(
+    usersQuery,
+    (snap) => {
+      userDocs = new Map(snap.docs.map((docSnap) => [docSnap.id, docSnap.data()]));
+      buildRows();
+    },
+    (err) => {
+      console.error('[TeacherService] users onSnapshot error:', err);
+      cb([]);
+    },
+  );
+
+  return () => {
+    unsubProgress();
+    unsubUsers();
+  };
 }
