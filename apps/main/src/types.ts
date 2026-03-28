@@ -102,6 +102,64 @@ export interface ActiveCourse {
   currentDay?: number;
 }
 
+export type LiveClassStatus = 'upcoming' | 'live' | 'finished';
+
+export interface LiveClass {
+  id: string;
+  title: string;
+  teacherName: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:mm
+  meetingLink: string;
+  materialLink?: string;
+  whatsappLink?: string;
+  description?: string;
+  status: LiveClassStatus;
+  createdBy: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface LiveClassInput {
+  title: string;
+  teacherName: string;
+  date: string;
+  time: string;
+  meetingLink: string;
+  materialLink?: string;
+  whatsappLink?: string;
+  description?: string;
+  status: LiveClassStatus;
+}
+
+export interface LiveClassMessage {
+  id: string;
+  text: string;
+  senderUid: string;
+  senderName: string;
+  createdAt?: string;
+}
+
+export interface LiveClassSession {
+  sessionStatus: 'idle' | 'active' | 'paused' | 'ended';
+  activeWorkbookId?: number | null;
+  activeLessonId?: string | null;
+  activeExerciseId?: string | null;
+  lastUpdatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface LiveClassResponse {
+  id: string;
+  userId: string;
+  userName: string;
+  workbookId?: number | null;
+  lessonId?: string | null;
+  exerciseId?: string | null;
+  answer: string;
+  createdAt?: string;
+}
+
 export interface UserProgress {
   userId: string;
   currentCourseId?: string;
@@ -121,6 +179,7 @@ export interface UserProgress {
 export enum SectionType {
   COURSES = 'COURSES',
   DASHBOARD = 'DASHBOARD',
+  LIVE_CLASSES = 'LIVE_CLASSES',
   WORKBOOK = 'WORKBOOK',
   WORKBOOK_LIST = 'WORKBOOK_LIST',
   LESSON = 'LESSON',

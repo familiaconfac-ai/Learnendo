@@ -26,6 +26,7 @@ import { WeekCompletionResult } from './services/db';
 import { calculateScore, ScoreResult } from './engine/scoringEngine';
 import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
+import { LiveClassesPage } from './components/LiveClasses/LiveClassesPage';
 
 const DEFAULT_COURSE_ID = 'english';
 const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
@@ -789,6 +790,14 @@ const App: React.FC = () => {
           />
         );
       }
+      case SectionType.LIVE_CLASSES:
+        return (
+          <LiveClassesPage
+            user={user}
+            isTeacher={isAdmin}
+            onBack={() => handleNavigate(SectionType.COURSES)}
+          />
+        );
       case SectionType.PLACEMENT_TEST:
         return <PlacementTest currentLanguage={language} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
       case SectionType.WORKBOOK:
@@ -951,6 +960,7 @@ const App: React.FC = () => {
             <div className="space-y-2">
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.LIVE_CLASSES); setMenuOpen(false); }}>Live Classes</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
               {isAdmin && (
                 <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>

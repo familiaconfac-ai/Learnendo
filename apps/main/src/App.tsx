@@ -15,6 +15,7 @@ import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard
 import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
 import { LanguageSelector } from './components/LanguageSelector';
 import { RankScreen } from './components/RankScreen';
+import { LiveClassesPage } from './components/LiveClasses/LiveClassesPage';
 import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
@@ -153,7 +154,7 @@ const App: React.FC = () => {
     (user?.uid ? !!localStorage.getItem(`learnendo_placement_${user.uid}`) : false)
   );
   const showPlacementBanner = progressLoaded && !hasPlacementDone &&
-    !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON] as string[]).includes(currentSection);
+    !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON, SectionType.LIVE_CLASSES] as string[]).includes(currentSection);
   const activeCourse = COURSES.find((course) => course.id === activeCourseId) ?? null;
   // Qualify the lesson-test prefix with the current language so that English
   // completions ('lesson_test_passed_1') never appear as completed in PT/ES
@@ -1486,6 +1487,14 @@ const App: React.FC = () => {
           />
         );
       }
+      case SectionType.LIVE_CLASSES:
+        return (
+          <LiveClassesPage
+            user={user}
+            isTeacher={isAdmin}
+            onBack={() => handleNavigate(SectionType.COURSES)}
+          />
+        );
       case SectionType.WORKBOOK_LIST: {
         const _courseId = currentCourseId ?? DEFAULT_COURSE_ID;
         const _registry = COURSE_WORKBOOKS[_courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
@@ -1766,6 +1775,7 @@ const App: React.FC = () => {
             <div className="space-y-2">
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.LIVE_CLASSES); setMenuOpen(false); }}>Live Classes</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
               {isAdmin && (
                 <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>

@@ -24,6 +24,13 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({ currentSecti
         <span className="hidden sm:inline">Pronounce</span>
       </button>
       <button
+        onClick={() => onNavigate('LIVE_CLASSES')}
+        className={`flex flex-col items-center gap-0.5 px-1.5 sm:px-2 text-xs flex-shrink-0 ${currentSection === 'LIVE_CLASSES' ? 'text-blue-500' : 'text-slate-500'}`}
+      >
+        <span className="text-lg">🎥</span>
+        <span className="hidden sm:inline">Classes</span>
+      </button>
+      <button
         onClick={onShare}
         className={`flex flex-col items-center gap-0.5 px-1.5 sm:px-2 text-xs flex-shrink-0 ${currentSection === 'SHARE' ? 'text-blue-500' : 'text-slate-500'}`}
       >

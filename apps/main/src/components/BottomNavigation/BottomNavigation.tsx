@@ -9,10 +9,10 @@ interface BottomNavigationProps {
   uiLanguage?: UILang;
 }
 
-const NAV_LABELS: Record<UILang, { workbooks: string; pronounce: string; rank: string; share: string; videos: string; teacher: string }> = {
-  en: { workbooks: 'Workbooks', pronounce: 'Pronounce', rank: 'Rank', share: 'Share', videos: 'Videos', teacher: 'Teacher' },
-  pt: { workbooks: 'Cadernos', pronounce: 'Pronúncia', rank: 'Ranking', share: 'Compartilhar', videos: 'Vídeos', teacher: 'Professor' },
-  es: { workbooks: 'Libros', pronounce: 'Pronunciación', rank: 'Ranking', share: 'Compartir', videos: 'Videos', teacher: 'Profesor' },
+const NAV_LABELS: Record<UILang, { workbooks: string; classes: string; pronounce: string; rank: string; share: string; videos: string; teacher: string }> = {
+  en: { workbooks: 'Workbooks', classes: 'Classes', pronounce: 'Pronounce', rank: 'Rank', share: 'Share', videos: 'Videos', teacher: 'Teacher' },
+  pt: { workbooks: 'Cadernos', classes: 'Aulas', pronounce: 'Pronúncia', rank: 'Ranking', share: 'Compartilhar', videos: 'Vídeos', teacher: 'Professor' },
+  es: { workbooks: 'Libros', classes: 'Clases', pronounce: 'Pronunciación', rank: 'Ranking', share: 'Compartir', videos: 'Videos', teacher: 'Profesor' },
 };
 
 export const BottomNavigation: React.FC<BottomNavigationProps> = ({
@@ -32,6 +32,15 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
       >
         <span className="text-lg">📚</span>
         <span className="hidden sm:inline">{L.workbooks}</span>
+      </button>
+
+      {/* Pronounce */}
+      <button
+        onClick={() => onNavigate('LIVE_CLASSES')}
+        className={`flex flex-col items-center gap-0.5 px-1.5 sm:px-2 text-xs flex-shrink-0 ${currentSection === 'LIVE_CLASSES' ? 'text-blue-400' : 'text-slate-400'}`}
+      >
+        <span className="text-lg">🎥</span>
+        <span className="hidden sm:inline">{L.classes}</span>
       </button>
 
       {/* Pronounce */}
