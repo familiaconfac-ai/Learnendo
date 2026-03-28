@@ -38,7 +38,7 @@ export const TeacherLiveControlPanel: React.FC<TeacherLiveControlPanelProps> = (
 
   return (
     <div className="rounded-2xl border border-blue-500/40 bg-slate-900 p-3">
-      <h3 className="mb-3 text-sm font-black uppercase tracking-wide text-blue-300">Teacher Live Control Panel</h3>
+      <h3 className="mb-3 text-sm font-black uppercase tracking-wide text-blue-300">Teacher Room Controls</h3>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <select
@@ -76,6 +76,43 @@ export const TeacherLiveControlPanel: React.FC<TeacherLiveControlPanelProps> = (
           className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
           placeholder="activeExerciseId"
         />
+
+        <select
+          value={local.liveAudioTransport ?? 'not-configured'}
+          onChange={(e) => setField('liveAudioTransport', e.target.value as LiveClassSession['liveAudioTransport'])}
+          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="not-configured">Transport pending</option>
+          <option value="connecting">Connecting</option>
+          <option value="connected">Connected</option>
+        </select>
+
+        <select
+          value={local.teacherLiveMicEnabled ? 'live' : 'muted'}
+          onChange={(e) => setField('teacherLiveMicEnabled', e.target.value === 'live')}
+          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="muted">Teacher live mic muted</option>
+          <option value="live">Teacher live mic live</option>
+        </select>
+
+        <select
+          value={local.allowStudentLiveMic ? 'open' : 'muted'}
+          onChange={(e) => setField('allowStudentLiveMic', e.target.value === 'open')}
+          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="muted">Students muted by room</option>
+          <option value="open">Students may unmute</option>
+        </select>
+
+        <select
+          value={local.audioNotesEnabled === false ? 'disabled' : 'enabled'}
+          onChange={(e) => setField('audioNotesEnabled', e.target.value === 'enabled')}
+          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="enabled">Audio notes enabled</option>
+          <option value="disabled">Audio notes disabled</option>
+        </select>
       </div>
 
       <button

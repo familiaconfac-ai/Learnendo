@@ -172,6 +172,10 @@ export interface LiveClassSession {
   activeWorkbookId?: number | null;
   activeLessonId?: string | null;
   activeExerciseId?: string | null;
+  liveAudioTransport?: 'not-configured' | 'connecting' | 'connected';
+  teacherLiveMicEnabled?: boolean;
+  allowStudentLiveMic?: boolean;
+  audioNotesEnabled?: boolean;
   lastUpdatedBy?: string;
   updatedAt?: string;
 }

@@ -43,6 +43,10 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
     activeWorkbookId: null,
     activeLessonId: null,
     activeExerciseId: null,
+    liveAudioTransport: 'not-configured',
+    teacherLiveMicEnabled: false,
+    allowStudentLiveMic: false,
+    audioNotesEnabled: true,
   });
 
   useEffect(() => {
@@ -132,11 +136,15 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
       </div>
 
       <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-800 p-3">
-        <h2 className="text-sm font-black uppercase tracking-wide text-blue-300">Live Session (Phase 2 Ready)</h2>
+        <h2 className="text-sm font-black uppercase tracking-wide text-blue-300">Live Session</h2>
         <p className="mt-2 text-sm text-slate-200">Status: {session.sessionStatus}</p>
         <p className="text-sm text-slate-200">activeWorkbookId: {session.activeWorkbookId ?? '-'}</p>
         <p className="text-sm text-slate-200">activeLessonId: {session.activeLessonId ?? '-'}</p>
         <p className="text-sm text-slate-200">activeExerciseId: {session.activeExerciseId ?? '-'}</p>
+        <p className="text-sm text-slate-200">Live audio transport: {session.liveAudioTransport ?? 'not-configured'}</p>
+        <p className="text-sm text-slate-200">Teacher live mic: {session.teacherLiveMicEnabled ? 'live' : 'muted'}</p>
+        <p className="text-sm text-slate-200">Student live mic: {session.allowStudentLiveMic ? 'allowed' : 'muted by room'}</p>
+        <p className="text-sm text-slate-200">Audio notes: {session.audioNotesEnabled === false ? 'disabled' : 'enabled'}</p>
       </div>
 
       {isTeacher && (
@@ -146,7 +154,12 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
       )}
 
       <div className="mt-4">
-        <LiveClassChat classId={liveClass.id} user={user} role={isTeacher ? 'teacher' : 'student'} />
+        <LiveClassChat
+          classId={liveClass.id}
+          user={user}
+          role={isTeacher ? 'teacher' : 'student'}
+          allowAudioNotes={session.audioNotesEnabled !== false}
+        />
       </div>
     </div>
   );

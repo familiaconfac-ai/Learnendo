@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClassMessage, LiveClassRole } from '../../types';
 import {
@@ -11,7 +11,7 @@ interface LiveClassChatProps {
   classId: string;
   user: User;
   role?: LiveClassRole;
-  allowAudio?: boolean;
+  allowAudioNotes?: boolean;
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -40,7 +40,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
   classId,
   user,
   role = 'student' as LiveClassRole,
-  allowAudio = false,
+  allowAudioNotes = false,
 }) => {
   const chatRole = role;
   const [messages, setMessages] = useState<LiveClassMessage[]>([]);
@@ -49,8 +49,12 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
   const [recording, setRecording] = useState(false);
   const [recordingStartedAt, setRecordingStartedAt] = useState<number | null>(null);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
-  const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [audioNoteBlob, setAudioNoteBlob] = useState<Blob | null>(null);
+  const [audioNoteDurationSec, setAudioNoteDurationSec] = useState<number | undefined>(undefined);
+  const [audioNotePreviewUrl, setAudioNotePreviewUrl] = useState<string>('');
+  const [audioMimeType, setAudioMimeType] = useState('audio/webm');
   const [audioError, setAudioError] = useState('');
+  const streamRef = useRef<MediaStream | null>(null);
 
   const senderName = useMemo(
     () => user.displayName || user.email || 'Student',
@@ -63,6 +67,15 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
     });
     return unsubscribe;
   }, [classId]);
+
+  useEffect(() => {
+    return () => {
+      if (audioNotePreviewUrl) {
+        URL.revokeObjectURL(audioNotePreviewUrl);
+      }
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, [audioNotePreviewUrl]);
 
   const handleSend = async () => {
     if (!text.trim() || sending) return;
@@ -78,28 +91,46 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
   };
 
   const handleToggleRecording = async () => {
-    if (!allowAudio) return;
+    if (!allowAudioNotes) return;
 
     if (!recording) {
       try {
         setAudioError('');
+        if (audioNotePreviewUrl) {
+          URL.revokeObjectURL(audioNotePreviewUrl);
+        }
+        setAudioNotePreviewUrl('');
+        setAudioNoteBlob(null);
+        setAudioNoteDurationSec(undefined);
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
         const mediaRecorder = new MediaRecorder(stream);
-        setRecordedChunks([]);
+        const chunks: Blob[] = [];
+        const startedAt = Date.now();
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        setAudioMimeType(mimeType);
 
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) {
-            setRecordedChunks((prev) => [...prev, event.data]);
+            chunks.push(event.data);
           }
         };
 
         mediaRecorder.onstop = () => {
-          stream.getTracks().forEach((track) => track.stop());
+          const blob = new Blob(chunks, { type: mimeType });
+          const previewUrl = URL.createObjectURL(blob);
+          setAudioNoteBlob(blob);
+          setAudioNotePreviewUrl(previewUrl);
+          setAudioNoteDurationSec(
+            Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
+          );
+          streamRef.current?.getTracks().forEach((track) => track.stop());
+          streamRef.current = null;
         };
 
         mediaRecorder.start();
         setRecorder(mediaRecorder);
-        setRecordingStartedAt(Date.now());
+        setRecordingStartedAt(startedAt);
         setRecording(true);
       } catch (error) {
         console.warn('[LiveClassChat] audio recording start failed:', error);
@@ -114,38 +145,39 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
     setRecorder(null);
   };
 
-  useEffect(() => {
-    if (recording || recordedChunks.length === 0 || sending) return;
+  const handleDiscardAudioNote = () => {
+    if (audioNotePreviewUrl) {
+      URL.revokeObjectURL(audioNotePreviewUrl);
+    }
+    setAudioNotePreviewUrl('');
+    setAudioNoteBlob(null);
+    setAudioNoteDurationSec(undefined);
+    setRecordingStartedAt(null);
+    setAudioError('');
+  };
 
-    const uploadAudio = async () => {
-      setSending(true);
-      try {
-        const blob = new Blob(recordedChunks, { type: recorder?.mimeType || 'audio/webm' });
-        const audioDataUrl = await blobToDataUrl(blob);
-        const elapsedSec = recordingStartedAt
-          ? Math.max(1, Math.round((Date.now() - recordingStartedAt) / 1000))
-          : undefined;
-        await sendLiveClassAudioMessage(
-          classId,
-          user.uid,
-          senderName,
-          audioDataUrl,
-          blob.type || 'audio/webm',
-          elapsedSec,
-          chatRole,
-        );
-      } catch (error) {
-        console.warn('[LiveClassChat] send audio note failed:', error);
-        setAudioError('Could not send audio note. Please try again.');
-      } finally {
-        setRecordedChunks([]);
-        setRecordingStartedAt(null);
-        setSending(false);
-      }
-    };
-
-    void uploadAudio();
-  }, [chatRole, classId, recordedChunks, recording, recorder?.mimeType, recordingStartedAt, senderName, sending, user.uid]);
+  const handleSendAudioNote = async () => {
+    if (!audioNoteBlob || sending || recording) return;
+    setSending(true);
+    try {
+      const audioDataUrl = await blobToDataUrl(audioNoteBlob);
+      await sendLiveClassAudioMessage(
+        classId,
+        user.uid,
+        senderName,
+        audioDataUrl,
+        audioMimeType,
+        audioNoteDurationSec,
+        chatRole,
+      );
+      handleDiscardAudioNote();
+    } catch (error) {
+      console.warn('[LiveClassChat] send audio note failed:', error);
+      setAudioError('Could not send audio note. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
@@ -205,21 +237,65 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
         >
           Send
         </button>
-        {allowAudio ? (
-          <button
-            type="button"
-            onClick={() => void handleToggleRecording()}
-            disabled={sending}
-            className={`rounded-xl px-4 py-2 text-sm font-black ${
-              recording
-                ? 'bg-rose-500 text-white shadow-[0_3px_0_0_#be123c]'
-                : 'bg-amber-400 text-slate-900 shadow-[0_3px_0_0_#d97706]'
-            } disabled:opacity-60`}
-          >
-            {recording ? 'Stop' : 'Audio'}
-          </button>
-        ) : null}
       </div>
+
+      {allowAudioNotes ? (
+        <div className="mt-4 rounded-xl border border-amber-400/30 bg-slate-900/70 p-3">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="text-xs font-black uppercase tracking-wide text-amber-300">Audio Note / Record Response</h4>
+              <p className="text-xs text-slate-400">
+                Secondary tool for oral responses and review. Separate from the Live Mic.
+              </p>
+            </div>
+            <div className="text-[11px] font-semibold text-slate-500">
+              {recording ? 'Recording in progress' : audioNoteBlob ? 'Ready to send' : 'No note recorded'}
+            </div>
+          </div>
+
+          {audioNotePreviewUrl ? (
+            <div className="mt-3 rounded-xl bg-slate-950 p-3">
+              <audio controls src={audioNotePreviewUrl} className="w-full" preload="none" />
+              {audioNoteDurationSec ? (
+                <p className="mt-1 text-[11px] font-semibold text-slate-400">Audio note {formatSeconds(audioNoteDurationSec)}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleToggleRecording()}
+              disabled={sending}
+              className={`rounded-xl px-4 py-2 text-sm font-black ${
+                recording
+                  ? 'bg-rose-500 text-white shadow-[0_3px_0_0_#be123c]'
+                  : 'bg-amber-400 text-slate-900 shadow-[0_3px_0_0_#d97706]'
+              } disabled:opacity-60`}
+            >
+              {recording ? 'Stop Recording' : 'Start Audio Note'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleSendAudioNote()}
+              disabled={!audioNoteBlob || sending || recording}
+              className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-slate-900 shadow-[0_3px_0_0_#059669] disabled:opacity-60"
+            >
+              Send Audio Note
+            </button>
+
+            <button
+              type="button"
+              onClick={handleDiscardAudioNote}
+              disabled={!audioNoteBlob || sending || recording}
+              className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200 disabled:opacity-60"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

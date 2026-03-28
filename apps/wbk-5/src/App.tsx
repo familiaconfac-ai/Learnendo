@@ -929,7 +929,7 @@ const App: React.FC = () => {
           </button>
 
           <div className="flex-shrink-0">
-            <LanguageSelector current={language} onOpenCourses={() => setCurrentSection(SectionType.COURSES)} />
+            <LanguageSelector current={language} onChange={handleLangSelect} />
           </div>
 
           <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">

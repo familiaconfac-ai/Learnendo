@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
-import { LiveClass, LiveClassPresence } from '../../types';
+import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
 import {
   getLiveClassMeetLink,
 } from '../../services/liveClassesService';
@@ -8,9 +8,11 @@ import {
   markLivePresenceOffline,
   subscribeLivePresence,
   subscribeLiveSession,
+  updateLiveSession,
   upsertLivePresence,
 } from '../../services/liveSessionService';
 import { LiveClassChat } from './LiveClassChat';
+import { LiveMicPanel } from './LiveMicPanel';
 
 interface LiveClassRoomPageProps {
   liveClass: LiveClass;
@@ -33,7 +35,16 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   onExit,
 }) => {
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
-  const [sessionLabel, setSessionLabel] = useState('idle');
+  const [session, setSession] = useState<LiveClassSession>({
+    sessionStatus: 'idle',
+    activeWorkbookId: null,
+    activeLessonId: null,
+    activeExerciseId: null,
+    liveAudioTransport: 'not-configured',
+    teacherLiveMicEnabled: false,
+    allowStudentLiveMic: false,
+    audioNotesEnabled: true,
+  });
   const role = isTeacher || liveClass.createdBy === user.uid ? 'teacher' : 'student';
 
   useEffect(() => {
@@ -64,11 +75,15 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   useEffect(() => {
     const unsubscribe = subscribeLiveSession(
       liveClass.id,
-      (session) => setSessionLabel(session.sessionStatus),
+      (next) => setSession(next),
       (error) => console.warn('[LiveClassRoomPage] session subscription failed:', error),
     );
     return unsubscribe;
   }, [liveClass.id]);
+
+  const handleUpdateSession = async (patch: Partial<LiveClassSession>) => {
+    await updateLiveSession(liveClass.id, patch, user.uid);
+  };
 
   const onlinePresence = useMemo(
     () => presence
@@ -86,9 +101,9 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     <div className="min-h-screen bg-slate-950 px-3 pb-28 pt-6 sm:px-4">
       <div className="rounded-2xl border border-slate-700 bg-slate-900 p-4">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <button type="button" onClick={onExit} className="text-sm font-bold text-slate-200">← Leave Room</button>
+          <button type="button" onClick={onExit} className="text-sm font-bold text-slate-200">? Leave Room</button>
           <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-emerald-300">
-            {sessionLabel}
+            {session.sessionStatus}
           </span>
         </div>
 
@@ -145,7 +160,24 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       </div>
 
       <div className="mt-4">
-        <LiveClassChat classId={liveClass.id} user={user} role={role} allowAudio />
+        <LiveMicPanel
+          classId={liveClass.id}
+          userId={user.uid}
+          role={role}
+          session={session}
+          isTeacher={role === 'teacher'}
+          userName={user.displayName || user.email || 'Student'}
+          onUpdateSession={handleUpdateSession}
+        />
+      </div>
+
+      <div className="mt-4">
+        <LiveClassChat
+          classId={liveClass.id}
+          user={user}
+          role={role}
+          allowAudioNotes={session.audioNotesEnabled !== false}
+        />
       </div>
     </div>
   );

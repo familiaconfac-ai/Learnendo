@@ -17,6 +17,10 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   activeWorkbookId: data?.activeWorkbookId ?? null,
   activeLessonId: data?.activeLessonId ?? null,
   activeExerciseId: data?.activeExerciseId ?? null,
+  liveAudioTransport: (data?.liveAudioTransport ?? 'not-configured') as LiveClassSession['liveAudioTransport'],
+  teacherLiveMicEnabled: Boolean(data?.teacherLiveMicEnabled),
+  allowStudentLiveMic: Boolean(data?.allowStudentLiveMic),
+  audioNotesEnabled: data?.audioNotesEnabled !== false,
   lastUpdatedBy: data?.lastUpdatedBy ?? '',
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
 });
@@ -75,16 +79,23 @@ export async function updateLiveSession(
   if (!classId) return;
 
   const sessionRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'session', 'state');
+  const payload: Record<string, unknown> = {
+    lastUpdatedBy: updatedBy,
+    updatedAt: serverTimestamp(),
+  };
+
+  if ('sessionStatus' in patch) payload.sessionStatus = patch.sessionStatus ?? 'idle';
+  if ('activeWorkbookId' in patch) payload.activeWorkbookId = patch.activeWorkbookId ?? null;
+  if ('activeLessonId' in patch) payload.activeLessonId = patch.activeLessonId ?? null;
+  if ('activeExerciseId' in patch) payload.activeExerciseId = patch.activeExerciseId ?? null;
+  if ('liveAudioTransport' in patch) payload.liveAudioTransport = patch.liveAudioTransport ?? 'not-configured';
+  if ('teacherLiveMicEnabled' in patch) payload.teacherLiveMicEnabled = Boolean(patch.teacherLiveMicEnabled);
+  if ('allowStudentLiveMic' in patch) payload.allowStudentLiveMic = Boolean(patch.allowStudentLiveMic);
+  if ('audioNotesEnabled' in patch) payload.audioNotesEnabled = patch.audioNotesEnabled !== false;
+
   await setDoc(
     sessionRef,
-    {
-      sessionStatus: patch.sessionStatus ?? 'idle',
-      activeWorkbookId: patch.activeWorkbookId ?? null,
-      activeLessonId: patch.activeLessonId ?? null,
-      activeExerciseId: patch.activeExerciseId ?? null,
-      lastUpdatedBy: updatedBy,
-      updatedAt: serverTimestamp(),
-    },
+    payload,
     { merge: true },
   );
 }

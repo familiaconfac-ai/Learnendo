@@ -242,6 +242,17 @@ const App: React.FC = () => {
     }
   }, [language, setLanguage, currentCourseId, progress]);
 
+  const handleLanguageSelect = useCallback((newLanguage: LessonLanguageCode) => {
+    setLanguage(newLanguage);
+    setCurrentWorkbookId(1);
+    setCurrentWorkbook(null);
+    setCurrentLessonId(null);
+    setCurrentDay(null);
+    setActiveWeeklyTest(null);
+    setCurrentSection(SectionType.COURSES);
+    setCourseMenuOpen(false);
+  }, [setLanguage]);
+
 
 
   const triggerConversion = (reason?: string) => {
@@ -1744,21 +1755,9 @@ const App: React.FC = () => {
           </button>
 
           <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-200 flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => setCurrentSection(SectionType.COURSES)}
-              className="rounded-full p-0.5 ring-2 ring-blue-400 ring-offset-1 active:scale-95 flex-shrink-0"
-              title={`Language: ${language.toUpperCase()}`}
-              aria-label="Change language"
-            >
-              <img
-                src={`/flags/${{ en: 'us', pt: 'br', es: 'es', el: 'gr', he: 'il' }[language as string] ?? 'us'}.png`}
-                alt={language}
-                width="24"
-                height="24"
-                className="rounded-full block"
-              />
-            </button>
+            <div className="flex-shrink-0">
+              <LanguageSelector current={language} onChange={handleLanguageSelect} />
+            </div>
             <span className="rounded-lg bg-slate-800 px-1.5 py-1">🔥 {currentLessonId ? Math.min(1, lessonScore.completed) : (score?.streak ?? 0)}</span>
             <span className="rounded-lg bg-slate-800 px-1.5 py-1">❄️ {currentLessonId ? lessonScore.missed : (score?.freeze ?? 0)}</span>
             <span className="rounded-lg bg-slate-800 px-1.5 py-1">💎 {currentLessonId ? lessonScore.total : (score?.diamonds ?? 0)}</span>
