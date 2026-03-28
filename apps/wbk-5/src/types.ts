@@ -51,16 +51,26 @@ export interface UserTestData {
 }
 
 export type LiveClassStatus = 'upcoming' | 'live' | 'finished';
+export type LiveClassRole = 'teacher' | 'student';
+export type LiveClassMessageType = 'text' | 'audio';
 
 export interface LiveClass {
   id: string;
   title: string;
   teacherName: string;
+  teacherUid?: string;
   date: string;
   time: string;
   meetingLink: string;
+  meetUrl?: string;
   whatsappLink?: string;
   description?: string;
+  workbookId?: number | null;
+  unitId?: string | null;
+  lessonId?: string | null;
+  isPrivate?: boolean;
+  assignedStudentIds?: string[];
+  assignedStudentNames?: string[];
   status: LiveClassStatus;
   createdBy: string;
   createdAt?: string;
@@ -73,16 +83,36 @@ export interface LiveClassInput {
   date: string;
   time: string;
   meetingLink: string;
+  meetUrl?: string;
   whatsappLink?: string;
   description?: string;
+  workbookId?: number | null;
+  unitId?: string | null;
+  lessonId?: string | null;
+  isPrivate?: boolean;
+  assignedStudentIds?: string[];
+  assignedStudentNames?: string[];
 }
 
 export interface LiveClassMessage {
   id: string;
-  text: string;
+  type?: LiveClassMessageType;
+  role?: LiveClassRole;
+  text?: string;
+  audioDataUrl?: string;
+  audioMimeType?: string;
+  audioDurationSec?: number;
   senderUid: string;
   senderName: string;
   createdAt?: string;
+}
+
+export interface LiveClassPresence {
+  uid: string;
+  name: string;
+  role: LiveClassRole;
+  isOnline: boolean;
+  lastSeenAt?: string;
 }
 
 export interface LiveClassSession {

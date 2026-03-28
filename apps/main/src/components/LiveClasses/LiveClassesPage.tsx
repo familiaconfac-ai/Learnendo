@@ -2,14 +2,17 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassInput } from '../../types';
 import {
+  canAccessLiveClass,
   createLiveClass,
   ensureLiveClassSession,
+  getLiveClassMeetLink,
   subscribeLiveClass,
   subscribeLiveClasses,
   updateLiveClass,
 } from '../../services/liveClassesService';
 import { LiveClassForm } from './LiveClassForm';
 import { LiveClassDetailsPage } from './LiveClassDetailsPage';
+import { LiveClassRoomPage } from './LiveClassRoomPage';
 
 interface LiveClassesPageProps {
   user: User;
@@ -45,13 +48,31 @@ const buildOptimisticClass = (classId: string, createdBy: string, input: LiveCla
     date: input.date,
     time: input.time,
     meetingLink: input.meetingLink.trim(),
+    meetUrl: input.meetUrl?.trim() ?? input.meetingLink.trim(),
     whatsappLink: input.whatsappLink?.trim() ?? '',
     description: input.description?.trim() ?? '',
+    workbookId: input.workbookId ?? 1,
+    unitId: input.unitId?.trim() ?? '',
+    lessonId: input.lessonId?.trim() ?? '',
+    isPrivate: input.isPrivate ?? true,
+    assignedStudentIds: input.assignedStudentIds ?? [],
+    assignedStudentNames: input.assignedStudentNames ?? [],
     status,
     createdBy,
+    teacherUid: createdBy,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+};
+
+const getRoomClassIdFromPath = (): string => {
+  const match = window.location.pathname.match(/^\/live-class\/([^/]+)$/);
+  if (!match?.[1]) return '';
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
 };
 
 const openExternalLink = (rawUrl: string) => {
@@ -70,6 +91,31 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [roomClassId, setRoomClassId] = useState<string>(() => getRoomClassIdFromPath());
+  const [accessError, setAccessError] = useState('');
+
+  const enterRoom = (liveClass: LiveClass) => {
+    const allowed = canAccessLiveClass(liveClass, user.uid, isTeacher);
+    if (!allowed) {
+      setAccessError('You do not have access to this private classroom.');
+      return;
+    }
+    setAccessError('');
+    setSelectedClassId(liveClass.id);
+    setSelectedClass(liveClass);
+    setRoomClassId(liveClass.id);
+    const roomPath = `/live-class/${encodeURIComponent(liveClass.id)}`;
+    if (window.location.pathname !== roomPath) {
+      window.history.pushState({}, '', roomPath);
+    }
+  };
+
+  const leaveRoom = () => {
+    setRoomClassId('');
+    if (window.location.pathname.startsWith('/live-class/')) {
+      window.history.pushState({}, '', '/');
+    }
+  };
 
   useEffect(() => {
     const unsub = subscribeLiveClasses(
@@ -92,6 +138,20 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
   }, []);
 
   useEffect(() => {
+    if (!roomClassId || selectedClassId === roomClassId) return;
+    setSelectedClassId(roomClassId);
+  }, [roomClassId, selectedClassId]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      setRoomClassId(getRoomClassIdFromPath());
+    };
+
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  useEffect(() => {
     if (!selectedClassId) return;
     const unsub = subscribeLiveClass(
       selectedClassId,
@@ -102,6 +162,11 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
   }, [selectedClassId]);
 
   const sortedClasses = useMemo(() => classes, [classes]);
+  const activeRoomClass = useMemo(() => {
+    if (!roomClassId) return null;
+    if (selectedClass?.id === roomClassId) return selectedClass;
+    return classes.find((item) => item.id === roomClassId) ?? null;
+  }, [classes, roomClassId, selectedClass]);
 
   const openCreate = () => {
     setEditingClass(null);
@@ -141,17 +206,31 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     }
   };
 
+  if (roomClassId && activeRoomClass) {
+    return (
+      <LiveClassRoomPage
+        liveClass={activeRoomClass}
+        user={user}
+        isTeacher={isTeacher}
+        onExit={leaveRoom}
+      />
+    );
+  }
+
   if (selectedClass && !showForm) {
+    const hasRoomAccess = canAccessLiveClass(selectedClass, user.uid, isTeacher);
     return (
       <LiveClassDetailsPage
         liveClass={selectedClass}
         user={user}
         isTeacher={isTeacher}
+        hasRoomAccess={hasRoomAccess}
         onBack={() => {
           setSelectedClassId('');
           setSelectedClass(null);
         }}
         onEdit={() => openEdit(selectedClass)}
+        onEnterRoom={() => enterRoom(selectedClass)}
       />
     );
   }
@@ -172,6 +251,12 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
           </button>
         )}
       </div>
+
+      {accessError ? (
+        <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-sm font-semibold text-rose-200">
+          {accessError}
+        </div>
+      ) : null}
 
       {showForm && (
         <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-900 p-3">
@@ -236,16 +321,27 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
                 </p>
               )}
 
-              <div className="mt-3 flex justify-end">
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
-                    openExternalLink(liveClass.meetingLink);
+                    enterRoom(liveClass);
                   }}
                   className="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-black text-slate-900 shadow-[0_4px_0_0_#059669]"
                 >
-                  Enter Class
+                  Enter Room
+                </button>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openExternalLink(getLiveClassMeetLink(liveClass));
+                  }}
+                  disabled={!getLiveClassMeetLink(liveClass)}
+                  className="rounded-xl bg-blue-500 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8] disabled:opacity-50"
+                >
+                  Meet
                 </button>
               </div>
             </article>

@@ -12,7 +12,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { LiveClass, LiveClassInput, LiveClassMessage } from '../types';
+import { LiveClass, LiveClassInput, LiveClassMessage, LiveClassRole } from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 
@@ -41,15 +41,39 @@ function normalizeExternalLink(raw: string): string {
   return `https://${trimmed}`;
 }
 
+function normalizeStudentIds(ids: string[] | undefined): string[] {
+  if (!ids || ids.length === 0) return [];
+  const cleaned = ids
+    .map((id) => id.trim())
+    .filter(Boolean);
+  return Array.from(new Set(cleaned));
+}
+
+function normalizeStudentNames(names: string[] | undefined): string[] {
+  if (!names || names.length === 0) return [];
+  return names
+    .map((name) => name.trim())
+    .filter(Boolean);
+}
+
 function buildLiveClassPayload(input: LiveClassInput) {
+  const normalizedMeetingLink = normalizeExternalLink(input.meetingLink);
+  const normalizedMeetUrl = normalizeExternalLink(input.meetUrl ?? input.meetingLink);
   return {
     title: input.title.trim(),
     teacherName: input.teacherName.trim(),
     date: input.date,
     time: input.time,
-    meetingLink: normalizeExternalLink(input.meetingLink),
+    meetingLink: normalizedMeetingLink,
+    meetUrl: normalizedMeetUrl,
     whatsappLink: normalizeExternalLink(input.whatsappLink ?? ''),
     description: input.description?.trim() ?? '',
+    workbookId: input.workbookId ?? null,
+    unitId: input.unitId?.trim() ?? null,
+    lessonId: input.lessonId?.trim() ?? null,
+    isPrivate: input.isPrivate ?? true,
+    assignedStudentIds: normalizeStudentIds(input.assignedStudentIds),
+    assignedStudentNames: normalizeStudentNames(input.assignedStudentNames),
     status: deriveLiveClassStatus(input.date, input.time),
   };
 }
@@ -58,11 +82,19 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   id,
   title: data.title ?? 'Untitled class',
   teacherName: data.teacherName ?? 'Teacher',
+  teacherUid: data.teacherUid ?? data.createdBy ?? '',
   date: data.date ?? '',
   time: data.time ?? '',
-  meetingLink: data.meetingLink ?? '',
+  meetingLink: data.meetingLink ?? data.meetUrl ?? '',
+  meetUrl: data.meetUrl ?? data.meetingLink ?? '',
   whatsappLink: data.whatsappLink ?? '',
   description: data.description ?? '',
+  workbookId: data.workbookId ?? null,
+  unitId: data.unitId ?? null,
+  lessonId: data.lessonId ?? null,
+  isPrivate: data.isPrivate ?? false,
+  assignedStudentIds: Array.isArray(data.assignedStudentIds) ? data.assignedStudentIds : [],
+  assignedStudentNames: Array.isArray(data.assignedStudentNames) ? data.assignedStudentNames : [],
   status: deriveLiveClassStatus(data.date ?? '', data.time ?? ''),
   createdBy: data.createdBy ?? '',
   createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
@@ -71,11 +103,33 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
 
 const mapMessage = (id: string, data: Record<string, any>): LiveClassMessage => ({
   id,
+  type: (data.type ?? 'text') as LiveClassMessage['type'],
+  role: (data.role ?? 'student') as LiveClassMessage['role'],
   text: data.text ?? '',
+  audioDataUrl: data.audioDataUrl ?? '',
+  audioMimeType: data.audioMimeType ?? '',
+  audioDurationSec: Number(data.audioDurationSec ?? 0) || undefined,
   senderUid: data.senderUid ?? '',
   senderName: data.senderName ?? 'Student',
   createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
 });
+
+export function getLiveClassMeetLink(liveClass: Pick<LiveClass, 'meetUrl' | 'meetingLink'>): string {
+  return (liveClass.meetUrl ?? liveClass.meetingLink ?? '').trim();
+}
+
+export function canAccessLiveClass(
+  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'isPrivate' | 'assignedStudentIds'>,
+  userUid: string,
+  isTeacher: boolean,
+): boolean {
+  if (!userUid) return false;
+  if (isTeacher) return true;
+  if (liveClass.createdBy === userUid || liveClass.teacherUid === userUid) return true;
+  if (!liveClass.isPrivate) return true;
+  const allowedIds = normalizeStudentIds(liveClass.assignedStudentIds ?? []);
+  return allowedIds.includes(userUid);
+}
 
 export function subscribeLiveClasses(
   onData: (classes: LiveClass[]) => void,
@@ -148,6 +202,7 @@ export async function createLiveClass(createdBy: string, input: LiveClassInput):
   const payload = {
     ...buildLiveClassPayload(input),
     createdBy,
+    teacherUid: createdBy,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -175,8 +230,15 @@ export async function updateLiveClass(classId: string, input: Partial<LiveClassI
       date: input.date ?? '',
       time: input.time ?? '',
       meetingLink: input.meetingLink ?? '',
+      meetUrl: input.meetUrl ?? input.meetingLink ?? '',
       whatsappLink: input.whatsappLink ?? '',
       description: input.description ?? '',
+      workbookId: input.workbookId ?? null,
+      unitId: input.unitId ?? null,
+      lessonId: input.lessonId ?? null,
+      isPrivate: input.isPrivate ?? true,
+      assignedStudentIds: input.assignedStudentIds ?? [],
+      assignedStudentNames: input.assignedStudentNames ?? [],
     }),
     materialLink: deleteField(),
     updatedAt: serverTimestamp(),
@@ -235,13 +297,42 @@ export async function sendLiveClassMessage(
   senderUid: string,
   senderName: string,
   text: string,
+  role: LiveClassRole = 'student',
 ): Promise<void> {
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId || !text.trim()) return;
 
   const messagesRef = collection(db, LIVE_CLASSES_COLLECTION, classId, 'messages');
   await addDoc(messagesRef, {
+    type: 'text',
+    role,
     text: text.trim(),
+    senderUid,
+    senderName,
+    createdAt: serverTimestamp(),
+  });
+}
+
+export async function sendLiveClassAudioMessage(
+  classId: string,
+  senderUid: string,
+  senderName: string,
+  audioDataUrl: string,
+  audioMimeType: string,
+  audioDurationSec?: number,
+  role: LiveClassRole = 'student',
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !audioDataUrl) return;
+
+  const messagesRef = collection(db, LIVE_CLASSES_COLLECTION, classId, 'messages');
+  await addDoc(messagesRef, {
+    type: 'audio',
+    role,
+    text: '',
+    audioDataUrl,
+    audioMimeType,
+    audioDurationSec: audioDurationSec ?? 0,
     senderUid,
     senderName,
     createdAt: serverTimestamp(),

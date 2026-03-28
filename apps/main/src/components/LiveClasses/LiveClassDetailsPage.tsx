@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassSession } from '../../types';
 import { subscribeLiveSession } from '../../services/liveSessionService';
+import { getLiveClassMeetLink } from '../../services/liveClassesService';
 import { LiveClassChat } from './LiveClassChat';
 import { TeacherLiveControlPanel } from './TeacherLiveControlPanel';
 
@@ -9,8 +10,10 @@ interface LiveClassDetailsPageProps {
   liveClass: LiveClass;
   user: User;
   isTeacher: boolean;
+  hasRoomAccess: boolean;
   onBack: () => void;
   onEdit: () => void;
+  onEnterRoom: () => void;
 }
 
 const statusClassMap: Record<LiveClass['status'], string> = {
@@ -30,8 +33,10 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   liveClass,
   user,
   isTeacher,
+  hasRoomAccess,
   onBack,
   onEdit,
+  onEnterRoom,
 }) => {
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
@@ -49,7 +54,8 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
     return unsubscribe;
   }, [liveClass.id]);
 
-  const canEnterClass = useMemo(() => !!liveClass.meetingLink.trim(), [liveClass.meetingLink]);
+  const meetLink = useMemo(() => getLiveClassMeetLink(liveClass), [liveClass]);
+  const canOpenMeet = useMemo(() => !!meetLink, [meetLink]);
   const canOpenWhatsapp = useMemo(() => !!(liveClass.whatsappLink ?? '').trim(), [liveClass.whatsappLink]);
 
   return (
@@ -67,19 +73,37 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
         <p className="text-sm text-slate-300">Teacher: {liveClass.teacherName}</p>
         <p className="text-sm text-slate-300">Date: {liveClass.date} • {liveClass.time}</p>
         {liveClass.description && <p className="mt-3 text-sm text-slate-200">{liveClass.description}</p>}
+        {liveClass.isPrivate && !hasRoomAccess && (
+          <p className="mt-3 rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-xs font-semibold text-rose-200">
+            Private class. You are not assigned to this room.
+          </p>
+        )}
 
         <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button
             type="button"
-            onClick={() => openExternalLink(liveClass.meetingLink)}
-            disabled={!canEnterClass}
+            onClick={onEnterRoom}
+            disabled={!hasRoomAccess}
             className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
-              canEnterClass
+              hasRoomAccess
                 ? 'bg-emerald-500 text-slate-900 shadow-[0_4px_0_0_#059669]'
                 : 'bg-slate-700 text-slate-400'
             }`}
           >
-            Enter Class
+            Enter Room
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openExternalLink(meetLink)}
+            disabled={!canOpenMeet}
+            className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
+              canOpenMeet
+                ? 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
+                : 'bg-slate-700 text-slate-400'
+            }`}
+          >
+            Open Meet (Optional)
           </button>
 
           <button
@@ -122,7 +146,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
       )}
 
       <div className="mt-4">
-        <LiveClassChat classId={liveClass.id} user={user} />
+        <LiveClassChat classId={liveClass.id} user={user} role={isTeacher ? 'teacher' : 'student'} />
       </div>
     </div>
   );

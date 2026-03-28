@@ -3,11 +3,12 @@ import {
   collection,
   doc,
   onSnapshot,
+  query,
   serverTimestamp,
   setDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { LiveClassResponse, LiveClassSession } from '../types';
+import { LiveClassPresence, LiveClassResponse, LiveClassSession } from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 
@@ -29,6 +30,14 @@ const mapResponse = (id: string, data: Record<string, any>): LiveClassResponse =
   exerciseId: data.exerciseId ?? null,
   answer: data.answer ?? '',
   createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
+});
+
+const mapPresence = (id: string, data: Record<string, any>): LiveClassPresence => ({
+  uid: id,
+  name: data.name ?? 'Student',
+  role: (data.role ?? 'student') as LiveClassPresence['role'],
+  isOnline: Boolean(data.isOnline),
+  lastSeenAt: data.lastSeenAt?.toDate?.()?.toISOString?.() ?? data.lastSeenAt ?? undefined,
 });
 
 export function subscribeLiveSession(
@@ -114,5 +123,66 @@ export function subscribeLiveResponses(
     (error) => {
       if (onError) onError(error);
     },
+  );
+}
+
+export function subscribeLivePresence(
+  classId: string,
+  onData: (presence: LiveClassPresence[]) => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  if (!db || !classId) {
+    onData([]);
+    return () => {};
+  }
+
+  const presenceRef = collection(db, LIVE_CLASSES_COLLECTION, classId, 'presence');
+  const presenceQuery = query(presenceRef);
+  return onSnapshot(
+    presenceQuery,
+    (snapshot) => {
+      const presence = snapshot.docs.map((d) => mapPresence(d.id, d.data() as Record<string, any>));
+      onData(presence);
+    },
+    (error) => {
+      if (onError) onError(error);
+    },
+  );
+}
+
+export async function upsertLivePresence(
+  classId: string,
+  uid: string,
+  name: string,
+  role: LiveClassPresence['role'],
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !uid) return;
+
+  const presenceRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'presence', uid);
+  await setDoc(
+    presenceRef,
+    {
+      name: name.trim() || 'Student',
+      role,
+      isOnline: true,
+      lastSeenAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export async function markLivePresenceOffline(classId: string, uid: string): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !uid) return;
+
+  const presenceRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'presence', uid);
+  await setDoc(
+    presenceRef,
+    {
+      isOnline: false,
+      lastSeenAt: serverTimestamp(),
+    },
+    { merge: true },
   );
 }

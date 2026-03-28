@@ -149,9 +149,16 @@ const App: React.FC = () => {
   const [showGrammarModal, setShowGrammarModal] = useState(false);
   const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
+  const languagePlacementDone = Boolean((progress.tests as any)?.placements?.[language]);
+  const localPlacementDone = user?.uid
+    ? Boolean(
+      localStorage.getItem(`learnendo_placement_${user.uid}_${language}`)
+      || localStorage.getItem(`learnendo_placement_${user.uid}`),
+    )
+    : false;
   const hasPlacementDone = progressLoaded && (
-    (progress.placementScore != null) ||
-    (user?.uid ? !!localStorage.getItem(`learnendo_placement_${user.uid}`) : false)
+    languagePlacementDone ||
+    localPlacementDone
   );
   const showPlacementBanner = progressLoaded && !hasPlacementDone &&
     !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON, SectionType.LIVE_CLASSES] as string[]).includes(currentSection);
@@ -897,6 +904,7 @@ const App: React.FC = () => {
     // Mark placement as done in localStorage so the gate banner disappears immediately.
     if (user?.uid) {
       localStorage.setItem(`learnendo_placement_${user.uid}`, '1');
+      localStorage.setItem(`learnendo_placement_${user.uid}_${language}`, '1');
     }
 
     // Persist placement test result (score + level) to flat progress doc.
