@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
+import { createPortal } from 'react-dom';
 import { LiveClassMessage, LiveClassRole } from '../../types';
 import {
   AUDIO_NOTE_EXPIRATION_MS,
@@ -48,8 +49,12 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
 }) => {
   const chatRole = role;
   const [messages, setMessages] = useState<LiveClassMessage[]>([]);
-  const [menuOpenForMessageId, setMenuOpenForMessageId] = useState<string | null>(null);
   const [actionInProgressForMessageId, setActionInProgressForMessageId] = useState<string | null>(null);
+  const [actionMenu, setActionMenu] = useState<{
+    messageId: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -61,6 +66,8 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
   const [audioMimeType, setAudioMimeType] = useState('audio/webm');
   const [audioError, setAudioError] = useState('');
   const streamRef = useRef<MediaStream | null>(null);
+  const chatRef = useRef<HTMLDivElement | null>(null);
+  const actionMenuRef = useRef<HTMLDivElement | null>(null);
 
   const senderName = useMemo(
     () => user.displayName || user.email || 'Student',
@@ -94,6 +101,32 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [audioNotePreviewUrl]);
+
+  useEffect(() => {
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (chatRef.current?.contains(target) || actionMenuRef.current?.contains(target)) {
+        return;
+      }
+      if (!chatRef.current) return;
+      if (!chatRef.current.contains(target)) {
+        setActionMenu(null);
+      }
+    };
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActionMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onEscape);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, []);
 
   const handleSend = async () => {
     if (!text.trim() || sending) return;
@@ -197,13 +230,15 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
     }
   };
 
+  const isAudioMessage = (msg: LiveClassMessage): boolean => msg.type === 'audio' || !!msg.audioDataUrl;
+
   const canManageAudioNote = (msg: LiveClassMessage): boolean => {
-    if (msg.type !== 'audio') return false;
+    if (!isAudioMessage(msg)) return false;
     return chatRole === 'teacher' || msg.senderUid === user.uid;
   };
 
   const isAudioNoteExpired = (msg: LiveClassMessage): boolean => {
-    if (msg.type !== 'audio' || msg.isPinned) return false;
+    if (!isAudioMessage(msg) || msg.isPinned) return false;
     const now = Date.now();
     if (typeof msg.expiresAtMs === 'number') {
       return msg.expiresAtMs <= now;
@@ -226,7 +261,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
     setActionInProgressForMessageId(msg.id);
     try {
       await deleteLiveClassMessage(classId, msg.id);
-      setMenuOpenForMessageId(null);
+      setActionMenu(null);
     } catch (error) {
       console.warn('[LiveClassChat] delete audio note failed:', error);
     } finally {
@@ -245,7 +280,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
         user.uid,
         senderName,
       );
-      setMenuOpenForMessageId(null);
+      setActionMenu(null);
     } catch (error) {
       console.warn('[LiveClassChat] pin audio note failed:', error);
     } finally {
@@ -253,8 +288,24 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
     }
   };
 
+  const handleOpenActionMenu = (event: React.MouseEvent<HTMLButtonElement>, messageId: string) => {
+    event.stopPropagation();
+    const rect = event.currentTarget.getBoundingClientRect();
+    setActionMenu((current) => {
+      if (current?.messageId === messageId) {
+        return null;
+      }
+
+      return {
+        messageId,
+        top: rect.bottom + 6,
+        left: Math.max(8, rect.right - 148),
+      };
+    });
+  };
+
   return (
-    <div className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
+    <div ref={chatRef} className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
       <h3 className="mb-2 text-sm font-black uppercase tracking-wide text-blue-300">Class Chat</h3>
 
       <div className="mb-3 max-h-72 space-y-2 overflow-y-auto rounded-xl bg-slate-900 p-3">
@@ -272,45 +323,26 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
                   mine ? 'ml-auto bg-blue-600 text-white' : 'bg-slate-700 text-slate-100'
                 }`}
               >
-                {msg.type === 'audio' && canManage ? (
-                  <div className="absolute right-2 top-2">
+                {isAudioMessage(msg) && canManage ? (
+                  <div className="mb-2 flex items-start justify-between gap-2">
+                    <p className="text-[11px] font-semibold opacity-80">
+                      {msg.senderName}
+                      {msg.isPinned ? '  [Pinned]' : ''}
+                    </p>
                     <button
                       type="button"
-                      className="rounded-md px-1 text-xs font-black opacity-80 hover:bg-black/20"
-                      onClick={() => setMenuOpenForMessageId((current) => (current === msg.id ? null : msg.id))}
+                      className="rounded-lg border border-white/20 bg-black/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-black/30"
+                      onClick={(event) => handleOpenActionMenu(event, msg.id)}
                       disabled={isBusy}
-                      aria-label="Message options"
+                      aria-label="Open note actions"
                     >
-                      ...
+                      Actions
                     </button>
-                    {menuOpenForMessageId === msg.id ? (
-                      <div className="absolute right-0 z-10 mt-1 w-32 rounded-lg border border-slate-600 bg-slate-900 p-1 shadow-xl">
-                        <button
-                          type="button"
-                          className="block w-full rounded-md px-2 py-1 text-left text-xs font-semibold text-slate-100 hover:bg-slate-800"
-                          onClick={() => void handleTogglePinAudioNote(msg)}
-                          disabled={isBusy}
-                        >
-                          {msg.isPinned ? 'Unpin note' : 'Pin note'}
-                        </button>
-                        <button
-                          type="button"
-                          className="mt-1 block w-full rounded-md px-2 py-1 text-left text-xs font-semibold text-rose-300 hover:bg-slate-800"
-                          onClick={() => void handleDeleteAudioNote(msg)}
-                          disabled={isBusy}
-                        >
-                          Delete note
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
                 ) : null}
 
-                <p className="text-[11px] font-semibold opacity-80">
-                  {msg.senderName}
-                  {msg.type === 'audio' && msg.isPinned ? '  [Pinned]' : ''}
-                </p>
-                {msg.type === 'audio' && msg.audioDataUrl ? (
+                {!isAudioMessage(msg) ? <p className="text-[11px] font-semibold opacity-80">{msg.senderName}</p> : null}
+                {isAudioMessage(msg) && msg.audioDataUrl ? (
                   <div className="mt-1 space-y-1">
                     <audio controls src={msg.audioDataUrl} className="w-full" preload="none" />
                     {msg.audioDurationSec ? (
@@ -325,6 +357,45 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
           })
         )}
       </div>
+
+      {actionMenu ? createPortal(
+        <div
+          ref={actionMenuRef}
+          className="fixed z-[1200] w-36 rounded-lg border border-slate-600 bg-slate-900 p-1 shadow-2xl"
+          style={{ top: actionMenu.top, left: actionMenu.left }}
+        >
+          {(() => {
+            const targetMessage = visibleMessages.find((msg) => msg.id === actionMenu.messageId);
+            if (!targetMessage || !canManageAudioNote(targetMessage)) {
+              return null;
+            }
+
+            const isBusy = actionInProgressForMessageId === targetMessage.id;
+
+            return (
+              <>
+                <button
+                  type="button"
+                  className="block w-full rounded-md px-2 py-1 text-left text-xs font-semibold text-slate-100 hover:bg-slate-800"
+                  onClick={() => void handleTogglePinAudioNote(targetMessage)}
+                  disabled={isBusy}
+                >
+                  {targetMessage.isPinned ? 'Unpin note' : 'Pin note'}
+                </button>
+                <button
+                  type="button"
+                  className="mt-1 block w-full rounded-md px-2 py-1 text-left text-xs font-semibold text-rose-300 hover:bg-slate-800"
+                  onClick={() => void handleDeleteAudioNote(targetMessage)}
+                  disabled={isBusy}
+                >
+                  Delete note
+                </button>
+              </>
+            );
+          })()}
+        </div>,
+        document.body,
+      ) : null}
 
       {audioError ? <p className="mb-2 text-xs font-semibold text-rose-300">{audioError}</p> : null}
 

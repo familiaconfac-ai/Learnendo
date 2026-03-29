@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LessonLanguageCode } from '../../types';
 
 interface LanguageSelectorProps {
@@ -17,15 +18,31 @@ const LANGUAGE_OPTIONS: { id: LessonLanguageCode; label: string; iconSrc: string
 export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onChange }) => {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const active = useMemo(
     () => LANGUAGE_OPTIONS.find((lang) => lang.id === current) ?? LANGUAGE_OPTIONS[0],
     [current],
   );
 
+  const updateMenuPosition = () => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setMenuPosition({
+      top: rect.bottom + 6,
+      left: Math.max(8, rect.left),
+    });
+  };
+
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (containerRef.current?.contains(target) || menuRef.current?.contains(target)) {
+        return;
+      }
       if (!containerRef.current) return;
-      if (!containerRef.current.contains(event.target as Node)) {
+      if (!containerRef.current.contains(target)) {
         setOpen(false);
       }
     };
@@ -33,6 +50,30 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onC
     document.addEventListener('mousedown', onPointerDown);
     return () => document.removeEventListener('mousedown', onPointerDown);
   }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    updateMenuPosition();
+
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    const onViewportChange = () => updateMenuPosition();
+
+    window.addEventListener('resize', onViewportChange);
+    window.addEventListener('scroll', onViewportChange, true);
+    document.addEventListener('keydown', onEscape);
+
+    return () => {
+      window.removeEventListener('resize', onViewportChange);
+      window.removeEventListener('scroll', onViewportChange, true);
+      document.removeEventListener('keydown', onEscape);
+    };
+  }, [open]);
 
   const handleSelect = (lang: LessonLanguageCode) => {
     onChange(lang);
@@ -42,11 +83,15 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onC
   return (
     <div ref={containerRef} className="relative flex items-center">
       <button
+        ref={triggerRef}
         type="button"
         aria-label={`Current language: ${active.label}`}
         title={active.label}
         onClick={(e) => {
           e.stopPropagation();
+          if (!open) {
+            updateMenuPosition();
+          }
           setOpen((prev) => !prev);
         }}
         className="rounded-full p-1 transition-transform active:scale-95 ring-2 ring-blue-500 ring-offset-2"
@@ -54,8 +99,12 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onC
         <img src={active.iconSrc} alt={active.label} width="26" height="26" className="block rounded-full" />
       </button>
 
-      {open ? (
-        <div className="absolute left-0 top-[calc(100%+6px)] z-50 w-40 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl">
+      {open && menuPosition ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed z-[1200] w-40 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-2xl"
+          style={{ top: menuPosition.top, left: menuPosition.left }}
+        >
           {LANGUAGE_OPTIONS.map((lang) => (
             <button
               key={lang.id}
@@ -72,7 +121,8 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onC
               <span>{lang.label}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   );
