@@ -18,7 +18,8 @@ import { db } from './firebase';
 import { LiveClass, LiveClassInput, LiveClassMessage, LiveClassRole } from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
-export const AUDIO_NOTE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
+export const LIVE_CLASS_MESSAGE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
+export const AUDIO_NOTE_EXPIRATION_MS = LIVE_CLASS_MESSAGE_EXPIRATION_MS;
 
 function deriveLiveClassStatus(date: string, time: string): LiveClass['status'] {
   if (!date || !time) return 'upcoming';
@@ -320,6 +321,8 @@ export async function sendLiveClassMessage(
     type: 'text',
     role,
     text: text.trim(),
+    isPinned: false,
+    expiresAtMs: Date.now() + LIVE_CLASS_MESSAGE_EXPIRATION_MS,
     senderUid,
     senderName,
     createdAt: serverTimestamp(),
@@ -347,7 +350,7 @@ export async function sendLiveClassAudioMessage(
     audioMimeType,
     audioDurationSec: audioDurationSec ?? 0,
     isPinned: false,
-    expiresAtMs: Date.now() + AUDIO_NOTE_EXPIRATION_MS,
+    expiresAtMs: Date.now() + LIVE_CLASS_MESSAGE_EXPIRATION_MS,
     senderUid,
     senderName,
     createdAt: serverTimestamp(),
@@ -362,7 +365,7 @@ export async function deleteLiveClassMessage(classId: string, messageId: string)
   await deleteDoc(messageRef);
 }
 
-export async function setLiveClassAudioMessagePinned(
+export async function setLiveClassMessagePinned(
   classId: string,
   messageId: string,
   pinned: boolean,
@@ -386,14 +389,24 @@ export async function setLiveClassAudioMessagePinned(
 
   await updateDoc(messageRef, {
     isPinned: false,
-    expiresAtMs: Date.now() + AUDIO_NOTE_EXPIRATION_MS,
+    expiresAtMs: Date.now() + LIVE_CLASS_MESSAGE_EXPIRATION_MS,
     pinnedAt: deleteField(),
     pinnedByUid: deleteField(),
     pinnedByName: deleteField(),
   });
 }
 
-export async function purgeExpiredLiveClassAudioNotes(classId: string): Promise<void> {
+export async function setLiveClassAudioMessagePinned(
+  classId: string,
+  messageId: string,
+  pinned: boolean,
+  actorUid: string,
+  actorName: string,
+): Promise<void> {
+  await setLiveClassMessagePinned(classId, messageId, pinned, actorUid, actorName);
+}
+
+export async function purgeExpiredLiveClassMessages(classId: string): Promise<void> {
   if (!db || !classId) return;
 
   const messagesRef = collection(db, LIVE_CLASSES_COLLECTION, classId, 'messages');
@@ -401,8 +414,12 @@ export async function purgeExpiredLiveClassAudioNotes(classId: string): Promise<
   const snapshot = await getDocs(expiredQuery);
   const targets = snapshot.docs.filter((docSnap) => {
     const data = docSnap.data() as Record<string, any>;
-    return data.type === 'audio' && data.isPinned !== true;
+    return data.isPinned !== true;
   });
 
   await Promise.all(targets.map((docSnap) => deleteDoc(docSnap.ref)));
+}
+
+export async function purgeExpiredLiveClassAudioNotes(classId: string): Promise<void> {
+  await purgeExpiredLiveClassMessages(classId);
 }

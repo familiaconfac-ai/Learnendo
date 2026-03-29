@@ -3,10 +3,10 @@ import { User } from 'firebase/auth';
 import { createPortal } from 'react-dom';
 import { LiveClassMessage, LiveClassRole } from '../../types';
 import {
-  AUDIO_NOTE_EXPIRATION_MS,
+  LIVE_CLASS_MESSAGE_EXPIRATION_MS,
   deleteLiveClassMessage,
-  purgeExpiredLiveClassAudioNotes,
-  setLiveClassAudioMessagePinned,
+  purgeExpiredLiveClassMessages,
+  setLiveClassMessagePinned,
   sendLiveClassAudioMessage,
   sendLiveClassMessage,
   subscribeLiveClassMessages,
@@ -83,8 +83,8 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
 
   useEffect(() => {
     const runPurge = () => {
-      void purgeExpiredLiveClassAudioNotes(classId).catch((error) => {
-        console.warn('[LiveClassChat] audio note purge failed:', error);
+      void purgeExpiredLiveClassMessages(classId).catch((error) => {
+        console.warn('[LiveClassChat] message purge failed:', error);
       });
     };
 
@@ -232,13 +232,12 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
 
   const isAudioMessage = (msg: LiveClassMessage): boolean => msg.type === 'audio' || !!msg.audioDataUrl;
 
-  const canManageAudioNote = (msg: LiveClassMessage): boolean => {
-    if (!isAudioMessage(msg)) return false;
+  const canManageMessage = (msg: LiveClassMessage): boolean => {
     return chatRole === 'teacher' || msg.senderUid === user.uid;
   };
 
-  const isAudioNoteExpired = (msg: LiveClassMessage): boolean => {
-    if (!isAudioMessage(msg) || msg.isPinned) return false;
+  const isMessageExpired = (msg: LiveClassMessage): boolean => {
+    if (msg.isPinned) return false;
     const now = Date.now();
     if (typeof msg.expiresAtMs === 'number') {
       return msg.expiresAtMs <= now;
@@ -246,34 +245,34 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
 
     const createdAtMs = msg.createdAt ? Date.parse(msg.createdAt) : Number.NaN;
     if (Number.isFinite(createdAtMs)) {
-      return createdAtMs + AUDIO_NOTE_EXPIRATION_MS <= now;
+      return createdAtMs + LIVE_CLASS_MESSAGE_EXPIRATION_MS <= now;
     }
     return false;
   };
 
   const visibleMessages = useMemo(
-    () => messages.filter((msg) => !isAudioNoteExpired(msg)),
+    () => messages.filter((msg) => !isMessageExpired(msg)),
     [messages],
   );
 
-  const handleDeleteAudioNote = async (msg: LiveClassMessage) => {
-    if (!canManageAudioNote(msg) || actionInProgressForMessageId) return;
+  const handleDeleteMessage = async (msg: LiveClassMessage) => {
+    if (!canManageMessage(msg) || actionInProgressForMessageId) return;
     setActionInProgressForMessageId(msg.id);
     try {
       await deleteLiveClassMessage(classId, msg.id);
       setActionMenu(null);
     } catch (error) {
-      console.warn('[LiveClassChat] delete audio note failed:', error);
+      console.warn('[LiveClassChat] delete message failed:', error);
     } finally {
       setActionInProgressForMessageId(null);
     }
   };
 
-  const handleTogglePinAudioNote = async (msg: LiveClassMessage) => {
-    if (!canManageAudioNote(msg) || actionInProgressForMessageId) return;
+  const handleTogglePinMessage = async (msg: LiveClassMessage) => {
+    if (!canManageMessage(msg) || actionInProgressForMessageId) return;
     setActionInProgressForMessageId(msg.id);
     try {
-      await setLiveClassAudioMessagePinned(
+      await setLiveClassMessagePinned(
         classId,
         msg.id,
         !msg.isPinned,
@@ -282,7 +281,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
       );
       setActionMenu(null);
     } catch (error) {
-      console.warn('[LiveClassChat] pin audio note failed:', error);
+      console.warn('[LiveClassChat] pin message failed:', error);
     } finally {
       setActionInProgressForMessageId(null);
     }
@@ -314,7 +313,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
         ) : (
           visibleMessages.map((msg) => {
             const mine = msg.senderUid === user.uid;
-            const canManage = canManageAudioNote(msg);
+            const canManage = canManageMessage(msg);
             const isBusy = actionInProgressForMessageId === msg.id;
             return (
               <div
@@ -323,7 +322,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
                   mine ? 'ml-auto bg-blue-600 text-white' : 'bg-slate-700 text-slate-100'
                 }`}
               >
-                {isAudioMessage(msg) && canManage ? (
+                {canManage ? (
                   <div className="mb-2 flex items-start justify-between gap-2">
                     <p className="text-[11px] font-semibold opacity-80">
                       {msg.senderName}
@@ -334,14 +333,19 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
                       className="rounded-lg border border-white/20 bg-black/20 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white hover:bg-black/30"
                       onClick={(event) => handleOpenActionMenu(event, msg.id)}
                       disabled={isBusy}
-                      aria-label="Open note actions"
+                      aria-label="Open message actions"
                     >
                       Actions
                     </button>
                   </div>
                 ) : null}
 
-                {!isAudioMessage(msg) ? <p className="text-[11px] font-semibold opacity-80">{msg.senderName}</p> : null}
+                {!canManage ? (
+                  <p className="text-[11px] font-semibold opacity-80">
+                    {msg.senderName}
+                    {msg.isPinned ? '  [Pinned]' : ''}
+                  </p>
+                ) : null}
                 {isAudioMessage(msg) && msg.audioDataUrl ? (
                   <div className="mt-1 space-y-1">
                     <audio controls src={msg.audioDataUrl} className="w-full" preload="none" />
@@ -366,7 +370,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
         >
           {(() => {
             const targetMessage = visibleMessages.find((msg) => msg.id === actionMenu.messageId);
-            if (!targetMessage || !canManageAudioNote(targetMessage)) {
+            if (!targetMessage || !canManageMessage(targetMessage)) {
               return null;
             }
 
@@ -377,7 +381,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
                 <button
                   type="button"
                   className="block w-full rounded-md px-2 py-1 text-left text-xs font-semibold text-slate-100 hover:bg-slate-800"
-                  onClick={() => void handleTogglePinAudioNote(targetMessage)}
+                  onClick={() => void handleTogglePinMessage(targetMessage)}
                   disabled={isBusy}
                 >
                   {targetMessage.isPinned ? 'Unpin note' : 'Pin note'}
@@ -385,7 +389,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
                 <button
                   type="button"
                   className="mt-1 block w-full rounded-md px-2 py-1 text-left text-xs font-semibold text-rose-300 hover:bg-slate-800"
-                  onClick={() => void handleDeleteAudioNote(targetMessage)}
+                  onClick={() => void handleDeleteMessage(targetMessage)}
                   disabled={isBusy}
                 >
                   Delete note

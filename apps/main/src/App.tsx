@@ -57,6 +57,14 @@ const COURSE_TO_LANGUAGE: Record<string, LessonLanguageCode> = {
   'hebrew_biblical': 'he',
 };
 
+const LANGUAGE_TO_PRIMARY_COURSE: Record<LessonLanguageCode, string> = {
+  en: 'english',
+  pt: 'portuguese_foreigners',
+  es: 'spanish',
+  el: 'greek_koine',
+  he: 'hebrew_biblical',
+};
+
 
 
 const COURSE_SELECTOR_OPTIONS = [
@@ -248,15 +256,16 @@ const App: React.FC = () => {
   }, [language, setLanguage, currentCourseId, progress]);
 
   const handleLanguageSelect = useCallback((newLanguage: LessonLanguageCode) => {
-    setLanguage(newLanguage);
-    setCurrentWorkbookId(1);
-    setCurrentWorkbook(null);
-    setCurrentLessonId(null);
-    setCurrentDay(null);
-    setActiveWeeklyTest(null);
-    setCurrentSection(SectionType.COURSES);
+    const targetCourseId = LANGUAGE_TO_PRIMARY_COURSE[newLanguage] ?? DEFAULT_COURSE_ID;
+
+    if (currentCourseId !== targetCourseId) {
+      handleCourseChange(targetCourseId);
+    } else if (language !== newLanguage) {
+      setLanguage(newLanguage);
+    }
+
     setCourseMenuOpen(false);
-  }, [setLanguage]);
+  }, [currentCourseId, handleCourseChange, language, setLanguage]);
 
 
 
