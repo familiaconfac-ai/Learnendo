@@ -124,7 +124,12 @@ const App: React.FC = () => {
     lastCompletedDate: new Date().toISOString()
   });
   const [currentCourseId, setCurrentCourseId] = useState<string | null>(null);
-  const [currentSection, setCurrentSection] = useState<SectionType>(SectionType.COURSES);
+  const [currentSection, setCurrentSection] = useState<SectionType>(() => {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/live-class/')) {
+      return SectionType.LIVE_CLASSES;
+    }
+    return SectionType.COURSES;
+  });
   const [menuOpen, setMenuOpen] = useState(false);
   const [courseMenuOpen, setCourseMenuOpen] = useState(false);
   const [currentWorkbookId, setCurrentWorkbookId] = useState<number | null>(null);
