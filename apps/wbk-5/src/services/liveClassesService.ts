@@ -1,20 +1,24 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { LiveClass, LiveClassInput, LiveClassMessage, LiveClassRole } from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
+export const AUDIO_NOTE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
 
 function deriveLiveClassStatus(date: string, time: string): LiveClass['status'] {
   if (!date || !time) return 'upcoming';
@@ -109,6 +113,11 @@ const mapMessage = (id: string, data: Record<string, any>): LiveClassMessage => 
   audioDataUrl: data.audioDataUrl ?? '',
   audioMimeType: data.audioMimeType ?? '',
   audioDurationSec: Number(data.audioDurationSec ?? 0) || undefined,
+  isPinned: data.isPinned === true,
+  pinnedAt: data.pinnedAt?.toDate?.()?.toISOString?.() ?? data.pinnedAt ?? undefined,
+  pinnedByUid: data.pinnedByUid ?? undefined,
+  pinnedByName: data.pinnedByName ?? undefined,
+  expiresAtMs: typeof data.expiresAtMs === 'number' ? data.expiresAtMs : undefined,
   senderUid: data.senderUid ?? '',
   senderName: data.senderName ?? 'Student',
   createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
@@ -337,8 +346,63 @@ export async function sendLiveClassAudioMessage(
     audioDataUrl,
     audioMimeType,
     audioDurationSec: audioDurationSec ?? 0,
+    isPinned: false,
+    expiresAtMs: Date.now() + AUDIO_NOTE_EXPIRATION_MS,
     senderUid,
     senderName,
     createdAt: serverTimestamp(),
   });
+}
+
+export async function deleteLiveClassMessage(classId: string, messageId: string): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !messageId) return;
+
+  const messageRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'messages', messageId);
+  await deleteDoc(messageRef);
+}
+
+export async function setLiveClassAudioMessagePinned(
+  classId: string,
+  messageId: string,
+  pinned: boolean,
+  actorUid: string,
+  actorName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !messageId) return;
+
+  const messageRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'messages', messageId);
+  if (pinned) {
+    await updateDoc(messageRef, {
+      isPinned: true,
+      pinnedAt: serverTimestamp(),
+      pinnedByUid: actorUid,
+      pinnedByName: actorName,
+      expiresAtMs: deleteField(),
+    });
+    return;
+  }
+
+  await updateDoc(messageRef, {
+    isPinned: false,
+    expiresAtMs: Date.now() + AUDIO_NOTE_EXPIRATION_MS,
+    pinnedAt: deleteField(),
+    pinnedByUid: deleteField(),
+    pinnedByName: deleteField(),
+  });
+}
+
+export async function purgeExpiredLiveClassAudioNotes(classId: string): Promise<void> {
+  if (!db || !classId) return;
+
+  const messagesRef = collection(db, LIVE_CLASSES_COLLECTION, classId, 'messages');
+  const expiredQuery = query(messagesRef, where('expiresAtMs', '<=', Date.now()));
+  const snapshot = await getDocs(expiredQuery);
+  const targets = snapshot.docs.filter((docSnap) => {
+    const data = docSnap.data() as Record<string, any>;
+    return data.type === 'audio' && data.isPinned !== true;
+  });
+
+  await Promise.all(targets.map((docSnap) => deleteDoc(docSnap.ref)));
 }

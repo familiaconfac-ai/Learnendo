@@ -102,6 +102,11 @@ export interface LiveClassMessage {
   audioDataUrl?: string;
   audioMimeType?: string;
   audioDurationSec?: number;
+  isPinned?: boolean;
+  pinnedAt?: string;
+  pinnedByUid?: string;
+  pinnedByName?: string;
+  expiresAtMs?: number;
   senderUid: string;
   senderName: string;
   createdAt?: string;

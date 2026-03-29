@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClassMessage, LiveClassRole } from '../../types';
 import {
+  AUDIO_NOTE_EXPIRATION_MS,
+  deleteLiveClassMessage,
+  purgeExpiredLiveClassAudioNotes,
+  setLiveClassAudioMessagePinned,
   sendLiveClassAudioMessage,
   sendLiveClassMessage,
   subscribeLiveClassMessages,
@@ -44,6 +48,8 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
 }) => {
   const chatRole = role;
   const [messages, setMessages] = useState<LiveClassMessage[]>([]);
+  const [menuOpenForMessageId, setMenuOpenForMessageId] = useState<string | null>(null);
+  const [actionInProgressForMessageId, setActionInProgressForMessageId] = useState<string | null>(null);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -66,6 +72,18 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
       console.warn('[LiveClassChat] message subscription failed:', error);
     });
     return unsubscribe;
+  }, [classId]);
+
+  useEffect(() => {
+    const runPurge = () => {
+      void purgeExpiredLiveClassAudioNotes(classId).catch((error) => {
+        console.warn('[LiveClassChat] audio note purge failed:', error);
+      });
+    };
+
+    runPurge();
+    const timer = window.setInterval(runPurge, 60000);
+    return () => window.clearInterval(timer);
   }, [classId]);
 
   useEffect(() => {
@@ -179,24 +197,119 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
     }
   };
 
+  const canManageAudioNote = (msg: LiveClassMessage): boolean => {
+    if (msg.type !== 'audio') return false;
+    return chatRole === 'teacher' || msg.senderUid === user.uid;
+  };
+
+  const isAudioNoteExpired = (msg: LiveClassMessage): boolean => {
+    if (msg.type !== 'audio' || msg.isPinned) return false;
+    const now = Date.now();
+    if (typeof msg.expiresAtMs === 'number') {
+      return msg.expiresAtMs <= now;
+    }
+
+    const createdAtMs = msg.createdAt ? Date.parse(msg.createdAt) : Number.NaN;
+    if (Number.isFinite(createdAtMs)) {
+      return createdAtMs + AUDIO_NOTE_EXPIRATION_MS <= now;
+    }
+    return false;
+  };
+
+  const visibleMessages = useMemo(
+    () => messages.filter((msg) => !isAudioNoteExpired(msg)),
+    [messages],
+  );
+
+  const handleDeleteAudioNote = async (msg: LiveClassMessage) => {
+    if (!canManageAudioNote(msg) || actionInProgressForMessageId) return;
+    setActionInProgressForMessageId(msg.id);
+    try {
+      await deleteLiveClassMessage(classId, msg.id);
+      setMenuOpenForMessageId(null);
+    } catch (error) {
+      console.warn('[LiveClassChat] delete audio note failed:', error);
+    } finally {
+      setActionInProgressForMessageId(null);
+    }
+  };
+
+  const handleTogglePinAudioNote = async (msg: LiveClassMessage) => {
+    if (!canManageAudioNote(msg) || actionInProgressForMessageId) return;
+    setActionInProgressForMessageId(msg.id);
+    try {
+      await setLiveClassAudioMessagePinned(
+        classId,
+        msg.id,
+        !msg.isPinned,
+        user.uid,
+        senderName,
+      );
+      setMenuOpenForMessageId(null);
+    } catch (error) {
+      console.warn('[LiveClassChat] pin audio note failed:', error);
+    } finally {
+      setActionInProgressForMessageId(null);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-slate-700 bg-slate-800 p-3">
       <h3 className="mb-2 text-sm font-black uppercase tracking-wide text-blue-300">Class Chat</h3>
 
       <div className="mb-3 max-h-72 space-y-2 overflow-y-auto rounded-xl bg-slate-900 p-3">
-        {messages.length === 0 ? (
+        {visibleMessages.length === 0 ? (
           <p className="text-xs text-slate-400">No messages yet. Start the conversation.</p>
         ) : (
-          messages.map((msg) => {
+          visibleMessages.map((msg) => {
             const mine = msg.senderUid === user.uid;
+            const canManage = canManageAudioNote(msg);
+            const isBusy = actionInProgressForMessageId === msg.id;
             return (
               <div
                 key={msg.id}
-                className={`max-w-[90%] rounded-xl px-3 py-2 text-sm ${
+                className={`relative max-w-[90%] rounded-xl px-3 py-2 text-sm ${
                   mine ? 'ml-auto bg-blue-600 text-white' : 'bg-slate-700 text-slate-100'
                 }`}
               >
-                <p className="text-[11px] font-semibold opacity-80">{msg.senderName}</p>
+                {msg.type === 'audio' && canManage ? (
+                  <div className="absolute right-2 top-2">
+                    <button
+                      type="button"
+                      className="rounded-md px-1 text-xs font-black opacity-80 hover:bg-black/20"
+                      onClick={() => setMenuOpenForMessageId((current) => (current === msg.id ? null : msg.id))}
+                      disabled={isBusy}
+                      aria-label="Message options"
+                    >
+                      ...
+                    </button>
+                    {menuOpenForMessageId === msg.id ? (
+                      <div className="absolute right-0 z-10 mt-1 w-32 rounded-lg border border-slate-600 bg-slate-900 p-1 shadow-xl">
+                        <button
+                          type="button"
+                          className="block w-full rounded-md px-2 py-1 text-left text-xs font-semibold text-slate-100 hover:bg-slate-800"
+                          onClick={() => void handleTogglePinAudioNote(msg)}
+                          disabled={isBusy}
+                        >
+                          {msg.isPinned ? 'Unpin note' : 'Pin note'}
+                        </button>
+                        <button
+                          type="button"
+                          className="mt-1 block w-full rounded-md px-2 py-1 text-left text-xs font-semibold text-rose-300 hover:bg-slate-800"
+                          onClick={() => void handleDeleteAudioNote(msg)}
+                          disabled={isBusy}
+                        >
+                          Delete note
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <p className="text-[11px] font-semibold opacity-80">
+                  {msg.senderName}
+                  {msg.type === 'audio' && msg.isPinned ? '  [Pinned]' : ''}
+                </p>
                 {msg.type === 'audio' && msg.audioDataUrl ? (
                   <div className="mt-1 space-y-1">
                     <audio controls src={msg.audioDataUrl} className="w-full" preload="none" />
