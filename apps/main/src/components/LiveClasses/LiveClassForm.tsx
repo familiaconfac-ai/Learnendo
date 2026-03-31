@@ -218,6 +218,10 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         />
       </div>
 
+      <p className="text-xs text-slate-400">
+        Fill workbook, unit, and lesson if you want the `Open Lesson Content` button to open a real lesson during class.
+      </p>
+
       <label className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200">
         <input
           type="checkbox"

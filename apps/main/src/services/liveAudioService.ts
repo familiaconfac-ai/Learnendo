@@ -53,7 +53,19 @@ export async function requestLiveAudioCredentials({
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || 'Failed to create live audio credentials.');
+    try {
+      const parsed = JSON.parse(errorText) as { error?: string };
+      const message = parsed.error?.trim() ?? '';
+      if (message === 'LiveKit server environment is not configured.') {
+        throw new Error('Live audio is not configured in this deployment yet. Add the LiveKit environment variables before using in-app voice.');
+      }
+      throw new Error(message || 'Failed to create live audio credentials.');
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(errorText || 'Failed to create live audio credentials.');
+    }
   }
 
   const payload = (await response.json()) as Partial<LiveAudioCredentials>;

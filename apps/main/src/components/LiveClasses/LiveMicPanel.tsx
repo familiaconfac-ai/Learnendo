@@ -344,6 +344,10 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         </p>
       ) : null}
 
+      <p className="mt-3 text-xs text-slate-400">
+        Avoid using the in-app live mic and Google Meet audio at the same time. If both are open together, echo and feedback can happen.
+      </p>
+
       <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
