@@ -25,7 +25,15 @@ async function readJsonBody(req: IncomingMessage): Promise<TokenRequestBody> {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as TokenRequestBody;
+
+  const rawBody = Buffer.concat(chunks).toString('utf8').trim();
+  if (!rawBody) return {};
+
+  try {
+    return JSON.parse(rawBody) as TokenRequestBody;
+  } catch {
+    throw new Error('Request body was not valid JSON.');
+  }
 }
 
 function sendJson(res: VercelResponseLike, statusCode: number, body: unknown) {
