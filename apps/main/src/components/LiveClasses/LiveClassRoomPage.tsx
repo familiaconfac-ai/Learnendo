@@ -15,12 +15,14 @@ import {
 import { LiveClassChat } from './LiveClassChat';
 import { LiveMicPanel } from './LiveMicPanel';
 import { resolvePresentationMedia } from './presentationMedia';
+import { VirtualWhiteboard } from './VirtualWhiteboard';
 
 interface LiveClassRoomPageProps {
   liveClass: LiveClass;
   user: User;
   isTeacher: boolean;
   onOpenClassContent: (liveClass: LiveClass) => void;
+  onEditClass: (liveClass: LiveClass) => void;
   onExit: () => void;
 }
 
@@ -47,9 +49,11 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   user,
   isTeacher,
   onOpenClassContent,
+  onEditClass,
   onExit,
 }) => {
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
+  const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
     activeWorkbookId: null,
@@ -109,6 +113,15 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       }),
     [presence],
   );
+  const assignedRoster = useMemo(() => {
+    const ids = liveClass.assignedStudentIds ?? [];
+    const names = liveClass.assignedStudentNames ?? [];
+    return ids.map((uid, index) => ({
+      uid,
+      label: names[index] || uid,
+      isOnline: onlinePresence.some((item) => item.uid === uid),
+    }));
+  }, [liveClass.assignedStudentIds, liveClass.assignedStudentNames, onlinePresence]);
 
   const meetLink = getLiveClassMeetLink(liveClass);
   const presentationLink = getLiveClassPresentationLink(liveClass);
@@ -170,6 +183,47 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           </div>
         </div>
 
+        <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950/80 p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-emerald-300">Assigned Students</p>
+              <p className="mt-1 text-sm text-slate-300">
+                {assignedRoster.length} assigned for this class
+              </p>
+            </div>
+            {role === 'teacher' ? (
+              <button
+                type="button"
+                onClick={() => onEditClass(liveClass)}
+                className="rounded-xl border border-slate-500 px-3 py-2 text-sm font-bold text-slate-100"
+              >
+                Add or Remove Students
+              </button>
+            ) : null}
+          </div>
+
+          {assignedRoster.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {assignedRoster.map((student) => (
+                <span
+                  key={student.uid}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                    student.isOnline
+                      ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-200'
+                      : 'border-slate-600 bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {student.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">
+              This room does not have assigned students yet.
+            </p>
+          )}
+        </div>
+
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
           <button
             type="button"
@@ -203,6 +257,14 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
             className="rounded-xl bg-green-600 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#047857]"
           >
             Share Link on WhatsApp
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowWhiteboard((prev) => !prev)}
+            className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#0891b2]"
+          >
+            {showWhiteboard ? 'Hide Whiteboard' : 'Virtual Whiteboard'}
           </button>
         </div>
 
@@ -274,6 +336,23 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           onUpdateSession={handleUpdateSession}
         />
       </div>
+
+      {showWhiteboard ? (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/80 px-3 py-6 backdrop-blur-sm sm:px-6">
+          <div className="w-full max-w-5xl">
+            <div className="mb-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowWhiteboard(false)}
+                className="rounded-xl border border-slate-500 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+              >
+                Close Whiteboard
+              </button>
+            </div>
+            <VirtualWhiteboard classId={liveClass.id} user={user} />
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-4">
         <LiveClassChat
