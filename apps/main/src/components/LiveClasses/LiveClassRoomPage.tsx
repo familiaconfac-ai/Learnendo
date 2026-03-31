@@ -31,6 +31,17 @@ const openExternalLink = (rawUrl: string) => {
   window.open(target, '_blank', 'noopener,noreferrer');
 };
 
+const buildRoomShareLink = (classId: string) => {
+  if (typeof window === 'undefined') return '';
+  return `${window.location.origin}/live-class/${encodeURIComponent(classId)}`;
+};
+
+const buildWhatsappShareUrl = (liveClass: LiveClass) => {
+  const roomLink = buildRoomShareLink(liveClass.id);
+  const message = `Join "${liveClass.title}" on Learnendo: ${roomLink}`;
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+};
+
 export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   liveClass,
   user,
@@ -106,6 +117,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     [presentationLink],
   );
   const hasPresentationLink = presentationMedia.kind !== 'none';
+  const whatsappShareLink = useMemo(() => buildWhatsappShareUrl(liveClass), [liveClass]);
 
   return (
     <div className="min-h-screen bg-slate-950 px-3 pb-28 pt-6 sm:px-4">
@@ -183,6 +195,14 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
             }`}
           >
             Open Material
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openExternalLink(whatsappShareLink)}
+            className="rounded-xl bg-green-600 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#047857]"
+          >
+            Share Link on WhatsApp
           </button>
         </div>
 

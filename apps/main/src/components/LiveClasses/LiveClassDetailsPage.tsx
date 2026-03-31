@@ -30,6 +30,17 @@ const openExternalLink = (rawUrl: string) => {
   window.open(target, '_blank', 'noopener,noreferrer');
 };
 
+const buildRoomShareLink = (classId: string) => {
+  if (typeof window === 'undefined') return '';
+  return `${window.location.origin}/live-class/${encodeURIComponent(classId)}`;
+};
+
+const buildWhatsappShareUrl = (liveClass: LiveClass) => {
+  const roomLink = buildRoomShareLink(liveClass.id);
+  const message = `Join "${liveClass.title}" on Learnendo: ${roomLink}`;
+  return `https://wa.me/?text=${encodeURIComponent(message)}`;
+};
+
 export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   liveClass,
   user,
@@ -62,6 +73,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
 
   const meetLink = useMemo(() => getLiveClassMeetLink(liveClass), [liveClass]);
   const presentationLink = useMemo(() => getLiveClassPresentationLink(liveClass), [liveClass]);
+  const whatsappShareLink = useMemo(() => buildWhatsappShareUrl(liveClass), [liveClass]);
   const canOpenMeet = useMemo(() => !!meetLink, [meetLink]);
   const canOpenPresentation = useMemo(() => !!presentationLink, [presentationLink]);
   const canOpenWhatsapp = useMemo(() => !!(liveClass.whatsappLink ?? '').trim(), [liveClass.whatsappLink]);
@@ -138,6 +150,14 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
             className="rounded-xl bg-amber-500 px-3 py-2 text-center text-sm font-black text-slate-900 shadow-[0_4px_0_0_#b45309]"
           >
             Open Lesson Content
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openExternalLink(whatsappShareLink)}
+            className="rounded-xl bg-green-600 px-3 py-2 text-center text-sm font-black text-white shadow-[0_4px_0_0_#047857]"
+          >
+            Share on WhatsApp
           </button>
 
           <button
