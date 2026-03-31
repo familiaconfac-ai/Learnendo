@@ -826,6 +826,17 @@ const App: React.FC = () => {
       return;
     }
 
+    if (section === SectionType.LIVE_CLASSES) {
+      setCurrentDay(null);
+      setCurrentLessonId(null);
+      setPendingLiveLessonRef(null);
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/live-class/')) {
+        window.history.pushState({}, '', '/');
+      }
+      setCurrentSection(SectionType.LIVE_CLASSES);
+      return;
+    }
+
     if (params?.lessonId) {
       setCurrentLessonId(params.lessonId);
     }

@@ -244,14 +244,19 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
       <button onClick={onBack} className="mb-4 text-sm font-bold text-slate-200" type="button">← Back</button>
 
       <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-black text-white">Live Classes</h1>
+        <div>
+          <h1 className="text-2xl font-black text-white">Online</h1>
+          <p className="mt-1 text-sm text-slate-400">
+            Manage scheduled classes, open active rooms, and create new meetings.
+          </p>
+        </div>
         {isTeacher && (
           <button
             type="button"
             onClick={openCreate}
             className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
           >
-            + New Class
+            + New Session
           </button>
         )}
       </div>
@@ -276,7 +281,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
       <div className="space-y-3">
         {loading ? (
           <div className="rounded-2xl border border-slate-700 bg-slate-800 p-4 text-sm text-slate-300">
-            Loading live classes...
+            Loading online sessions...
           </div>
         ) : loadError ? (
           <div className="rounded-2xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
@@ -284,7 +289,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
           </div>
         ) : sortedClasses.length === 0 ? (
           <div className="rounded-2xl border border-slate-700 bg-slate-800 p-4 text-sm text-slate-300">
-            No live classes yet. Teachers can create the first session.
+            No online sessions yet. Teachers can create the first session.
           </div>
         ) : (
           sortedClasses.map((liveClass) => (
