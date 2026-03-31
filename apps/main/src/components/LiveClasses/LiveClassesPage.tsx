@@ -49,6 +49,7 @@ const buildOptimisticClass = (classId: string, createdBy: string, input: LiveCla
     time: input.time,
     meetingLink: input.meetingLink.trim(),
     meetUrl: input.meetUrl?.trim() ?? input.meetingLink.trim(),
+    presentationUrl: input.presentationUrl?.trim() ?? '',
     whatsappLink: input.whatsappLink?.trim() ?? '',
     description: input.description?.trim() ?? '',
     workbookId: input.workbookId ?? 1,

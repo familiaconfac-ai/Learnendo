@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
 import {
   getLiveClassMeetLink,
+  getLiveClassPresentationLink,
 } from '../../services/liveClassesService';
 import {
   markLivePresenceOffline,
@@ -27,6 +28,33 @@ const openExternalLink = (rawUrl: string) => {
   const target = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
   window.open(target, '_blank', 'noopener,noreferrer');
 };
+
+function buildPresentationEmbedUrl(rawUrl: string): string | null {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return null;
+
+  try {
+    const normalized = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const url = new URL(normalized);
+    const host = url.hostname.replace(/^www\./, '');
+    const path = url.pathname;
+
+    if (host === 'docs.google.com') {
+      const docMatch = path.match(/^\/document\/d\/([^/]+)/);
+      if (docMatch) return `https://docs.google.com/document/d/${docMatch[1]}/preview`;
+
+      const slidesMatch = path.match(/^\/presentation\/d\/([^/]+)/);
+      if (slidesMatch) return `https://docs.google.com/presentation/d/${slidesMatch[1]}/embed?rm=minimal`;
+
+      if (path.includes('/presentation/') && url.searchParams.get('embedded') === 'true') return url.toString();
+      if (path.includes('/document/') && url.searchParams.get('embedded') === 'true') return url.toString();
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   liveClass,
@@ -96,6 +124,12 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   );
 
   const meetLink = getLiveClassMeetLink(liveClass);
+  const presentationLink = getLiveClassPresentationLink(liveClass);
+  const presentationEmbedUrl = useMemo(
+    () => buildPresentationEmbedUrl(presentationLink),
+    [presentationLink],
+  );
+  const hasPresentationLink = Boolean(presentationLink);
 
   return (
     <div className="min-h-screen bg-slate-950 px-3 pb-28 pt-6 sm:px-4">
@@ -153,9 +187,58 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
             Open Meet (Optional)
           </button>
 
-          <div className="rounded-xl border border-dashed border-slate-700 px-3 py-2 text-sm text-slate-300">
-            Presentation sync placeholder (Phase 2)
+          <button
+            type="button"
+            onClick={() => openExternalLink(presentationLink)}
+            disabled={!hasPresentationLink}
+            className={`rounded-xl px-3 py-2 text-sm font-black ${
+              hasPresentationLink
+                ? 'bg-violet-500 text-white shadow-[0_4px_0_0_#7c3aed]'
+                : 'bg-slate-700 text-slate-400'
+            }`}
+          >
+            Open Presentation
+          </button>
+        </div>
+
+        <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950/80 p-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-violet-300">Presentation</p>
+              <p className="mt-1 text-sm text-slate-300">
+                {hasPresentationLink
+                  ? 'Class material is attached to this room.'
+                  : 'No presentation link added to this class yet.'}
+              </p>
+            </div>
+            {hasPresentationLink ? (
+              <button
+                type="button"
+                onClick={() => openExternalLink(presentationLink)}
+                className="rounded-xl border border-violet-400/40 px-3 py-2 text-sm font-bold text-violet-200"
+              >
+                Open in New Tab
+              </button>
+            ) : null}
           </div>
+
+          {hasPresentationLink ? (
+            presentationEmbedUrl ? (
+              <div className="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-white">
+                <iframe
+                  title="Class presentation"
+                  src={presentationEmbedUrl}
+                  className="h-[420px] w-full bg-white"
+                  allow="autoplay; fullscreen"
+                />
+              </div>
+            ) : (
+              <div className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-6 text-sm text-slate-300">
+                This link was saved to the class, but inline preview is not available for this provider yet. Use
+                &nbsp;Open Presentation&nbsp;or&nbsp;Open in New Tab.
+              </div>
+            )
+          ) : null}
         </div>
       </div>
 

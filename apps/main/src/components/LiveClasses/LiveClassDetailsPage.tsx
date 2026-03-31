@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassSession } from '../../types';
 import { subscribeLiveSession } from '../../services/liveSessionService';
-import { getLiveClassMeetLink } from '../../services/liveClassesService';
+import { getLiveClassMeetLink, getLiveClassPresentationLink } from '../../services/liveClassesService';
 import { LiveClassChat } from './LiveClassChat';
 import { TeacherLiveControlPanel } from './TeacherLiveControlPanel';
 
@@ -59,7 +59,9 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   }, [liveClass.id]);
 
   const meetLink = useMemo(() => getLiveClassMeetLink(liveClass), [liveClass]);
+  const presentationLink = useMemo(() => getLiveClassPresentationLink(liveClass), [liveClass]);
   const canOpenMeet = useMemo(() => !!meetLink, [meetLink]);
+  const canOpenPresentation = useMemo(() => !!presentationLink, [presentationLink]);
   const canOpenWhatsapp = useMemo(() => !!(liveClass.whatsappLink ?? '').trim(), [liveClass.whatsappLink]);
 
   return (
@@ -77,6 +79,11 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
         <p className="text-sm text-slate-300">Teacher: {liveClass.teacherName}</p>
         <p className="text-sm text-slate-300">Date: {liveClass.date} • {liveClass.time}</p>
         {liveClass.description && <p className="mt-3 text-sm text-slate-200">{liveClass.description}</p>}
+        {presentationLink && (
+          <p className="mt-3 text-xs font-semibold text-blue-200 break-all">
+            Presentation: {presentationLink}
+          </p>
+        )}
         {liveClass.isPrivate && !hasRoomAccess && (
           <p className="mt-3 rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-xs font-semibold text-rose-200">
             Private class. You are not assigned to this room.
@@ -121,6 +128,19 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
             }`}
           >
             Open WhatsApp
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openExternalLink(presentationLink)}
+            disabled={!canOpenPresentation}
+            className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
+              canOpenPresentation
+                ? 'bg-violet-500 text-white shadow-[0_4px_0_0_#7c3aed]'
+                : 'bg-slate-700 text-slate-400'
+            }`}
+          >
+            Open Presentation
           </button>
         </div>
 

@@ -15,6 +15,7 @@ const DEFAULT_FORM: LiveClassInput = {
   time: '',
   meetingLink: '',
   meetUrl: '',
+  presentationUrl: '',
   whatsappLink: '',
   description: '',
   workbookId: 1,
@@ -79,6 +80,7 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
       teacherName: form.teacherName.trim(),
       meetingLink: form.meetingLink.trim(),
       meetUrl: form.meetUrl?.trim() ?? '',
+      presentationUrl: form.presentationUrl?.trim() ?? '',
       whatsappLink: form.whatsappLink?.trim() ?? '',
       description: form.description?.trim() ?? '',
       unitId: form.unitId?.trim() ?? '',
@@ -137,6 +139,14 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         onChange={(e) => setField('meetUrl', e.target.value)}
         className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
         placeholder="Backup Meet URL (optional)"
+      />
+
+      <input
+        type="url"
+        value={form.presentationUrl ?? ''}
+        onChange={(e) => setField('presentationUrl', e.target.value)}
+        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
+        placeholder="Presentation link (Google Slides, Canva, PowerPoint, Google Docs)"
       />
 
       <div className="grid grid-cols-3 gap-3">

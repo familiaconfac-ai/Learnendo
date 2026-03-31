@@ -2,7 +2,6 @@ import {
   addDoc,
   collection,
   deleteDoc,
-  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -71,6 +70,7 @@ function buildLiveClassPayload(input: LiveClassInput) {
     time: input.time,
     meetingLink: normalizedMeetingLink,
     meetUrl: normalizedMeetUrl,
+    presentationUrl: normalizeExternalLink(input.presentationUrl ?? ''),
     whatsappLink: normalizeExternalLink(input.whatsappLink ?? ''),
     description: input.description?.trim() ?? '',
     workbookId: input.workbookId ?? null,
@@ -92,6 +92,7 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   time: data.time ?? '',
   meetingLink: data.meetingLink ?? data.meetUrl ?? '',
   meetUrl: data.meetUrl ?? data.meetingLink ?? '',
+  presentationUrl: data.presentationUrl ?? data.materialLink ?? '',
   whatsappLink: data.whatsappLink ?? '',
   description: data.description ?? '',
   workbookId: data.workbookId ?? null,
@@ -241,6 +242,7 @@ export async function updateLiveClass(classId: string, input: Partial<LiveClassI
       time: input.time ?? '',
       meetingLink: input.meetingLink ?? '',
       meetUrl: input.meetUrl ?? input.meetingLink ?? '',
+      presentationUrl: input.presentationUrl ?? '',
       whatsappLink: input.whatsappLink ?? '',
       description: input.description ?? '',
       workbookId: input.workbookId ?? null,
@@ -250,15 +252,18 @@ export async function updateLiveClass(classId: string, input: Partial<LiveClassI
       assignedStudentIds: input.assignedStudentIds ?? [],
       assignedStudentNames: input.assignedStudentNames ?? [],
     }),
-    materialLink: deleteField(),
     updatedAt: serverTimestamp(),
   };
   console.log('[LiveClassesService] updateLiveClass payload', {
     collection: LIVE_CLASSES_COLLECTION,
     classId,
-    payload: { ...payload, materialLink: '[deleteField]' },
+    payload,
   });
   await updateDoc(classRef, payload);
+}
+
+export function getLiveClassPresentationLink(liveClass: Pick<LiveClass, 'presentationUrl'>): string {
+  return (liveClass.presentationUrl ?? '').trim();
 }
 
 export async function ensureLiveClassSession(classId: string): Promise<void> {

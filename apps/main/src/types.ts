@@ -115,6 +115,7 @@ export interface LiveClass {
   time: string; // HH:mm
   meetingLink: string;
   meetUrl?: string;
+  presentationUrl?: string;
   whatsappLink?: string;
   description?: string;
   workbookId?: number | null;
@@ -136,6 +137,7 @@ export interface LiveClassInput {
   time: string;
   meetingLink: string;
   meetUrl?: string;
+  presentationUrl?: string;
   whatsappLink?: string;
   description?: string;
   workbookId?: number | null;
