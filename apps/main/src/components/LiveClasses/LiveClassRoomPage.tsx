@@ -61,6 +61,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     activeExerciseId: null,
     liveAudioTransport: 'not-configured',
     teacherLiveMicEnabled: false,
+    teacherCameraEnabled: false,
     allowStudentLiveMic: false,
     audioNotesEnabled: true,
   });

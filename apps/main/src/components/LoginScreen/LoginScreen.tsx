@@ -31,6 +31,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLogin,
   onRegister,
 }) => {
+  const [logoFailed, setLogoFailed] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -67,38 +68,45 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   return (
     <div className="min-h-screen bg-blue-50">
-      <div className="relative max-w-[420px] mx-auto px-4 pt-8 pb-10 min-h-screen flex flex-col items-center justify-center">
+      <div className="relative mx-auto flex min-h-screen max-w-[420px] flex-col items-center justify-center px-4 pb-10 pt-8">
         <button
           type="button"
           onClick={onToggleMenu}
           aria-label="Open menu"
           aria-expanded={menuOpen}
-          className="absolute top-4 left-4 text-[28px] p-[10px] cursor-pointer text-slate-700 rounded-2xl bg-white shadow-sm active:scale-95"
+          className="absolute left-4 top-4 rounded-2xl bg-white p-[10px] text-[28px] text-slate-700 shadow-sm active:scale-95"
         >
-          ☰
+          <span aria-hidden="true">&#9776;</span>
         </button>
 
-        {menuOpen && (
-          <div className="absolute top-20 left-4 right-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-lg">
+        {menuOpen ? (
+          <div className="absolute left-4 right-4 top-20 rounded-3xl border border-slate-200 bg-white p-4 shadow-lg">
             <p className="text-sm font-semibold text-slate-700">Sign in to access your courses and progress.</p>
           </div>
-        )}
+        ) : null}
 
         <div className="w-full text-center">
-          <img
-            src="/learnendo-logo-transp.png"
-            alt="Learnendo Logo"
-            style={{ width: '200px', marginBottom: '12px' }}
-            className="logo-login mx-auto"
-          />
-          <p className="text-slate-600 font-semibold text-sm mb-8">Log in to continue learning</p>
+          {logoFailed ? (
+            <div className="mx-auto mb-3 inline-flex rounded-3xl bg-blue-600 px-6 py-4 text-3xl font-black text-white shadow-[0_4px_0_0_#1d4ed8]">
+              Learnendo
+            </div>
+          ) : (
+            <img
+              src="/learnendo-logo-transp.png"
+              alt="Learnendo Logo"
+              style={{ width: '200px', marginBottom: '12px' }}
+              className="logo-login mx-auto"
+              onError={() => setLogoFailed(true)}
+            />
+          )}
+          <p className="mb-8 text-sm font-semibold text-slate-600">Log in to continue learning</p>
 
-          <div className="bg-white rounded-[28px] shadow-sm border border-slate-100 p-5 space-y-4">
-            {error && (
+          <div className="space-y-4 rounded-[28px] border border-slate-100 bg-white p-5 shadow-sm">
+            {error ? (
               <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
                 {error}
               </div>
-            )}
+            ) : null}
 
             <input
               type="email"
@@ -106,7 +114,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               autoComplete="email"
               placeholder="Email"
               value={email}
-              onChange={(e) => { setEmail(e.target.value); setError(''); }}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                setError('');
+              }}
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-800 outline-none focus:border-blue-400"
             />
 
@@ -116,7 +127,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 autoComplete="current-password"
                 placeholder="Password"
                 value={password}
-                onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError('');
+                }}
                 className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 pr-20 text-sm font-medium text-slate-800 outline-none focus:border-blue-400"
               />
               <button
@@ -151,7 +165,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <button
               type="button"
               onClick={() => setShowForgot(true)}
-              className="w-full text-center text-xs font-medium text-blue-500 hover:text-blue-700 pt-1"
+              className="w-full pt-1 text-center text-xs font-medium text-blue-500 hover:text-blue-700"
             >
               Forgot password?
             </button>

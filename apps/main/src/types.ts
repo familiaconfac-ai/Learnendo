@@ -111,6 +111,7 @@ export interface LiveClass {
   title: string;
   teacherName: string;
   teacherUid?: string;
+  courseId?: string;
   groupId?: string;
   groupName?: string;
   date: string; // YYYY-MM-DD
@@ -135,6 +136,7 @@ export interface LiveClass {
 export interface LiveClassInput {
   title: string;
   teacherName: string;
+  courseId?: string;
   groupId?: string;
   groupName?: string;
   date: string;
@@ -205,9 +207,17 @@ export interface LiveClassSession {
   activeExerciseId?: string | null;
   liveAudioTransport?: 'not-configured' | 'connecting' | 'connected';
   teacherLiveMicEnabled?: boolean;
+  teacherCameraEnabled?: boolean;
   allowStudentLiveMic?: boolean;
   audioNotesEnabled?: boolean;
   lastUpdatedBy?: string;
+  updatedAt?: string;
+}
+
+export interface LiveWhiteboardState {
+  content: string;
+  updatedByUid?: string;
+  updatedByName?: string;
   updatedAt?: string;
 }
 

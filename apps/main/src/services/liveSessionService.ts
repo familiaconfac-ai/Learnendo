@@ -9,7 +9,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { LiveClassPresence, LiveClassResponse, LiveClassSession } from '../types';
+import { LiveClassPresence, LiveClassResponse, LiveClassSession, LiveWhiteboardState } from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 
@@ -20,6 +20,7 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   activeExerciseId: data?.activeExerciseId ?? null,
   liveAudioTransport: (data?.liveAudioTransport ?? 'not-configured') as LiveClassSession['liveAudioTransport'],
   teacherLiveMicEnabled: Boolean(data?.teacherLiveMicEnabled),
+  teacherCameraEnabled: Boolean(data?.teacherCameraEnabled),
   allowStudentLiveMic: Boolean(data?.allowStudentLiveMic),
   audioNotesEnabled: data?.audioNotesEnabled !== false,
   lastUpdatedBy: data?.lastUpdatedBy ?? '',
@@ -43,6 +44,13 @@ const mapPresence = (id: string, data: Record<string, any>): LiveClassPresence =
   role: (data.role ?? 'student') as LiveClassPresence['role'],
   isOnline: Boolean(data.isOnline),
   lastSeenAt: data.lastSeenAt?.toDate?.()?.toISOString?.() ?? data.lastSeenAt ?? undefined,
+});
+
+const mapWhiteboard = (data: Record<string, any> | undefined): LiveWhiteboardState => ({
+  content: data?.content ?? '',
+  updatedByUid: data?.updatedByUid ?? '',
+  updatedByName: data?.updatedByName ?? '',
+  updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
 });
 
 export function subscribeLiveSession(
@@ -91,6 +99,7 @@ export async function updateLiveSession(
   if ('activeExerciseId' in patch) payload.activeExerciseId = patch.activeExerciseId ?? null;
   if ('liveAudioTransport' in patch) payload.liveAudioTransport = patch.liveAudioTransport ?? 'not-configured';
   if ('teacherLiveMicEnabled' in patch) payload.teacherLiveMicEnabled = Boolean(patch.teacherLiveMicEnabled);
+  if ('teacherCameraEnabled' in patch) payload.teacherCameraEnabled = Boolean(patch.teacherCameraEnabled);
   if ('allowStudentLiveMic' in patch) payload.allowStudentLiveMic = Boolean(patch.allowStudentLiveMic);
   if ('audioNotesEnabled' in patch) payload.audioNotesEnabled = patch.audioNotesEnabled !== false;
 
@@ -194,6 +203,54 @@ export async function markLivePresenceOffline(classId: string, uid: string): Pro
     {
       isOnline: false,
       lastSeenAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export function subscribeLiveWhiteboard(
+  classId: string,
+  onData: (whiteboard: LiveWhiteboardState) => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  if (!db || !classId) {
+    onData(mapWhiteboard(undefined));
+    return () => {};
+  }
+
+  const whiteboardRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'session', 'whiteboard');
+  return onSnapshot(
+    whiteboardRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        onData(mapWhiteboard(undefined));
+        return;
+      }
+      onData(mapWhiteboard(snapshot.data() as Record<string, any>));
+    },
+    (error) => {
+      if (onError) onError(error);
+    },
+  );
+}
+
+export async function updateLiveWhiteboard(
+  classId: string,
+  content: string,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId) return;
+
+  const whiteboardRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'session', 'whiteboard');
+  await setDoc(
+    whiteboardRef,
+    {
+      content,
+      updatedByUid,
+      updatedByName,
+      updatedAt: serverTimestamp(),
     },
     { merge: true },
   );

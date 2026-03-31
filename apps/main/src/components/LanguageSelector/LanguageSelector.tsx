@@ -15,8 +15,11 @@ const LANGUAGE_OPTIONS: { id: LessonLanguageCode; label: string; iconSrc: string
   { id: 'he', label: 'Hebrew', iconSrc: '/flags/il.png' },
 ];
 
+const getLanguageFallback = (label: string) => label.slice(0, 2).toUpperCase();
+
 export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onChange }) => {
   const [open, setOpen] = useState(false);
+  const [failedIcons, setFailedIcons] = useState<Record<string, boolean>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -80,6 +83,33 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onC
     setOpen(false);
   };
 
+  const renderFlag = (lang: { id: LessonLanguageCode; label: string; iconSrc: string }, size: 26 | 20) => {
+    if (failedIcons[lang.id]) {
+      return (
+        <span
+          className={`flex items-center justify-center rounded-full bg-blue-600 font-black text-white ${
+            size === 26 ? 'h-[26px] w-[26px] text-[10px]' : 'h-5 w-5 text-[9px]'
+          }`}
+        >
+          {getLanguageFallback(lang.label)}
+        </span>
+      );
+    }
+
+    return (
+      <img
+        src={lang.iconSrc}
+        alt={lang.label}
+        width={size}
+        height={size}
+        className="block rounded-full"
+        onError={() => {
+          setFailedIcons((currentIcons) => ({ ...currentIcons, [lang.id]: true }));
+        }}
+      />
+    );
+  };
+
   return (
     <div ref={containerRef} className="relative flex items-center">
       <button
@@ -96,7 +126,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onC
         }}
         className="rounded-full p-1 transition-transform active:scale-95 ring-2 ring-blue-500 ring-offset-2"
       >
-        <img src={active.iconSrc} alt={active.label} width="26" height="26" className="block rounded-full" />
+        {renderFlag(active, 26)}
       </button>
 
       {open && menuPosition ? createPortal(
@@ -117,7 +147,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({ current, onC
               }}
               className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left text-xs font-semibold text-slate-200 hover:bg-slate-800"
             >
-              <img src={lang.iconSrc} alt={lang.label} width="20" height="20" className="block rounded-full" />
+              {renderFlag(lang, 20)}
               <span>{lang.label}</span>
             </button>
           ))}

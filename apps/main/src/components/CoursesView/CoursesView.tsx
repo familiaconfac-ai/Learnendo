@@ -48,6 +48,15 @@ const COURSE_DISPLAY: Record<UILang, Record<string, { title: string; subtitle: s
   },
 };
 
+const COURSE_FLAG_SRC: Record<string, string> = {
+  english: '/flags/us.png',
+  portuguese_foreigners: '/flags/br.png',
+  portuguese_native: '/flags/br.png',
+  spanish: '/flags/es.png',
+  greek_koine: '/flags/gr.png',
+  hebrew_biblical: '/flags/il.png',
+};
+
 export const CoursesView: React.FC<CoursesViewProps> = ({
   courses,
   currentCourseId,
@@ -59,6 +68,8 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
   const uiLang: UILang = currentLanguage === 'pt' ? 'pt' : currentLanguage === 'es' ? 'es' : 'en';
   const categories: CategoryKey[] = ['modern', 'biblical'];
   const catLabels = CATEGORY_LABELS[uiLang];
+  const [logoFailed, setLogoFailed] = React.useState(false);
+  const [failedCourseFlags, setFailedCourseFlags] = React.useState<Record<string, boolean>>({});
 
   return (
     <div className="min-h-screen bg-slate-900 pb-28 w-full overflow-x-hidden">
@@ -67,12 +78,19 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
         {/* Header */}
         <div className="text-center mb-6 sm:mb-8">
           <button type="button" onClick={onLogoClick} className="mx-auto block cursor-pointer">
-            <img
-              src="/learnendo-logo-transp.png"
-              alt="Learnendo Logo"
-              className="mx-auto"
-              style={{ width: 'min(160px, 80vw)', marginBottom: '8px' }}
-            />
+            {logoFailed ? (
+              <div className="mx-auto mb-2 rounded-2xl bg-blue-600 px-5 py-3 text-2xl font-black text-white shadow-[0_4px_0_0_#1d4ed8]">
+                Learnendo
+              </div>
+            ) : (
+              <img
+                src="/learnendo-logo-transp.png"
+                alt="Learnendo Logo"
+                className="mx-auto"
+                style={{ width: 'min(160px, 80vw)', marginBottom: '8px' }}
+                onError={() => setLogoFailed(true)}
+              />
+            )}
           </button>
           <p className="text-slate-400 font-semibold text-xs sm:text-sm mt-1">{CHOOSE_LABEL[currentLanguage]}</p>
         </div>
@@ -107,9 +125,22 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
                       ].join(' ')}
                     >
                       <div className="flex items-center gap-4">
-                        <span className="text-[28px] leading-none select-none">
-                          {course.flag}
-                        </span>
+                        {failedCourseFlags[course.id] || !COURSE_FLAG_SRC[course.id] ? (
+                          <span className={`flex h-9 w-9 items-center justify-center rounded-full text-xs font-black ${
+                            isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                          }`}>
+                            {title.slice(0, 2).toUpperCase()}
+                          </span>
+                        ) : (
+                          <img
+                            src={COURSE_FLAG_SRC[course.id]}
+                            alt={title}
+                            className="h-9 w-9 rounded-full object-cover"
+                            onError={() => {
+                              setFailedCourseFlags((currentFlags) => ({ ...currentFlags, [course.id]: true }));
+                            }}
+                          />
+                        )}
 
                         <div className="flex-1 min-w-0">
                           <div className={`font-black text-base leading-tight ${isActive ? 'text-white' : 'text-slate-800'}`}>

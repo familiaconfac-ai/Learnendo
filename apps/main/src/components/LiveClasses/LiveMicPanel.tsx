@@ -27,6 +27,7 @@ interface ParticipantSummary {
   isLocal: boolean;
   isSpeaking: boolean;
   micEnabled: boolean;
+  cameraEnabled: boolean;
 }
 
 const roomTransportLabelMap: Record<NonNullable<LiveClassSession['liveAudioTransport']>, string> = {
@@ -68,6 +69,12 @@ function sortParticipants(a: ParticipantSummary, b: ParticipantSummary): number 
   return a.name.localeCompare(b.name);
 }
 
+function isParticipantCameraEnabled(participant: Participant): boolean {
+  return Array.from(participant.trackPublications.values()).some(
+    (publication) => publication.source === Track.Source.Camera && !publication.isMuted,
+  );
+}
+
 export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
   classId,
   userId,
@@ -80,9 +87,11 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
   const [participantSummaries, setParticipantSummaries] = useState<ParticipantSummary[]>([]);
   const [localMicEnabled, setLocalMicEnabled] = useState(false);
+  const [localCameraEnabled, setLocalCameraEnabled] = useState(false);
   const [joining, setJoining] = useState(false);
   const [transportError, setTransportError] = useState('');
   const audioHostRef = useRef<HTMLDivElement | null>(null);
+  const videoTileRefs = useRef(new Map<string, HTMLDivElement>());
   const roomRef = useRef<Room | null>(null);
 
   const roomTransportLabel = roomTransportLabelMap[session.liveAudioTransport ?? 'not-configured'];
@@ -98,6 +107,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         isLocal: true,
         isSpeaking: activeRoom.localParticipant.isSpeaking,
         micEnabled: isParticipantMicEnabled(activeRoom.localParticipant),
+        cameraEnabled: isParticipantCameraEnabled(activeRoom.localParticipant),
       },
       ...Array.from(activeRoom.remoteParticipants.values()).map((participant) => ({
         identity: participant.identity,
@@ -106,11 +116,13 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         isLocal: false,
         isSpeaking: participant.isSpeaking,
         micEnabled: isParticipantMicEnabled(participant),
+        cameraEnabled: isParticipantCameraEnabled(participant),
       })),
     ].sort(sortParticipants);
 
     setParticipantSummaries(nextParticipants);
     setLocalMicEnabled(isParticipantMicEnabled(activeRoom.localParticipant));
+    setLocalCameraEnabled(isParticipantCameraEnabled(activeRoom.localParticipant));
   }, [role]);
 
   const detachTrackElement = useCallback((trackSid: string) => {
@@ -133,6 +145,67 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     audioHostRef.current.appendChild(element);
   }, [detachTrackElement]);
 
+  const clearVideoHost = useCallback((host: HTMLDivElement | null) => {
+    if (!host) return;
+    host.querySelectorAll('video').forEach((element) => {
+      const video = element as HTMLVideoElement;
+      video.pause();
+      video.srcObject = null;
+      video.remove();
+    });
+  }, []);
+
+  const syncVideoTiles = useCallback((activeRoom: Room) => {
+    const videoRefs = videoTileRefs.current;
+    const participants: Participant[] = [
+      activeRoom.localParticipant,
+      ...Array.from(activeRoom.remoteParticipants.values()),
+    ];
+
+    participants.forEach((participant) => {
+      const host = videoRefs.get(participant.identity);
+      if (!host) return;
+
+      clearVideoHost(host);
+
+      const publication = Array.from(participant.trackPublications.values()).find(
+        (item) => item.source === Track.Source.Camera && item.track && !item.isMuted,
+      );
+      const track = publication?.track;
+      if (!track || track.kind !== Track.Kind.Video) return;
+
+      const element = track.attach() as HTMLVideoElement;
+      element.autoplay = true;
+      element.muted = participant.identity === activeRoom.localParticipant.identity;
+      element.playsInline = true;
+      element.className = 'h-full w-full object-cover';
+      host.appendChild(element);
+    });
+
+    videoRefs.forEach((host, identity) => {
+      if (!participants.some((participant) => participant.identity === identity)) {
+        clearVideoHost(host);
+      }
+    });
+  }, [clearVideoHost]);
+
+  const setVideoTileRef = useCallback((identity: string, node: HTMLDivElement | null) => {
+    const refs = videoTileRefs.current;
+    if (node) {
+      refs.set(identity, node);
+      if (roomRef.current) {
+        syncVideoTiles(roomRef.current);
+      }
+      return;
+    }
+
+    const existing = refs.get(identity);
+    if (existing) {
+      clearVideoHost(existing);
+    }
+    refs.delete(identity);
+  }, [clearVideoHost, syncVideoTiles]);
+
   const disconnectRoom = useCallback(async (activeRoom: Room | null, source: 'teacher' | 'local') => {
     if (!activeRoom) return;
 
@@ -142,22 +215,30 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
       // Ignore microphone cleanup failures during disconnect.
     }
 
+    try {
+      await activeRoom.localParticipant.setCameraEnabled(false);
+    } catch {
+      // Ignore camera cleanup failures during disconnect.
+    }
+
     activeRoom.disconnect();
     roomRef.current = null;
     setConnectionState(ConnectionState.Disconnected);
     setParticipantSummaries([]);
     setLocalMicEnabled(false);
+    setLocalCameraEnabled(false);
 
     if (audioHostRef.current) {
       audioHostRef.current.innerHTML = '';
     }
+    videoTileRefs.current.forEach((host) => clearVideoHost(host));
 
     if (source === 'teacher' && onUpdateSession) {
-      await onUpdateSession({ teacherLiveMicEnabled: false }).catch((error) => {
+      await onUpdateSession({ teacherLiveMicEnabled: false, teacherCameraEnabled: false }).catch((error) => {
         console.warn('[LiveMicPanel] teacher disconnect state sync failed:', error);
       });
     }
-  }, [onUpdateSession]);
+  }, [clearVideoHost, onUpdateSession]);
 
   const joinAudio = useCallback(async (): Promise<Room> => {
     if (roomRef.current && roomRef.current.state !== ConnectionState.Disconnected) {
@@ -183,34 +264,61 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
       nextRoom.on(RoomEvent.ConnectionStateChanged, (state) => {
         setConnectionState(state);
         syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
       });
-      nextRoom.on(RoomEvent.ParticipantConnected, () => syncParticipants(nextRoom));
-      nextRoom.on(RoomEvent.ParticipantDisconnected, () => syncParticipants(nextRoom));
-      nextRoom.on(RoomEvent.ActiveSpeakersChanged, () => syncParticipants(nextRoom));
-      nextRoom.on(RoomEvent.LocalTrackPublished, () => syncParticipants(nextRoom));
-      nextRoom.on(RoomEvent.LocalTrackUnpublished, () => syncParticipants(nextRoom));
-      nextRoom.on(RoomEvent.TrackMuted, () => syncParticipants(nextRoom));
-      nextRoom.on(RoomEvent.TrackUnmuted, () => syncParticipants(nextRoom));
-      nextRoom.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
-        attachAudioTrack(track as RemoteTrack, participant);
+      nextRoom.on(RoomEvent.ParticipantConnected, () => {
         syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
+      });
+      nextRoom.on(RoomEvent.ParticipantDisconnected, () => {
+        syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
+      });
+      nextRoom.on(RoomEvent.ActiveSpeakersChanged, () => syncParticipants(nextRoom));
+      nextRoom.on(RoomEvent.LocalTrackPublished, () => {
+        syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
+      });
+      nextRoom.on(RoomEvent.LocalTrackUnpublished, () => {
+        syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
+      });
+      nextRoom.on(RoomEvent.TrackMuted, () => {
+        syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
+      });
+      nextRoom.on(RoomEvent.TrackUnmuted, () => {
+        syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
+      });
+      nextRoom.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
+        if (track.kind === Track.Kind.Audio) {
+          attachAudioTrack(track as RemoteTrack, participant);
+        }
+        syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
       });
       nextRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
-        detachTrackElement(track.sid);
+        if (track.kind === Track.Kind.Audio) {
+          detachTrackElement(track.sid);
+        }
         syncParticipants(nextRoom);
+        syncVideoTiles(nextRoom);
       });
       nextRoom.on(RoomEvent.Disconnected, () => {
         roomRef.current = null;
         setConnectionState(ConnectionState.Disconnected);
         setParticipantSummaries([]);
         setLocalMicEnabled(false);
+        setLocalCameraEnabled(false);
         if (audioHostRef.current) {
           audioHostRef.current.innerHTML = '';
         }
+        videoTileRefs.current.forEach((host) => clearVideoHost(host));
       });
       nextRoom.on(RoomEvent.MediaDevicesError, (error) => {
         console.warn('[LiveMicPanel] media device error:', error);
-        setTransportError('Microphone access failed. Check browser permission and device settings.');
+        setTransportError('Microphone or camera access failed. Check browser permission and device settings.');
       });
 
       await nextRoom.connect(credentials.wsUrl, credentials.token);
@@ -226,6 +334,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
 
       roomRef.current = nextRoom;
       syncParticipants(nextRoom);
+      syncVideoTiles(nextRoom);
       return nextRoom;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to join live audio.';
@@ -235,7 +344,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     } finally {
       setJoining(false);
     }
-  }, [attachAudioTrack, classId, detachTrackElement, role, syncParticipants, userId, userName]);
+  }, [attachAudioTrack, classId, clearVideoHost, detachTrackElement, role, syncParticipants, syncVideoTiles, userId, userName]);
 
   const handleLeaveAudio = async () => {
     await disconnectRoom(roomRef.current, isTeacher ? 'teacher' : 'local');
@@ -272,6 +381,27 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     }
   };
 
+  const handleToggleLocalCamera = async () => {
+    try {
+      const activeRoom = await joinAudio();
+      const nextCameraEnabled = !isParticipantCameraEnabled(activeRoom.localParticipant);
+      await activeRoom.localParticipant.setCameraEnabled(nextCameraEnabled);
+      syncParticipants(activeRoom);
+      syncVideoTiles(activeRoom);
+
+      if (isTeacher && onUpdateSession) {
+        await onUpdateSession({
+          teacherCameraEnabled: nextCameraEnabled,
+          liveAudioTransport: 'connected',
+        }).catch((error) => {
+          console.warn('[LiveMicPanel] teacher camera state sync failed:', error);
+        });
+      }
+    } catch (error) {
+      console.warn('[LiveMicPanel] toggle local camera failed:', error);
+    }
+  };
+
   useEffect(() => {
     if (!session.allowStudentLiveMic && !isTeacher && roomRef.current && localMicEnabled) {
       void roomRef.current.localParticipant.setMicrophoneEnabled(false)
@@ -300,9 +430,9 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-wide text-emerald-300">Live Mic</h2>
+          <h2 className="text-sm font-black uppercase tracking-wide text-emerald-300">Live Audio & Camera</h2>
           <p className="mt-1 text-sm text-slate-200">
-            Real-time classroom audio is running through LiveKit. Live speech does not create chat audio files.
+            Real-time classroom audio and optional camera are running through LiveKit. Live speech does not create chat audio files.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -315,11 +445,18 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         </div>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-4">
         <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
           <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Teacher Live Mic</p>
           <p className="mt-1 text-sm font-semibold text-white">
             {session.teacherLiveMicEnabled ? 'Live in room' : 'Muted in room'}
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
+          <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Teacher Camera</p>
+          <p className="mt-1 text-sm font-semibold text-white">
+            {session.teacherCameraEnabled ? 'Camera live' : 'Camera off'}
           </p>
         </div>
 
@@ -331,9 +468,13 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         </div>
 
         <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
-          <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Your Local Mic</p>
+          <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Your Mic / Camera</p>
           <p className="mt-1 text-sm font-semibold text-white">
-            {localMicEnabled ? 'Publishing live audio' : connected ? 'Connected and muted' : 'Not connected'}
+            {localMicEnabled || localCameraEnabled
+              ? `${localMicEnabled ? 'Mic live' : 'Mic muted'} | ${localCameraEnabled ? 'Camera on' : 'Camera off'}`
+              : connected
+                ? 'Connected and muted'
+                : 'Not connected'}
           </p>
         </div>
       </div>
@@ -382,6 +523,19 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
             : isTeacher ? 'Go Live' : 'Unmute My Live Mic'}
         </button>
 
+        <button
+          type="button"
+          onClick={() => void handleToggleLocalCamera()}
+          disabled={joining}
+          className={`rounded-xl px-4 py-2 text-sm font-black ${
+            localCameraEnabled
+              ? 'bg-fuchsia-500 text-white shadow-[0_3px_0_0_#a21caf]'
+              : 'bg-sky-500 text-slate-950 shadow-[0_3px_0_0_#0284c7]'
+          } disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none`}
+        >
+          {localCameraEnabled ? 'Turn Camera Off' : 'Turn Camera On'}
+        </button>
+
         {isTeacher ? (
           <button
             type="button"
@@ -395,6 +549,49 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
             {session.allowStudentLiveMic ? 'Mute Students' : 'Allow Student Mics'}
           </button>
         ) : null}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/50 p-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-xs font-black uppercase tracking-wide text-slate-300">Live Camera</h3>
+          <span className="text-[11px] font-semibold text-slate-500">
+            {participantSummaries.filter((participant) => participant.cameraEnabled).length} camera live
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          {participantSummaries.filter((participant) => participant.cameraEnabled).length === 0 ? (
+            <p className="text-xs text-slate-400">Nobody has enabled camera in this room yet.</p>
+          ) : (
+            participantSummaries
+              .filter((participant) => participant.cameraEnabled)
+              .map((participant) => (
+                <div key={participant.identity} className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
+                  <div className="aspect-video bg-slate-950">
+                    <div
+                      ref={(node) => setVideoTileRef(participant.identity, node)}
+                      className="h-full w-full bg-slate-950"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between gap-2 border-t border-slate-700 px-3 py-2 text-sm text-slate-100">
+                    <div>
+                      <p className="font-semibold">
+                        {participant.name}
+                        {participant.isLocal ? ' (You)' : ''}
+                      </p>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">{participant.role}</p>
+                    </div>
+                    <div className="text-right text-[11px] font-semibold uppercase tracking-wide">
+                      <p className="text-sky-300">Camera live</p>
+                      <p className={participant.isSpeaking ? 'text-amber-300' : 'text-slate-500'}>
+                        {participant.isSpeaking ? 'Speaking' : 'Silent'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+          )}
+        </div>
       </div>
 
       <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950/50 p-3">
@@ -420,6 +617,9 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
                   <p className={participant.micEnabled ? 'text-emerald-300' : 'text-slate-500'}>
                     {participant.micEnabled ? 'Mic live' : 'Mic muted'}
                   </p>
+                  <p className={participant.cameraEnabled ? 'text-sky-300' : 'text-slate-500'}>
+                    {participant.cameraEnabled ? 'Camera live' : 'Camera off'}
+                  </p>
                   <p className={participant.isSpeaking ? 'text-amber-300' : 'text-slate-500'}>
                     {participant.isSpeaking ? 'Speaking' : 'Silent'}
                   </p>
@@ -432,10 +632,10 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
 
       <p className="mt-2 text-xs text-slate-400">
         {isTeacher
-          ? `${userName} can publish live audio here, and students who joined the audio room hear it immediately.`
+          ? `${userName} can publish live audio and optional camera here, and students who joined the room see and hear it immediately.`
           : studentMicDisabled
-            ? 'You can join audio to listen now. Your live microphone stays muted until the teacher enables student mic access.'
-            : 'You can join audio to listen, and unmute your own live microphone when the teacher allows it.'}
+            ? 'You can join the room to listen now and turn your camera on if needed. Your live microphone stays muted until the teacher enables student mic access.'
+            : 'You can join the room to listen, use your camera, and unmute your own live microphone when the teacher allows it.'}
       </p>
     </div>
   );
