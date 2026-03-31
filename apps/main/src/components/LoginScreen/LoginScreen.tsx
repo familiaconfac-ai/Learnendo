@@ -33,6 +33,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showForgot, setShowForgot] = useState(false);
@@ -109,14 +110,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-800 outline-none focus:border-blue-400"
             />
 
-            <input
-              type="password"
-              autoComplete="current-password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setError(''); }}
-              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm font-medium text-slate-800 outline-none focus:border-blue-400"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setError(''); }}
+                className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 pr-20 text-sm font-medium text-slate-800 outline-none focus:border-blue-400"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((current) => !current)}
+                className="absolute inset-y-0 right-4 my-auto h-fit text-xs font-bold text-blue-600 hover:text-blue-700"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
 
             <button
               type="button"

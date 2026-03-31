@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { convertAnonymousToUser } from '../../services/firebase';
-import { createOrUpdateUserProfile } from '../../services/db';
 import { User } from 'firebase/auth';
+import { createOrUpdateUserProfile } from '../../services/db';
+import { convertAnonymousToUser } from '../../services/firebase';
 
 interface ConversionModalProps {
   user: User;
   isOpen: boolean;
   onSuccess: () => void;
   onCancel: () => void;
-  reason?: string; // Optional context for why conversion is needed
+  reason?: string;
 }
 
 export const ConversionModal: React.FC<ConversionModalProps> = ({
@@ -21,6 +21,8 @@ export const ConversionModal: React.FC<ConversionModalProps> = ({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +30,6 @@ export const ConversionModal: React.FC<ConversionModalProps> = ({
     e.preventDefault();
     setError(null);
 
-    // Validation
     if (!email.trim()) {
       setError('Please enter an email address.');
       return;
@@ -54,23 +55,20 @@ export const ConversionModal: React.FC<ConversionModalProps> = ({
     try {
       console.log('[ConversionModal] Starting conversion for:', user.uid);
 
-      // Step 1: Convert anonymous account to registered
       const convertedUser = await convertAnonymousToUser(email, password);
-      console.log('[ConversionModal] ✅ Auth conversion complete');
+      console.log('[ConversionModal] Auth conversion complete');
 
-      // Step 2: Update Firestore profile with email
       await createOrUpdateUserProfile(user, email);
-      console.log('[ConversionModal] ✅ Firestore profile updated');
+      console.log('[ConversionModal] Firestore profile updated');
 
-      console.log('[ConversionModal] ✅ Conversion complete. Email:', convertedUser.email);
+      console.log('[ConversionModal] Conversion complete. Email:', convertedUser.email);
 
-      // Clear form and notify parent
       setEmail('');
       setPassword('');
       setConfirmPassword('');
       onSuccess();
     } catch (err: any) {
-      console.error('[ConversionModal] ❌ Conversion failed:', err);
+      console.error('[ConversionModal] Conversion failed:', err);
       setError(err.message || 'Conversion failed. Please try again.');
     } finally {
       setIsLoading(false);
@@ -82,24 +80,21 @@ export const ConversionModal: React.FC<ConversionModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[999]" onClick={onCancel}>
+    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={onCancel}>
       <div
-        className="bg-white rounded-2xl shadow-2xl p-8 w-11/12 max-w-md mx-auto"
+        className="mx-auto w-11/12 max-w-md rounded-2xl bg-white p-8 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="mb-6">
           <h2 className="text-2xl font-bold text-slate-800">Create Account</h2>
-          <p className="text-slate-600 mt-2">
+          <p className="mt-2 text-slate-600">
             {reason || 'Create an account to unlock more features and save your progress.'}
           </p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleConvert} className="space-y-4">
-          {/* Email Input */}
           <div>
-            <label htmlFor="email" className="block text-sm font-semibold text-slate-700 mb-2">
+            <label htmlFor="email" className="mb-2 block text-sm font-semibold text-slate-700">
               Email Address
             </label>
             <input
@@ -109,87 +104,105 @@ export const ConversionModal: React.FC<ConversionModalProps> = ({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="maria@example.com"
               disabled={isLoading}
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+              className="w-full rounded-lg border border-slate-300 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
             />
           </div>
 
-          {/* Password Input */}
           <div>
-            <label htmlFor="password" className="block text-sm font-semibold text-slate-700 mb-2">
+            <label htmlFor="password" className="mb-2 block text-sm font-semibold text-slate-700">
               Password
             </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••"
-              disabled={isLoading}
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
-            />
-            <p className="text-xs text-slate-500 mt-1">Minimum 6 characters</p>
+            <div className="relative">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••"
+                disabled={isLoading}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 pr-20 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((current) => !current)}
+                disabled={isLoading}
+                className="absolute inset-y-0 right-4 my-auto h-fit text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                aria-pressed={showPassword}
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">Minimum 6 characters</p>
           </div>
 
-          {/* Confirm Password Input */}
           <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-semibold text-slate-700 mb-2">
+            <label htmlFor="confirmPassword" className="mb-2 block text-sm font-semibold text-slate-700">
               Confirm Password
             </label>
-            <input
-              id="confirmPassword"
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••"
-              disabled={isLoading}
-              className="w-full px-4 py-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
-            />
+            <div className="relative">
+              <input
+                id="confirmPassword"
+                type={showConfirmPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="••••••"
+                disabled={isLoading}
+                className="w-full rounded-lg border border-slate-300 px-4 py-3 pr-20 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100"
+              />
+              <button
+                type="button"
+                onClick={() => setShowConfirmPassword((current) => !current)}
+                disabled={isLoading}
+                className="absolute inset-y-0 right-4 my-auto h-fit text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                aria-pressed={showConfirmPassword}
+              >
+                {showConfirmPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
           </div>
 
-          {/* Error Message */}
           {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <p className="text-sm text-red-800 font-medium">{error}</p>
+            <div className="rounded-lg border border-red-200 bg-red-50 p-4">
+              <p className="text-sm font-medium text-red-800">{error}</p>
             </div>
           )}
 
-          {/* Info Box */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
             <p className="text-sm text-blue-800">
-              <span className="font-semibold">ℹ️ Your progress is safe!</span> All your data will be preserved with your new account.
+              <span className="font-semibold">Your progress is safe!</span> All your data will be preserved with your
+              new account.
             </p>
           </div>
 
-          {/* Form Error (if exists) */}
           {isLoading && (
             <div className="flex items-center justify-center py-2">
-              <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-              <p className="text-sm text-slate-600 ml-3">Converting your account...</p>
+              <div className="inline-block h-5 w-5 animate-spin rounded-full border-b-2 border-blue-600"></div>
+              <p className="ml-3 text-sm text-slate-600">Converting your account...</p>
             </div>
           )}
 
-          {/* Actions */}
-          <div className="flex gap-3 mt-6">
+          <div className="mt-6 flex gap-3">
             <button
               type="button"
               onClick={onCancel}
               disabled={isLoading}
-              className="flex-1 px-4 py-3 border border-slate-300 rounded-lg text-slate-700 font-semibold hover:bg-slate-50 transition-all disabled:opacity-50"
+              className="flex-1 rounded-lg border border-slate-300 px-4 py-3 font-semibold text-slate-700 transition-all hover:bg-slate-50 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isLoading}
-              className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all active:scale-95 disabled:opacity-50"
+              className="flex-1 rounded-lg bg-blue-600 px-4 py-3 font-semibold text-white transition-all hover:bg-blue-700 active:scale-95 disabled:opacity-50"
             >
               {isLoading ? 'Converting...' : 'Create Account'}
             </button>
           </div>
         </form>
 
-        {/* Footer Note */}
-        <p className="text-xs text-slate-500 text-center mt-4">
+        <p className="mt-4 text-center text-xs text-slate-500">
           Your account will be secured with email and password authentication.
         </p>
       </div>
