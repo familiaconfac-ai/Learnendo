@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LiveClassInput } from '../../types';
 import { getAllStudents, StudentBasicInfo } from '../../services/teacherDashboard';
+import { StudentRosterPicker } from './StudentRosterPicker';
 
 interface LiveClassFormProps {
   initialValue?: Partial<LiveClassInput>;
@@ -119,6 +120,8 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
       ...form,
       title: form.title.trim(),
       teacherName: form.teacherName.trim(),
+      groupId: form.groupId?.trim() ?? '',
+      groupName: form.groupName?.trim() ?? '',
       meetingLink: form.meetingLink.trim(),
       meetUrl: form.meetUrl?.trim() ?? '',
       presentationUrl: form.presentationUrl?.trim() ?? '',
@@ -225,48 +228,12 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         Private room (assigned students only)
       </label>
 
-      <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-3">
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <p className="text-sm font-bold text-white">Registered Students</p>
-          <span className="text-xs text-slate-400">
-            {loadingStudents ? 'Loading...' : `${students.length} available`}
-          </span>
-        </div>
-
-        {students.length === 0 ? (
-          <p className="text-xs text-slate-400">
-            No registered students found yet. You can still paste student IDs manually below.
-          </p>
-        ) : (
-          <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
-            {students.map((student) => {
-              const selected = selectedStudentIds.has(student.uid);
-              return (
-                <button
-                  key={student.uid}
-                  type="button"
-                  onClick={() => toggleStudentSelection(student)}
-                  className={`w-full rounded-xl border px-3 py-2 text-left transition-colors ${
-                    selected
-                      ? 'border-blue-500 bg-blue-500/15 text-blue-100'
-                      : 'border-slate-700 bg-slate-800 text-slate-200 hover:border-slate-500'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">{student.name}</p>
-                      <p className="truncate text-xs text-slate-400">{student.email ?? student.uid}</p>
-                    </div>
-                    <span className="text-xs font-black uppercase">
-                      {selected ? 'Added' : 'Add'}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <StudentRosterPicker
+        students={students}
+        loading={loadingStudents}
+        selectedStudentIds={selectedStudentIds}
+        onToggleStudent={toggleStudentSelection}
+      />
 
       <textarea
         value={assignedIdsText}

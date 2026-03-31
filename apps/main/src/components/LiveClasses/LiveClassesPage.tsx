@@ -1,16 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
-import { LiveClass, LiveClassInput } from '../../types';
+import { LiveClass, LiveClassGroup, LiveClassGroupInput, LiveClassInput } from '../../types';
 import {
   canAccessLiveClass,
   createLiveClass,
+  createLiveClassGroup,
   ensureLiveClassSession,
   getLiveClassMeetLink,
   subscribeLiveClass,
+  subscribeLiveClassGroups,
   subscribeLiveClasses,
   updateLiveClass,
+  updateLiveClassGroup,
 } from '../../services/liveClassesService';
 import { LiveClassForm } from './LiveClassForm';
+import { LiveClassGroupForm } from './LiveClassGroupForm';
 import { LiveClassDetailsPage } from './LiveClassDetailsPage';
 import { LiveClassRoomPage } from './LiveClassRoomPage';
 
@@ -46,6 +50,9 @@ const buildOptimisticClass = (classId: string, createdBy: string, input: LiveCla
     id: classId,
     title: input.title.trim(),
     teacherName: input.teacherName.trim(),
+    teacherUid: createdBy,
+    groupId: input.groupId?.trim() ?? '',
+    groupName: input.groupName?.trim() ?? '',
     date: input.date,
     time: input.time,
     meetingLink: input.meetingLink.trim(),
@@ -61,7 +68,6 @@ const buildOptimisticClass = (classId: string, createdBy: string, input: LiveCla
     assignedStudentNames: input.assignedStudentNames ?? [],
     status,
     createdBy,
-    teacherUid: createdBy,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -84,17 +90,36 @@ const openExternalLink = (rawUrl: string) => {
   window.open(target, '_blank', 'noopener,noreferrer');
 };
 
+const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string): Partial<LiveClassInput> => ({
+  title: group.name,
+  teacherName,
+  groupId: group.id,
+  groupName: group.name,
+  whatsappLink: group.whatsappLink ?? '',
+  assignedStudentIds: group.assignedStudentIds,
+  assignedStudentNames: group.assignedStudentNames,
+  isPrivate: true,
+});
+
 export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeacher, onOpenClassContent, onBack }) => {
   const [classes, setClasses] = useState<LiveClass[]>([]);
+  const [groups, setGroups] = useState<LiveClassGroup[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [selectedClass, setSelectedClass] = useState<LiveClass | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [showGroupForm, setShowGroupForm] = useState(false);
   const [editingClass, setEditingClass] = useState<LiveClass | null>(null);
+  const [editingGroup, setEditingGroup] = useState<LiveClassGroup | null>(null);
+  const [sessionDraft, setSessionDraft] = useState<Partial<LiveClassInput> | undefined>(undefined);
   const [saving, setSaving] = useState(false);
+  const [savingGroup, setSavingGroup] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [groupsLoading, setGroupsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [groupsError, setGroupsError] = useState('');
   const [roomClassId, setRoomClassId] = useState<string>(() => getRoomClassIdFromPath());
   const [accessError, setAccessError] = useState('');
+  const teacherDisplayName = user.displayName || user.email || '';
 
   const enterRoom = (liveClass: LiveClass) => {
     const allowed = canAccessLiveClass(liveClass, user.uid, isTeacher);
@@ -122,10 +147,6 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
   useEffect(() => {
     const unsub = subscribeLiveClasses(
       (nextClasses) => {
-        console.log('[LiveClassesPage] received live classes', {
-          fetchedCount: nextClasses.length,
-          visibleCount: nextClasses.length,
-        });
         setClasses(nextClasses);
         setLoading(false);
         setLoadError('');
@@ -133,11 +154,35 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
       (error) => {
         console.warn('[LiveClassesPage] class subscription failed:', error);
         setLoading(false);
-        setLoadError('Unable to load live classes right now.');
+        setLoadError('Unable to load online sessions right now.');
       },
     );
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!isTeacher) {
+      setGroups([]);
+      setGroupsLoading(false);
+      setGroupsError('');
+      return undefined;
+    }
+
+    const unsub = subscribeLiveClassGroups(
+      (nextGroups) => {
+        setGroups(nextGroups);
+        setGroupsLoading(false);
+        setGroupsError('');
+      },
+      (error) => {
+        console.warn('[LiveClassesPage] group subscription failed:', error);
+        setGroupsLoading(false);
+        setGroupsError('Unable to load online groups right now.');
+      },
+    );
+
+    return () => unsub();
+  }, [isTeacher]);
 
   useEffect(() => {
     if (!roomClassId || selectedClassId === roomClassId) return;
@@ -170,19 +215,43 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     return classes.find((item) => item.id === roomClassId) ?? null;
   }, [classes, roomClassId, selectedClass]);
 
-  const openCreate = () => {
+  const openCreate = (draft?: Partial<LiveClassInput>) => {
     setEditingClass(null);
+    setSessionDraft(draft);
     setShowForm(true);
+  };
+
+  const openCreateFromGroup = (group: LiveClassGroup) => {
+    setShowGroupForm(false);
+    setEditingGroup(null);
+    openCreate(buildSessionDraftFromGroup(group, teacherDisplayName));
   };
 
   const openEdit = (liveClass: LiveClass) => {
     setEditingClass(liveClass);
+    setSessionDraft(undefined);
     setShowForm(true);
   };
 
   const closeForm = () => {
     setShowForm(false);
     setEditingClass(null);
+    setSessionDraft(undefined);
+  };
+
+  const openGroupCreate = () => {
+    setEditingGroup(null);
+    setShowGroupForm(true);
+  };
+
+  const openGroupEdit = (group: LiveClassGroup) => {
+    setEditingGroup(group);
+    setShowGroupForm(true);
+  };
+
+  const closeGroupForm = () => {
+    setShowGroupForm(false);
+    setEditingGroup(null);
   };
 
   const handleSave = async (input: LiveClassInput) => {
@@ -191,9 +260,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
       if (editingClass) {
         await updateLiveClass(editingClass.id, input);
       } else {
-        console.log('[LiveClassesPage] creating class', input);
         const classId = await createLiveClass(user.uid, input);
-        console.log('[LiveClassesPage] created class id', classId);
         const optimisticClass = buildOptimisticClass(classId, user.uid, input);
         setClasses((prev) => upsertLiveClass(prev, optimisticClass));
         await ensureLiveClassSession(classId);
@@ -205,6 +272,22 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
       console.warn('[LiveClassesPage] save class failed:', error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveGroup = async (input: LiveClassGroupInput) => {
+    setSavingGroup(true);
+    try {
+      if (editingGroup) {
+        await updateLiveClassGroup(editingGroup.id, input);
+      } else {
+        await createLiveClassGroup(user.uid, input);
+      }
+      closeGroupForm();
+    } catch (error) {
+      console.warn('[LiveClassesPage] save group failed:', error);
+    } finally {
+      setSavingGroup(false);
     }
   };
 
@@ -241,24 +324,36 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
 
   return (
     <div className="min-h-screen bg-slate-900 px-3 pb-28 pt-6 sm:px-4">
-      <button onClick={onBack} className="mb-4 text-sm font-bold text-slate-200" type="button">← Back</button>
+      <button onClick={onBack} className="mb-4 text-sm font-bold text-slate-200" type="button">&larr; Back</button>
 
-      <div className="mb-4 flex items-center justify-between">
+      <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-black text-white">Online</h1>
           <p className="mt-1 text-sm text-slate-400">
             Manage scheduled classes, open active rooms, and create new meetings.
           </p>
         </div>
-        {isTeacher && (
-          <button
-            type="button"
-            onClick={openCreate}
-            className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
-          >
-            + New Session
-          </button>
-        )}
+        {isTeacher ? (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={openGroupCreate}
+              className="rounded-xl border border-slate-500 px-3 py-2 text-xs font-black text-slate-100"
+            >
+              + New Group
+            </button>
+            <button
+              type="button"
+              onClick={() => openCreate({
+                teacherName: teacherDisplayName,
+                isPrivate: true,
+              })}
+              className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
+            >
+              + New Session
+            </button>
+          </div>
+        ) : null}
       </div>
 
       {accessError ? (
@@ -267,16 +362,100 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
         </div>
       ) : null}
 
-      {showForm && (
+      {showForm ? (
         <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-900 p-3">
           <LiveClassForm
-            initialValue={editingClass ?? undefined}
+            initialValue={editingClass ?? sessionDraft ?? undefined}
             onCancel={closeForm}
             onSubmit={handleSave}
             submitting={saving}
           />
         </div>
-      )}
+      ) : null}
+
+      {showGroupForm && isTeacher ? (
+        <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-900 p-3">
+          <LiveClassGroupForm
+            initialValue={editingGroup ?? undefined}
+            onCancel={closeGroupForm}
+            onSubmit={handleSaveGroup}
+            submitting={savingGroup}
+          />
+        </div>
+      ) : null}
+
+      {isTeacher ? (
+        <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-800 p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black text-white">Groups</h2>
+              <p className="text-sm text-slate-400">
+                Reuse the same students for VIP classes, recurring sessions, and quick meetings.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-black uppercase tracking-wide text-slate-300">
+              {groups.length} groups
+            </span>
+          </div>
+
+          {groupsLoading ? (
+            <div className="rounded-2xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300">
+              Loading groups...
+            </div>
+          ) : groupsError ? (
+            <div className="rounded-2xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+              {groupsError}
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-600 bg-slate-900/60 p-4 text-sm text-slate-300">
+              No groups yet. Create your first group to save a fixed set of students and reuse it in future sessions.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {groups.map((group) => (
+                <article
+                  key={group.id}
+                  className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4"
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <h3 className="text-base font-black text-white">{group.name}</h3>
+                      <p className="mt-1 text-sm text-slate-300">
+                        {group.assignedStudentNames.length} student{group.assignedStudentNames.length === 1 ? '' : 's'}
+                      </p>
+                      {group.description ? (
+                        <p className="mt-2 text-sm text-slate-400">{group.description}</p>
+                      ) : null}
+                      {group.assignedStudentNames.length > 0 ? (
+                        <p className="mt-2 text-xs text-slate-400">
+                          {group.assignedStudentNames.join(', ')}
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openCreateFromGroup(group)}
+                        className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
+                      >
+                        New Session From Group
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openGroupEdit(group)}
+                        className="rounded-xl border border-slate-500 px-3 py-2 text-sm font-bold text-slate-100"
+                      >
+                        Edit Group
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : null}
 
       <div className="space-y-3">
         {loading ? (
@@ -319,16 +498,21 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
 
               <p className="text-sm font-semibold text-slate-200">{liveClass.teacherName}</p>
               <p className="text-sm text-slate-300">{liveClass.date} • {liveClass.time}</p>
+              {liveClass.groupName ? (
+                <p className="mt-1 text-xs font-bold uppercase tracking-wide text-blue-300">
+                  Group: {liveClass.groupName}
+                </p>
+              ) : null}
 
               <div className="my-4 flex justify-center">
                 <img src="/logo.png" alt="Learnendo" className="w-24 opacity-70" />
               </div>
 
-              {liveClass.description && (
+              {liveClass.description ? (
                 <p className="mt-2 max-w-2xl text-lg leading-relaxed text-white">
                   {liveClass.description}
                 </p>
-              )}
+              ) : null}
 
               <div className="mt-3 flex flex-wrap justify-end gap-2">
                 <button

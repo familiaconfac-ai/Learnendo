@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteField,
   deleteDoc,
   doc,
   getDoc,
@@ -14,9 +15,10 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { LiveClass, LiveClassInput, LiveClassMessage, LiveClassRole } from '../types';
+import { LiveClass, LiveClassGroup, LiveClassGroupInput, LiveClassInput, LiveClassMessage, LiveClassRole } from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
+const LIVE_CLASS_GROUPS_COLLECTION = 'liveClassGroups';
 export const LIVE_CLASS_MESSAGE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
 export const AUDIO_NOTE_EXPIRATION_MS = LIVE_CLASS_MESSAGE_EXPIRATION_MS;
 
@@ -66,6 +68,8 @@ function buildLiveClassPayload(input: LiveClassInput) {
   return {
     title: input.title.trim(),
     teacherName: input.teacherName.trim(),
+    groupId: input.groupId?.trim() ?? '',
+    groupName: input.groupName?.trim() ?? '',
     date: input.date,
     time: input.time,
     meetingLink: normalizedMeetingLink,
@@ -88,6 +92,8 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   title: data.title ?? 'Untitled class',
   teacherName: data.teacherName ?? 'Teacher',
   teacherUid: data.teacherUid ?? data.createdBy ?? '',
+  groupId: data.groupId ?? '',
+  groupName: data.groupName ?? '',
   date: data.date ?? '',
   time: data.time ?? '',
   meetingLink: data.meetingLink ?? data.meetUrl ?? '',
@@ -238,6 +244,8 @@ export async function updateLiveClass(classId: string, input: Partial<LiveClassI
     ...buildLiveClassPayload({
       title: input.title ?? '',
       teacherName: input.teacherName ?? '',
+      groupId: input.groupId ?? '',
+      groupName: input.groupName ?? '',
       date: input.date ?? '',
       time: input.time ?? '',
       meetingLink: input.meetingLink ?? '',
@@ -264,6 +272,78 @@ export async function updateLiveClass(classId: string, input: Partial<LiveClassI
 
 export function getLiveClassPresentationLink(liveClass: Pick<LiveClass, 'presentationUrl'>): string {
   return (liveClass.presentationUrl ?? '').trim();
+}
+
+function buildLiveClassGroupPayload(input: LiveClassGroupInput) {
+  return {
+    name: input.name.trim(),
+    description: input.description?.trim() ?? '',
+    whatsappLink: normalizeExternalLink(input.whatsappLink ?? ''),
+    assignedStudentIds: normalizeStudentIds(input.assignedStudentIds),
+    assignedStudentNames: normalizeStudentNames(input.assignedStudentNames),
+  };
+}
+
+const mapLiveClassGroup = (id: string, data: Record<string, any>): LiveClassGroup => ({
+  id,
+  name: data.name ?? 'Untitled group',
+  description: data.description ?? '',
+  whatsappLink: data.whatsappLink ?? '',
+  assignedStudentIds: Array.isArray(data.assignedStudentIds) ? data.assignedStudentIds : [],
+  assignedStudentNames: Array.isArray(data.assignedStudentNames) ? data.assignedStudentNames : [],
+  createdBy: data.createdBy ?? '',
+  createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
+  updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
+});
+
+export function subscribeLiveClassGroups(
+  onData: (groups: LiveClassGroup[]) => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  if (!db) {
+    onData([]);
+    return () => {};
+  }
+
+  const groupsRef = collection(db, LIVE_CLASS_GROUPS_COLLECTION);
+  return onSnapshot(
+    groupsRef,
+    (snapshot) => {
+      const groups = snapshot.docs
+        .map((d) => mapLiveClassGroup(d.id, d.data() as Record<string, any>))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      onData(groups);
+    },
+    (error) => {
+      console.warn('[LiveClassesService] subscribeLiveClassGroups failed', error);
+      if (onError) onError(error);
+    },
+  );
+}
+
+export async function createLiveClassGroup(createdBy: string, input: LiveClassGroupInput): Promise<string> {
+  if (!db) throw new Error('Firestore is not initialized');
+
+  const payload = {
+    ...buildLiveClassGroupPayload(input),
+    createdBy,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+
+  const docRef = await addDoc(collection(db, LIVE_CLASS_GROUPS_COLLECTION), payload);
+  return docRef.id;
+}
+
+export async function updateLiveClassGroup(groupId: string, input: LiveClassGroupInput): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!groupId) return;
+
+  const groupRef = doc(db, LIVE_CLASS_GROUPS_COLLECTION, groupId);
+  await updateDoc(groupRef, {
+    ...buildLiveClassGroupPayload(input),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function ensureLiveClassSession(classId: string): Promise<void> {

@@ -111,6 +111,8 @@ export interface LiveClass {
   title: string;
   teacherName: string;
   teacherUid?: string;
+  groupId?: string;
+  groupName?: string;
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
   meetingLink: string;
@@ -133,6 +135,8 @@ export interface LiveClass {
 export interface LiveClassInput {
   title: string;
   teacherName: string;
+  groupId?: string;
+  groupName?: string;
   date: string;
   time: string;
   meetingLink: string;
@@ -144,6 +148,26 @@ export interface LiveClassInput {
   unitId?: string | null;
   lessonId?: string | null;
   isPrivate?: boolean;
+  assignedStudentIds?: string[];
+  assignedStudentNames?: string[];
+}
+
+export interface LiveClassGroup {
+  id: string;
+  name: string;
+  description?: string;
+  whatsappLink?: string;
+  assignedStudentIds: string[];
+  assignedStudentNames: string[];
+  createdBy: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface LiveClassGroupInput {
+  name: string;
+  description?: string;
+  whatsappLink?: string;
   assignedStudentIds?: string[];
   assignedStudentNames?: string[];
 }
