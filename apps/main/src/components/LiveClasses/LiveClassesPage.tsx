@@ -17,6 +17,7 @@ import { LiveClassRoomPage } from './LiveClassRoomPage';
 interface LiveClassesPageProps {
   user: User;
   isTeacher: boolean;
+  onOpenClassContent: (liveClass: LiveClass) => void;
   onBack: () => void;
 }
 
@@ -83,7 +84,7 @@ const openExternalLink = (rawUrl: string) => {
   window.open(target, '_blank', 'noopener,noreferrer');
 };
 
-export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeacher, onBack }) => {
+export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeacher, onOpenClassContent, onBack }) => {
   const [classes, setClasses] = useState<LiveClass[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
   const [selectedClass, setSelectedClass] = useState<LiveClass | null>(null);
@@ -213,6 +214,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
         liveClass={activeRoomClass}
         user={user}
         isTeacher={isTeacher}
+        onOpenClassContent={onOpenClassContent}
         onExit={leaveRoom}
       />
     );
@@ -232,6 +234,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
         }}
         onEdit={() => openEdit(selectedClass)}
         onEnterRoom={() => enterRoom(selectedClass)}
+        onOpenClassContent={() => onOpenClassContent(selectedClass)}
       />
     );
   }

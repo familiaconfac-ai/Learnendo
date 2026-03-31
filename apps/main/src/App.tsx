@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, setDoc, updateDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
-import { Course, Day, UserProgress, SectionType, LessonLanguageCode, ActiveCourse } from './types';
+import { Course, Day, UserProgress, SectionType, LessonLanguageCode, ActiveCourse, LiveClass } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
 import { BottomNavigation } from './components/BottomNavigation';
@@ -85,6 +85,27 @@ const getLessonNumberFromId = (lessonId: string | null | undefined) => {
   return match ? Number(match[1]) : NaN;
 };
 
+const getDefaultWorkbookIdForCourse = (courseId: string | null | undefined): number => {
+  const registry = COURSE_WORKBOOKS[courseId ?? DEFAULT_COURSE_ID] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+  const workbookIds = Object.keys(registry)
+    .map(Number)
+    .filter((id) => Number.isFinite(id))
+    .sort((a, b) => a - b);
+  return workbookIds[0] ?? 1;
+};
+
+const findLessonIdInWorkbook = (workbook: any, lessonReference: string | null | undefined): string | null => {
+  const lessons = workbook?.lessons ?? [];
+  if (!lessonReference || !lessons.length) return null;
+
+  const exactMatch = lessons.find((lesson: any) => lesson.id === lessonReference);
+  if (exactMatch?.id) return exactMatch.id;
+
+  const lessonNumber = getLessonNumberFromId(lessonReference);
+  if (!Number.isFinite(lessonNumber) || lessonNumber < 1) return null;
+  return lessons[lessonNumber - 1]?.id ?? null;
+};
+
 const App: React.FC = () => {
   // ===== LANGUAGE STATE =====
   const [language, setLanguageState] = useState<LessonLanguageCode>(() => {
@@ -145,6 +166,7 @@ const App: React.FC = () => {
   const [currentWorkbook, setCurrentWorkbook] = useState<any>(null);
   const [isWorkbookLoading, setIsWorkbookLoading] = useState(false);
   const [currentDay, setCurrentDay] = useState<Day | null>(null);
+  const [pendingLiveLessonRef, setPendingLiveLessonRef] = useState<{ workbookId: number; lessonRef: string | null } | null>(null);
   const [activeWeeklyTest, setActiveWeeklyTest] = useState<{ lessonNumber: number; lessonId: string } | null>(null);
   const [lessonTestCompleted, setLessonTestCompleted] = useState<Record<number, boolean>>({});
   const [lessonTestScores, setLessonTestScores] = useState<Record<number, number>>({});
@@ -234,14 +256,21 @@ const App: React.FC = () => {
 
   // Sync language with course selection
   const handleCourseChange = useCallback((courseId: string) => {
+    const defaultWorkbookId = getDefaultWorkbookIdForCourse(courseId);
     console.log('[COURSE CHANGE] handleCourseChange called', {
       newCourseId: courseId,
       previousCourseId: currentCourseId,
       currentLanguage: language,
       currentWorkbook: progress.currentWorkbook,
+      nextWorkbookId: defaultWorkbookId,
       completedDaysCount: countCompletedDays((progress as any).days),
     });
     setCurrentCourseId(courseId);
+    setCurrentWorkbookId(defaultWorkbookId);
+    setCurrentWorkbook(null);
+    setCurrentLessonId(null);
+    setCurrentDay(null);
+    setPendingLiveLessonRef(null);
     const languageForCourse = COURSE_TO_LANGUAGE[courseId];
     if (languageForCourse && languageForCourse !== language) {
       console.log('[LANGUAGE CHANGE] via handleCourseChange', {
@@ -750,6 +779,12 @@ const App: React.FC = () => {
           return;
         }
 
+        if (currentWorkbookId !== 1 && Array.isArray((resolvedWorkbook as any).lessons) && (resolvedWorkbook as any).lessons.length === 0) {
+          setCurrentWorkbookId(getDefaultWorkbookIdForCourse(courseId));
+          setCurrentSection(SectionType.WORKBOOK);
+          return;
+        }
+
         setCurrentWorkbook(resolvedWorkbook);
         setCurrentSection(SectionType.WORKBOOK);
       } catch {
@@ -762,6 +797,15 @@ const App: React.FC = () => {
     loadWorkbook();
     return () => { cancelled = true; };
   }, [currentWorkbookId, currentCourseId, progressLoaded]);
+
+  useEffect(() => {
+    if (!pendingLiveLessonRef || !currentWorkbook || currentWorkbookId !== pendingLiveLessonRef.workbookId) return;
+    const targetLessonId = findLessonIdInWorkbook(currentWorkbook, pendingLiveLessonRef.lessonRef);
+    setPendingLiveLessonRef(null);
+    if (targetLessonId) {
+      openLesson(targetLessonId);
+    }
+  }, [currentWorkbook, currentWorkbookId, pendingLiveLessonRef]);
 
   const handleNavigate = (section: SectionType, params?: any) => {
     setCourseMenuOpen(false);
@@ -870,13 +914,14 @@ const App: React.FC = () => {
     // Initialise (or reload) lesson progress from courseProgress
     if (user?.uid) {
       const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
-      console.log('[OPEN LESSON] ensureLessonStarted path:', `users/${user.uid}/courseProgress/${courseId}_${progress.currentWorkbook}`, {
+      const activeWorkbookNumber = currentWorkbookId || progress.currentWorkbook || 1;
+      console.log('[OPEN LESSON] ensureLessonStarted path:', `users/${user.uid}/courseProgress/${courseId}_${activeWorkbookNumber}`, {
         lessonNumber,
         language,
         courseId,
-        workbook: progress.currentWorkbook,
+        workbook: activeWorkbookNumber,
       });
-      ensureLessonStarted(user.uid, courseId, progress.currentWorkbook, lessonNumber)
+      ensureLessonStarted(user.uid, courseId, activeWorkbookNumber, lessonNumber)
         .then(lp => {
           console.log('[OPEN LESSON] ensureLessonStarted resolved', {
             lessonNumber,
@@ -904,7 +949,8 @@ const App: React.FC = () => {
 
     // Auto-show grammar on first visit to this lesson.
     const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
-    const grammarKey = `grammar_seen_${courseId}_${progress.currentWorkbook}_${lessonNumber}`;
+    const activeWorkbookNumber = currentWorkbookId || progress.currentWorkbook || 1;
+    const grammarKey = `grammar_seen_${courseId}_${activeWorkbookNumber}_${lessonNumber}`;
     if (!localStorage.getItem(grammarKey)) {
       localStorage.setItem(grammarKey, '1');
       setShowGrammarModal(true);
@@ -918,6 +964,23 @@ const App: React.FC = () => {
     setActiveWeeklyTest({ lessonNumber, lessonId });
     setCurrentSection(SectionType.PRACTICE);
   };
+
+  const openLiveClassContent = useCallback((liveClass: LiveClass) => {
+    const targetWorkbookId = liveClass.workbookId ?? currentWorkbookId ?? progress.currentWorkbook ?? 1;
+    const targetLessonRef = liveClass.lessonId ?? null;
+
+    setCurrentWorkbookId(targetWorkbookId);
+    setCurrentWorkbook(null);
+    setCurrentDay(null);
+
+    if (targetLessonRef) {
+      setPendingLiveLessonRef({ workbookId: targetWorkbookId, lessonRef: targetLessonRef });
+    } else {
+      setPendingLiveLessonRef(null);
+    }
+
+    setCurrentSection(SectionType.WORKBOOK);
+  }, [currentWorkbookId, progress.currentWorkbook]);
 
   const handlePlacementComplete = (score: number, level: string) => {
     const workbook = PlacementEngine.determineWorkbook(score);
@@ -1525,6 +1588,7 @@ const App: React.FC = () => {
           <LiveClassesPage
             user={user}
             isTeacher={isAdmin}
+            onOpenClassContent={openLiveClassContent}
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
         );

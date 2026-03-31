@@ -14,6 +14,7 @@ interface LiveClassDetailsPageProps {
   onBack: () => void;
   onEdit: () => void;
   onEnterRoom: () => void;
+  onOpenClassContent: () => void;
 }
 
 const statusClassMap: Record<LiveClass['status'], string> = {
@@ -37,6 +38,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   onBack,
   onEdit,
   onEnterRoom,
+  onOpenClassContent,
 }) => {
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
@@ -81,7 +83,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
         {liveClass.description && <p className="mt-3 text-sm text-slate-200">{liveClass.description}</p>}
         {presentationLink && (
           <p className="mt-3 text-xs font-semibold text-blue-200 break-all">
-            Presentation: {presentationLink}
+            Material: {presentationLink}
           </p>
         )}
         {liveClass.isPrivate && !hasRoomAccess && (
@@ -132,6 +134,14 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
 
           <button
             type="button"
+            onClick={onOpenClassContent}
+            className="rounded-xl bg-amber-500 px-3 py-2 text-center text-sm font-black text-slate-900 shadow-[0_4px_0_0_#b45309]"
+          >
+            Open Lesson Content
+          </button>
+
+          <button
+            type="button"
             onClick={() => openExternalLink(presentationLink)}
             disabled={!canOpenPresentation}
             className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
@@ -140,7 +150,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
                 : 'bg-slate-700 text-slate-400'
             }`}
           >
-            Open Presentation
+            Open Material
           </button>
         </div>
 

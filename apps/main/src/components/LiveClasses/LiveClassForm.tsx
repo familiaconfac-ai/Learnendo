@@ -146,7 +146,7 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         value={form.presentationUrl ?? ''}
         onChange={(e) => setField('presentationUrl', e.target.value)}
         className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="Presentation link (Google Slides, Canva, PowerPoint, Google Docs)"
+        placeholder="Material link (Google Slides, Canva, PowerPoint Web, YouTube, PDF, image, video)"
       />
 
       <div className="grid grid-cols-3 gap-3">

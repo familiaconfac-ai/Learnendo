@@ -14,11 +14,13 @@ import {
 } from '../../services/liveSessionService';
 import { LiveClassChat } from './LiveClassChat';
 import { LiveMicPanel } from './LiveMicPanel';
+import { resolvePresentationMedia } from './presentationMedia';
 
 interface LiveClassRoomPageProps {
   liveClass: LiveClass;
   user: User;
   isTeacher: boolean;
+  onOpenClassContent: (liveClass: LiveClass) => void;
   onExit: () => void;
 }
 
@@ -29,37 +31,11 @@ const openExternalLink = (rawUrl: string) => {
   window.open(target, '_blank', 'noopener,noreferrer');
 };
 
-function buildPresentationEmbedUrl(rawUrl: string): string | null {
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return null;
-
-  try {
-    const normalized = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
-    const url = new URL(normalized);
-    const host = url.hostname.replace(/^www\./, '');
-    const path = url.pathname;
-
-    if (host === 'docs.google.com') {
-      const docMatch = path.match(/^\/document\/d\/([^/]+)/);
-      if (docMatch) return `https://docs.google.com/document/d/${docMatch[1]}/preview`;
-
-      const slidesMatch = path.match(/^\/presentation\/d\/([^/]+)/);
-      if (slidesMatch) return `https://docs.google.com/presentation/d/${slidesMatch[1]}/embed?rm=minimal`;
-
-      if (path.includes('/presentation/') && url.searchParams.get('embedded') === 'true') return url.toString();
-      if (path.includes('/document/') && url.searchParams.get('embedded') === 'true') return url.toString();
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   liveClass,
   user,
   isTeacher,
+  onOpenClassContent,
   onExit,
 }) => {
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
@@ -125,11 +101,11 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
   const meetLink = getLiveClassMeetLink(liveClass);
   const presentationLink = getLiveClassPresentationLink(liveClass);
-  const presentationEmbedUrl = useMemo(
-    () => buildPresentationEmbedUrl(presentationLink),
+  const presentationMedia = useMemo(
+    () => resolvePresentationMedia(presentationLink),
     [presentationLink],
   );
-  const hasPresentationLink = Boolean(presentationLink);
+  const hasPresentationLink = presentationMedia.kind !== 'none';
 
   return (
     <div className="min-h-screen bg-slate-950 px-3 pb-28 pt-6 sm:px-4">
@@ -149,6 +125,15 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           <p className="mt-1 text-sm text-slate-200">
             Workbook {liveClass.workbookId ?? '-'} | Unit {liveClass.unitId ?? '-'} | Lesson {liveClass.lessonId ?? '-'}
           </p>
+          {(liveClass.workbookId || liveClass.lessonId) ? (
+            <button
+              type="button"
+              onClick={() => onOpenClassContent(liveClass)}
+              className="mt-3 rounded-xl bg-amber-500 px-3 py-2 text-sm font-black text-slate-900 shadow-[0_4px_0_0_#b45309]"
+            >
+              Open Lesson Content
+            </button>
+          ) : null}
         </div>
 
         <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950/80 p-3">
@@ -189,7 +174,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
           <button
             type="button"
-            onClick={() => openExternalLink(presentationLink)}
+            onClick={() => openExternalLink(presentationMedia.openUrl)}
             disabled={!hasPresentationLink}
             className={`rounded-xl px-3 py-2 text-sm font-black ${
               hasPresentationLink
@@ -197,24 +182,24 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
                 : 'bg-slate-700 text-slate-400'
             }`}
           >
-            Open Presentation
+            Open Material
           </button>
         </div>
 
         <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950/80 p-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-wide text-violet-300">Presentation</p>
+              <p className="text-xs font-black uppercase tracking-wide text-violet-300">Class Material</p>
               <p className="mt-1 text-sm text-slate-300">
                 {hasPresentationLink
-                  ? 'Class material is attached to this room.'
+                  ? `${presentationMedia.title} attached to this room.`
                   : 'No presentation link added to this class yet.'}
               </p>
             </div>
             {hasPresentationLink ? (
               <button
                 type="button"
-                onClick={() => openExternalLink(presentationLink)}
+                onClick={() => openExternalLink(presentationMedia.openUrl)}
                 className="rounded-xl border border-violet-400/40 px-3 py-2 text-sm font-bold text-violet-200"
               >
                 Open in New Tab
@@ -223,19 +208,35 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           </div>
 
           {hasPresentationLink ? (
-            presentationEmbedUrl ? (
+            presentationMedia.kind === 'image' ? (
+              <div className="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
+                <img
+                  src={presentationMedia.embedUrl ?? presentationMedia.openUrl}
+                  alt="Class material"
+                  className="max-h-[520px] w-full object-contain"
+                />
+              </div>
+            ) : presentationMedia.kind === 'video' ? (
+              <div className="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-black">
+                <video
+                  src={presentationMedia.embedUrl ?? presentationMedia.openUrl}
+                  controls
+                  className="max-h-[520px] w-full"
+                />
+              </div>
+            ) : presentationMedia.embedUrl ? (
               <div className="mt-3 overflow-hidden rounded-xl border border-slate-700 bg-white">
                 <iframe
                   title="Class presentation"
-                  src={presentationEmbedUrl}
+                  src={presentationMedia.embedUrl}
                   className="h-[420px] w-full bg-white"
-                  allow="autoplay; fullscreen"
+                  allow="autoplay; fullscreen; clipboard-read; clipboard-write"
                 />
               </div>
             ) : (
               <div className="mt-3 rounded-xl border border-dashed border-slate-700 px-4 py-6 text-sm text-slate-300">
-                This link was saved to the class, but inline preview is not available for this provider yet. Use
-                &nbsp;Open Presentation&nbsp;or&nbsp;Open in New Tab.
+                This material link was saved to the class, but inline preview is not available for this provider yet.
+                Use Open Presentation or Open in New Tab.
               </div>
             )
           ) : null}
