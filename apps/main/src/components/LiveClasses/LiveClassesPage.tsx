@@ -5,6 +5,7 @@ import {
   canAccessLiveClass,
   createLiveClass,
   createLiveClassGroup,
+  deleteLiveClass,
   ensureLiveClassSession,
   getLiveClassMeetLink,
   subscribeLiveClass,
@@ -21,6 +22,7 @@ import { LiveClassRoomPage } from './LiveClassRoomPage';
 interface LiveClassesPageProps {
   user: User;
   isTeacher: boolean;
+  currentCourseId: string;
   onOpenClassContent: (liveClass: LiveClass) => void;
   onBack: () => void;
 }
@@ -51,6 +53,7 @@ const buildOptimisticClass = (classId: string, createdBy: string, input: LiveCla
     title: input.title.trim(),
     teacherName: input.teacherName.trim(),
     teacherUid: createdBy,
+    courseId: input.courseId?.trim() ?? 'english',
     groupId: input.groupId?.trim() ?? '',
     groupName: input.groupName?.trim() ?? '',
     date: input.date,
@@ -90,9 +93,10 @@ const openExternalLink = (rawUrl: string) => {
   window.open(target, '_blank', 'noopener,noreferrer');
 };
 
-const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string): Partial<LiveClassInput> => ({
+const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string, courseId: string): Partial<LiveClassInput> => ({
   title: group.name,
   teacherName,
+  courseId,
   groupId: group.id,
   groupName: group.name,
   whatsappLink: group.whatsappLink ?? '',
@@ -101,7 +105,7 @@ const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string):
   isPrivate: true,
 });
 
-export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeacher, onOpenClassContent, onBack }) => {
+export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeacher, currentCourseId, onOpenClassContent, onBack }) => {
   const [classes, setClasses] = useState<LiveClass[]>([]);
   const [groups, setGroups] = useState<LiveClassGroup[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
@@ -224,12 +228,14 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
   const openCreateFromGroup = (group: LiveClassGroup) => {
     setShowGroupForm(false);
     setEditingGroup(null);
-    openCreate(buildSessionDraftFromGroup(group, teacherDisplayName));
+    openCreate(buildSessionDraftFromGroup(group, teacherDisplayName, currentCourseId));
   };
 
   const openEdit = (liveClass: LiveClass) => {
     setEditingClass(liveClass);
     setSessionDraft(undefined);
+    setSelectedClassId(liveClass.id);
+    setSelectedClass(liveClass);
     setShowForm(true);
   };
 
@@ -237,6 +243,14 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     setShowForm(false);
     setEditingClass(null);
     setSessionDraft(undefined);
+  };
+
+  const openEditFromRoom = (liveClass: LiveClass) => {
+    setRoomClassId('');
+    if (window.location.pathname.startsWith('/live-class/')) {
+      window.history.pushState({}, '', '/');
+    }
+    openEdit(liveClass);
   };
 
   const openGroupCreate = () => {
@@ -291,6 +305,23 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     }
   };
 
+  const handleDeleteClass = async (liveClass: LiveClass) => {
+    if (!window.confirm(`Delete "${liveClass.title}"?`)) return;
+
+    try {
+      await deleteLiveClass(liveClass.id);
+      setClasses((prev) => prev.filter((item) => item.id !== liveClass.id));
+      setSelectedClassId('');
+      setSelectedClass(null);
+      setRoomClassId('');
+      if (window.location.pathname.startsWith('/live-class/')) {
+        window.history.pushState({}, '', '/');
+      }
+    } catch (error) {
+      console.warn('[LiveClassesPage] delete class failed:', error);
+    }
+  };
+
   if (roomClassId && activeRoomClass) {
     return (
       <LiveClassRoomPage
@@ -298,6 +329,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
         user={user}
         isTeacher={isTeacher}
         onOpenClassContent={onOpenClassContent}
+        onEditClass={openEditFromRoom}
         onExit={leaveRoom}
       />
     );
@@ -316,6 +348,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
           setSelectedClass(null);
         }}
         onEdit={() => openEdit(selectedClass)}
+        onDelete={() => void handleDeleteClass(selectedClass)}
         onEnterRoom={() => enterRoom(selectedClass)}
         onOpenClassContent={() => onOpenClassContent(selectedClass)}
       />
@@ -345,6 +378,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
             <button
               type="button"
               onClick={() => openCreate({
+                courseId: currentCourseId,
                 teacherName: teacherDisplayName,
                 isPrivate: true,
               })}

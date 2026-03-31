@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
-import { LiveClass, LiveClassSession } from '../../types';
-import { subscribeLiveSession } from '../../services/liveSessionService';
+import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
+import { subscribeLivePresence, subscribeLiveSession } from '../../services/liveSessionService';
 import { getLiveClassMeetLink, getLiveClassPresentationLink } from '../../services/liveClassesService';
 import { LiveClassChat } from './LiveClassChat';
 import { TeacherLiveControlPanel } from './TeacherLiveControlPanel';
@@ -13,6 +13,7 @@ interface LiveClassDetailsPageProps {
   hasRoomAccess: boolean;
   onBack: () => void;
   onEdit: () => void;
+  onDelete: () => void;
   onEnterRoom: () => void;
   onOpenClassContent: () => void;
 }
@@ -48,9 +49,11 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   hasRoomAccess,
   onBack,
   onEdit,
+  onDelete,
   onEnterRoom,
   onOpenClassContent,
 }) => {
+  const [presence, setPresence] = useState<LiveClassPresence[]>([]);
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
     activeWorkbookId: null,
@@ -71,12 +74,34 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
     return unsubscribe;
   }, [liveClass.id]);
 
+  useEffect(() => {
+    const unsubscribe = subscribeLivePresence(
+      liveClass.id,
+      (next) => setPresence(next),
+      (error) => console.warn('[LiveClassDetailsPage] presence subscription failed:', error),
+    );
+    return unsubscribe;
+  }, [liveClass.id]);
+
   const meetLink = useMemo(() => getLiveClassMeetLink(liveClass), [liveClass]);
   const presentationLink = useMemo(() => getLiveClassPresentationLink(liveClass), [liveClass]);
   const whatsappShareLink = useMemo(() => buildWhatsappShareUrl(liveClass), [liveClass]);
   const canOpenMeet = useMemo(() => !!meetLink, [meetLink]);
   const canOpenPresentation = useMemo(() => !!presentationLink, [presentationLink]);
   const canOpenWhatsapp = useMemo(() => !!(liveClass.whatsappLink ?? '').trim(), [liveClass.whatsappLink]);
+  const onlinePresence = useMemo(
+    () => presence.filter((item) => item.isOnline),
+    [presence],
+  );
+  const assignedRoster = useMemo(() => {
+    const ids = liveClass.assignedStudentIds ?? [];
+    const names = liveClass.assignedStudentNames ?? [];
+    return ids.map((uid, index) => ({
+      uid,
+      label: names[index] || uid,
+      isOnline: onlinePresence.some((item) => item.uid === uid),
+    }));
+  }, [liveClass.assignedStudentIds, liveClass.assignedStudentNames, onlinePresence]);
 
   return (
     <div className="min-h-screen bg-slate-900 px-3 pb-28 pt-6 sm:px-4">
@@ -174,14 +199,64 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
           </button>
         </div>
 
+        <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-wide text-blue-300">Students</h2>
+              <p className="mt-1 text-sm text-slate-300">
+                {onlinePresence.length} online now
+              </p>
+            </div>
+            {isTeacher ? (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="rounded-xl border border-slate-500 px-3 py-2 text-xs font-bold text-slate-100"
+              >
+                Manage Students
+              </button>
+            ) : null}
+          </div>
+
+          {assignedRoster.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {assignedRoster.map((student) => (
+                <span
+                  key={student.uid}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                    student.isOnline
+                      ? 'border-emerald-400/50 bg-emerald-500/20 text-emerald-200'
+                      : 'border-slate-600 bg-slate-800 text-slate-300'
+                  }`}
+                >
+                  {student.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">
+              No assigned students yet. Add them before class if you want a private room.
+            </p>
+          )}
+        </div>
+
         {isTeacher && (
-          <button
-            type="button"
-            onClick={onEdit}
-            className="mt-3 w-full rounded-xl border border-slate-500 px-3 py-2 text-sm font-bold text-slate-100"
-          >
-            Edit Class
-          </button>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={onEdit}
+              className="flex-1 rounded-xl border border-slate-500 px-3 py-2 text-sm font-bold text-slate-100"
+            >
+              Edit Class
+            </button>
+            <button
+              type="button"
+              onClick={onDelete}
+              className="flex-1 rounded-xl border border-rose-500/50 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-200"
+            >
+              Delete Class
+            </button>
+          </div>
         )}
       </div>
 

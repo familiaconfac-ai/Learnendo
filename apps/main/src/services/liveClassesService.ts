@@ -68,6 +68,7 @@ function buildLiveClassPayload(input: LiveClassInput) {
   return {
     title: input.title.trim(),
     teacherName: input.teacherName.trim(),
+    courseId: input.courseId?.trim() ?? '',
     groupId: input.groupId?.trim() ?? '',
     groupName: input.groupName?.trim() ?? '',
     date: input.date,
@@ -92,6 +93,7 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   title: data.title ?? 'Untitled class',
   teacherName: data.teacherName ?? 'Teacher',
   teacherUid: data.teacherUid ?? data.createdBy ?? '',
+  courseId: data.courseId ?? '',
   groupId: data.groupId ?? '',
   groupName: data.groupName ?? '',
   date: data.date ?? '',
@@ -244,6 +246,7 @@ export async function updateLiveClass(classId: string, input: Partial<LiveClassI
     ...buildLiveClassPayload({
       title: input.title ?? '',
       teacherName: input.teacherName ?? '',
+      courseId: input.courseId ?? '',
       groupId: input.groupId ?? '',
       groupName: input.groupName ?? '',
       date: input.date ?? '',
@@ -268,6 +271,13 @@ export async function updateLiveClass(classId: string, input: Partial<LiveClassI
     payload,
   });
   await updateDoc(classRef, payload);
+}
+
+export async function deleteLiveClass(classId: string): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId) return;
+  const classRef = doc(db, LIVE_CLASSES_COLLECTION, classId);
+  await deleteDoc(classRef);
 }
 
 export function getLiveClassPresentationLink(liveClass: Pick<LiveClass, 'presentationUrl'>): string {
