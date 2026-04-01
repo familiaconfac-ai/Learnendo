@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, setDoc, updateDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
-import { Course, Day, UserProgress, SectionType, LessonLanguageCode, ActiveCourse, LiveClass } from './types';
+import { Course, Day, Lesson, UserProgress, SectionType, LessonLanguageCode, ActiveCourse, LiveClass, LiveClassSession } from './types';
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
 import { BottomNavigation } from './components/BottomNavigation';
@@ -32,6 +32,7 @@ import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 import { trackLessonCompletion } from './services/progressService';
 import { lesson1NewWords } from './data/workbook1/lesson1';
+import { subscribeLiveSession, updateLiveSession } from './services/liveSessionService';
 
 /** Accumulated unique word count per lesson number.
  * Lesson N value = sum of all new words introduced from lesson 1 through N.
@@ -75,6 +76,88 @@ const COURSE_SELECTOR_OPTIONS = [
   { id: 'hebrew_biblical', label: 'Hebrew', flag: '🇮🇱' },
 ] as const;
 
+const VALID_LANGUAGES = new Set<LessonLanguageCode>(['en', 'pt', 'es', 'el', 'he']);
+const VALID_SECTIONS = new Set<SectionType>(Object.values(SectionType));
+
+/**
+ * validateAndFixState — pure state guard.
+ * Returns a corrected snapshot of (language, courseId, workbookId).
+ * Does NOT call any React setter. Callers apply the returned corrections.
+ * Safe to call at any time — never causes a render loop.
+ */
+function validateAndFixState(opts: {
+  language: LessonLanguageCode | null | undefined;
+  courseId: string | null | undefined;
+  workbookId: number | null | undefined;
+  section: SectionType | null | undefined;
+  context: string;
+}): {
+  language: LessonLanguageCode;
+  courseId: string;
+  workbookId: number;
+  section: SectionType;
+  fixed: boolean;
+} {
+  let fixed = false;
+  const problems: string[] = [];
+
+  // 1. Language must be a known code
+  let lang: LessonLanguageCode = (opts.language && VALID_LANGUAGES.has(opts.language))
+    ? opts.language
+    : DEFAULT_LANGUAGE;
+  if (lang !== opts.language) {
+    problems.push(`language: '${opts.language}' → '${lang}'`);
+    fixed = true;
+  }
+
+  // 2. CourseId must be known; if missing/unknown, derive from language
+  const knownCourses = new Set(Object.keys(COURSE_TO_LANGUAGE));
+  let courseId: string = (opts.courseId && knownCourses.has(opts.courseId))
+    ? opts.courseId
+    : (LANGUAGE_TO_PRIMARY_COURSE[lang] ?? DEFAULT_COURSE_ID);
+  if (courseId !== opts.courseId) {
+    problems.push(`courseId: '${opts.courseId}' → '${courseId}'`);
+    fixed = true;
+  }
+
+  // 3. Language must be consistent with courseId (courseId wins if both provided)
+  const expectedLang = COURSE_TO_LANGUAGE[courseId];
+  if (expectedLang && expectedLang !== lang && opts.courseId === courseId) {
+    lang = expectedLang;
+    problems.push(`language forced by courseId: '${opts.language}' → '${lang}'`);
+    fixed = true;
+  }
+
+  // 4. WorkbookId must exist in the course registry
+  const registry = COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+  const validWorkbookIds = new Set(Object.keys(registry).map(Number));
+  const rawWbId = opts.workbookId ?? 0;
+  let workbookId: number = (validWorkbookIds.has(rawWbId) && rawWbId > 0)
+    ? rawWbId
+    : getDefaultWorkbookIdForCourse(courseId);
+  if (workbookId !== rawWbId) {
+    problems.push(`workbookId: ${rawWbId} → ${workbookId}`);
+    fixed = true;
+  }
+
+  // 5. Section must be a known enum value
+  const section: SectionType = (opts.section && VALID_SECTIONS.has(opts.section))
+    ? opts.section
+    : SectionType.WORKBOOK;
+  if (section !== opts.section) {
+    problems.push(`section: '${opts.section}' → '${section}'`);
+    fixed = true;
+  }
+
+  if (fixed) {
+    console.warn('[STATE FIXED]', opts.context, { problems, result: { lang, courseId, workbookId, section } });
+  } else {
+    console.log('[STATE VALID]', opts.context, { language: lang, courseId, workbookId, section });
+  }
+
+  return { language: lang, courseId, workbookId, section, fixed };
+}
+
 const getLessonNumberFromId = (lessonId: string | null | undefined) => {
   if (!lessonId) return NaN;
   // IDs like "wb1_l3" encode the lesson number after "_l"; extract that first.
@@ -104,6 +187,20 @@ const findLessonIdInWorkbook = (workbook: any, lessonReference: string | null | 
   const lessonNumber = getLessonNumberFromId(lessonReference);
   if (!Number.isFinite(lessonNumber) || lessonNumber < 1) return null;
   return lessons[lessonNumber - 1]?.id ?? null;
+};
+
+const findDayInLesson = (lesson: Lesson | null | undefined, exerciseReference: string | null | undefined): Day | null => {
+  const days = lesson?.days ?? [];
+  if (!exerciseReference || !days.length) return null;
+
+  const exactMatch = days.find((day) => day.id === exerciseReference);
+  if (exactMatch) return exactMatch;
+
+  const match = exerciseReference.match(/d(\d+)/i);
+  if (!match) return null;
+  const dayNumber = Number(match[1]);
+  if (!Number.isFinite(dayNumber) || dayNumber < 1) return null;
+  return days[dayNumber - 1] ?? null;
 };
 
 const App: React.FC = () => {
@@ -167,6 +264,8 @@ const App: React.FC = () => {
   const [isWorkbookLoading, setIsWorkbookLoading] = useState(false);
   const [currentDay, setCurrentDay] = useState<Day | null>(null);
   const [pendingLiveLessonRef, setPendingLiveLessonRef] = useState<{ workbookId: number; lessonRef: string | null } | null>(null);
+  const [activeOnlineClass, setActiveOnlineClass] = useState<LiveClass | null>(null);
+  const [activeOnlineSession, setActiveOnlineSession] = useState<LiveClassSession | null>(null);
   const [activeWeeklyTest, setActiveWeeklyTest] = useState<{ lessonNumber: number; lessonId: string } | null>(null);
   const [lessonTestCompleted, setLessonTestCompleted] = useState<Record<number, boolean>>({});
   const [lessonTestScores, setLessonTestScores] = useState<Record<number, number>>({});
@@ -227,12 +326,31 @@ const App: React.FC = () => {
     const t = setTimeout(() => setMinSplashDone(true), 1500);
     return () => clearTimeout(t);
   }, []);
+  /** Safety net: if both loading and progressLoaded are still stuck after 8 s, unblock. */
+  React.useEffect(() => {
+    if (progressLoaded) return; // already resolved — no-op
+    const t = setTimeout(() => {
+      if (!progressLoaded) {
+        console.warn('[SPLASH_DEBUG] Safety timeout: progressLoaded still false after 8s — forcing unblock');
+        setProgressLoaded(true);
+        setLoading(false);
+      }
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [progressLoaded]);
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
   const lastLocalUpdateRef = useRef<string | null>(null);
   /** Timestamp (ms) when the current day practice started — used to compute timeSpent. */
   const dayStartTimeRef = useRef<number | null>(null);
   /** Always holds the latest progress to avoid stale closures in async callbacks. */
   const latestProgressRef = useRef<UserProgress>(progress);
+  /** Mirror of currentSection kept in a ref so the workbook-load effect can read
+   *  it without it becoming a reactive dependency (avoids re-running on every nav). */
+  const currentSectionRef = useRef<SectionType>(currentSection);
+  /** Timestamp of the last user-initiated language/course action.
+   *  Firestore restores that arrive AFTER a manual action are suppressed if they
+   *  would revert the user's explicit choice (race-condition guard). */
+  const lastUserActionRef = useRef<number>(0);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
@@ -240,6 +358,11 @@ const App: React.FC = () => {
   useEffect(() => {
     latestProgressRef.current = progress;
   }, [progress]);
+
+  // Keep currentSectionRef in sync so the workbook-load effect can read it
+  useEffect(() => {
+    currentSectionRef.current = currentSection;
+  }, [currentSection]);
 
   // Log whenever language changes
   useEffect(() => {
@@ -282,10 +405,31 @@ const App: React.FC = () => {
       });
       setLanguage(languageForCourse);
     }
-  }, [language, setLanguage, currentCourseId, progress]);
+    // Persist the new courseId to Firestore immediately so future Firestore snapshots
+    // return the correct courseId and don't revert the user's language choice.
+    if (user?.uid && db) {
+      const now = new Date().toISOString();
+      lastLocalUpdateRef.current = now;
+      setDoc(
+        doc(db, 'users', user.uid, 'courseProgress', 'main'),
+        { courseId, lastUpdated: now },
+        { merge: true },
+      ).catch(e => console.warn('[COURSE] persist courseId to Firestore failed:', e));
+    }
+  }, [language, setLanguage, currentCourseId, progress, user?.uid]);
 
   const handleLanguageSelect = useCallback((newLanguage: LessonLanguageCode) => {
     const targetCourseId = LANGUAGE_TO_PRIMARY_COURSE[newLanguage] ?? DEFAULT_COURSE_ID;
+    console.log('[LANG_DEBUG] handleLanguageSelect', {
+      newLanguage,
+      targetCourseId,
+      currentCourseId,
+      currentLanguage: language,
+      currentSection: currentSectionRef.current,
+    });
+
+    // Stamp user action time so Firestore restores arriving within 3s are suppressed
+    lastUserActionRef.current = Date.now();
 
     if (currentCourseId !== targetCourseId) {
       handleCourseChange(targetCourseId);
@@ -477,7 +621,31 @@ const App: React.FC = () => {
 
   // ── Firestore progress listener — single source of truth for UserProgress ──
   useEffect(() => {
-    if (!authReady || !user?.uid || !db) return;
+    if (!authReady || !user?.uid) return;
+
+    // ── FIX: if Firebase/Firestore is not available, unblock the UI immediately ──
+    // Without this, loading & progressLoaded stay in their initial stuck state
+    // and the blue splash screen never clears (both after login and on refresh
+    // when the Firestore SDK is unavailable).
+    if (!db) {
+      const fallbackCourseId = LANGUAGE_TO_PRIMARY_COURSE[language] ?? DEFAULT_COURSE_ID;
+      console.warn('[SPLASH_DEBUG] db not initialized — unblocking UI with local defaults for', user.uid,
+        { fallbackCourseId, language });
+      // Sync courseId with language so there's no mismatch when Firestore is unavailable
+      if (!currentCourseId) setCurrentCourseId(fallbackCourseId);
+      setProgressLoaded(true);
+      setLoading(false);
+      return;
+    }
+
+    console.log('[BOOT_DEBUG] Starting Firestore progress listener', {
+      uid: user.uid,
+      email: user.email,
+      isAdmin: user.email?.toLowerCase() === 'learnendo@gmail.com',
+      savedLanguage: localStorage.getItem('learnendo_user_language'),
+      savedCourseId: null, // read from Firestore snapshot
+    });
+
     setLoading(true);
     const progressRef = doc(db, 'users', user.uid, 'courseProgress', 'main');
     const progressPath = `users/${user.uid}/courseProgress/main`;
@@ -583,30 +751,72 @@ const App: React.FC = () => {
           // Restore the saved courseId so ensureLessonStarted reads the correct
           // courseProgress/{courseId}_{bookNumber} document after logout/login.
           if (data.courseId) {
-            setCurrentCourseId(data.courseId);
-            // ── COLD-START FIX: sync language to match the restored course ──────
-            // handleCourseChange() does this on user interaction, but the Firestore
-            // restore path previously skipped it.  On a cold start (cleared storage),
-            // language defaults to 'en' while courseId may be e.g.
-            // 'portuguese_foreigners' → TTS and UI stayed in English.
-            const restoredLanguage = COURSE_TO_LANGUAGE[data.courseId];
-            console.log('[COLD-START INIT] Firestore courseId→language sync', {
-              courseId: data.courseId,
-              restoredLanguage,
-              prevLanguage: language,
-              willUpdate: !!restoredLanguage && restoredLanguage !== language,
-            });
-            if (restoredLanguage && restoredLanguage !== language) {
-              setLanguage(restoredLanguage);
+            // Race-condition guard: if the user manually switched language/course less
+            // than 3 seconds ago, do NOT let an older Firestore snapshot overwrite it.
+            const msSinceUserAction = Date.now() - lastUserActionRef.current;
+            if (msSinceUserAction < 3000) {
+              console.warn('[STATE ERROR] Firestore restore suppressed — user action is too recent',
+                { msSinceUserAction, snapshotCourseId: data.courseId, currentCourseId });
+            } else {
+              setCurrentCourseId(data.courseId);
+              // ── COLD-START FIX: sync language to match the restored course ──────
+              // handleCourseChange() does this on user interaction, but the Firestore
+              // restore path previously skipped it.  On a cold start (cleared storage),
+              // language defaults to 'en' while courseId may be e.g.
+              // 'portuguese_foreigners' → TTS and UI stayed in English.
+              const restoredLanguage = COURSE_TO_LANGUAGE[data.courseId];
+              console.log('[RESTORE_DEBUG] Firestore courseId/language restore', {
+                uid: user?.uid,
+                courseId: data.courseId,
+                restoredLanguage,
+                currentLanguage: language,
+                willChangeLanguage: !!restoredLanguage && restoredLanguage !== language,
+              });
+              console.log('[COLD-START INIT] Firestore courseId→language sync', {
+                courseId: data.courseId,
+                restoredLanguage,
+                prevLanguage: language,
+                willUpdate: !!restoredLanguage && restoredLanguage !== language,
+              });
+              if (restoredLanguage && restoredLanguage !== language) {
+                setLanguage(restoredLanguage);
+              }
+              // Run state guard after restore to catch any remaining inconsistencies
+              const validated = validateAndFixState({
+                language: restoredLanguage ?? language,
+                courseId: data.courseId,
+                workbookId: data.currentWorkbook ?? data.workbook ?? 1,
+                section: currentSectionRef.current,
+                context: 'Firestore restore',
+              });
+              if (validated.fixed) {
+                if (validated.courseId !== data.courseId) setCurrentCourseId(validated.courseId);
+                if (validated.language !== (restoredLanguage ?? language)) setLanguage(validated.language);
+                if (validated.workbookId !== (data.currentWorkbook ?? data.workbook ?? 1)) setCurrentWorkbookId(validated.workbookId);
+              }
+              // Backfill courseId on the flat progress doc for returning users whose
+              // doc predates the courseId field (written via merge so nothing else changes).
+              if (db && user?.uid) {
+                setDoc(
+                  doc(db, 'progress', user.uid),
+                  { courseId: data.courseId },
+                  { merge: true },
+                ).catch(() => {});
+              }
             }
-            // Backfill courseId on the flat progress doc for returning users whose
-            // doc predates the courseId field (written via merge so nothing else changes).
-            if (db && user?.uid) {
-              setDoc(
-                doc(db, 'progress', user.uid),
-                { courseId: data.courseId },
-                { merge: true },
-              ).catch(() => {});
+          } else {
+            // No courseId in Firestore — ensure language → courseId consistency
+            const validated = validateAndFixState({
+              language,
+              courseId: currentCourseId,
+              workbookId: data.currentWorkbook ?? data.workbook ?? 1,
+              section: currentSectionRef.current,
+              context: 'Firestore restore (no courseId in doc)',
+            });
+            if (validated.fixed) {
+              if (validated.courseId !== currentCourseId) setCurrentCourseId(validated.courseId);
+              if (validated.language !== language) setLanguage(validated.language);
+              if (validated.workbookId !== (data.currentWorkbook ?? data.workbook ?? 1)) setCurrentWorkbookId(validated.workbookId);
             }
           }
           setProgressLoaded(true);
@@ -648,7 +858,20 @@ const App: React.FC = () => {
         }
       },
       (err) => {
-        console.warn('[Progress] onSnapshot error:', err);
+        // ── FIX: setProgressLoaded(true) was missing here ──
+        // Also sync courseId with language so there's no mismatch when Firestore errors.
+        const storedLang = (typeof window !== 'undefined'
+          ? localStorage.getItem(LANGUAGE_STORAGE_KEY)
+          : null) as LessonLanguageCode | null;
+        const resolvedLang: LessonLanguageCode =
+          storedLang && (['en', 'pt', 'es', 'el', 'he'] as string[]).includes(storedLang)
+            ? storedLang
+            : DEFAULT_LANGUAGE;
+        const fallbackCourseId = LANGUAGE_TO_PRIMARY_COURSE[resolvedLang] ?? DEFAULT_COURSE_ID;
+        console.warn('[SPLASH_DEBUG] Firestore onSnapshot error — unblocking UI:', err.code, err.message,
+          { resolvedLang, fallbackCourseId });
+        if (!currentCourseId) setCurrentCourseId(fallbackCourseId);
+        setProgressLoaded(true);
         setLoading(false);
       },
     );
@@ -727,12 +950,18 @@ const App: React.FC = () => {
       progressCurrentLesson: progress.currentLesson,
     });
     if (!currentCourseId) {
-      console.log('[ACTION] Setting DEFAULT_COURSE_ID', {
-        newValue: DEFAULT_COURSE_ID,
-        reason: 'currentCourseId is falsy',
+      // ── FIX: derive courseId from the user's saved language, not from DEFAULT_COURSE_ID ──
+      // Using DEFAULT_COURSE_ID='english' here caused Spanish/Portuguese students to have
+      // language='es'/'pt' (from localStorage) but courseId='english' during the window
+      // between auth and Firestore loading. If Firestore then errored out, they stayed stuck
+      // with English workbook and mismatched Spanish UI.
+      const courseFromLanguage = LANGUAGE_TO_PRIMARY_COURSE[language] ?? DEFAULT_COURSE_ID;
+      console.log('[BOOT_DEBUG] ensure-defaults: deriving courseId from language', {
         language,
+        courseFromLanguage,
+        reason: 'currentCourseId is falsy before Firestore loads',
       });
-      setCurrentCourseId(DEFAULT_COURSE_ID);
+      setCurrentCourseId(courseFromLanguage);
     }
     if (!currentWorkbookId) {
       console.log('[ACTION] Setting currentWorkbookId from progress', {
@@ -755,12 +984,45 @@ const App: React.FC = () => {
     // then resets to lesson 1" race condition.
     let cancelled = false;
 
+    // ── FIX: Do not forcibly navigate away from LIVE_CLASSES when a language/course
+    // change triggers this workbook reload.  Using a ref avoids adding currentSection
+    // as a reactive dependency (which would cause the effect to re-run on every nav).
+    const navigateToWorkbook = () => {
+      if (currentSectionRef.current !== SectionType.LIVE_CLASSES) {
+        setCurrentSection(SectionType.WORKBOOK);
+      }
+    };
+
     const loadWorkbook = async () => {
       const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
       const registry = COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+
+      // Guard: validate the combo before even attempting the import
+      const validated = validateAndFixState({
+        language,
+        courseId,
+        workbookId: currentWorkbookId,
+        section: currentSectionRef.current,
+        context: 'loadWorkbook',
+      });
+      if (validated.fixed && validated.workbookId !== currentWorkbookId) {
+        // The workbookId was invalid for this course — apply the fix and let the
+        // effect re-run with the corrected value instead of loading with a bad id.
+        if (!cancelled) setCurrentWorkbookId(validated.workbookId);
+        return;
+      }
+
       const loader = registry[currentWorkbookId as keyof typeof registry];
       if (!loader) {
-        if (!cancelled) setCurrentSection(SectionType.WORKBOOK);
+        if (!cancelled) {
+          // ── FIX: reset workbookId to default so the effect re-runs with a valid combo ──
+          // Without this, currentWorkbook stays null and renderSection shows an invisible
+          // "Workbook unavailable" text on the dark background (looks like a blank page).
+          const defaultId = getDefaultWorkbookIdForCourse(courseId);
+          console.warn('[COURSE_DEBUG] No workbook loader found — resetting workbookId to default', { courseId, currentWorkbookId, defaultId });
+          setCurrentWorkbookId(defaultId);
+          navigateToWorkbook();
+        }
         return;
       }
 
@@ -775,20 +1037,25 @@ const App: React.FC = () => {
           null;
 
         if (!resolvedWorkbook) {
-          setCurrentSection(SectionType.WORKBOOK);
+          console.warn('[COURSE_DEBUG] Workbook module resolved but no workbook export found', { courseId, currentWorkbookId });
+          navigateToWorkbook();
           return;
         }
 
         if (currentWorkbookId !== 1 && Array.isArray((resolvedWorkbook as any).lessons) && (resolvedWorkbook as any).lessons.length === 0) {
           setCurrentWorkbookId(getDefaultWorkbookIdForCourse(courseId));
-          setCurrentSection(SectionType.WORKBOOK);
+          navigateToWorkbook();
           return;
         }
 
+        console.log('[COURSE_DEBUG] Workbook loaded', { courseId, currentWorkbookId, lessonCount: (resolvedWorkbook as any).lessons?.length ?? 0 });
         setCurrentWorkbook(resolvedWorkbook);
-        setCurrentSection(SectionType.WORKBOOK);
-      } catch {
-        if (!cancelled) setCurrentSection(SectionType.WORKBOOK);
+        navigateToWorkbook();
+      } catch (err) {
+        if (!cancelled) {
+          console.error('[COURSE_DEBUG] Workbook load error', { courseId, currentWorkbookId, err });
+          navigateToWorkbook();
+        }
       } finally {
         if (!cancelled) setIsWorkbookLoading(false);
       }
@@ -803,15 +1070,32 @@ const App: React.FC = () => {
     const targetLessonId = findLessonIdInWorkbook(currentWorkbook, pendingLiveLessonRef.lessonRef);
     setPendingLiveLessonRef(null);
     if (targetLessonId) {
-      openLesson(targetLessonId);
+      openLesson(targetLessonId, { force: Boolean(activeOnlineClass) });
     }
-  }, [currentWorkbook, currentWorkbookId, pendingLiveLessonRef]);
+  }, [activeOnlineClass, currentWorkbook, currentWorkbookId, pendingLiveLessonRef]);
+
+  useEffect(() => {
+    if (!activeOnlineClass?.id) {
+      setActiveOnlineSession(null);
+      return;
+    }
+
+    const unsubscribe = subscribeLiveSession(
+      activeOnlineClass.id,
+      (nextSession) => setActiveOnlineSession(nextSession),
+      (error) => console.warn('[App] live session subscription failed:', error),
+    );
+
+    return unsubscribe;
+  }, [activeOnlineClass?.id]);
 
   const handleNavigate = (section: SectionType, params?: any) => {
     setCourseMenuOpen(false);
     setActiveWeeklyTest(null);
 
     if (section === SectionType.DASHBOARD) {
+      setActiveOnlineClass(null);
+      setActiveOnlineSession(null);
       setCurrentDay(null);
       setCurrentLessonId(null);
       const workbookId = Number(progress.currentWorkbook || 1);
@@ -822,6 +1106,8 @@ const App: React.FC = () => {
     }
 
     if (section === SectionType.COURSES) {
+      setActiveOnlineClass(null);
+      setActiveOnlineSession(null);
       setCurrentSection(SectionType.COURSES);
       return;
     }
@@ -882,16 +1168,31 @@ const App: React.FC = () => {
   };
 
   const handleSelectWorkbook = (workbookId: number) => {
+    const effectiveCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
+    console.log('[WORKBOOK_CLICK_DEBUG] handleSelectWorkbook called', {
+      workbookId,
+      language,
+      currentCourseId,
+      effectiveCourseId,
+      previousWorkbookId: currentWorkbookId,
+    });
     const updated = { ...progress, currentWorkbook: workbookId };
     setProgress(updated);
     setCurrentWorkbookId(workbookId);
+    // Stamp user-action time so the race-condition guard suppresses any
+    // concurrent Firestore snapshot from reverting courseId/language.
+    lastUserActionRef.current = Date.now();
     try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
     if (user?.uid && db) {
       const now = new Date().toISOString();
       lastLocalUpdateRef.current = now;
+      // ── ROOT CAUSE FIX: always include courseId in this write ──
+      // Without courseId here, the Firestore snapshot triggered by this write
+      // comes back with the OLD courseId (e.g. 'spanish' from the previous session),
+      // which overwrites currentCourseId and loads the wrong workbook.
       setDoc(
         doc(db, 'users', user.uid, 'courseProgress', 'main'),
-        { currentWorkbook: workbookId, lastUpdated: now },
+        { currentWorkbook: workbookId, courseId: effectiveCourseId, lastUpdated: now },
         { merge: true },
       ).catch(e => console.warn('[WORKBOOK] persist workbook selection failed:', e));
     }
@@ -906,11 +1207,29 @@ const App: React.FC = () => {
     return true;
   };
 
-  const openLesson = (lessonId: string) => {
+  const pushLiveSessionState = useCallback(async (patch: Partial<LiveClassSession>) => {
+    if (!activeOnlineClass?.id || !user?.uid || !isAdmin) return;
+    try {
+      await updateLiveSession(activeOnlineClass.id, patch, user.uid);
+    } catch (error) {
+      console.warn('[App] live session state update failed:', error);
+    }
+  }, [activeOnlineClass?.id, isAdmin, user?.uid]);
+
+  const openLesson = (
+    lessonId: string,
+    options?: {
+      force?: boolean;
+      syncToSession?: boolean;
+    },
+  ) => {
     const lessonNumber = getLessonNumberFromId(lessonId);
     if (!Number.isFinite(lessonNumber)) return;
 
-    if (!canOpenLessonToday(lessonNumber)) {
+    const forceOpen = options?.force === true;
+    const syncToSession = options?.syncToSession !== false;
+
+    if (!forceOpen && !canOpenLessonToday(lessonNumber)) {
       alert('Come back tomorrow to continue your journey.');
       return;
     }
@@ -926,6 +1245,13 @@ const App: React.FC = () => {
     if (user?.uid) {
       const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
       const activeWorkbookNumber = currentWorkbookId || progress.currentWorkbook || 1;
+      console.log('[WORKBOOK_CLICK_DEBUG] openLesson called', {
+        lessonId,
+        language,
+        courseId,
+        workbookId: activeWorkbookNumber,
+        resolvedLessonNumber: getLessonNumberFromId(lessonId),
+      });
       console.log('[OPEN LESSON] ensureLessonStarted path:', `users/${user.uid}/courseProgress/${courseId}_${activeWorkbookNumber}`, {
         lessonNumber,
         language,
@@ -958,9 +1284,21 @@ const App: React.FC = () => {
     setCurrentDay(null);
     setCurrentSection(SectionType.LESSON);
 
-    // Auto-show grammar on first visit to this lesson.
+    // Declare here (shared by live-session sync below AND grammar key).
+    // Must come before any use to avoid the Temporal Dead Zone error.
     const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
     const activeWorkbookNumber = currentWorkbookId || progress.currentWorkbook || 1;
+
+    if (syncToSession && activeOnlineClass?.id && isAdmin) {
+      void pushLiveSessionState({
+        sessionStatus: 'active',
+        activeWorkbookId: activeWorkbookNumber,
+        activeLessonId: lessonId,
+        activeExerciseId: null,
+      });
+    }
+
+    // Auto-show grammar on first visit to this lesson.
     const grammarKey = `grammar_seen_${courseId}_${activeWorkbookNumber}_${lessonNumber}`;
     if (!localStorage.getItem(grammarKey)) {
       localStorage.setItem(grammarKey, '1');
@@ -977,21 +1315,153 @@ const App: React.FC = () => {
   };
 
   const openLiveClassContent = useCallback((liveClass: LiveClass) => {
-    const targetWorkbookId = liveClass.workbookId ?? currentWorkbookId ?? progress.currentWorkbook ?? 1;
+    console.log('[ONLINE_DEBUG] openLiveClassContent called', {
+      classId: liveClass.id,
+      classCourseId: liveClass.courseId,
+      classWorkbookId: liveClass.workbookId,
+      classLessonId: liveClass.lessonId,
+      currentCourseId,
+      currentLanguage: language,
+    });
+    setActiveOnlineClass(liveClass);
+    const targetCourseId = liveClass.courseId?.trim() || currentCourseId || DEFAULT_COURSE_ID;
+    const targetLanguage = COURSE_TO_LANGUAGE[targetCourseId] ?? language;
+    // ── FIX: do NOT fall back to currentWorkbookId for the target course ──
+    // If admin was on workbook 2 of English and opens a Greek class (workbook 1 only),
+    // targetWorkbookId would be 2, which has no loader → blank page.
+    // Use the class's explicit workbookId, or the default workbook for the target course.
+    const targetWorkbookId = liveClass.workbookId ?? getDefaultWorkbookIdForCourse(targetCourseId);
     const targetLessonRef = liveClass.lessonId ?? null;
+    console.log('[ONLINE_DEBUG] openLiveClassContent resolved targets', { targetCourseId, targetLanguage, targetWorkbookId, targetLessonRef });
 
-    setCurrentWorkbookId(targetWorkbookId);
+    // Validate the computed targets before applying them
+    const validated = validateAndFixState({
+      language: targetLanguage,
+      courseId: targetCourseId,
+      workbookId: targetWorkbookId,
+      section: SectionType.WORKBOOK,
+      context: 'openLiveClassContent',
+    });
+
+    // Stamp as user action so Firestore doesn't override this choice for 3s
+    lastUserActionRef.current = Date.now();
+
+    if (validated.courseId !== currentCourseId) {
+      setCurrentCourseId(validated.courseId);
+    }
+    if (validated.language !== language) {
+      setLanguage(validated.language);
+    }
+    setCurrentWorkbookId(validated.workbookId);
     setCurrentWorkbook(null);
     setCurrentDay(null);
 
     if (targetLessonRef) {
       setPendingLiveLessonRef({ workbookId: targetWorkbookId, lessonRef: targetLessonRef });
+      if (user?.uid && isAdmin) {
+        void updateLiveSession(liveClass.id, {
+          sessionStatus: 'active',
+          activeWorkbookId: targetWorkbookId,
+          activeLessonId: targetLessonRef,
+          activeExerciseId: null,
+        }, user.uid).catch((error) => {
+          console.warn('[App] failed to start synced live lesson:', error);
+        });
+      }
     } else {
       setPendingLiveLessonRef(null);
     }
 
     setCurrentSection(SectionType.WORKBOOK);
-  }, [currentWorkbookId, progress.currentWorkbook]);
+  }, [currentCourseId, currentWorkbookId, isAdmin, language, progress.currentWorkbook, setLanguage, user?.uid]);
+
+  useEffect(() => {
+    if (!activeOnlineClass || !activeOnlineSession) return;
+
+    // ── FIX: Admin is the session CONTROLLER, not a follower ──
+    // Without this guard the session-sync effect ran for admin too, overriding their
+    // selected language/course to match the class's courseId and forcing section
+    // changes — causing the flag to appear broken and blank pages when the session
+    // had a different course (e.g. Spanish) than the admin's current state (English).
+    if (isAdmin) {
+      console.log('[ONLINE_DEBUG] Admin — skipping session-sync follow (admin controls session, not follows it)');
+      return;
+    }
+
+    const targetCourseId = activeOnlineClass.courseId?.trim() || currentCourseId || DEFAULT_COURSE_ID;
+    const targetLanguage = COURSE_TO_LANGUAGE[targetCourseId] ?? language;
+    console.log('[ONLINE_DEBUG] Student session sync', { targetCourseId, targetLanguage, currentCourseId, language });
+    const targetWorkbookId = activeOnlineSession.activeWorkbookId ?? null;
+    const targetLessonRef = activeOnlineSession.activeLessonId ?? null;
+    const targetExerciseRef = activeOnlineSession.activeExerciseId ?? null;
+
+    if (!targetWorkbookId || !targetLessonRef) return;
+
+    if (targetCourseId !== currentCourseId) {
+      setCurrentCourseId(targetCourseId);
+    }
+    if (targetLanguage !== language) {
+      setLanguage(targetLanguage);
+    }
+
+    if (currentWorkbookId !== targetWorkbookId) {
+      setCurrentWorkbookId(targetWorkbookId);
+      setCurrentWorkbook(null);
+      setCurrentDay(null);
+      setPendingLiveLessonRef({ workbookId: targetWorkbookId, lessonRef: targetLessonRef });
+      setCurrentSection(SectionType.WORKBOOK);
+      return;
+    }
+
+    if (!currentWorkbook) return;
+
+    const resolvedLessonId = findLessonIdInWorkbook(currentWorkbook, targetLessonRef);
+    if (!resolvedLessonId) return;
+
+    if (currentLessonId !== resolvedLessonId || currentSection === SectionType.WORKBOOK || currentSection === SectionType.LIVE_CLASSES) {
+      openLesson(resolvedLessonId, { force: true, syncToSession: false });
+      return;
+    }
+
+    const resolvedLesson =
+      currentWorkbook?.lessons?.find((lesson: Lesson) => lesson.id === resolvedLessonId) ??
+      currentWorkbook?.lessons?.[getLessonNumberFromId(resolvedLessonId) - 1] ??
+      null;
+
+    if (!targetExerciseRef) {
+      if (currentDay) {
+        setCurrentDay(null);
+        setActiveWeeklyTest(null);
+      }
+      if (currentSection !== SectionType.LESSON) {
+        setCurrentSection(SectionType.LESSON);
+      }
+      return;
+    }
+
+    const targetDay = findDayInLesson(resolvedLesson, targetExerciseRef);
+    if (!targetDay) return;
+
+    if (currentDay?.id !== targetDay.id || currentSection !== SectionType.PRACTICE) {
+      dayStartTimeRef.current = Date.now();
+      setCurrentDay(targetDay);
+      setActiveWeeklyTest(null);
+      setCurrentSection(SectionType.PRACTICE);
+    }
+  }, [
+    activeOnlineClass,
+    activeOnlineSession,
+    currentCourseId,
+    currentDay,
+    isAdmin,
+    currentLessonId,
+    currentSection,
+    currentWorkbook,
+    currentWorkbookId,
+    language,
+    openLesson,
+    setLanguage,
+  ]);
 
   const handlePlacementComplete = (score: number, level: string) => {
     const workbook = PlacementEngine.determineWorkbook(score);
@@ -1245,6 +1715,14 @@ const App: React.FC = () => {
 
       setCurrentLessonId(lessonId);
       setCurrentSection(SectionType.LESSON);
+      if (activeOnlineClass?.id && isAdmin) {
+        void pushLiveSessionState({
+          sessionStatus: 'active',
+          activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
+          activeLessonId: lessonId,
+          activeExerciseId: null,
+        });
+      }
       return;
     }
 
@@ -1289,6 +1767,14 @@ const App: React.FC = () => {
     // same pattern used for weekly tests. Firebase writes continue in the background.
     setCurrentDay(null);
     setCurrentSection(SectionType.LESSON);
+    if (activeOnlineClass?.id && isAdmin) {
+      void pushLiveSessionState({
+        sessionStatus: 'active',
+        activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
+        activeLessonId: currentLessonId || null,
+        activeExerciseId: null,
+      });
+    }
 
     // Immediately surface the completion in local state so LessonView unlocks
     // the next exercise before the Firestore onSnapshot arrives.
@@ -1595,11 +2081,14 @@ const App: React.FC = () => {
         );
       }
       case SectionType.LIVE_CLASSES:
+        console.log('[ONLINE_DEBUG] Rendering LiveClassesPage', { currentCourseId, language, isAdmin });
         return (
           <LiveClassesPage
             user={user}
             isTeacher={isAdmin}
+            currentCourseId={currentCourseId ?? DEFAULT_COURSE_ID}
             onOpenClassContent={openLiveClassContent}
+            onRoomContextChange={setActiveOnlineClass}
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
         );
@@ -1670,8 +2159,8 @@ const App: React.FC = () => {
       case SectionType.PLACEMENT_TEST:
         return <PlacementTest currentLanguage={language} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
       case SectionType.WORKBOOK:
-        if (isWorkbookLoading) return <div className="px-4 py-6">Loading workbook...</div>;
-        if (!currentWorkbook) return <div className="px-4 py-6">Workbook unavailable for this course.</div>;
+        if (isWorkbookLoading) return <div className="px-4 py-6 text-slate-200">Loading workbook...</div>;
+        if (!currentWorkbook) return <div className="px-4 py-6 text-slate-200">Workbook unavailable for this course.</div>;
         return (
           <WorkbookView
             workbookId={currentWorkbookId || progress.currentWorkbook}
@@ -1711,8 +2200,27 @@ const App: React.FC = () => {
               setCurrentDay(day);
               setActiveWeeklyTest(null);
               setCurrentSection(SectionType.PRACTICE);
+              if (activeOnlineClass?.id && isAdmin) {
+                void pushLiveSessionState({
+                  sessionStatus: 'active',
+                  activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
+                  activeLessonId: lesson.id,
+                  activeExerciseId: day.id,
+                });
+              }
             }}
-            onStartWeeklyTest={(day: Day) => { dayStartTimeRef.current = Date.now(); startWeeklyTest(lesson.id, lessonNumber, day); }}
+            onStartWeeklyTest={(day: Day) => {
+              dayStartTimeRef.current = Date.now();
+              startWeeklyTest(lesson.id, lessonNumber, day);
+              if (activeOnlineClass?.id && isAdmin) {
+                void pushLiveSessionState({
+                  sessionStatus: 'active',
+                  activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
+                  activeLessonId: lesson.id,
+                  activeExerciseId: day.id,
+                });
+              }
+            }}
             onBack={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook })}
             onGrammar={() => setShowGrammarModal(true)}
           />
@@ -1764,6 +2272,14 @@ const App: React.FC = () => {
               setCurrentDay(null);
               setActiveWeeklyTest(null);
               setCurrentSection(SectionType.LESSON);
+              if (activeOnlineClass?.id && isAdmin) {
+                void pushLiveSessionState({
+                  sessionStatus: 'active',
+                  activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
+                  activeLessonId: currentLessonId || null,
+                  activeExerciseId: null,
+                });
+              }
             }}
           />
         );
@@ -1817,6 +2333,7 @@ const App: React.FC = () => {
   }
 
   if (loading || !progressLoaded || !minSplashDone) {
+    console.log('[SPLASH_DEBUG] Still showing splash', { loading, progressLoaded, minSplashDone, uid: user?.uid });
     return (
       <div className="fixed inset-0 bg-blue-600 flex items-center justify-center">
         <span
@@ -1827,6 +2344,24 @@ const App: React.FC = () => {
         </span>
       </div>
     );
+  }
+
+  // Final guard before render: ensure no invalid combination reaches the component tree
+  {
+    const preRenderCheck = validateAndFixState({
+      language,
+      courseId: currentCourseId,
+      workbookId: currentWorkbookId,
+      section: currentSection,
+      context: 'pre-render',
+    });
+    if (preRenderCheck.fixed) {
+      // Corrections will trigger a re-render; current render is invalid — bail early.
+      if (preRenderCheck.language !== language) setLanguageState(preRenderCheck.language);
+      if (preRenderCheck.courseId !== currentCourseId) setCurrentCourseId(preRenderCheck.courseId);
+      if (preRenderCheck.workbookId !== currentWorkbookId) setCurrentWorkbookId(preRenderCheck.workbookId);
+      return null; // skip rendering with bad state; corrected state triggers immediate re-render
+    }
   }
 
   return (

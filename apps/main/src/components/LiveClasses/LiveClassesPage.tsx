@@ -24,6 +24,7 @@ interface LiveClassesPageProps {
   isTeacher: boolean;
   currentCourseId: string;
   onOpenClassContent: (liveClass: LiveClass) => void;
+  onRoomContextChange: (liveClass: LiveClass | null) => void;
   onBack: () => void;
 }
 
@@ -105,7 +106,7 @@ const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string, 
   isPrivate: true,
 });
 
-export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeacher, currentCourseId, onOpenClassContent, onBack }) => {
+export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeacher, currentCourseId, onOpenClassContent, onRoomContextChange, onBack }) => {
   const [classes, setClasses] = useState<LiveClass[]>([]);
   const [groups, setGroups] = useState<LiveClassGroup[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
@@ -218,6 +219,10 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     if (selectedClass?.id === roomClassId) return selectedClass;
     return classes.find((item) => item.id === roomClassId) ?? null;
   }, [classes, roomClassId, selectedClass]);
+
+  useEffect(() => {
+    onRoomContextChange(activeRoomClass ?? null);
+  }, [activeRoomClass, onRoomContextChange]);
 
   const openCreate = (draft?: Partial<LiveClassInput>) => {
     setEditingClass(null);
@@ -549,6 +554,18 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
               ) : null}
 
               <div className="mt-3 flex flex-wrap justify-end gap-2">
+                {isTeacher ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleDeleteClass(liveClass);
+                    }}
+                    className="rounded-xl border border-rose-500/50 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-200"
+                  >
+                    Delete
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={(event) => {

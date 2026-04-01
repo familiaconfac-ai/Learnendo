@@ -13,6 +13,7 @@ interface LiveClassFormProps {
 const DEFAULT_FORM: LiveClassInput = {
   title: '',
   teacherName: '',
+  courseId: 'english',
   date: '',
   time: '',
   meetingLink: '',
@@ -26,6 +27,11 @@ const DEFAULT_FORM: LiveClassInput = {
   isPrivate: true,
   assignedStudentIds: [],
   assignedStudentNames: [],
+};
+
+const clampNumber = (value: number, min: number, max: number) => {
+  if (!Number.isFinite(value)) return min;
+  return Math.min(max, Math.max(min, value));
 };
 
 export const LiveClassForm: React.FC<LiveClassFormProps> = ({
@@ -90,6 +96,9 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
     .filter(Boolean);
 
   const selectedStudentIds = new Set(parseCsv(assignedIdsText));
+  const workbookNumber = clampNumber(Number(form.workbookId ?? 1), 1, 8);
+  const unitNumber = clampNumber(Number(form.unitId ?? 1), 1, 16);
+  const lessonNumber = clampNumber(Number(form.lessonId ?? 1), 1, 12);
 
   const toggleStudentSelection = (student: StudentBasicInfo) => {
     const nextIds = new Set(parseCsv(assignedIdsText));
@@ -120,6 +129,7 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
       ...form,
       title: form.title.trim(),
       teacherName: form.teacherName.trim(),
+      courseId: form.courseId?.trim() ?? 'english',
       groupId: form.groupId?.trim() ?? '',
       groupName: form.groupName?.trim() ?? '',
       meetingLink: form.meetingLink.trim(),
@@ -127,8 +137,9 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
       presentationUrl: form.presentationUrl?.trim() ?? '',
       whatsappLink: form.whatsappLink?.trim() ?? '',
       description: form.description?.trim() ?? '',
-      unitId: form.unitId?.trim() ?? '',
-      lessonId: form.lessonId?.trim() ?? '',
+      workbookId: workbookNumber,
+      unitId: String(unitNumber),
+      lessonId: String(lessonNumber),
       assignedStudentIds: parseCsv(assignedIdsText),
       assignedStudentNames: parseCsv(assignedNamesText),
     });
@@ -153,6 +164,11 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
         placeholder="Teacher name"
       />
+
+      <div className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200">
+        <span className="font-bold text-white">Course for this class:</span>{' '}
+        <span>{form.courseId ?? 'english'}</span>
+      </div>
 
       <div className="grid grid-cols-2 gap-3">
         <input
@@ -193,29 +209,45 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         placeholder="Material link (Google Slides, Canva, PowerPoint Web, YouTube, PDF, image, video)"
       />
 
-      <div className="grid grid-cols-3 gap-3">
-        <input
-          type="number"
-          min={1}
-          value={form.workbookId ?? 1}
-          onChange={(e) => setField('workbookId', Number(e.target.value) || 1)}
-          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-          placeholder="Workbook"
-        />
-        <input
-          type="text"
-          value={form.unitId ?? ''}
-          onChange={(e) => setField('unitId', e.target.value)}
-          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-          placeholder="Unit"
-        />
-        <input
-          type="text"
-          value={form.lessonId ?? ''}
-          onChange={(e) => setField('lessonId', e.target.value)}
-          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-          placeholder="Lesson"
-        />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <label className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200">
+          <span className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">Workbook</span>
+          <input
+            type="number"
+            min={1}
+            max={8}
+            step={1}
+            value={workbookNumber}
+            onChange={(e) => setField('workbookId', clampNumber(Number(e.target.value) || 1, 1, 8))}
+            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-bold text-white"
+          />
+        </label>
+
+        <label className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200">
+          <span className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">Unit</span>
+          <input
+            type="number"
+            min={1}
+            max={16}
+            step={1}
+            value={unitNumber}
+            onChange={(e) => setField('unitId', String(clampNumber(Number(e.target.value) || 1, 1, 16)))}
+            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-bold text-white"
+          />
+        </label>
+
+        <label className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200">
+          <span className="mb-2 block text-xs font-black uppercase tracking-wide text-slate-400">Lesson</span>
+          <input
+            type="number"
+            min={1}
+            max={12}
+            step={1}
+            value={lessonNumber}
+            onChange={(e) => setField('lessonId', String(clampNumber(Number(e.target.value) || 1, 1, 12)))}
+            className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm font-bold text-white"
+          />
+        </label>
       </div>
 
       <p className="text-xs text-slate-400">
