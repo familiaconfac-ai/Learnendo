@@ -56,12 +56,12 @@ const mapWhiteboard = (data: Record<string, any> | undefined): LiveWhiteboardSta
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
 });
 
-function getSharedWhiteboardRef(classId: string) {
-  return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SHARED_COLLECTION, LIVE_WHITEBOARD_DOC);
-}
-
 function getLegacyWhiteboardRef(classId: string) {
   return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, LIVE_WHITEBOARD_DOC);
+}
+
+function getSharedWhiteboardRef(classId: string) {
+  return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SHARED_COLLECTION, LIVE_WHITEBOARD_DOC);
 }
 
 function buildWhiteboardPayload(content: string, updatedByUid: string, updatedByName: string) {
@@ -243,37 +243,37 @@ export function subscribeLiveWhiteboard(
     return () => {};
   }
 
-  const whiteboardRef = getSharedWhiteboardRef(classId);
-  const legacyWhiteboardRef = getLegacyWhiteboardRef(classId);
-  let migratedLegacySnapshot = false;
+  const whiteboardRef = getLegacyWhiteboardRef(classId);
+  const sharedWhiteboardRef = getSharedWhiteboardRef(classId);
+  let migratedSharedSnapshot = false;
 
   return onSnapshot(
     whiteboardRef,
     (snapshot) => {
       if (!snapshot.exists()) {
-        if (migratedLegacySnapshot) {
+        if (migratedSharedSnapshot) {
           onData(mapWhiteboard(undefined));
           return;
         }
 
-        migratedLegacySnapshot = true;
-        void getDoc(legacyWhiteboardRef)
-          .then((legacySnapshot) => {
-            if (!legacySnapshot.exists()) {
+        migratedSharedSnapshot = true;
+        void getDoc(sharedWhiteboardRef)
+          .then((sharedSnapshot) => {
+            if (!sharedSnapshot.exists()) {
               onData(mapWhiteboard(undefined));
               return;
             }
 
-            const legacyData = mapWhiteboard(legacySnapshot.data() as Record<string, any>);
-            onData(legacyData);
+            const sharedData = mapWhiteboard(sharedSnapshot.data() as Record<string, any>);
+            onData(sharedData);
 
-            // Migrate old room-level whiteboard data into the shared path used by the room.
+            // Mirror any existing shared whiteboard data back into the live session path.
             return setDoc(
               whiteboardRef,
               buildWhiteboardPayload(
-                legacyData.content ?? '',
-                legacyData.updatedByUid ?? '',
-                legacyData.updatedByName ?? '',
+                sharedData.content ?? '',
+                sharedData.updatedByUid ?? '',
+                sharedData.updatedByName ?? '',
               ),
               { merge: true },
             );
@@ -300,12 +300,12 @@ export async function updateLiveWhiteboard(
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId) return;
 
-  const whiteboardRef = getSharedWhiteboardRef(classId);
-  const legacyWhiteboardRef = getLegacyWhiteboardRef(classId);
+  const whiteboardRef = getLegacyWhiteboardRef(classId);
+  const sharedWhiteboardRef = getSharedWhiteboardRef(classId);
   const payload = buildWhiteboardPayload(content, updatedByUid, updatedByName);
 
   await Promise.all([
     setDoc(whiteboardRef, payload, { merge: true }),
-    setDoc(legacyWhiteboardRef, payload, { merge: true }),
+    setDoc(sharedWhiteboardRef, payload, { merge: true }),
   ]);
 }
