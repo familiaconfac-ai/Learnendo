@@ -9,6 +9,18 @@ export interface LiveAudioCredentials {
   participantName: string;
 }
 
+interface LiveAudioErrorPayload {
+  error?: string;
+  missingEnv?: string[];
+  diagnostics?: {
+    apiKeyConfigured?: boolean;
+    apiSecretConfigured?: boolean;
+    apiKeySuffix?: string;
+    url?: string;
+    urlHost?: string;
+  };
+}
+
 interface RequestLiveAudioCredentialsParams {
   classId: string;
   userId: string;
@@ -16,7 +28,7 @@ interface RequestLiveAudioCredentialsParams {
   role: LiveClassRole;
 }
 
-const DEFAULT_TOKEN_ENDPOINT = '/api/livekit-token';
+const DEFAULT_TOKEN_ENDPOINT = '/api/getToken';
 
 export function getLiveAudioRoomName(classId: string): string {
   return `learnendo-live-${classId}`;
@@ -27,6 +39,28 @@ export function getLiveAudioTokenEndpoint(): string {
   return configured || DEFAULT_TOKEN_ENDPOINT;
 }
 
+function isHtmlResponse(contentType: string, responseText: string) {
+  return contentType.includes('text/html') || /^\s*</.test(responseText);
+}
+
+function validateReturnedLiveKitUrl(wsUrl: string) {
+  try {
+    const parsedUrl = new URL(wsUrl);
+    if (parsedUrl.protocol !== 'wss:') {
+      throw new Error('Live audio token endpoint returned an invalid LiveKit URL. Expected a wss:// URL.');
+    }
+    if (!parsedUrl.host) {
+      throw new Error('Live audio token endpoint returned a LiveKit URL without a host.');
+    }
+    return parsedUrl.host;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Live audio token endpoint returned an invalid LiveKit URL.');
+  }
+}
+
 export async function requestLiveAudioCredentials({
   classId,
   userId,
@@ -35,6 +69,7 @@ export async function requestLiveAudioCredentials({
 }: RequestLiveAudioCredentialsParams): Promise<LiveAudioCredentials> {
   const endpoint = getLiveAudioTokenEndpoint();
   const idToken = await auth.currentUser?.getIdToken?.().catch(() => '');
+  const roomName = getLiveAudioRoomName(classId);
 
   const response = await fetch(endpoint, {
     method: 'POST',
@@ -43,11 +78,10 @@ export async function requestLiveAudioCredentials({
       ...(idToken ? { authorization: `Bearer ${idToken}` } : {}),
     },
     body: JSON.stringify({
-      classId,
-      userId,
-      userName,
-      role,
-      roomName: getLiveAudioRoomName(classId),
+      room: roomName,
+      username: userName,
+      participantIdentity: `${role}:${userId}`,
+      metadata: JSON.stringify({ classId, userId, role }),
     }),
   });
 
@@ -55,16 +89,33 @@ export async function requestLiveAudioCredentials({
 
   if (!response.ok) {
     const errorText = await response.text();
+    if (response.status === 404) {
+      throw new Error(
+        'Live audio token endpoint was not found at /api/getToken. In production, confirm the Vercel project Root Directory is apps/main. In development, run the app with `vercel dev` so API routes are available.',
+      );
+    }
     try {
-      const parsed = JSON.parse(errorText) as { error?: string };
+      const parsed = JSON.parse(errorText) as LiveAudioErrorPayload;
       const message = parsed.error?.trim() ?? '';
+      const diagnosticsHint = parsed.diagnostics?.urlHost
+        ? ` Host: ${parsed.diagnostics.urlHost}.`
+        : '';
       if (message === 'LiveKit server environment is not configured.') {
-        throw new Error('Live audio is not configured in this deployment yet. Add the LiveKit environment variables before using in-app voice.');
+        const missingEnv = parsed.missingEnv?.filter(Boolean) ?? [];
+        const envHint = missingEnv.length > 0
+          ? missingEnv.join(', ')
+          : 'LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET';
+        throw new Error(`Live audio is not configured in this deployment yet. Add ${envHint} before using in-app voice.${diagnosticsHint}`);
       }
-      throw new Error(message || 'Failed to create live audio credentials.');
+      throw new Error(`${message || 'Failed to create live audio credentials.'}${diagnosticsHint}`);
     } catch (error) {
       if (error instanceof Error) {
         throw error;
+      }
+      if (isHtmlResponse(contentType, errorText)) {
+        throw new Error(
+          'Live audio token endpoint returned HTML instead of JSON. Check whether the /api/getToken route is being rewritten to the SPA or is missing from the deployed Vercel root directory.',
+        );
       }
       throw new Error(errorText || 'Failed to create live audio credentials.');
     }
@@ -78,6 +129,11 @@ export async function requestLiveAudioCredentials({
   }
 
   if (contentType && !contentType.includes('application/json')) {
+    if (isHtmlResponse(contentType, responseText)) {
+      throw new Error(
+        'Live audio token endpoint returned HTML instead of JSON. Check whether the /api/getToken route is being rewritten to index.html or is unavailable in this environment.',
+      );
+    }
     throw new Error(
       'Live audio token endpoint did not return JSON. Check whether the API route and LiveKit server configuration are available in this environment.',
     );
@@ -90,15 +146,20 @@ export async function requestLiveAudioCredentials({
     throw new Error('Live audio credentials response was not valid JSON.');
   }
 
-  if (!payload.token || !payload.wsUrl || !payload.roomName) {
+  const wsUrl = payload.wsUrl ?? (payload as Partial<{ url: string }>).url;
+  const resolvedRoomName = payload.roomName ?? (payload as Partial<{ room: string }>).room ?? roomName;
+
+  if (!payload.token || !wsUrl || !resolvedRoomName) {
     throw new Error('Live audio credentials response is incomplete.');
   }
 
+  validateReturnedLiveKitUrl(wsUrl);
+
   return {
     token: payload.token,
-    wsUrl: payload.wsUrl,
-    roomName: payload.roomName,
-    participantIdentity: payload.participantIdentity ?? userId,
+    wsUrl,
+    roomName: resolvedRoomName,
+    participantIdentity: payload.participantIdentity ?? `${role}:${userId}`,
     participantName: payload.participantName ?? userName,
   };
 }

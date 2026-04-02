@@ -2,16 +2,19 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
-  updateDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { LiveClassPresence, LiveClassResponse, LiveClassSession, LiveWhiteboardState } from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
+const LIVE_SESSION_COLLECTION = 'session';
+const LIVE_SHARED_COLLECTION = 'shared';
+const LIVE_WHITEBOARD_DOC = 'whiteboard';
 
 const mapSession = (data: Record<string, any> | undefined): LiveClassSession => ({
   sessionStatus: (data?.sessionStatus ?? 'idle') as LiveClassSession['sessionStatus'],
@@ -47,11 +50,33 @@ const mapPresence = (id: string, data: Record<string, any>): LiveClassPresence =
 });
 
 const mapWhiteboard = (data: Record<string, any> | undefined): LiveWhiteboardState => ({
-  content: data?.content ?? '',
-  updatedByUid: data?.updatedByUid ?? '',
-  updatedByName: data?.updatedByName ?? '',
+  content: data?.text ?? data?.content ?? '',
+  updatedByUid: data?.updatedBy?.uid ?? data?.updatedByUid ?? '',
+  updatedByName: data?.updatedBy?.name ?? data?.updatedByName ?? '',
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
 });
+
+function getSharedWhiteboardRef(classId: string) {
+  return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SHARED_COLLECTION, LIVE_WHITEBOARD_DOC);
+}
+
+function getLegacyWhiteboardRef(classId: string) {
+  return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, LIVE_WHITEBOARD_DOC);
+}
+
+function buildWhiteboardPayload(content: string, updatedByUid: string, updatedByName: string) {
+  return {
+    text: content,
+    content,
+    updatedBy: {
+      uid: updatedByUid,
+      name: updatedByName,
+    },
+    updatedByUid,
+    updatedByName,
+    updatedAt: serverTimestamp(),
+  };
+}
 
 export function subscribeLiveSession(
   classId: string,
@@ -63,7 +88,7 @@ export function subscribeLiveSession(
     return () => {};
   }
 
-  const sessionRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'session', 'state');
+  const sessionRef = doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, 'state');
   return onSnapshot(
     sessionRef,
     (snapshot) => {
@@ -87,7 +112,7 @@ export async function updateLiveSession(
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId) return;
 
-  const sessionRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'session', 'state');
+  const sessionRef = doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, 'state');
   const payload: Record<string, unknown> = {
     lastUpdatedBy: updatedBy,
     updatedAt: serverTimestamp(),
@@ -218,12 +243,44 @@ export function subscribeLiveWhiteboard(
     return () => {};
   }
 
-  const whiteboardRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'session', 'whiteboard');
+  const whiteboardRef = getSharedWhiteboardRef(classId);
+  const legacyWhiteboardRef = getLegacyWhiteboardRef(classId);
+  let migratedLegacySnapshot = false;
+
   return onSnapshot(
     whiteboardRef,
     (snapshot) => {
       if (!snapshot.exists()) {
-        onData(mapWhiteboard(undefined));
+        if (migratedLegacySnapshot) {
+          onData(mapWhiteboard(undefined));
+          return;
+        }
+
+        migratedLegacySnapshot = true;
+        void getDoc(legacyWhiteboardRef)
+          .then((legacySnapshot) => {
+            if (!legacySnapshot.exists()) {
+              onData(mapWhiteboard(undefined));
+              return;
+            }
+
+            const legacyData = mapWhiteboard(legacySnapshot.data() as Record<string, any>);
+            onData(legacyData);
+
+            // Migrate old room-level whiteboard data into the shared path used by the room.
+            return setDoc(
+              whiteboardRef,
+              buildWhiteboardPayload(
+                legacyData.content ?? '',
+                legacyData.updatedByUid ?? '',
+                legacyData.updatedByName ?? '',
+              ),
+              { merge: true },
+            );
+          })
+          .catch((error) => {
+            if (onError) onError(error);
+          });
         return;
       }
       onData(mapWhiteboard(snapshot.data() as Record<string, any>));
@@ -243,15 +300,12 @@ export async function updateLiveWhiteboard(
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId) return;
 
-  const whiteboardRef = doc(db, LIVE_CLASSES_COLLECTION, classId, 'session', 'whiteboard');
-  await setDoc(
-    whiteboardRef,
-    {
-      content,
-      updatedByUid,
-      updatedByName,
-      updatedAt: serverTimestamp(),
-    },
-    { merge: true },
-  );
+  const whiteboardRef = getSharedWhiteboardRef(classId);
+  const legacyWhiteboardRef = getLegacyWhiteboardRef(classId);
+  const payload = buildWhiteboardPayload(content, updatedByUid, updatedByName);
+
+  await Promise.all([
+    setDoc(whiteboardRef, payload, { merge: true }),
+    setDoc(legacyWhiteboardRef, payload, { merge: true }),
+  ]);
 }

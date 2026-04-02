@@ -97,6 +97,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
   const roomTransportLabel = roomTransportLabelMap[session.liveAudioTransport ?? 'not-configured'];
   const localConnectionLabel = localConnectionLabelMap[connectionState];
   const studentMicDisabled = !isTeacher && !session.allowStudentLiveMic;
+  const canAutoEnableMic = isTeacher || session.allowStudentLiveMic;
 
   const syncParticipants = useCallback((activeRoom: Room) => {
     const nextParticipants: ParticipantSummary[] = [
@@ -324,6 +325,15 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
       await nextRoom.connect(credentials.wsUrl, credentials.token);
       await nextRoom.startAudio();
 
+      if (canAutoEnableMic) {
+        try {
+          await nextRoom.localParticipant.setMicrophoneEnabled(true);
+        } catch (error) {
+          console.warn('[LiveMicPanel] automatic microphone start failed:', error);
+          setTransportError('Connected to the room, but the microphone could not start automatically. Check browser permissions and try again.');
+        }
+      }
+
       Array.from(nextRoom.remoteParticipants.values()).forEach((participant) => {
         Array.from(participant.trackPublications.values()).forEach((publication) => {
           if (publication.track && publication.track.kind === Track.Kind.Audio) {
@@ -335,6 +345,16 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
       roomRef.current = nextRoom;
       syncParticipants(nextRoom);
       syncVideoTiles(nextRoom);
+
+      if (isTeacher && onUpdateSession) {
+        await onUpdateSession({
+          teacherLiveMicEnabled: canAutoEnableMic ? isParticipantMicEnabled(nextRoom.localParticipant) : false,
+          liveAudioTransport: 'connected',
+        }).catch((error) => {
+          console.warn('[LiveMicPanel] teacher live mic auto-start sync failed:', error);
+        });
+      }
+
       return nextRoom;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to join live audio.';
@@ -344,7 +364,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     } finally {
       setJoining(false);
     }
-  }, [attachAudioTrack, classId, clearVideoHost, detachTrackElement, role, syncParticipants, syncVideoTiles, userId, userName]);
+  }, [attachAudioTrack, canAutoEnableMic, classId, clearVideoHost, detachTrackElement, isTeacher, onUpdateSession, role, syncParticipants, syncVideoTiles, userId, userName]);
 
   const handleLeaveAudio = async () => {
     await disconnectRoom(roomRef.current, isTeacher ? 'teacher' : 'local');
