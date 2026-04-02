@@ -338,6 +338,18 @@ const App: React.FC = () => {
     }, 8000);
     return () => clearTimeout(t);
   }, [progressLoaded]);
+  /** Safety net: if authReady is still false after 12 s (Firebase SDK failure), force it. */
+  React.useEffect(() => {
+    if (authReady) return;
+    const t = setTimeout(() => {
+      if (!authReady) {
+        console.warn('[LOGIN_FLOW_DEBUG] authReady safety timeout — Firebase SDK may not have initialized; forcing authReady=true');
+        setAuthReady(true);
+        setLoading(false);
+      }
+    }, 12000);
+    return () => clearTimeout(t);
+  }, [authReady]);
   const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
   const lastLocalUpdateRef = useRef<string | null>(null);
   /** Timestamp (ms) when the current day practice started — used to compute timeSpent. */
@@ -482,6 +494,7 @@ const App: React.FC = () => {
         setProgressLoaded(false); // reset so next login waits for Firestore again
         setLoading(true);
         setUser(null);
+        console.log('[LOGIN_FLOW_DEBUG] auth ready (no user / logout)');
         setAuthReady(true);
         return;
       }
@@ -560,6 +573,7 @@ const App: React.FC = () => {
       setCurrentSection(SectionType.WORKBOOK);
 
       // Auth is now ready — user and progress are both set
+      console.log('[LOGIN_FLOW_DEBUG] auth ready', { uid: authenticatedUser.uid, email: authenticatedUser.email });
       setAuthReady(true);
 
       // ========== STEP 4: SESSION MANAGEMENT ==========
@@ -819,6 +833,7 @@ const App: React.FC = () => {
               if (validated.workbookId !== (data.currentWorkbook ?? data.workbook ?? 1)) setCurrentWorkbookId(validated.workbookId);
             }
           }
+          console.log('[LOGIN_FLOW_DEBUG] progress restore ready', { uid: user?.uid });
           setProgressLoaded(true);
           setLoading(false);
         } else {
@@ -852,6 +867,7 @@ const App: React.FC = () => {
           });
           setProgress((prev) => ({ ...prev, ...defaults }));
           console.log('[STATE CONTROL ✓] Firestore empty — using local defaults (awaiting user action)');
+          console.log('[LOGIN_FLOW_DEBUG] progress restore ready (no Firestore doc)', { uid: user?.uid });
           setProgressLoaded(true); // render the empty state
           setLoading(false);
           // DO NOT write defaults to Firestore — only write when user makes progress
@@ -1008,7 +1024,10 @@ const App: React.FC = () => {
       if (validated.fixed && validated.workbookId !== currentWorkbookId) {
         // The workbookId was invalid for this course — apply the fix and let the
         // effect re-run with the corrected value instead of loading with a bad id.
-        if (!cancelled) setCurrentWorkbookId(validated.workbookId);
+        if (!cancelled) {
+          setIsWorkbookLoading(true); // show spinner during the reset window
+          setCurrentWorkbookId(validated.workbookId);
+        }
         return;
       }
 
@@ -1020,6 +1039,8 @@ const App: React.FC = () => {
           // "Workbook unavailable" text on the dark background (looks like a blank page).
           const defaultId = getDefaultWorkbookIdForCourse(courseId);
           console.warn('[COURSE_DEBUG] No workbook loader found — resetting workbookId to default', { courseId, currentWorkbookId, defaultId });
+          // Keep the spinner visible during the reset+re-run window.
+          setIsWorkbookLoading(true);
           setCurrentWorkbookId(defaultId);
           navigateToWorkbook();
         }
@@ -2158,9 +2179,69 @@ const App: React.FC = () => {
       }
       case SectionType.PLACEMENT_TEST:
         return <PlacementTest currentLanguage={language} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
-      case SectionType.WORKBOOK:
-        if (isWorkbookLoading) return <div className="px-4 py-6 text-slate-200">Loading workbook...</div>;
-        if (!currentWorkbook) return <div className="px-4 py-6 text-slate-200">Workbook unavailable for this course.</div>;
+      case SectionType.WORKBOOK: {
+        const hasAnyDays = Object.keys(progress.days ?? {}).some(k => (progress.days as any)?.[k] === true);
+        const hasAnyActivity = (progress.completedActivities?.length ?? 0) > 0;
+        const hasProgress = hasAnyDays || hasAnyActivity;
+        console.log('[EMPTY_STATE_DEBUG]', { language, courseId: currentCourseId, hasProgress, isWorkbookLoading, hasWorkbook: !!currentWorkbook });
+        // Loading — workbook is in flight OR the brief window before the first load fires
+        if (isWorkbookLoading || !currentWorkbook) {
+          return (
+            <div className="flex min-h-[60vh] items-center justify-center px-4">
+              <div className="text-center">
+                <div className="mb-4 text-4xl">📚</div>
+                <p className="text-slate-300 font-semibold">
+                  {uiLanguage === 'pt' ? 'Carregando caderno...' : uiLanguage === 'es' ? 'Cargando libro...' : 'Loading content...'}
+                </p>
+              </div>
+            </div>
+          );
+        }
+        // Workbook loaded but student has no completed days or activities — show orientation
+        if (!hasProgress) {
+          const title =
+            uiLanguage === 'pt' ? 'Você ainda não iniciou este curso.'
+            : uiLanguage === 'es' ? 'Aún no has iniciado este curso.'
+            : 'You have not started this course yet.';
+          const wbkLabel =
+            uiLanguage === 'pt' ? 'Começar Caderno 1'
+            : uiLanguage === 'es' ? 'Empezar Libro 1'
+            : 'Start Workbook 1';
+          const testLabel =
+            uiLanguage === 'pt' ? 'Fazer Teste de Nivelamento'
+            : uiLanguage === 'es' ? 'Hacer Prueba de Nivel'
+            : 'Start Placement Test';
+          console.log('[EMPTY_STATE_DEBUG] fallback rendered — no progress', { language, courseId: currentCourseId });
+          return (
+            <div className="flex min-h-[60vh] items-center justify-center px-6">
+              <div className="text-center max-w-sm">
+                <div className="mb-4 text-6xl">🌟</div>
+                <h2 className="text-xl font-black text-white mb-3">{title}</h2>
+                <p className="text-slate-400 text-sm mb-6">
+                  {uiLanguage === 'pt'
+                    ? 'Escolha como quer começar:'
+                    : uiLanguage === 'es'
+                    ? 'Elige cómo quieres comenzar:'
+                    : 'Choose how you want to start:'}
+                </p>
+                <div className="flex flex-col gap-3">
+                  <button
+                    onClick={() => setCurrentSection(SectionType.PLACEMENT_TEST)}
+                    className="w-full py-3 px-4 rounded-2xl bg-yellow-400 text-slate-900 font-bold text-base active:scale-95 transition-transform"
+                  >
+                    🎯 {testLabel}
+                  </button>
+                  <button
+                    onClick={() => handleSelectWorkbook(1)}
+                    className="w-full py-3 px-4 rounded-2xl bg-blue-600 text-white font-bold text-base active:scale-95 transition-transform"
+                  >
+                    📖 {wbkLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        }
         return (
           <WorkbookView
             workbookId={currentWorkbookId || progress.currentWorkbook}
@@ -2172,6 +2253,7 @@ const App: React.FC = () => {
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
         );
+      }
       case SectionType.LESSON: {
         const parsedLessonNumber = getLessonNumberFromId(currentLessonId || `lesson${progress.currentLesson}`);
         const lessonNumber = Number.isFinite(parsedLessonNumber) ? parsedLessonNumber : progress.currentLesson;
@@ -2318,7 +2400,17 @@ const App: React.FC = () => {
   };
 
   if (!authReady) {
-    return null;
+    console.log('[LOGIN_FLOW_DEBUG] waiting for auth — showing splash');
+    return (
+      <div className="fixed inset-0 bg-blue-600 flex items-center justify-center">
+        <span
+          className="text-5xl font-black text-white tracking-tight"
+          style={{ animation: 'splashEnter 0.5s ease-out forwards' }}
+        >
+          Learnendo
+        </span>
+      </div>
+    );
   }
 
   if (!user) {

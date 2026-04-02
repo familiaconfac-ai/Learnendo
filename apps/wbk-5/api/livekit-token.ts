@@ -19,6 +19,8 @@ interface TokenRequestBody {
   role?: 'teacher' | 'student';
 }
 
+const requiredLiveKitEnvKeys = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] as const;
+
 async function readJsonBody(req: IncomingMessage): Promise<TokenRequestBody> {
   const chunks: Uint8Array[] = [];
   for await (const chunk of req) {
@@ -49,9 +51,13 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
   const apiKey = process.env.LIVEKIT_API_KEY?.trim();
   const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
   const roomPrefix = process.env.LIVEKIT_ROOM_PREFIX?.trim() || 'learnendo-live';
+  const missingEnv = requiredLiveKitEnvKeys.filter((key) => !process.env[key]?.trim());
 
-  if (!wsUrl || !apiKey || !apiSecret) {
-    sendJson(res, 500, { error: 'LiveKit server environment is not configured.' });
+  if (missingEnv.length > 0 || !wsUrl || !apiKey || !apiSecret) {
+    sendJson(res, 500, {
+      error: 'LiveKit server environment is not configured.',
+      missingEnv,
+    });
     return;
   }
 

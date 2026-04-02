@@ -12,6 +12,7 @@ import {
   updateLiveSession,
   upsertLivePresence,
 } from '../../services/liveSessionService';
+import { ExerciseSessionPanel } from './ExerciseSessionPanel';
 import { LiveClassChat } from './LiveClassChat';
 import { LiveMicPanel } from './LiveMicPanel';
 import { resolvePresentationMedia } from './presentationMedia';
@@ -54,6 +55,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 }) => {
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
+  const [showExerciseSession, setShowExerciseSession] = useState(false);
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
     activeWorkbookId: null,
@@ -262,10 +264,24 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
           <button
             type="button"
-            onClick={() => setShowWhiteboard((prev) => !prev)}
+            onClick={() => {
+              setShowWhiteboard((prev) => !prev);
+              setShowExerciseSession(false);
+            }}
             className="rounded-xl bg-cyan-500 px-3 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#0891b2]"
           >
             {showWhiteboard ? 'Hide Whiteboard' : 'Virtual Whiteboard'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setShowExerciseSession((prev) => !prev);
+              setShowWhiteboard(false);
+            }}
+            className="rounded-xl bg-violet-500 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#7c3aed]"
+          >
+            {showExerciseSession ? 'Hide Exercise Session' : 'Exercise Session'}
           </button>
         </div>
 
@@ -351,6 +367,28 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
               </button>
             </div>
             <VirtualWhiteboard classId={liveClass.id} user={user} />
+          </div>
+        </div>
+      ) : null}
+
+      {showExerciseSession ? (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/80 px-3 py-6 backdrop-blur-sm sm:px-6">
+          <div className="w-full max-w-6xl">
+            <div className="mb-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowExerciseSession(false)}
+                className="rounded-xl border border-slate-500 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+              >
+                Close Exercise Session
+              </button>
+            </div>
+            <ExerciseSessionPanel
+              classId={liveClass.id}
+              user={user}
+              isTeacher={role === 'teacher'}
+              assignedRoster={assignedRoster}
+            />
           </div>
         </div>
       ) : null}

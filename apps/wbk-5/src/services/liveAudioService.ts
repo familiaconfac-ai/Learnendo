@@ -9,6 +9,11 @@ export interface LiveAudioCredentials {
   participantName: string;
 }
 
+interface LiveAudioErrorPayload {
+  error?: string;
+  missingEnv?: string[];
+}
+
 interface RequestLiveAudioCredentialsParams {
   classId: string;
   userId: string;
@@ -51,12 +56,49 @@ export async function requestLiveAudioCredentials({
     }),
   });
 
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || 'Failed to create live audio credentials.');
+    try {
+      const parsed = JSON.parse(errorText) as LiveAudioErrorPayload;
+      const message = parsed.error?.trim() ?? '';
+      if (message === 'LiveKit server environment is not configured.') {
+        const missingEnv = parsed.missingEnv?.filter(Boolean) ?? [];
+        const envHint = missingEnv.length > 0
+          ? missingEnv.join(', ')
+          : 'LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET';
+        throw new Error(`Live audio is not configured in this deployment yet. Add ${envHint} before using in-app voice.`);
+      }
+      throw new Error(message || 'Failed to create live audio credentials.');
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(errorText || 'Failed to create live audio credentials.');
+    }
   }
 
-  const payload = (await response.json()) as Partial<LiveAudioCredentials>;
+  const responseText = await response.text();
+  if (!responseText.trim()) {
+    throw new Error(
+      'Live audio token endpoint returned an empty response. Check whether the local or deployed API route is available.',
+    );
+  }
+
+  if (contentType && !contentType.includes('application/json')) {
+    throw new Error(
+      'Live audio token endpoint did not return JSON. Check whether the API route and LiveKit server configuration are available in this environment.',
+    );
+  }
+
+  let payload: Partial<LiveAudioCredentials>;
+  try {
+    payload = JSON.parse(responseText) as Partial<LiveAudioCredentials>;
+  } catch {
+    throw new Error('Live audio credentials response was not valid JSON.');
+  }
+
   if (!payload.token || !payload.wsUrl || !payload.roomName) {
     throw new Error('Live audio credentials response is incomplete.');
   }

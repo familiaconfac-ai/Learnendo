@@ -1,0 +1,174 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && userDoc().data.role == 'admin';
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function liveClassDoc(classId) {
+      return get(/databases/$(database)/documents/liveClasses/$(classId));
+    }
+
+    function liveClassExists(classId) {
+      return exists(/databases/$(database)/documents/liveClasses/$(classId));
+    }
+
+    function isTeacherForClass(classId) {
+      return signedIn()
+        && liveClassExists(classId)
+        && (
+          isAdmin()
+          || liveClassDoc(classId).data.createdBy == request.auth.uid
+          || liveClassDoc(classId).data.teacherUid == request.auth.uid
+        );
+    }
+
+    function isStudentAssignedToClass(classId) {
+      return signedIn()
+        && liveClassExists(classId)
+        && liveClassDoc(classId).data.assignedStudentIds is list
+        && request.auth.uid in liveClassDoc(classId).data.assignedStudentIds;
+    }
+
+    function canAccessLiveClassRoom(classId) {
+      return signedIn()
+        && liveClassExists(classId)
+        && (
+          isTeacherForClass(classId)
+          || liveClassDoc(classId).data.isPrivate != true
+          || isStudentAssignedToClass(classId)
+        );
+    }
+
+    function exerciseSessionDoc(classId) {
+      return get(/databases/$(database)/documents/liveClasses/$(classId)/session/exerciseSession);
+    }
+
+    function exerciseSessionIsActive(classId) {
+      return exists(/databases/$(database)/documents/liveClasses/$(classId)/session/exerciseSession)
+        && exerciseSessionDoc(classId).data.isActive == true;
+    }
+
+    function canStudentUpdateOwnExerciseBlock(classId) {
+      return isStudentAssignedToClass(classId)
+        && exerciseSessionIsActive(classId)
+        && resource.data.assignedTo == request.auth.uid
+        && resource.data.isLocked == false
+        && resource.data.status in ['pending', 'in_progress']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'answerText',
+          'status',
+          'updatedAt',
+          'updatedBy',
+        ])
+        && request.resource.data.order == resource.data.order
+        && request.resource.data.prompt == resource.data.prompt
+        && request.resource.data.assignedTo == resource.data.assignedTo
+        && request.resource.data.assignedToName == resource.data.assignedToName
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.isLocked == resource.data.isLocked
+        && request.resource.data.status in ['pending', 'in_progress']
+        && request.resource.data.updatedBy.uid == request.auth.uid
+        && request.resource.data.updatedBy.name is string;
+    }
+
+    match /users/{uid} {
+      allow read, create, update, delete: if isOwner(uid) || isAdmin();
+
+      match /{document=**} {
+        allow read, create, update, delete: if isOwner(uid) || isAdmin();
+      }
+    }
+
+    match /progress/{uid} {
+      allow read, create, update, delete: if isOwner(uid) || isAdmin();
+    }
+
+    match /groups/{groupId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /liveClassGroups/{groupId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if isAdmin() || resource.data.createdBy == request.auth.uid;
+    }
+
+    match /liveClasses/{classId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && (
+          isAdmin()
+          || (
+            request.resource.data.createdBy == request.auth.uid
+            && request.resource.data.teacherUid == request.auth.uid
+          )
+        );
+      allow update, delete: if isTeacherForClass(classId);
+
+      match /session/{docId} {
+        allow read: if canAccessLiveClassRoom(classId);
+        allow create, update: if isTeacherForClass(classId)
+          || (docId == 'whiteboard' && canAccessLiveClassRoom(classId));
+        allow delete: if isTeacherForClass(classId);
+      }
+
+      match /shared/{docId} {
+        allow read: if canAccessLiveClassRoom(classId);
+        allow create, update: if docId == 'whiteboard' && canAccessLiveClassRoom(classId);
+        allow delete: if isTeacherForClass(classId);
+      }
+
+      match /exerciseBlocks/{blockId} {
+        allow read: if canAccessLiveClassRoom(classId);
+        allow create, delete: if isTeacherForClass(classId);
+        allow update: if isTeacherForClass(classId) || canStudentUpdateOwnExerciseBlock(classId);
+      }
+
+      match /presence/{uid} {
+        allow read: if canAccessLiveClassRoom(classId);
+        allow create, update: if canAccessLiveClassRoom(classId) && isOwner(uid);
+        allow delete: if isTeacherForClass(classId) || isOwner(uid);
+      }
+
+      match /responses/{responseId} {
+        allow read: if canAccessLiveClassRoom(classId);
+        allow create: if canAccessLiveClassRoom(classId)
+          && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isTeacherForClass(classId)
+          || (signedIn() && resource.data.userId == request.auth.uid);
+      }
+
+      match /messages/{messageId} {
+        allow read: if canAccessLiveClassRoom(classId);
+        allow create: if canAccessLiveClassRoom(classId)
+          && request.resource.data.senderUid == request.auth.uid;
+        allow update, delete: if isTeacherForClass(classId)
+          || (signedIn() && resource.data.senderUid == request.auth.uid);
+      }
+    }
+
+    match /debug_test/{uid} {
+      allow read, create, update, delete: if isOwner(uid) || isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

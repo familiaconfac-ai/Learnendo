@@ -221,6 +221,35 @@ export interface LiveWhiteboardState {
   updatedAt?: string;
 }
 
+export type LiveExerciseBlockStatus = 'pending' | 'in_progress' | 'done';
+
+export interface LiveExerciseActor {
+  uid: string;
+  name: string;
+}
+
+export interface LiveExerciseSession {
+  title: string;
+  isActive: boolean;
+  endedAt?: string;
+  updatedAt?: string;
+  updatedBy?: LiveExerciseActor;
+}
+
+export interface LiveExerciseBlock {
+  id: string;
+  order: number;
+  prompt: string;
+  answerText: string;
+  assignedTo: string;
+  assignedToName: string;
+  status: LiveExerciseBlockStatus;
+  isLocked: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: LiveExerciseActor;
+}
+
 export interface LiveClassResponse {
   id: string;
   userId: string;

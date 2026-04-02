@@ -9,12 +9,22 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { LiveClassPresence, LiveClassResponse, LiveClassSession, LiveWhiteboardState } from '../types';
+import {
+  LiveClassPresence,
+  LiveClassResponse,
+  LiveClassSession,
+  LiveExerciseBlock,
+  LiveExerciseBlockStatus,
+  LiveExerciseSession,
+  LiveWhiteboardState,
+} from '../types';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_SESSION_COLLECTION = 'session';
 const LIVE_SHARED_COLLECTION = 'shared';
 const LIVE_WHITEBOARD_DOC = 'whiteboard';
+const LIVE_EXERCISE_SESSION_DOC = 'exerciseSession';
+const LIVE_EXERCISE_BLOCKS_COLLECTION = 'exerciseBlocks';
 
 const mapSession = (data: Record<string, any> | undefined): LiveClassSession => ({
   sessionStatus: (data?.sessionStatus ?? 'idle') as LiveClassSession['sessionStatus'],
@@ -56,12 +66,52 @@ const mapWhiteboard = (data: Record<string, any> | undefined): LiveWhiteboardSta
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
 });
 
+const mapExerciseSession = (data: Record<string, any> | undefined): LiveExerciseSession => ({
+  title: data?.title ?? '',
+  isActive: data ? data.isActive !== false : false,
+  endedAt: data?.endedAt?.toDate?.()?.toISOString?.() ?? data?.endedAt ?? undefined,
+  updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
+  updatedBy: data?.updatedBy
+    ? {
+      uid: data.updatedBy.uid ?? '',
+      name: data.updatedBy.name ?? '',
+    }
+    : undefined,
+});
+
+const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBlock => ({
+  id,
+  order: Number.isFinite(data.order) ? Number(data.order) : 0,
+  prompt: data.prompt ?? '',
+  answerText: data.answerText ?? '',
+  assignedTo: data.assignedTo ?? '',
+  assignedToName: data.assignedToName ?? '',
+  status: (data.status ?? 'pending') as LiveExerciseBlockStatus,
+  isLocked: Boolean(data.isLocked),
+  createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
+  updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
+  updatedBy: data.updatedBy
+    ? {
+      uid: data.updatedBy.uid ?? '',
+      name: data.updatedBy.name ?? '',
+    }
+    : undefined,
+});
+
 function getLegacyWhiteboardRef(classId: string) {
   return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, LIVE_WHITEBOARD_DOC);
 }
 
 function getSharedWhiteboardRef(classId: string) {
   return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SHARED_COLLECTION, LIVE_WHITEBOARD_DOC);
+}
+
+function getExerciseSessionRef(classId: string) {
+  return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, LIVE_EXERCISE_SESSION_DOC);
+}
+
+function getExerciseBlocksCollection(classId: string) {
+  return collection(db, LIVE_CLASSES_COLLECTION, classId, LIVE_EXERCISE_BLOCKS_COLLECTION);
 }
 
 function buildWhiteboardPayload(content: string, updatedByUid: string, updatedByName: string) {
@@ -75,6 +125,13 @@ function buildWhiteboardPayload(content: string, updatedByUid: string, updatedBy
     updatedByUid,
     updatedByName,
     updatedAt: serverTimestamp(),
+  };
+}
+
+function buildExerciseActor(updatedByUid: string, updatedByName: string) {
+  return {
+    uid: updatedByUid,
+    name: updatedByName,
   };
 }
 
@@ -308,4 +365,148 @@ export async function updateLiveWhiteboard(
     setDoc(whiteboardRef, payload, { merge: true }),
     setDoc(sharedWhiteboardRef, payload, { merge: true }),
   ]);
+}
+
+export function subscribeExerciseSession(
+  classId: string,
+  onData: (session: LiveExerciseSession) => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  if (!db || !classId) {
+    onData(mapExerciseSession(undefined));
+    return () => {};
+  }
+
+  return onSnapshot(
+    getExerciseSessionRef(classId),
+    (snapshot) => {
+      onData(snapshot.exists() ? mapExerciseSession(snapshot.data() as Record<string, any>) : mapExerciseSession(undefined));
+    },
+    (error) => {
+      if (onError) onError(error);
+    },
+  );
+}
+
+export function subscribeExerciseBlocks(
+  classId: string,
+  onData: (blocks: LiveExerciseBlock[]) => void,
+  onError?: (error: unknown) => void,
+): () => void {
+  if (!db || !classId) {
+    onData([]);
+    return () => {};
+  }
+
+  return onSnapshot(
+    getExerciseBlocksCollection(classId),
+    (snapshot) => {
+      const blocks = snapshot.docs
+        .map((item) => mapExerciseBlock(item.id, item.data() as Record<string, any>))
+        .sort((a, b) => {
+          if (a.order !== b.order) return a.order - b.order;
+          return a.id.localeCompare(b.id);
+        });
+      onData(blocks);
+    },
+    (error) => {
+      if (onError) onError(error);
+    },
+  );
+}
+
+export async function saveExerciseSession(
+  classId: string,
+  patch: Partial<Pick<LiveExerciseSession, 'title' | 'isActive'>>,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId) return;
+
+  const payload: Record<string, unknown> = {
+    updatedAt: serverTimestamp(),
+    updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+  };
+
+  if ('title' in patch) payload.title = patch.title ?? '';
+  if ('isActive' in patch) {
+    payload.isActive = patch.isActive !== false;
+    if (patch.isActive !== false) payload.endedAt = null;
+  }
+
+  await setDoc(getExerciseSessionRef(classId), payload, { merge: true });
+}
+
+export async function endExerciseSession(
+  classId: string,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId) return;
+
+  await setDoc(
+    getExerciseSessionRef(classId),
+    {
+      isActive: false,
+      endedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+    },
+    { merge: true },
+  );
+}
+
+export async function createExerciseBlock(
+  classId: string,
+  input: Partial<Pick<LiveExerciseBlock, 'order' | 'prompt' | 'assignedTo' | 'assignedToName' | 'status' | 'isLocked'>>,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId) return;
+
+  await addDoc(getExerciseBlocksCollection(classId), {
+    order: input.order ?? 1,
+    prompt: input.prompt ?? '',
+    answerText: '',
+    assignedTo: input.assignedTo ?? '',
+    assignedToName: input.assignedToName ?? '',
+    status: input.status ?? 'pending',
+    isLocked: input.isLocked ?? false,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+    updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+  });
+}
+
+export async function updateExerciseBlock(
+  classId: string,
+  blockId: string,
+  patch: Partial<Pick<LiveExerciseBlock, 'order' | 'prompt' | 'answerText' | 'assignedTo' | 'assignedToName' | 'status' | 'isLocked'>>,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !blockId) return;
+
+  const payload: Record<string, unknown> = {
+    updatedAt: serverTimestamp(),
+    updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+  };
+
+  if ('order' in patch) payload.order = patch.order ?? 0;
+  if ('prompt' in patch) payload.prompt = patch.prompt ?? '';
+  if ('answerText' in patch) payload.answerText = patch.answerText ?? '';
+  if ('assignedTo' in patch) payload.assignedTo = patch.assignedTo ?? '';
+  if ('assignedToName' in patch) payload.assignedToName = patch.assignedToName ?? '';
+  if ('status' in patch) payload.status = patch.status ?? 'pending';
+  if ('isLocked' in patch) payload.isLocked = Boolean(patch.isLocked);
+
+  await setDoc(
+    doc(getExerciseBlocksCollection(classId), blockId),
+    payload,
+    { merge: true },
+  );
 }
