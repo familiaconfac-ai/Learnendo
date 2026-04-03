@@ -390,6 +390,10 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
                 user={user}
                 canManageBoard={role === 'teacher'}
                 canEditBoard={role === 'teacher' || session.allowStudentWhiteboardEdit === true}
+                courseId={liveClass.courseId ?? 'english'}
+                defaultWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
+                defaultLessonId={session.activeLessonId ?? liveClass.lessonId ?? ''}
+                defaultExerciseId={session.activeExerciseId ?? ''}
                 onUpdateSession={handleUpdateSession}
                 allowStudentWhiteboardEdit={session.allowStudentWhiteboardEdit === true}
               />

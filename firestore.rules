@@ -84,6 +84,14 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly([
           'text',
           'content',
+          'mode',
+          'title',
+          'instruction',
+          'sourceCourseId',
+          'sourceWorkbookId',
+          'sourceLessonId',
+          'sourceExerciseId',
+          'blocks',
           'updatedAt',
           'updatedBy',
           'updatedByUid',
@@ -93,7 +101,15 @@ service cloud.firestore {
         && request.resource.data.updatedByUid == request.auth.uid
         && request.resource.data.updatedByName is string
         && request.resource.data.text is string
-        && request.resource.data.content is string;
+        && request.resource.data.content is string
+        && request.resource.data.mode is string
+        && request.resource.data.title is string
+        && request.resource.data.instruction is string
+        && request.resource.data.sourceCourseId is string
+        && (request.resource.data.sourceWorkbookId == null || request.resource.data.sourceWorkbookId is int)
+        && request.resource.data.sourceLessonId is string
+        && request.resource.data.sourceExerciseId is string
+        && request.resource.data.blocks is list;
     }
 
     function canParticipantUpdateWhiteboard(classId) {
@@ -105,6 +121,14 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'text',
           'content',
+          'mode',
+          'title',
+          'instruction',
+          'sourceCourseId',
+          'sourceWorkbookId',
+          'sourceLessonId',
+          'sourceExerciseId',
+          'blocks',
           'updatedAt',
           'updatedBy',
           'updatedByUid',
@@ -114,7 +138,15 @@ service cloud.firestore {
         && request.resource.data.updatedByUid == request.auth.uid
         && request.resource.data.updatedByName is string
         && request.resource.data.text is string
-        && request.resource.data.content is string;
+        && request.resource.data.content is string
+        && request.resource.data.mode is string
+        && request.resource.data.title is string
+        && request.resource.data.instruction is string
+        && request.resource.data.sourceCourseId is string
+        && (request.resource.data.sourceWorkbookId == null || request.resource.data.sourceWorkbookId is int)
+        && request.resource.data.sourceLessonId is string
+        && request.resource.data.sourceExerciseId is string
+        && request.resource.data.blocks is list;
     }
 
     function canStudentUpdateOwnExerciseBlock(classId) {

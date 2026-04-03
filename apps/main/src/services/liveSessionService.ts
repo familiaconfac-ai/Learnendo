@@ -14,6 +14,7 @@ import {
   LiveClassPresence,
   LiveClassResponse,
   LiveClassSession,
+  LiveWhiteboardBlock,
   LiveExerciseBlock,
   LiveExerciseBlockStatus,
   LiveExerciseSession,
@@ -74,8 +75,39 @@ const mapPresence = (id: string, data: Record<string, any>): LiveClassPresence =
   lastSeenAt: data.lastSeenAt?.toDate?.()?.toISOString?.() ?? data.lastSeenAt ?? undefined,
 });
 
+const mapWhiteboardBlock = (item: unknown, index: number): LiveWhiteboardBlock | null => {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
+  const raw = item as Record<string, any>;
+  const prompt = typeof raw.prompt === 'string' ? raw.prompt : '';
+  const response = typeof raw.response === 'string' ? raw.response : '';
+  const id = typeof raw.id === 'string' && raw.id.trim() ? raw.id : `block_${index + 1}`;
+  const order = Number.isFinite(raw.order) ? Number(raw.order) : index + 1;
+  return {
+    id,
+    prompt,
+    response,
+    order,
+  };
+};
+
 const mapWhiteboard = (data: Record<string, any> | undefined): LiveWhiteboardState => ({
   content: data?.text ?? data?.content ?? '',
+  mode: (data?.mode ?? 'free') as LiveWhiteboardState['mode'],
+  title: data?.title ?? '',
+  instruction: data?.instruction ?? '',
+  sourceCourseId: data?.sourceCourseId ?? '',
+  sourceWorkbookId: Number.isFinite(data?.sourceWorkbookId) ? Number(data?.sourceWorkbookId) : null,
+  sourceLessonId: data?.sourceLessonId ?? '',
+  sourceExerciseId: data?.sourceExerciseId ?? '',
+  blocks: Array.isArray(data?.blocks)
+    ? data.blocks
+      .map((item: unknown, index: number) => mapWhiteboardBlock(item, index))
+      .filter((item: LiveWhiteboardBlock | null): item is LiveWhiteboardBlock => item !== null)
+      .sort((left, right) => {
+        if (left.order !== right.order) return left.order - right.order;
+        return left.id.localeCompare(right.id);
+      })
+    : [],
   updatedByUid: data?.updatedBy?.uid ?? data?.updatedByUid ?? '',
   updatedByName: data?.updatedBy?.name ?? data?.updatedByName ?? '',
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
@@ -147,10 +179,30 @@ function getExerciseBlocksCollection(classId: string) {
   return collection(db, LIVE_CLASSES_COLLECTION, classId, LIVE_EXERCISE_BLOCKS_COLLECTION);
 }
 
-function buildWhiteboardPayload(content: string, updatedByUid: string, updatedByName: string) {
+function buildWhiteboardPayload(state: LiveWhiteboardState, updatedByUid: string, updatedByName: string) {
+  const normalizedBlocks = (state.blocks ?? [])
+    .map((block, index) => ({
+      id: block.id?.trim() || `block_${index + 1}`,
+      prompt: block.prompt ?? '',
+      response: block.response ?? '',
+      order: Number.isFinite(block.order) ? Number(block.order) : index + 1,
+    }))
+    .sort((left, right) => {
+      if (left.order !== right.order) return left.order - right.order;
+      return left.id.localeCompare(right.id);
+    });
+
   return {
-    text: content,
-    content,
+    text: state.content ?? '',
+    content: state.content ?? '',
+    mode: state.mode ?? 'free',
+    title: state.title ?? '',
+    instruction: state.instruction ?? '',
+    sourceCourseId: state.sourceCourseId ?? '',
+    sourceWorkbookId: state.sourceWorkbookId ?? null,
+    sourceLessonId: state.sourceLessonId ?? '',
+    sourceExerciseId: state.sourceExerciseId ?? '',
+    blocks: normalizedBlocks,
     updatedBy: {
       uid: updatedByUid,
       name: updatedByName,
@@ -361,7 +413,7 @@ export function subscribeLiveWhiteboard(
             return setDoc(
               sharedWhiteboardRef,
               buildWhiteboardPayload(
-                legacyData.content ?? '',
+                legacyData,
                 legacyData.updatedByUid ?? '',
                 legacyData.updatedByName ?? '',
               ),
@@ -390,7 +442,7 @@ export function subscribeLiveWhiteboard(
 
 export async function updateLiveWhiteboard(
   classId: string,
-  content: string,
+  state: LiveWhiteboardState,
   updatedByUid: string,
   updatedByName: string,
 ): Promise<void> {
@@ -398,11 +450,13 @@ export async function updateLiveWhiteboard(
   if (!classId) return;
 
   const sharedWhiteboardRef = getSharedWhiteboardRef(classId);
-  const payload = buildWhiteboardPayload(content, updatedByUid, updatedByName);
+  const payload = buildWhiteboardPayload(state, updatedByUid, updatedByName);
   console.info('[liveSessionService] whiteboard update requested', {
     classId,
     updatedByUid,
-    contentLength: content.length,
+    contentLength: state.content?.length ?? 0,
+    mode: state.mode ?? 'free',
+    blockCount: state.blocks?.length ?? 0,
   });
 
   await setDoc(sharedWhiteboardRef, payload, { merge: true });

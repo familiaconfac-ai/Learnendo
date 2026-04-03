@@ -218,9 +218,24 @@ export interface LiveClassSession {
 
 export interface LiveWhiteboardState {
   content: string;
+  mode?: 'free' | 'manual-questions' | 'lesson-exercise';
+  title?: string;
+  instruction?: string;
+  sourceCourseId?: string;
+  sourceWorkbookId?: number | null;
+  sourceLessonId?: string | null;
+  sourceExerciseId?: string | null;
+  blocks?: LiveWhiteboardBlock[];
   updatedByUid?: string;
   updatedByName?: string;
   updatedAt?: string;
+}
+
+export interface LiveWhiteboardBlock {
+  id: string;
+  prompt: string;
+  response: string;
+  order: number;
 }
 
 export type LiveExerciseBlockStatus = 'pending' | 'in_progress' | 'done';
