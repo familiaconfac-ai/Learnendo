@@ -65,6 +65,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     teacherLiveMicEnabled: false,
     teacherCameraEnabled: false,
     allowStudentLiveMic: false,
+    studentCameraMode: 'off',
     audioNotesEnabled: true,
   });
   const role = isTeacher || liveClass.createdBy === user.uid ? 'teacher' : 'student';

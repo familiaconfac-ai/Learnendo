@@ -44,6 +44,18 @@ const localConnectionLabelMap: Record<ConnectionState, string> = {
   signalReconnecting: 'Reconnecting signal',
 };
 
+const studentCameraModeLabelMap: Record<NonNullable<LiveClassSession['studentCameraMode']>, string> = {
+  off: 'Off',
+  'follow-mic': 'Follows mic',
+  required: 'Required',
+};
+
+const nextStudentCameraModeMap: Record<NonNullable<LiveClassSession['studentCameraMode']>, NonNullable<LiveClassSession['studentCameraMode']>> = {
+  off: 'follow-mic',
+  'follow-mic': 'required',
+  required: 'off',
+};
+
 function getParticipantRole(participant: Participant, fallback: LiveClassRole): LiveClassRole {
   try {
     const parsed = JSON.parse(participant.metadata || '{}') as { role?: LiveClassRole };
@@ -120,6 +132,23 @@ async function ensureMicrophonePermission() {
   stream.getTracks().forEach((track) => track.stop());
 }
 
+async function ensureCameraPermission() {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    throw new Error('This browser does not support camera access for live video.');
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+function getCameraErrorMessage(error: unknown, localParticipant: Participant) {
+  const fallback = error instanceof Error ? error.message : 'Camera access failed. Check browser permissions and your selected camera device.';
+  const liveKitCameraError = 'lastCameraError' in localParticipant
+    ? (localParticipant as Participant & { lastCameraError?: Error }).lastCameraError?.message
+    : '';
+  return liveKitCameraError || fallback;
+}
+
 export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
   classId,
   userId,
@@ -151,8 +180,16 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
 
   const roomTransportLabel = roomTransportLabelMap[session.liveAudioTransport ?? 'not-configured'];
   const localConnectionLabel = localConnectionLabelMap[connectionState];
+  const studentCameraMode = session.studentCameraMode ?? 'off';
+  const studentCameraPolicyLabel = studentCameraModeLabelMap[studentCameraMode];
   const studentMicDisabled = !isTeacher && !session.allowStudentLiveMic;
-  const canAutoEnableMic = isTeacher || session.allowStudentLiveMic;
+  const studentCameraDisabled = !isTeacher && studentCameraMode === 'off';
+  const studentCameraFollowMic = !isTeacher && studentCameraMode === 'follow-mic';
+  const studentCameraRequired = !isTeacher && studentCameraMode === 'required';
+  const canAutoEnableMic = isTeacher;
+  const displayedCameraParticipants = isTeacher
+    ? participantSummaries
+    : participantSummaries.filter((participant) => !participant.isLocal);
 
   const syncParticipants = useCallback((activeRoom: Room) => {
     const nextParticipants: ParticipantSummary[] = [
@@ -236,7 +273,9 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
 
       const element = track.attach() as HTMLVideoElement;
       element.autoplay = true;
-      element.muted = participant.identity === activeRoom.localParticipant.identity;
+      // Audio is attached through dedicated audio tags, so keeping video muted avoids
+      // mobile autoplay blocks while still allowing the participant to be heard.
+      element.muted = true;
       element.playsInline = true;
       element.className = 'h-full w-full object-cover';
       host.appendChild(element);
@@ -265,6 +304,48 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     }
     refs.delete(identity);
   }, [clearVideoHost, syncVideoTiles]);
+
+  const updateTeacherRoomState = useCallback(async (activeRoom: Room) => {
+    if (!isTeacherRef.current || !onUpdateSessionRef.current) return;
+
+    await onUpdateSessionRef.current({
+      teacherLiveMicEnabled: isParticipantMicEnabled(activeRoom.localParticipant),
+      teacherCameraEnabled: isParticipantCameraEnabled(activeRoom.localParticipant),
+      liveAudioTransport: activeRoom.state === ConnectionState.Connected ? 'connected' : 'connecting',
+    }).catch((error) => {
+      console.warn('[LiveMicPanel] teacher room state sync failed:', error);
+    });
+  }, []);
+
+  const setLocalCameraState = useCallback(async (activeRoom: Room, enabled: boolean) => {
+    const localParticipant = activeRoom.localParticipant;
+
+    if (enabled) {
+      await ensureCameraPermission();
+    }
+
+    const publication = await localParticipant.setCameraEnabled(
+      enabled,
+      enabled ? { facingMode: 'user' } : undefined,
+    );
+
+    const resolvedPublication = enabled ? (publication ?? getCameraPublication(localParticipant)) : undefined;
+    console.info('[LiveMicPanel] camera toggle complete', {
+      participantIdentity: localParticipant.identity,
+      enabled,
+      hasPublication: Boolean(resolvedPublication),
+      trackSid: resolvedPublication?.trackSid ?? '',
+    });
+
+    if (enabled && !resolvedPublication) {
+      throw new Error(getCameraErrorMessage(localParticipant.lastCameraError, localParticipant));
+    }
+
+    syncParticipants(activeRoom);
+    syncVideoTiles(activeRoom);
+    setTransportError('');
+    return Boolean(resolvedPublication);
+  }, [syncParticipants, syncVideoTiles]);
 
   const disconnectRoom = useCallback(async (activeRoom: Room | null, source: 'teacher' | 'local') => {
     if (!activeRoom) return;
@@ -367,18 +448,22 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         }
         syncParticipants(nextRoom);
         syncVideoTiles(nextRoom);
+        void updateTeacherRoomState(nextRoom);
       });
       nextRoom.on(RoomEvent.LocalTrackUnpublished, () => {
         syncParticipants(nextRoom);
         syncVideoTiles(nextRoom);
+        void updateTeacherRoomState(nextRoom);
       });
       nextRoom.on(RoomEvent.TrackMuted, () => {
         syncParticipants(nextRoom);
         syncVideoTiles(nextRoom);
+        void updateTeacherRoomState(nextRoom);
       });
       nextRoom.on(RoomEvent.TrackUnmuted, () => {
         syncParticipants(nextRoom);
         syncVideoTiles(nextRoom);
+        void updateTeacherRoomState(nextRoom);
       });
       nextRoom.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
         if (track.kind === Track.Kind.Audio) {
@@ -454,14 +539,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
       syncParticipants(nextRoom);
       syncVideoTiles(nextRoom);
 
-      if (isTeacher && onUpdateSession) {
-        await onUpdateSession({
-          teacherLiveMicEnabled: canAutoEnableMic ? isParticipantMicEnabled(nextRoom.localParticipant) : false,
-          liveAudioTransport: 'connected',
-        }).catch((error) => {
-          console.warn('[LiveMicPanel] teacher live mic auto-start sync failed:', error);
-        });
-      }
+      await updateTeacherRoomState(nextRoom);
 
       return nextRoom;
     } catch (error) {
@@ -472,7 +550,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     } finally {
       setJoining(false);
     }
-  }, [attachAudioTrack, canAutoEnableMic, classId, clearVideoHost, detachTrackElement, isTeacher, onUpdateSession, role, syncParticipants, syncVideoTiles, userId, userName]);
+  }, [attachAudioTrack, canAutoEnableMic, classId, clearVideoHost, detachTrackElement, role, syncParticipants, syncVideoTiles, updateTeacherRoomState, userId, userName]);
 
   const handleLeaveAudio = async () => {
     await disconnectRoom(roomRef.current, isTeacher ? 'teacher' : 'local');
@@ -484,6 +562,16 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     await onUpdateSession({ allowStudentLiveMic: !session.allowStudentLiveMic }).catch((error) => {
       console.warn('[LiveMicPanel] student live mic policy update failed:', error);
       setTransportError('Unable to update student microphone permissions right now.');
+    });
+  };
+
+  const handleTeacherStudentCameraModeToggle = async () => {
+    if (!isTeacher || !onUpdateSession) return;
+    setTransportError('');
+    const nextMode = nextStudentCameraModeMap[studentCameraMode];
+    await onUpdateSession({ studentCameraMode: nextMode }).catch((error) => {
+      console.warn('[LiveMicPanel] student camera mode update failed:', error);
+      setTransportError('Unable to update student camera permissions right now.');
     });
   };
 
@@ -509,15 +597,21 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
       } else {
         setTransportError('');
       }
+
+      if (!isTeacher) {
+        if (studentCameraFollowMic && nextMicEnabled) {
+          await setLocalCameraState(activeRoom, true);
+        }
+
+        if (studentCameraFollowMic && !nextMicEnabled && isParticipantCameraEnabled(activeRoom.localParticipant)) {
+          await setLocalCameraState(activeRoom, false);
+        }
+      }
+
       syncParticipants(activeRoom);
 
-      if (isTeacher && onUpdateSession) {
-        await onUpdateSession({
-          teacherLiveMicEnabled: nextMicEnabled,
-          liveAudioTransport: 'connected',
-        }).catch((error) => {
-          console.warn('[LiveMicPanel] teacher live mic state sync failed:', error);
-        });
+      if (isTeacher) {
+        await updateTeacherRoomState(activeRoom);
       }
     } catch (error) {
       console.warn('[LiveMicPanel] toggle local mic failed:', error);
@@ -525,35 +619,39 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
   };
 
   const handleToggleLocalCamera = async () => {
+    if (!isTeacher) {
+      if (studentCameraDisabled) {
+        setTransportError('Only the teacher can turn student cameras on in this room.');
+        return;
+      }
+
+      if (studentCameraFollowMic) {
+        setTransportError('Student camera follows the microphone in this room. Open your mic to appear on camera.');
+        return;
+      }
+
+      if (studentCameraRequired && localCameraEnabled) {
+        setTransportError('The teacher requires student camera to stay on right now.');
+        return;
+      }
+    }
+
     try {
       const activeRoom = await joinAudio();
       const nextCameraEnabled = !isParticipantCameraEnabled(activeRoom.localParticipant);
-      await activeRoom.localParticipant.setCameraEnabled(nextCameraEnabled);
-      const publication = getCameraPublication(activeRoom.localParticipant);
-      console.info('[LiveMicPanel] camera toggle complete', {
-        participantIdentity: activeRoom.localParticipant.identity,
-        enabled: nextCameraEnabled,
-        hasPublication: Boolean(publication),
-        trackSid: publication?.trackSid ?? '',
-      });
-      if (nextCameraEnabled && !publication) {
-        setTransportError('Camera was enabled, but no video track was published to the room. Check browser camera permission and try again.');
-      } else {
-        setTransportError('');
-      }
-      syncParticipants(activeRoom);
-      syncVideoTiles(activeRoom);
+      await setLocalCameraState(activeRoom, nextCameraEnabled);
 
-      if (isTeacher && onUpdateSession) {
-        await onUpdateSession({
-          teacherCameraEnabled: nextCameraEnabled,
-          liveAudioTransport: 'connected',
-        }).catch((error) => {
-          console.warn('[LiveMicPanel] teacher camera state sync failed:', error);
-        });
+      if (isTeacher) {
+        await updateTeacherRoomState(activeRoom);
       }
     } catch (error) {
       console.warn('[LiveMicPanel] toggle local camera failed:', error);
+      const localParticipant = roomRef.current?.localParticipant;
+      setTransportError(
+        localParticipant
+          ? getCameraErrorMessage(error, localParticipant)
+          : (error instanceof Error ? error.message : 'Camera access failed. Check browser permissions and your selected camera device.'),
+      );
     }
   };
 
@@ -570,6 +668,39 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         });
     }
   }, [isTeacher, localMicEnabled, session.allowStudentLiveMic, syncParticipants]);
+
+  useEffect(() => {
+    if (isTeacher || !roomRef.current || connectionState !== ConnectionState.Connected) {
+      return;
+    }
+
+    const activeRoom = roomRef.current;
+    const shouldEnableCamera = studentCameraRequired || (studentCameraFollowMic && localMicEnabled);
+    const shouldDisableCamera = studentCameraDisabled || (studentCameraFollowMic && !localMicEnabled);
+
+    if (shouldEnableCamera && !localCameraEnabled) {
+      void setLocalCameraState(activeRoom, true).catch((error) => {
+        console.warn('[LiveMicPanel] student camera policy enable failed:', error);
+        setTransportError(getCameraErrorMessage(error, activeRoom.localParticipant));
+      });
+      return;
+    }
+
+    if (shouldDisableCamera && localCameraEnabled) {
+      void setLocalCameraState(activeRoom, false).catch((error) => {
+        console.warn('[LiveMicPanel] student camera policy disable failed:', error);
+      });
+    }
+  }, [
+    connectionState,
+    isTeacher,
+    localCameraEnabled,
+    localMicEnabled,
+    setLocalCameraState,
+    studentCameraDisabled,
+    studentCameraFollowMic,
+    studentCameraRequired,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -616,9 +747,12 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         </div>
 
         <div className="rounded-xl border border-slate-700 bg-slate-950/70 p-3">
-          <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Student Live Mic</p>
+          <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Student Mic / Camera</p>
           <p className="mt-1 text-sm font-semibold text-white">
             {session.allowStudentLiveMic ? 'Students may unmute' : 'Students muted by teacher'}
+          </p>
+          <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            Camera: {studentCameraPolicyLabel}
           </p>
         </div>
 
@@ -681,28 +815,46 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         <button
           type="button"
           onClick={() => void handleToggleLocalCamera()}
-          disabled={joining}
+          disabled={joining || (!isTeacher && studentCameraMode !== 'required' && (studentCameraDisabled || studentCameraFollowMic))}
           className={`rounded-xl px-4 py-2 text-sm font-black ${
             localCameraEnabled
               ? 'bg-fuchsia-500 text-white shadow-[0_3px_0_0_#a21caf]'
               : 'bg-sky-500 text-slate-950 shadow-[0_3px_0_0_#0284c7]'
           } disabled:bg-slate-700 disabled:text-slate-400 disabled:shadow-none`}
         >
-          {localCameraEnabled ? 'Turn Camera Off' : 'Turn Camera On'}
+          {isTeacher
+            ? (localCameraEnabled ? 'Turn Camera Off' : 'Turn Camera On')
+            : studentCameraDisabled
+              ? 'Camera Controlled by Teacher'
+              : studentCameraFollowMic
+                ? 'Camera Opens with Mic'
+                : studentCameraRequired
+                  ? 'Teacher Requires Camera'
+                  : (localCameraEnabled ? 'Turn Camera Off' : 'Turn Camera On')}
         </button>
 
         {isTeacher ? (
-          <button
-            type="button"
-            onClick={() => void handleTeacherStudentPolicyToggle()}
-            className={`rounded-xl px-4 py-2 text-sm font-black ${
-              session.allowStudentLiveMic
-                ? 'bg-amber-400 text-slate-900 shadow-[0_3px_0_0_#d97706]'
-                : 'bg-slate-100 text-slate-900 shadow-[0_3px_0_0_#94a3b8]'
-            }`}
-          >
-            {session.allowStudentLiveMic ? 'Mute Students' : 'Allow Student Mics'}
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => void handleTeacherStudentPolicyToggle()}
+              className={`rounded-xl px-4 py-2 text-sm font-black ${
+                session.allowStudentLiveMic
+                  ? 'bg-amber-400 text-slate-900 shadow-[0_3px_0_0_#d97706]'
+                  : 'bg-slate-100 text-slate-900 shadow-[0_3px_0_0_#94a3b8]'
+              }`}
+            >
+              {session.allowStudentLiveMic ? 'Mute Students' : 'Allow Student Mics'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleTeacherStudentCameraModeToggle()}
+              className="rounded-xl bg-violet-400 px-4 py-2 text-sm font-black text-slate-950 shadow-[0_3px_0_0_#8b5cf6]"
+            >
+              Student Camera: {studentCameraPolicyLabel}
+            </button>
+          </>
         ) : null}
       </div>
 
@@ -710,15 +862,19 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-xs font-black uppercase tracking-wide text-slate-300">Live Camera</h3>
           <span className="text-[11px] font-semibold text-slate-500">
-            {participantSummaries.filter((participant) => participant.cameraEnabled).length} camera live
+            {displayedCameraParticipants.filter((participant) => participant.cameraEnabled).length} camera live
           </span>
         </div>
 
         <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-          {participantSummaries.length === 0 ? (
-            <p className="text-xs text-slate-400">Nobody has joined the live room yet.</p>
+          {displayedCameraParticipants.length === 0 ? (
+            <p className="text-xs text-slate-400">
+              {isTeacher
+                ? 'Nobody has joined the live room yet.'
+                : 'Your own camera preview stays hidden here. When the teacher camera is live, it will appear in this area.'}
+            </p>
           ) : (
-            participantSummaries.map((participant) => (
+            displayedCameraParticipants.map((participant) => (
               <div key={participant.identity} className="overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
                 <div className="aspect-video bg-slate-950">
                   <div
@@ -795,8 +951,12 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         {isTeacher
           ? `${userName} can publish live audio and optional camera here, and students who joined the room see and hear it immediately.`
           : studentMicDisabled
-            ? 'You can join the room to listen now and turn your camera on if needed. Your live microphone stays muted until the teacher enables student mic access.'
-            : 'You can join the room to listen, use your camera, and unmute your own live microphone when the teacher allows it.'}
+            ? 'You can join the room to listen now. Your microphone stays muted until the teacher enables student mic access, and camera behavior follows the teacher setting.'
+            : studentCameraFollowMic
+              ? 'Open your microphone when you need to speak. Your camera will open together with the mic while the teacher keeps this mode active.'
+              : studentCameraRequired
+                ? 'The teacher requires student camera to stay on in this room.'
+                : 'You can join the room to listen and unmute when the teacher allows it.'}
       </p>
     </div>
   );

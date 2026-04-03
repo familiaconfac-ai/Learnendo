@@ -48,6 +48,7 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   teacherLiveMicEnabled: Boolean(data?.teacherLiveMicEnabled),
   teacherCameraEnabled: Boolean(data?.teacherCameraEnabled),
   allowStudentLiveMic: Boolean(data?.allowStudentLiveMic),
+  studentCameraMode: (data?.studentCameraMode ?? 'off') as LiveClassSession['studentCameraMode'],
   audioNotesEnabled: data?.audioNotesEnabled !== false,
   lastUpdatedBy: data?.lastUpdatedBy ?? '',
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
@@ -210,6 +211,7 @@ export async function updateLiveSession(
   if ('teacherLiveMicEnabled' in patch) payload.teacherLiveMicEnabled = Boolean(patch.teacherLiveMicEnabled);
   if ('teacherCameraEnabled' in patch) payload.teacherCameraEnabled = Boolean(patch.teacherCameraEnabled);
   if ('allowStudentLiveMic' in patch) payload.allowStudentLiveMic = Boolean(patch.allowStudentLiveMic);
+  if ('studentCameraMode' in patch) payload.studentCameraMode = patch.studentCameraMode ?? 'off';
   if ('audioNotesEnabled' in patch) payload.audioNotesEnabled = patch.audioNotesEnabled !== false;
 
   await setDoc(

@@ -97,12 +97,31 @@ export const TeacherLiveControlPanel: React.FC<TeacherLiveControlPanelProps> = (
         </select>
 
         <select
+          value={local.teacherCameraEnabled ? 'live' : 'off'}
+          onChange={(e) => setField('teacherCameraEnabled', e.target.value === 'live')}
+          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="off">Teacher camera off</option>
+          <option value="live">Teacher camera live</option>
+        </select>
+
+        <select
           value={local.allowStudentLiveMic ? 'open' : 'muted'}
           onChange={(e) => setField('allowStudentLiveMic', e.target.value === 'open')}
           className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
         >
           <option value="muted">Students muted by room</option>
           <option value="open">Students may unmute</option>
+        </select>
+
+        <select
+          value={local.studentCameraMode ?? 'off'}
+          onChange={(e) => setField('studentCameraMode', e.target.value as LiveClassSession['studentCameraMode'])}
+          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
+        >
+          <option value="off">Student camera off</option>
+          <option value="follow-mic">Student camera follows mic</option>
+          <option value="required">Student camera required</option>
         </select>
 
         <select

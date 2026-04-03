@@ -209,6 +209,7 @@ export interface LiveClassSession {
   teacherLiveMicEnabled?: boolean;
   teacherCameraEnabled?: boolean;
   allowStudentLiveMic?: boolean;
+  studentCameraMode?: 'off' | 'follow-mic' | 'required';
   audioNotesEnabled?: boolean;
   lastUpdatedBy?: string;
   updatedAt?: string;
