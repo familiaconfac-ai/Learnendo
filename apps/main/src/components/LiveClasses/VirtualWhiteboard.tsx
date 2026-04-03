@@ -26,6 +26,7 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
   const isApplyingRemoteRef = useRef(false);
   const lastRemoteContentRef = useRef('');
   const actorName = user.displayName || user.email || 'Learnendo user';
+  const isStudentView = !canManageBoard;
 
   useEffect(() => {
     setLoading(true);
@@ -35,6 +36,12 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
     const unsubscribe = subscribeLiveWhiteboard(
       classId,
       (next) => {
+        console.info('[VirtualWhiteboard] realtime update received', {
+          classId,
+          viewerUid: user.uid,
+          updatedByUid: next.updatedByUid ?? '',
+          contentLength: next.content?.length ?? 0,
+        });
         setWhiteboard(next);
         const nextContent = next.content ?? '';
         lastRemoteContentRef.current = nextContent;
@@ -76,6 +83,11 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
     }
 
     syncTimeoutRef.current = window.setTimeout(() => {
+      console.info('[VirtualWhiteboard] submitting shared update', {
+        classId,
+        actorUid: user.uid,
+        contentLength: draft.length,
+      });
       void updateLiveWhiteboard(
         classId,
         draft,
@@ -119,16 +131,15 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
   };
 
   return (
-    <div className="rounded-2xl border border-cyan-500/30 bg-slate-900 p-4">
+    <div className={`rounded-2xl border border-cyan-500/30 bg-slate-900 ${isStudentView ? 'p-3 sm:p-4' : 'p-4'}`}>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-wide text-cyan-300">Virtual Whiteboard</h2>
-          <p className="mt-1 text-sm text-slate-200">
-            Type prompts, corrections, examples, or short activities here. Everyone in the room sees the same board in real time.
-          </p>
-          {!canManageBoard ? (
-            <p className="mt-2 text-xs font-semibold text-cyan-200">
-              Your typing syncs automatically with the room. Only the teacher can clear the whole board.
+          <h2 className="text-sm font-black uppercase tracking-wide text-cyan-300">
+            {isStudentView ? 'Shared Board' : 'Virtual Whiteboard'}
+          </h2>
+          {!isStudentView ? (
+            <p className="mt-1 text-sm text-slate-200">
+              Type prompts, corrections, examples, or short activities here. Everyone in the room sees the same board in real time.
             </p>
           ) : null}
         </div>
@@ -154,14 +165,20 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
       <textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
-        className="mt-3 h-64 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-base leading-relaxed text-white placeholder:text-slate-500"
-        placeholder="Write a sentence, paste a prompt, ask students to correct a mistake, or let them answer here..."
+        className={`mt-3 w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-base leading-relaxed text-white placeholder:text-slate-500 ${isStudentView ? 'h-[70vh] sm:h-[60vh]' : 'h-64 sm:h-72'}`}
+        placeholder={isStudentView
+          ? 'Write here and everyone in the room will see it live.'
+          : 'Write a sentence, paste a prompt, ask students to correct a mistake, or let them answer here...'}
         disabled={loading}
       />
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <span className="text-xs text-slate-400">
-          {syncState === 'syncing' ? 'Syncing whiteboard...' : 'Shared board synced'}
+          {syncState === 'syncing'
+            ? 'Syncing whiteboard...'
+            : isStudentView
+              ? 'Live board synced'
+              : 'Shared board synced'}
         </span>
         {canManageBoard ? (
           <button

@@ -304,24 +304,34 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
   const ownStatus = getStudentStatus(block, actorUid);
   const locked = isStudentLocked(block, actorUid);
   const [draft, setDraft] = useState(ownAnswer);
-  const [saveState, setSaveState] = useState<'idle' | 'saving'>('idle');
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState('');
 
   useEffect(() => {
     setDraft(ownAnswer);
     setError('');
+    setSaveState('idle');
   }, [block.id, ownAnswer]);
 
-  useEffect(() => {
-    if (!canEdit || draft === ownAnswer) return () => {};
+  const handleSubmit = async () => {
+    if (!canEdit) return;
 
-    const timeoutId = window.setTimeout(() => {
-      const nextStatus: LiveExerciseBlockStatus = draft.trim()
-        ? (ownStatus === 'done' ? 'done' : 'in_progress')
-        : 'pending';
+    const nextStatus: LiveExerciseBlockStatus = draft.trim()
+      ? (ownStatus === 'done' ? 'done' : 'in_progress')
+      : 'pending';
 
-      setSaveState('saving');
-      void updateExerciseBlockResponse(
+    setSaveState('saving');
+    setError('');
+
+    try {
+      console.info('[ExerciseSessionPanel] student response submit', {
+        classId,
+        blockId: block.id,
+        actorUid,
+        responseLength: draft.length,
+        nextStatus,
+      });
+      await updateExerciseBlockResponse(
         classId,
         block.id,
         actorUid,
@@ -329,21 +339,14 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
         nextStatus,
         actorUid,
         actorName,
-      )
-        .then(() => {
-          setError('');
-        })
-        .catch((saveError) => {
-          console.warn('[ExerciseSessionPanel] answer autosave failed:', saveError);
-          setError(getExerciseErrorMessage(saveError, 'Unable to sync your answer right now.'));
-        })
-        .finally(() => {
-          setSaveState('idle');
-        });
-    }, 400);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [actorName, actorUid, block.id, canEdit, classId, draft, ownAnswer, ownStatus]);
+      );
+      setSaveState('saved');
+    } catch (saveError) {
+      console.warn('[ExerciseSessionPanel] student response submit failed:', saveError);
+      setError(getExerciseErrorMessage(saveError, 'Unable to sync your answer right now.'));
+      setSaveState('idle');
+    }
+  };
 
   return (
     <article className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
@@ -380,15 +383,36 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
 
       <textarea
         value={draft}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setSaveState('idle');
+        }}
         disabled={!canEdit}
         className="mt-3 h-32 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-70"
-        placeholder={canEdit ? 'Type your answer here. It syncs automatically.' : 'Your answer is read-only right now.'}
+        placeholder={canEdit ? 'Type your answer here, then tap Submit.' : 'Your answer is read-only right now.'}
       />
 
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-slate-400">{actorLabel}</span>
+        <button
+          type="button"
+          onClick={() => void handleSubmit()}
+          disabled={!canEdit || saveState === 'saving' || draft === ownAnswer}
+          className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#0891b2] disabled:cursor-not-allowed disabled:opacity-60 disabled:shadow-none"
+        >
+          {saveState === 'saving' ? 'Submitting...' : 'Submit Response'}
+        </button>
+      </div>
+
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-        <span>{actorLabel}</span>
-        <span>{saveState === 'saving' ? 'Saving...' : 'Synced'}</span>
+        <span>{draft === ownAnswer ? 'No pending edits' : 'Unsaved changes'}</span>
+        <span>
+          {saveState === 'saving'
+            ? 'Submitting...'
+            : saveState === 'saved'
+              ? 'Submitted'
+              : 'Waiting for submit'}
+        </span>
       </div>
     </article>
   );
@@ -439,6 +463,12 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
     const unsubscribe = subscribeExerciseBlocks(
       classId,
       (next) => {
+        console.info('[ExerciseSessionPanel] blocks realtime update', {
+          classId,
+          blockCount: next.length,
+          viewerUid: user.uid,
+          isTeacher,
+        });
         setBlocks(next);
         setLoadingBlocks(false);
       },

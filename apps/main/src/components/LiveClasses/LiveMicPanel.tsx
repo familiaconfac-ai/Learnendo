@@ -138,6 +138,16 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
   const audioHostRef = useRef<HTMLDivElement | null>(null);
   const videoTileRefs = useRef(new Map<string, HTMLDivElement>());
   const roomRef = useRef<Room | null>(null);
+  const isTeacherRef = useRef(isTeacher);
+  const onUpdateSessionRef = useRef(onUpdateSession);
+
+  useEffect(() => {
+    isTeacherRef.current = isTeacher;
+  }, [isTeacher]);
+
+  useEffect(() => {
+    onUpdateSessionRef.current = onUpdateSession;
+  }, [onUpdateSession]);
 
   const roomTransportLabel = roomTransportLabelMap[session.liveAudioTransport ?? 'not-configured'];
   const localConnectionLabel = localConnectionLabelMap[connectionState];
@@ -185,10 +195,14 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     detachTrackElement(track.sid);
     const element = track.attach() as HTMLAudioElement;
     element.autoplay = true;
+    element.muted = false;
     element.dataset.trackSid = track.sid;
     element.dataset.participantIdentity = participant.identity;
     element.className = 'hidden';
     audioHostRef.current.appendChild(element);
+    void element.play().catch((error) => {
+      console.warn('[LiveMicPanel] remote audio autoplay failed:', error);
+    });
   }, [detachTrackElement]);
 
   const clearVideoHost = useCallback((host: HTMLDivElement | null) => {
@@ -279,12 +293,12 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     }
     videoTileRefs.current.forEach((host) => clearVideoHost(host));
 
-    if (source === 'teacher' && onUpdateSession) {
-      await onUpdateSession({ teacherLiveMicEnabled: false, teacherCameraEnabled: false }).catch((error) => {
+    if (source === 'teacher' && onUpdateSessionRef.current) {
+      await onUpdateSessionRef.current({ teacherLiveMicEnabled: false, teacherCameraEnabled: false }).catch((error) => {
         console.warn('[LiveMicPanel] teacher disconnect state sync failed:', error);
       });
     }
-  }, [clearVideoHost, onUpdateSession]);
+  }, [clearVideoHost]);
 
   const joinAudio = useCallback(async (): Promise<Room> => {
     if (roomRef.current && roomRef.current.state !== ConnectionState.Disconnected) {
@@ -368,6 +382,10 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
       });
       nextRoom.on(RoomEvent.TrackSubscribed, (track, _publication, participant) => {
         if (track.kind === Track.Kind.Audio) {
+          console.info('[LiveMicPanel] remote audio track subscribed', {
+            participantIdentity: participant.identity,
+            trackSid: track.sid,
+          });
           attachAudioTrack(track as RemoteTrack, participant);
         }
         if (track.kind === Track.Kind.Video) {
@@ -555,9 +573,9 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
 
   useEffect(() => {
     return () => {
-      void disconnectRoom(roomRef.current, isTeacher ? 'teacher' : 'local');
+      void disconnectRoom(roomRef.current, isTeacherRef.current ? 'teacher' : 'local');
     };
-  }, [disconnectRoom, isTeacher]);
+  }, [disconnectRoom]);
 
   const connected = connectionState === ConnectionState.Connected;
 

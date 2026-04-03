@@ -297,6 +297,7 @@ const App: React.FC = () => {
   const [currentLessonId, setCurrentLessonId] = useState<string | null>(null);
   const [currentWorkbook, setCurrentWorkbook] = useState<any>(null);
   const [isWorkbookLoading, setIsWorkbookLoading] = useState(false);
+  const [contentLoadError, setContentLoadError] = useState<string | null>(null);
   const [currentDay, setCurrentDay] = useState<Day | null>(null);
   const [pendingLiveLessonRef, setPendingLiveLessonRef] = useState<{ workbookId: number; lessonRef: string | null } | null>(null);
   const [activeOnlineClass, setActiveOnlineClass] = useState<LiveClass | null>(null);
@@ -1035,6 +1036,7 @@ const App: React.FC = () => {
     const loadWorkbook = async () => {
       const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
       const registry = COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+      setContentLoadError(null);
 
       // Guard: validate the combo before even attempting the import
       const validated = validateAndFixState({
@@ -1062,6 +1064,7 @@ const App: React.FC = () => {
           // "Workbook unavailable" text on the dark background (looks like a blank page).
           const defaultId = getDefaultWorkbookIdForCourse(courseId);
           console.warn('[COURSE_DEBUG] No workbook loader found — resetting workbookId to default', { courseId, currentWorkbookId, defaultId });
+          setContentLoadError(`Workbook ${currentWorkbookId} is not available for ${courseId}.`);
           // Keep the spinner visible during the reset+re-run window.
           setIsWorkbookLoading(true);
           setCurrentWorkbookId(defaultId);
@@ -1082,6 +1085,7 @@ const App: React.FC = () => {
 
         if (!resolvedWorkbook) {
           console.warn('[COURSE_DEBUG] Workbook module resolved but no workbook export found', { courseId, currentWorkbookId });
+          setContentLoadError(`Workbook ${currentWorkbookId} could not be opened for ${courseId}.`);
           navigateToWorkbook();
           return;
         }
@@ -1094,10 +1098,12 @@ const App: React.FC = () => {
 
         console.log('[COURSE_DEBUG] Workbook loaded', { courseId, currentWorkbookId, lessonCount: (resolvedWorkbook as any).lessons?.length ?? 0 });
         setCurrentWorkbook(resolvedWorkbook);
+        setContentLoadError(null);
         navigateToWorkbook();
       } catch (err) {
         if (!cancelled) {
           console.error('[COURSE_DEBUG] Workbook load error', { courseId, currentWorkbookId, err });
+          setContentLoadError(`Workbook ${currentWorkbookId} failed to load for ${courseId}.`);
           navigateToWorkbook();
         }
       } finally {
@@ -1112,11 +1118,21 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!pendingLiveLessonRef || !currentWorkbook || currentWorkbookId !== pendingLiveLessonRef.workbookId) return;
     const targetLessonId = findLessonIdInWorkbook(currentWorkbook, pendingLiveLessonRef.lessonRef);
+    console.log('[ONLINE_DEBUG] pending live lesson lookup', {
+      selectedLanguage: language,
+      selectedCourse: currentCourseId ?? DEFAULT_COURSE_ID,
+      workbookId: currentWorkbookId,
+      lessonId: pendingLiveLessonRef.lessonRef,
+      lessonFound: Boolean(targetLessonId),
+    });
     setPendingLiveLessonRef(null);
     if (targetLessonId) {
+      setContentLoadError(null);
       openLesson(targetLessonId, { force: Boolean(activeOnlineClass) });
+      return;
     }
-  }, [activeOnlineClass, currentWorkbook, currentWorkbookId, pendingLiveLessonRef]);
+    setContentLoadError(`The assigned lesson "${pendingLiveLessonRef.lessonRef ?? ''}" was not found in workbook ${currentWorkbookId}.`);
+  }, [activeOnlineClass, currentWorkbook, currentWorkbookId, currentCourseId, language, pendingLiveLessonRef]);
 
   useEffect(() => {
     if (!activeOnlineClass?.id) {
@@ -1392,32 +1408,70 @@ const App: React.FC = () => {
 
     // Stamp as user action so Firestore doesn't override this choice for 3s
     lastUserActionRef.current = Date.now();
+    setContentLoadError(null);
 
-    if (validated.courseId !== currentCourseId) {
+    const currentResolvedCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
+    const courseChanged = validated.courseId !== currentResolvedCourseId;
+    const workbookChanged = validated.workbookId !== currentWorkbookId;
+
+    console.log('[ONLINE_DEBUG] openLiveClassContent navigation state', {
+      selectedLanguage: targetLanguage,
+      selectedCourse: validated.courseId,
+      workbookId: validated.workbookId,
+      lessonId: targetLessonRef,
+      courseChanged,
+      workbookChanged,
+      hasCurrentWorkbook: Boolean(currentWorkbook),
+    });
+
+    if (courseChanged) {
       setCurrentCourseId(validated.courseId);
     }
-    setCurrentWorkbookId(validated.workbookId);
-    setCurrentWorkbook(null);
     setCurrentDay(null);
 
-    if (targetLessonRef) {
-      setPendingLiveLessonRef({ workbookId: targetWorkbookId, lessonRef: targetLessonRef });
-      if (user?.uid && isAdmin) {
-        void updateLiveSession(liveClass.id, {
-          sessionStatus: 'active',
-          activeWorkbookId: targetWorkbookId,
-          activeLessonId: targetLessonRef,
-          activeExerciseId: null,
-        }, user.uid).catch((error) => {
-          console.warn('[App] failed to start synced live lesson:', error);
-        });
+    if (courseChanged || workbookChanged) {
+      setCurrentWorkbookId(validated.workbookId);
+      setCurrentWorkbook(null);
+      if (targetLessonRef) {
+        setPendingLiveLessonRef({ workbookId: validated.workbookId, lessonRef: targetLessonRef });
+      } else {
+        setPendingLiveLessonRef(null);
+      }
+      setCurrentSection(SectionType.WORKBOOK);
+    } else if (targetLessonRef) {
+      const resolvedLessonId = findLessonIdInWorkbook(currentWorkbook, targetLessonRef);
+      console.log('[ONLINE_DEBUG] immediate live lesson lookup', {
+        selectedLanguage: targetLanguage,
+        selectedCourse: validated.courseId,
+        workbookId: validated.workbookId,
+        lessonId: targetLessonRef,
+        lessonFound: Boolean(resolvedLessonId),
+      });
+      if (resolvedLessonId) {
+        openLesson(resolvedLessonId, { force: true, syncToSession: false });
+      } else {
+        setPendingLiveLessonRef({ workbookId: validated.workbookId, lessonRef: targetLessonRef });
+        setContentLoadError(`The assigned lesson "${targetLessonRef}" was not found in workbook ${validated.workbookId}.`);
+        setCurrentSection(SectionType.WORKBOOK);
       }
     } else {
       setPendingLiveLessonRef(null);
+      setCurrentSection(SectionType.WORKBOOK);
     }
 
-    setCurrentSection(SectionType.WORKBOOK);
-  }, [currentCourseId, currentWorkbookId, isAdmin, language, progress.currentWorkbook, setLanguage, user?.uid]);
+    if (targetLessonRef && user?.uid && isAdmin) {
+      void updateLiveSession(liveClass.id, {
+        sessionStatus: 'active',
+        activeWorkbookId: targetWorkbookId,
+        activeLessonId: targetLessonRef,
+        activeExerciseId: null,
+      }, user.uid).catch((error) => {
+        console.warn('[App] failed to start synced live lesson:', error);
+      });
+    } else if (!targetLessonRef) {
+      setPendingLiveLessonRef(null);
+    }
+  }, [currentCourseId, currentWorkbook, currentWorkbookId, isAdmin, language, openLesson, user?.uid]);
 
   useEffect(() => {
     if (!activeOnlineClass || !activeOnlineSession) return;
@@ -2206,14 +2260,37 @@ const App: React.FC = () => {
         const hasAnyActivity = (progress.completedActivities?.length ?? 0) > 0;
         const hasProgress = hasAnyDays || hasAnyActivity;
         console.log('[EMPTY_STATE_DEBUG]', { language, courseId: currentCourseId, hasProgress, isWorkbookLoading, hasWorkbook: !!currentWorkbook });
-        // Loading — workbook is in flight OR the brief window before the first load fires
-        if (isWorkbookLoading || !currentWorkbook) {
+        if (isWorkbookLoading) {
           return (
             <div className="flex min-h-[60vh] items-center justify-center px-4">
               <div className="text-center">
                 <div className="mb-4 text-4xl">📚</div>
                 <p className="text-slate-300 font-semibold">
                   {uiLanguage === 'pt' ? 'Carregando caderno...' : uiLanguage === 'es' ? 'Cargando libro...' : 'Loading content...'}
+                </p>
+              </div>
+            </div>
+          );
+        }
+        if (!currentWorkbook) {
+          return (
+            <div className="flex min-h-[60vh] items-center justify-center px-4">
+              <div className="max-w-md text-center">
+                <div className="mb-4 text-4xl">⚠️</div>
+                <p className="text-slate-100 font-semibold">
+                  {contentLoadError
+                    ?? (uiLanguage === 'pt'
+                      ? 'Não foi possível abrir o conteúdo desta aula.'
+                      : uiLanguage === 'es'
+                        ? 'No fue posible abrir el contenido de esta lección.'
+                        : 'This lesson content could not be opened.')}
+                </p>
+                <p className="mt-2 text-sm text-slate-400">
+                  {uiLanguage === 'pt'
+                    ? 'Verifique o workbook e lesson atribuídos à live class.'
+                    : uiLanguage === 'es'
+                      ? 'Revisa el workbook y la lesson asignados a la live class.'
+                      : 'Check the workbook and lesson assigned to this live class.'}
                 </p>
               </div>
             </div>

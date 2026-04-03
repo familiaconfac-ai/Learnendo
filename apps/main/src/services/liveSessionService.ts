@@ -349,6 +349,11 @@ export function subscribeLiveWhiteboard(
             }
 
             const sharedData = mapWhiteboard(sharedSnapshot.data() as Record<string, any>);
+            console.info('[liveSessionService] whiteboard shared fallback loaded', {
+              classId,
+              contentLength: sharedData.content?.length ?? 0,
+              updatedByUid: sharedData.updatedByUid ?? '',
+            });
             onData(sharedData);
 
             // Mirror any existing shared whiteboard data back into the live session path.
@@ -367,7 +372,13 @@ export function subscribeLiveWhiteboard(
           });
         return;
       }
-      onData(mapWhiteboard(snapshot.data() as Record<string, any>));
+      const mapped = mapWhiteboard(snapshot.data() as Record<string, any>);
+      console.info('[liveSessionService] whiteboard snapshot received', {
+        classId,
+        contentLength: mapped.content?.length ?? 0,
+        updatedByUid: mapped.updatedByUid ?? '',
+      });
+      onData(mapped);
     },
     (error) => {
       if (onError) onError(error);
@@ -387,6 +398,11 @@ export async function updateLiveWhiteboard(
   const whiteboardRef = getLegacyWhiteboardRef(classId);
   const sharedWhiteboardRef = getSharedWhiteboardRef(classId);
   const payload = buildWhiteboardPayload(content, updatedByUid, updatedByName);
+  console.info('[liveSessionService] whiteboard update requested', {
+    classId,
+    updatedByUid,
+    contentLength: content.length,
+  });
 
   await Promise.all([
     setDoc(whiteboardRef, payload, { merge: true }),
@@ -542,6 +558,14 @@ export async function updateExerciseBlockResponse(
 ): Promise<void> {
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId || !blockId || !studentUid) return;
+  console.info('[liveSessionService] exercise response update requested', {
+    classId,
+    blockId,
+    studentUid,
+    answerLength: answerText.length,
+    status,
+    updatedByUid,
+  });
 
   await setDoc(
     doc(getExerciseBlocksCollection(classId), blockId),

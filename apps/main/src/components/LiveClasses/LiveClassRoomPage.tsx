@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
 import {
@@ -119,9 +119,9 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     };
   }, [showExerciseSession]);
 
-  const handleUpdateSession = async (patch: Partial<LiveClassSession>) => {
+  const handleUpdateSession = useCallback(async (patch: Partial<LiveClassSession>) => {
     await updateLiveSession(liveClass.id, patch, user.uid);
-  };
+  }, [liveClass.id, user.uid]);
 
   const onlinePresence = useMemo(
     () => presence
@@ -371,18 +371,20 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       </div>
 
       {showWhiteboard ? (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/80 px-3 py-6 backdrop-blur-sm sm:px-6">
-          <div className="w-full max-w-5xl">
-            <div className="mb-3 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowWhiteboard(false)}
-                className="rounded-xl border border-slate-500 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
-              >
-                Close Whiteboard
-              </button>
+        <div className="fixed inset-0 z-[1000] overflow-y-auto bg-slate-950/80 px-3 py-3 backdrop-blur-sm sm:px-6 sm:py-6">
+          <div className="flex min-h-screen w-full items-stretch justify-center">
+            <div className="flex w-full max-w-5xl flex-col">
+              <div className="mb-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setShowWhiteboard(false)}
+                  className="rounded-xl border border-slate-500 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+                >
+                  Close Whiteboard
+                </button>
+              </div>
+              <VirtualWhiteboard classId={liveClass.id} user={user} canManageBoard={role === 'teacher'} />
             </div>
-            <VirtualWhiteboard classId={liveClass.id} user={user} canManageBoard={role === 'teacher'} />
           </div>
         </div>
       ) : null}
