@@ -66,6 +66,22 @@ const LANGUAGE_TO_PRIMARY_COURSE: Record<LessonLanguageCode, string> = {
   he: 'hebrew_biblical',
 };
 
+const COURSE_ID_ALIASES: Record<string, string> = {
+  en: 'english',
+  english: 'english',
+  pt: 'portuguese_foreigners',
+  portuguese: 'portuguese_foreigners',
+  portuguese_foreigners: 'portuguese_foreigners',
+  es: 'spanish',
+  spanish: 'spanish',
+  el: 'greek_koine',
+  greek: 'greek_koine',
+  greek_koine: 'greek_koine',
+  he: 'hebrew_biblical',
+  hebrew: 'hebrew_biblical',
+  hebrew_biblical: 'hebrew_biblical',
+};
+
 
 
 const COURSE_SELECTOR_OPTIONS = [
@@ -112,23 +128,18 @@ function validateAndFixState(opts: {
 
   // 2. CourseId must be known; if missing/unknown, derive from language
   const knownCourses = new Set(Object.keys(COURSE_TO_LANGUAGE));
-  let courseId: string = (opts.courseId && knownCourses.has(opts.courseId))
-    ? opts.courseId
+  const normalizedCourseId = typeof opts.courseId === 'string'
+    ? COURSE_ID_ALIASES[opts.courseId.trim().toLowerCase()] ?? opts.courseId.trim()
+    : '';
+  let courseId: string = normalizedCourseId && knownCourses.has(normalizedCourseId)
+    ? normalizedCourseId
     : (LANGUAGE_TO_PRIMARY_COURSE[lang] ?? DEFAULT_COURSE_ID);
   if (courseId !== opts.courseId) {
     problems.push(`courseId: '${opts.courseId}' → '${courseId}'`);
     fixed = true;
   }
 
-  // 3. Language must be consistent with courseId (courseId wins if both provided)
-  const expectedLang = COURSE_TO_LANGUAGE[courseId];
-  if (expectedLang && expectedLang !== lang && opts.courseId === courseId) {
-    lang = expectedLang;
-    problems.push(`language forced by courseId: '${opts.language}' → '${lang}'`);
-    fixed = true;
-  }
-
-  // 4. WorkbookId must exist in the course registry
+  // 3. WorkbookId must exist in the course registry
   const registry = COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
   const validWorkbookIds = new Set(Object.keys(registry).map(Number));
   const rawWbId = opts.workbookId ?? 0;
@@ -157,6 +168,30 @@ function validateAndFixState(opts: {
 
   return { language: lang, courseId, workbookId, section, fixed };
 }
+
+const normalizeCourseId = (
+  rawCourseId: string | null | undefined,
+  fallbackLanguage: LessonLanguageCode = DEFAULT_LANGUAGE,
+): string => {
+  const normalized = (rawCourseId ?? '').trim().toLowerCase();
+  if (normalized && COURSE_ID_ALIASES[normalized]) {
+    return COURSE_ID_ALIASES[normalized];
+  }
+  if (normalized && COURSE_TO_LANGUAGE[normalized]) {
+    return normalized;
+  }
+  return LANGUAGE_TO_PRIMARY_COURSE[fallbackLanguage] ?? DEFAULT_COURSE_ID;
+};
+
+const getPrimaryCourseForLanguage = (
+  selectedLanguage: LessonLanguageCode,
+  fallbackCourseId?: string | null,
+) => {
+  if (selectedLanguage === 'en' || selectedLanguage === 'pt' || selectedLanguage === 'es') {
+    return LANGUAGE_TO_PRIMARY_COURSE[selectedLanguage];
+  }
+  return normalizeCourseId(fallbackCourseId, selectedLanguage);
+};
 
 const getLessonNumberFromId = (lessonId: string | null | undefined) => {
   if (!lessonId) return NaN;
@@ -391,27 +426,28 @@ const App: React.FC = () => {
 
   // Sync language with course selection
   const handleCourseChange = useCallback((courseId: string) => {
-    const defaultWorkbookId = getDefaultWorkbookIdForCourse(courseId);
+    const nextCourseId = normalizeCourseId(courseId, language);
+    const defaultWorkbookId = getDefaultWorkbookIdForCourse(nextCourseId);
     console.log('[COURSE CHANGE] handleCourseChange called', {
-      newCourseId: courseId,
+      newCourseId: nextCourseId,
       previousCourseId: currentCourseId,
       currentLanguage: language,
       currentWorkbook: progress.currentWorkbook,
       nextWorkbookId: defaultWorkbookId,
       completedDaysCount: countCompletedDays((progress as any).days),
     });
-    setCurrentCourseId(courseId);
+    setCurrentCourseId(nextCourseId);
     setCurrentWorkbookId(defaultWorkbookId);
     setCurrentWorkbook(null);
     setCurrentLessonId(null);
     setCurrentDay(null);
     setPendingLiveLessonRef(null);
-    const languageForCourse = COURSE_TO_LANGUAGE[courseId];
+    const languageForCourse = COURSE_TO_LANGUAGE[nextCourseId];
     if (languageForCourse && languageForCourse !== language) {
       console.log('[LANGUAGE CHANGE] via handleCourseChange', {
         newLanguage: languageForCourse,
         previousLanguage: language,
-        courseId,
+        courseId: nextCourseId,
         currentWorkbook: progress.currentWorkbook,
         completedDaysCount: countCompletedDays((progress as any).days),
       });
@@ -424,7 +460,7 @@ const App: React.FC = () => {
       lastLocalUpdateRef.current = now;
       setDoc(
         doc(db, 'users', user.uid, 'courseProgress', 'main'),
-        { courseId, lastUpdated: now },
+        { courseId: nextCourseId, lastUpdated: now },
         { merge: true },
       ).catch(e => console.warn('[COURSE] persist courseId to Firestore failed:', e));
     }
@@ -772,40 +808,27 @@ const App: React.FC = () => {
               console.warn('[STATE ERROR] Firestore restore suppressed — user action is too recent',
                 { msSinceUserAction, snapshotCourseId: data.courseId, currentCourseId });
             } else {
-              setCurrentCourseId(data.courseId);
-              // ── COLD-START FIX: sync language to match the restored course ──────
-              // handleCourseChange() does this on user interaction, but the Firestore
-              // restore path previously skipped it.  On a cold start (cleared storage),
-              // language defaults to 'en' while courseId may be e.g.
-              // 'portuguese_foreigners' → TTS and UI stayed in English.
-              const restoredLanguage = COURSE_TO_LANGUAGE[data.courseId];
+              const restoredCourseId = normalizeCourseId(data.courseId, language);
+              setCurrentCourseId(restoredCourseId);
+              const restoredLanguage = COURSE_TO_LANGUAGE[restoredCourseId];
               console.log('[RESTORE_DEBUG] Firestore courseId/language restore', {
                 uid: user?.uid,
-                courseId: data.courseId,
+                courseId: restoredCourseId,
                 restoredLanguage,
                 currentLanguage: language,
-                willChangeLanguage: !!restoredLanguage && restoredLanguage !== language,
+                willChangeLanguage: false,
               });
-              console.log('[COLD-START INIT] Firestore courseId→language sync', {
-                courseId: data.courseId,
-                restoredLanguage,
-                prevLanguage: language,
-                willUpdate: !!restoredLanguage && restoredLanguage !== language,
-              });
-              if (restoredLanguage && restoredLanguage !== language) {
-                setLanguage(restoredLanguage);
-              }
               // Run state guard after restore to catch any remaining inconsistencies
               const validated = validateAndFixState({
-                language: restoredLanguage ?? language,
-                courseId: data.courseId,
+                language,
+                courseId: restoredCourseId,
                 workbookId: data.currentWorkbook ?? data.workbook ?? 1,
                 section: currentSectionRef.current,
                 context: 'Firestore restore',
               });
               if (validated.fixed) {
-                if (validated.courseId !== data.courseId) setCurrentCourseId(validated.courseId);
-                if (validated.language !== (restoredLanguage ?? language)) setLanguage(validated.language);
+                if (validated.courseId !== restoredCourseId) setCurrentCourseId(validated.courseId);
+                if (validated.language !== language) setLanguage(validated.language);
                 if (validated.workbookId !== (data.currentWorkbook ?? data.workbook ?? 1)) setCurrentWorkbookId(validated.workbookId);
               }
               // Backfill courseId on the flat progress doc for returning users whose
@@ -813,7 +836,7 @@ const App: React.FC = () => {
               if (db && user?.uid) {
                 setDoc(
                   doc(db, 'progress', user.uid),
-                  { courseId: data.courseId },
+                  { courseId: restoredCourseId },
                   { merge: true },
                 ).catch(() => {});
               }
@@ -1345,8 +1368,11 @@ const App: React.FC = () => {
       currentLanguage: language,
     });
     setActiveOnlineClass(liveClass);
-    const targetCourseId = liveClass.courseId?.trim() || currentCourseId || DEFAULT_COURSE_ID;
-    const targetLanguage = COURSE_TO_LANGUAGE[targetCourseId] ?? language;
+    const targetCourseId = getPrimaryCourseForLanguage(
+      language,
+      liveClass.courseId?.trim() || currentCourseId || DEFAULT_COURSE_ID,
+    );
+    const targetLanguage = language;
     // ── FIX: do NOT fall back to currentWorkbookId for the target course ──
     // If admin was on workbook 2 of English and opens a Greek class (workbook 1 only),
     // targetWorkbookId would be 2, which has no loader → blank page.
@@ -1369,9 +1395,6 @@ const App: React.FC = () => {
 
     if (validated.courseId !== currentCourseId) {
       setCurrentCourseId(validated.courseId);
-    }
-    if (validated.language !== language) {
-      setLanguage(validated.language);
     }
     setCurrentWorkbookId(validated.workbookId);
     setCurrentWorkbook(null);
@@ -1409,9 +1432,12 @@ const App: React.FC = () => {
       return;
     }
 
-    const targetCourseId = activeOnlineClass.courseId?.trim() || currentCourseId || DEFAULT_COURSE_ID;
-    const targetLanguage = COURSE_TO_LANGUAGE[targetCourseId] ?? language;
-    console.log('[ONLINE_DEBUG] Student session sync', { targetCourseId, targetLanguage, currentCourseId, language });
+    if (currentSection === SectionType.LIVE_CLASSES) return;
+    const targetCourseId = getPrimaryCourseForLanguage(
+      language,
+      activeOnlineClass.courseId?.trim() || currentCourseId || DEFAULT_COURSE_ID,
+    );
+    console.log('[ONLINE_DEBUG] Student session sync', { targetCourseId, currentCourseId, language });
     const targetWorkbookId = activeOnlineSession.activeWorkbookId ?? null;
     const targetLessonRef = activeOnlineSession.activeLessonId ?? null;
     const targetExerciseRef = activeOnlineSession.activeExerciseId ?? null;
@@ -1421,10 +1447,6 @@ const App: React.FC = () => {
     if (targetCourseId !== currentCourseId) {
       setCurrentCourseId(targetCourseId);
     }
-    if (targetLanguage !== language) {
-      setLanguage(targetLanguage);
-    }
-
     if (currentWorkbookId !== targetWorkbookId) {
       setCurrentWorkbookId(targetWorkbookId);
       setCurrentWorkbook(null);
@@ -1439,7 +1461,7 @@ const App: React.FC = () => {
     const resolvedLessonId = findLessonIdInWorkbook(currentWorkbook, targetLessonRef);
     if (!resolvedLessonId) return;
 
-    if (currentLessonId !== resolvedLessonId || currentSection === SectionType.WORKBOOK || currentSection === SectionType.LIVE_CLASSES) {
+    if (currentLessonId !== resolvedLessonId || currentSection === SectionType.WORKBOOK) {
       openLesson(resolvedLessonId, { force: true, syncToSession: false });
       return;
     }
@@ -2078,7 +2100,7 @@ const App: React.FC = () => {
             courses={COURSES}
             currentCourseId={currentCourseId}
             currentLanguage={uiLanguage}
-            onLanguageChange={setLanguage}
+            onLanguageChange={handleLanguageSelect}
             onLogoClick={() => handleNavigate(SectionType.WORKBOOK)}
             onSelectCourse={(id) => {
               handleCourseChange(id);
