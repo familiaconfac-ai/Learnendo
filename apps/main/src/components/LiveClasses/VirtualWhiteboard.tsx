@@ -7,6 +7,9 @@ interface VirtualWhiteboardProps {
   classId: string;
   user: User;
   canManageBoard: boolean;
+  canEditBoard: boolean;
+  allowStudentWhiteboardEdit: boolean;
+  onUpdateSession?: (patch: { allowStudentWhiteboardEdit?: boolean }) => Promise<void>;
 }
 
 function getWhiteboardErrorMessage(error: unknown, fallback: string) {
@@ -16,22 +19,37 @@ function getWhiteboardErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, user, canManageBoard }) => {
+export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({
+  classId,
+  user,
+  canManageBoard,
+  canEditBoard,
+  allowStudentWhiteboardEdit,
+  onUpdateSession,
+}) => {
   const [whiteboard, setWhiteboard] = useState<LiveWhiteboardState>({ content: '' });
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncState, setSyncState] = useState<'idle' | 'syncing'>('idle');
   const [error, setError] = useState('');
+  const [updatingPermission, setUpdatingPermission] = useState(false);
   const syncTimeoutRef = useRef<number | null>(null);
   const isApplyingRemoteRef = useRef(false);
   const lastRemoteContentRef = useRef('');
+  const latestDraftRef = useRef('');
+  const pendingLocalPublishRef = useRef<string | null>(null);
   const actorName = user.displayName || user.email || 'Learnendo user';
   const isStudentView = !canManageBoard;
+
+  useEffect(() => {
+    latestDraftRef.current = draft;
+  }, [draft]);
 
   useEffect(() => {
     setLoading(true);
     setError('');
     lastRemoteContentRef.current = '';
+    pendingLocalPublishRef.current = null;
 
     const unsubscribe = subscribeLiveWhiteboard(
       classId,
@@ -45,6 +63,20 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
         setWhiteboard(next);
         const nextContent = next.content ?? '';
         lastRemoteContentRef.current = nextContent;
+
+        if (
+          pendingLocalPublishRef.current
+          && pendingLocalPublishRef.current !== nextContent
+          && latestDraftRef.current !== nextContent
+        ) {
+          setLoading(false);
+          return;
+        }
+
+        if (pendingLocalPublishRef.current === nextContent) {
+          pendingLocalPublishRef.current = null;
+        }
+
         isApplyingRemoteRef.current = true;
         setDraft(nextContent);
         setLoading(false);
@@ -70,6 +102,10 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
 
   useEffect(() => {
     if (loading || isApplyingRemoteRef.current) return () => {};
+    if (!canEditBoard) {
+      setSyncState('idle');
+      return () => {};
+    }
     if (draft === lastRemoteContentRef.current) {
       setSyncState('idle');
       return () => {};
@@ -83,6 +119,7 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
     }
 
     syncTimeoutRef.current = window.setTimeout(() => {
+      pendingLocalPublishRef.current = draft;
       console.info('[VirtualWhiteboard] submitting shared update', {
         classId,
         actorUid: user.uid,
@@ -96,6 +133,7 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
       )
         .catch((saveError) => {
           console.warn('[VirtualWhiteboard] autosync failed:', saveError);
+          pendingLocalPublishRef.current = null;
           setError(getWhiteboardErrorMessage(saveError, 'Unable to sync the shared whiteboard right now.'));
           setSyncState('idle');
         });
@@ -106,7 +144,21 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
         window.clearTimeout(syncTimeoutRef.current);
       }
     };
-  }, [actorName, classId, draft, loading, user.uid]);
+  }, [actorName, canEditBoard, classId, draft, loading, user.uid]);
+
+  const handleToggleStudentEdit = async () => {
+    if (!canManageBoard || !onUpdateSession) return;
+    setUpdatingPermission(true);
+    setError('');
+    try {
+      await onUpdateSession({ allowStudentWhiteboardEdit: !allowStudentWhiteboardEdit });
+    } catch (permissionError) {
+      console.warn('[VirtualWhiteboard] whiteboard permission update failed:', permissionError);
+      setError('Unable to update whiteboard editing permissions right now.');
+    } finally {
+      setUpdatingPermission(false);
+    }
+  };
 
   const handleClear = async () => {
     if (!canManageBoard) return;
@@ -142,6 +194,13 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
               Type prompts, corrections, examples, or short activities here. Everyone in the room sees the same board in real time.
             </p>
           ) : null}
+          <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            {canManageBoard
+              ? `Student editing ${allowStudentWhiteboardEdit ? 'enabled' : 'disabled'}`
+              : canEditBoard
+                ? 'Collaborative editing enabled'
+                : 'Waiting for teacher to enable editing'}
+          </p>
         </div>
         {whiteboard.updatedAt ? (
           <div className="text-xs text-slate-400">
@@ -170,16 +229,33 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
           ? 'Write here and everyone in the room will see it live.'
           : 'Write a sentence, paste a prompt, ask students to correct a mistake, or let them answer here...'}
         disabled={loading}
+        readOnly={!canEditBoard}
       />
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <span className="text-xs text-slate-400">
           {syncState === 'syncing'
             ? 'Syncing whiteboard...'
-            : isStudentView
+            : !canEditBoard
+              ? 'Shared board is view-only right now'
+              : isStudentView
               ? 'Live board synced'
               : 'Shared board synced'}
         </span>
+        {canManageBoard ? (
+          <button
+            type="button"
+            onClick={() => void handleToggleStudentEdit()}
+            disabled={updatingPermission || loading}
+            className="rounded-xl border border-cyan-500/40 px-4 py-2 text-sm font-bold text-cyan-200"
+          >
+            {updatingPermission
+              ? 'Updating Access...'
+              : allowStudentWhiteboardEdit
+                ? 'Disable Student Editing'
+                : 'Enable Student Editing'}
+          </button>
+        ) : null}
         {canManageBoard ? (
           <button
             type="button"

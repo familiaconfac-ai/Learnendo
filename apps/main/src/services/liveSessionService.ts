@@ -49,6 +49,7 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   teacherCameraEnabled: Boolean(data?.teacherCameraEnabled),
   allowStudentLiveMic: Boolean(data?.allowStudentLiveMic),
   studentCameraMode: (data?.studentCameraMode ?? 'off') as LiveClassSession['studentCameraMode'],
+  allowStudentWhiteboardEdit: Boolean(data?.allowStudentWhiteboardEdit),
   audioNotesEnabled: data?.audioNotesEnabled !== false,
   lastUpdatedBy: data?.lastUpdatedBy ?? '',
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
@@ -134,6 +135,10 @@ function getSharedWhiteboardRef(classId: string) {
   return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SHARED_COLLECTION, LIVE_WHITEBOARD_DOC);
 }
 
+function getSessionStateRef(classId: string) {
+  return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, 'state');
+}
+
 function getExerciseSessionRef(classId: string) {
   return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, LIVE_EXERCISE_SESSION_DOC);
 }
@@ -173,7 +178,7 @@ export function subscribeLiveSession(
     return () => {};
   }
 
-  const sessionRef = doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, 'state');
+  const sessionRef = getSessionStateRef(classId);
   return onSnapshot(
     sessionRef,
     (snapshot) => {
@@ -197,7 +202,7 @@ export async function updateLiveSession(
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId) return;
 
-  const sessionRef = doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, 'state');
+  const sessionRef = getSessionStateRef(classId);
   const payload: Record<string, unknown> = {
     lastUpdatedBy: updatedBy,
     updatedAt: serverTimestamp(),
@@ -212,6 +217,7 @@ export async function updateLiveSession(
   if ('teacherCameraEnabled' in patch) payload.teacherCameraEnabled = Boolean(patch.teacherCameraEnabled);
   if ('allowStudentLiveMic' in patch) payload.allowStudentLiveMic = Boolean(patch.allowStudentLiveMic);
   if ('studentCameraMode' in patch) payload.studentCameraMode = patch.studentCameraMode ?? 'off';
+  if ('allowStudentWhiteboardEdit' in patch) payload.allowStudentWhiteboardEdit = Boolean(patch.allowStudentWhiteboardEdit);
   if ('audioNotesEnabled' in patch) payload.audioNotesEnabled = patch.audioNotesEnabled !== false;
 
   await setDoc(
@@ -329,42 +335,35 @@ export function subscribeLiveWhiteboard(
     return () => {};
   }
 
-  const whiteboardRef = getLegacyWhiteboardRef(classId);
+  const legacyWhiteboardRef = getLegacyWhiteboardRef(classId);
   const sharedWhiteboardRef = getSharedWhiteboardRef(classId);
-  let migratedSharedSnapshot = false;
 
   return onSnapshot(
-    whiteboardRef,
+    sharedWhiteboardRef,
     (snapshot) => {
       if (!snapshot.exists()) {
-        if (migratedSharedSnapshot) {
-          onData(mapWhiteboard(undefined));
-          return;
-        }
-
-        migratedSharedSnapshot = true;
-        void getDoc(sharedWhiteboardRef)
-          .then((sharedSnapshot) => {
-            if (!sharedSnapshot.exists()) {
+        void getDoc(legacyWhiteboardRef)
+          .then((legacySnapshot) => {
+            if (!legacySnapshot.exists()) {
               onData(mapWhiteboard(undefined));
               return;
             }
 
-            const sharedData = mapWhiteboard(sharedSnapshot.data() as Record<string, any>);
-            console.info('[liveSessionService] whiteboard shared fallback loaded', {
+            const legacyData = mapWhiteboard(legacySnapshot.data() as Record<string, any>);
+            console.info('[liveSessionService] whiteboard legacy fallback loaded', {
               classId,
-              contentLength: sharedData.content?.length ?? 0,
-              updatedByUid: sharedData.updatedByUid ?? '',
+              contentLength: legacyData.content?.length ?? 0,
+              updatedByUid: legacyData.updatedByUid ?? '',
             });
-            onData(sharedData);
+            onData(legacyData);
 
-            // Mirror any existing shared whiteboard data back into the live session path.
+            // Migrate a pre-existing board into the single shared source of truth.
             return setDoc(
-              whiteboardRef,
+              sharedWhiteboardRef,
               buildWhiteboardPayload(
-                sharedData.content ?? '',
-                sharedData.updatedByUid ?? '',
-                sharedData.updatedByName ?? '',
+                legacyData.content ?? '',
+                legacyData.updatedByUid ?? '',
+                legacyData.updatedByName ?? '',
               ),
               { merge: true },
             );
@@ -374,6 +373,7 @@ export function subscribeLiveWhiteboard(
           });
         return;
       }
+
       const mapped = mapWhiteboard(snapshot.data() as Record<string, any>);
       console.info('[liveSessionService] whiteboard snapshot received', {
         classId,
@@ -397,7 +397,6 @@ export async function updateLiveWhiteboard(
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId) return;
 
-  const whiteboardRef = getLegacyWhiteboardRef(classId);
   const sharedWhiteboardRef = getSharedWhiteboardRef(classId);
   const payload = buildWhiteboardPayload(content, updatedByUid, updatedByName);
   console.info('[liveSessionService] whiteboard update requested', {
@@ -406,10 +405,7 @@ export async function updateLiveWhiteboard(
     contentLength: content.length,
   });
 
-  await Promise.all([
-    setDoc(whiteboardRef, payload, { merge: true }),
-    setDoc(sharedWhiteboardRef, payload, { merge: true }),
-  ]);
+  await setDoc(sharedWhiteboardRef, payload, { merge: true });
 }
 
 export function subscribeExerciseSession(

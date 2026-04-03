@@ -210,6 +210,7 @@ export interface LiveClassSession {
   teacherCameraEnabled?: boolean;
   allowStudentLiveMic?: boolean;
   studentCameraMode?: 'off' | 'follow-mic' | 'required';
+  allowStudentWhiteboardEdit?: boolean;
   audioNotesEnabled?: boolean;
   lastUpdatedBy?: string;
   updatedAt?: string;

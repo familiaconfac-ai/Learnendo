@@ -66,6 +66,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     teacherCameraEnabled: false,
     allowStudentLiveMic: false,
     studentCameraMode: 'off',
+    allowStudentWhiteboardEdit: false,
     audioNotesEnabled: true,
   });
   const role = isTeacher || liveClass.createdBy === user.uid ? 'teacher' : 'student';
@@ -384,7 +385,14 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
                   Close Whiteboard
                 </button>
               </div>
-              <VirtualWhiteboard classId={liveClass.id} user={user} canManageBoard={role === 'teacher'} />
+              <VirtualWhiteboard
+                classId={liveClass.id}
+                user={user}
+                canManageBoard={role === 'teacher'}
+                canEditBoard={role === 'teacher' || session.allowStudentWhiteboardEdit === true}
+                onUpdateSession={handleUpdateSession}
+                allowStudentWhiteboardEdit={session.allowStudentWhiteboardEdit === true}
+              />
             </div>
           </div>
         </div>

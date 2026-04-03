@@ -66,8 +66,21 @@ service cloud.firestore {
         && exerciseSessionDoc(classId).data.isActive == true;
     }
 
+    function liveSessionStateDoc(classId) {
+      return get(/databases/$(database)/documents/liveClasses/$(classId)/session/state);
+    }
+
+    function studentWhiteboardEditingEnabled(classId) {
+      return exists(/databases/$(database)/documents/liveClasses/$(classId)/session/state)
+        && liveSessionStateDoc(classId).data.allowStudentWhiteboardEdit == true;
+    }
+
     function canParticipantCreateWhiteboard(classId) {
       return canAccessLiveClassRoom(classId)
+        && (
+          isTeacherForClass(classId)
+          || studentWhiteboardEditingEnabled(classId)
+        )
         && request.resource.data.keys().hasOnly([
           'text',
           'content',
@@ -85,6 +98,10 @@ service cloud.firestore {
 
     function canParticipantUpdateWhiteboard(classId) {
       return canAccessLiveClassRoom(classId)
+        && (
+          isTeacherForClass(classId)
+          || studentWhiteboardEditingEnabled(classId)
+        )
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'text',
           'content',

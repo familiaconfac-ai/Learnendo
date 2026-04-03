@@ -371,6 +371,7 @@ export async function ensureLiveClassSession(classId: string): Promise<void> {
       teacherCameraEnabled: false,
       allowStudentLiveMic: false,
       studentCameraMode: 'off',
+      allowStudentWhiteboardEdit: false,
       audioNotesEnabled: true,
       updatedAt: serverTimestamp(),
     },
