@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteField,
   doc,
   getDoc,
   onSnapshot,
@@ -25,6 +26,18 @@ const LIVE_SHARED_COLLECTION = 'shared';
 const LIVE_WHITEBOARD_DOC = 'whiteboard';
 const LIVE_EXERCISE_SESSION_DOC = 'exerciseSession';
 const LIVE_EXERCISE_BLOCKS_COLLECTION = 'exerciseBlocks';
+
+function normalizeAssignedIdentifier(value: string | null | undefined) {
+  return (value ?? '').trim();
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isBooleanRecord(value: unknown): value is Record<string, boolean> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
 
 const mapSession = (data: Record<string, any> | undefined): LiveClassSession => ({
   sessionStatus: (data?.sessionStatus ?? 'idle') as LiveClassSession['sessionStatus'],
@@ -79,24 +92,38 @@ const mapExerciseSession = (data: Record<string, any> | undefined): LiveExercise
     : undefined,
 });
 
-const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBlock => ({
-  id,
-  order: Number.isFinite(data.order) ? Number(data.order) : 0,
-  prompt: data.prompt ?? '',
-  answerText: data.answerText ?? '',
-  assignedTo: data.assignedTo ?? '',
-  assignedToName: data.assignedToName ?? '',
-  status: (data.status ?? 'pending') as LiveExerciseBlockStatus,
-  isLocked: Boolean(data.isLocked),
-  createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
-  updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
-  updatedBy: data.updatedBy
-    ? {
-      uid: data.updatedBy.uid ?? '',
-      name: data.updatedBy.name ?? '',
-    }
-    : undefined,
-});
+const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBlock => {
+  const legacyAssignedTo = normalizeAssignedIdentifier(data.assignedTo);
+  const legacyResponses = legacyAssignedTo
+    ? { [legacyAssignedTo]: data.answerText ?? '' }
+    : {};
+  const responses = isStringRecord(data.responses) ? data.responses : legacyResponses;
+  const responseStatuses = isStringRecord(data.responseStatuses)
+    ? Object.fromEntries(
+      Object.entries(data.responseStatuses).map(([key, value]) => [key, value as LiveExerciseBlockStatus]),
+    )
+    : (legacyAssignedTo ? { [legacyAssignedTo]: (data.status ?? 'pending') as LiveExerciseBlockStatus } : {});
+  const responseLocks = isBooleanRecord(data.responseLocks)
+    ? data.responseLocks
+    : (legacyAssignedTo ? { [legacyAssignedTo]: Boolean(data.isLocked) } : {});
+
+  return {
+    id,
+    order: Number.isFinite(data.order) ? Number(data.order) : 0,
+    prompt: data.prompt ?? '',
+    responses,
+    responseStatuses,
+    responseLocks,
+    createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
+    updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
+    updatedBy: data.updatedBy
+      ? {
+        uid: data.updatedBy.uid ?? '',
+        name: data.updatedBy.name ?? '',
+      }
+      : undefined,
+  };
+};
 
 function getLegacyWhiteboardRef(classId: string) {
   return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, LIVE_WHITEBOARD_DOC);
@@ -460,7 +487,7 @@ export async function endExerciseSession(
 
 export async function createExerciseBlock(
   classId: string,
-  input: Partial<Pick<LiveExerciseBlock, 'order' | 'prompt' | 'assignedTo' | 'assignedToName' | 'status' | 'isLocked'>>,
+  input: Partial<Pick<LiveExerciseBlock, 'order' | 'prompt'>>,
   updatedByUid: string,
   updatedByName: string,
 ): Promise<void> {
@@ -469,12 +496,10 @@ export async function createExerciseBlock(
 
   await addDoc(getExerciseBlocksCollection(classId), {
     order: input.order ?? 1,
-    prompt: input.prompt ?? '',
-    answerText: '',
-    assignedTo: input.assignedTo ?? '',
-    assignedToName: input.assignedToName ?? '',
-    status: input.status ?? 'pending',
-    isLocked: input.isLocked ?? false,
+    prompt: input.prompt?.trim() ?? '',
+    responses: {},
+    responseStatuses: {},
+    responseLocks: {},
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     updatedBy: buildExerciseActor(updatedByUid, updatedByName),
@@ -484,7 +509,7 @@ export async function createExerciseBlock(
 export async function updateExerciseBlock(
   classId: string,
   blockId: string,
-  patch: Partial<Pick<LiveExerciseBlock, 'order' | 'prompt' | 'answerText' | 'assignedTo' | 'assignedToName' | 'status' | 'isLocked'>>,
+  patch: Partial<Pick<LiveExerciseBlock, 'order' | 'prompt'>>,
   updatedByUid: string,
   updatedByName: string,
 ): Promise<void> {
@@ -497,16 +522,122 @@ export async function updateExerciseBlock(
   };
 
   if ('order' in patch) payload.order = patch.order ?? 0;
-  if ('prompt' in patch) payload.prompt = patch.prompt ?? '';
-  if ('answerText' in patch) payload.answerText = patch.answerText ?? '';
-  if ('assignedTo' in patch) payload.assignedTo = patch.assignedTo ?? '';
-  if ('assignedToName' in patch) payload.assignedToName = patch.assignedToName ?? '';
-  if ('status' in patch) payload.status = patch.status ?? 'pending';
-  if ('isLocked' in patch) payload.isLocked = Boolean(patch.isLocked);
+  if ('prompt' in patch) payload.prompt = patch.prompt?.trim() ?? '';
 
   await setDoc(
     doc(getExerciseBlocksCollection(classId), blockId),
     payload,
+    { merge: true },
+  );
+}
+
+export async function updateExerciseBlockResponse(
+  classId: string,
+  blockId: string,
+  studentUid: string,
+  answerText: string,
+  status: LiveExerciseBlockStatus,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !blockId || !studentUid) return;
+
+  await setDoc(
+    doc(getExerciseBlocksCollection(classId), blockId),
+    {
+      [`responses.${studentUid}`]: answerText,
+      [`responseStatuses.${studentUid}`]: status,
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+    },
+    { merge: true },
+  );
+}
+
+export async function setExerciseBlockStudentLock(
+  classId: string,
+  blockId: string,
+  studentUid: string,
+  isLocked: boolean,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !blockId || !studentUid) return;
+
+  await setDoc(
+    doc(getExerciseBlocksCollection(classId), blockId),
+    {
+      [`responseLocks.${studentUid}`]: isLocked,
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+    },
+    { merge: true },
+  );
+}
+
+export async function setExerciseBlockStudentStatus(
+  classId: string,
+  blockId: string,
+  studentUid: string,
+  status: LiveExerciseBlockStatus,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !blockId || !studentUid) return;
+
+  await setDoc(
+    doc(getExerciseBlocksCollection(classId), blockId),
+    {
+      [`responseStatuses.${studentUid}`]: status,
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+    },
+    { merge: true },
+  );
+}
+
+export async function clearExerciseBlockStudentResponse(
+  classId: string,
+  blockId: string,
+  studentUid: string,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !blockId || !studentUid) return;
+
+  await setDoc(
+    doc(getExerciseBlocksCollection(classId), blockId),
+    {
+      [`responses.${studentUid}`]: '',
+      [`responseStatuses.${studentUid}`]: 'pending',
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+    },
+    { merge: true },
+  );
+}
+
+export async function clearExerciseBlockStudentLock(
+  classId: string,
+  blockId: string,
+  studentUid: string,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !blockId || !studentUid) return;
+
+  await setDoc(
+    doc(getExerciseBlocksCollection(classId), blockId),
+    {
+      [`responseLocks.${studentUid}`]: deleteField(),
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+    },
     { merge: true },
   );
 }

@@ -103,6 +103,22 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     return unsubscribe;
   }, [liveClass.id]);
 
+  useEffect(() => {
+    if (!showExerciseSession) return () => {};
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+
+    // Keep scrolling inside the exercise panel instead of leaving the page in a locked state.
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [showExerciseSession]);
+
   const handleUpdateSession = async (patch: Partial<LiveClassSession>) => {
     await updateLiveSession(liveClass.id, patch, user.uid);
   };
@@ -366,29 +382,48 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
                 Close Whiteboard
               </button>
             </div>
-            <VirtualWhiteboard classId={liveClass.id} user={user} />
+            <VirtualWhiteboard classId={liveClass.id} user={user} canManageBoard={role === 'teacher'} />
           </div>
         </div>
       ) : null}
 
       {showExerciseSession ? (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/80 px-3 py-6 backdrop-blur-sm sm:px-6">
-          <div className="w-full max-w-6xl">
-            <div className="mb-3 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowExerciseSession(false)}
-                className="rounded-xl border border-slate-500 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
-              >
-                Close Exercise Session
-              </button>
+        <div className="fixed inset-0 z-[1000] overflow-y-auto bg-slate-950/80 backdrop-blur-sm">
+          <div className="flex min-h-screen w-full items-stretch justify-center sm:px-6 sm:py-6">
+            <div className="flex h-screen w-full max-w-6xl flex-col border border-slate-700 bg-slate-950 sm:h-auto sm:max-h-[90vh] sm:rounded-2xl">
+              <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-700 bg-slate-950/95 px-4 py-3">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wide text-violet-300">Live Class</p>
+                  <p className="text-sm font-bold text-white">Exercise Session</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowExerciseSession(false)}
+                  className="rounded-xl border border-slate-500 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+                >
+                  Close
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-6 sm:py-4">
+                <div className="min-h-full">
+                  <ExerciseSessionPanel
+                    classId={liveClass.id}
+                    user={user}
+                    isTeacher={role === 'teacher'}
+                    assignedRoster={assignedRoster}
+                  />
+                </div>
+              </div>
+              <div className="border-t border-slate-700 bg-slate-950/95 px-4 py-3 sm:hidden">
+                <button
+                  type="button"
+                  onClick={() => setShowExerciseSession(false)}
+                  className="w-full rounded-xl border border-slate-500 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+                >
+                  Close Exercise Session
+                </button>
+              </div>
             </div>
-            <ExerciseSessionPanel
-              classId={liveClass.id}
-              user={user}
-              isTeacher={role === 'teacher'}
-              assignedRoster={assignedRoster}
-            />
           </div>
         </div>
       ) : null}

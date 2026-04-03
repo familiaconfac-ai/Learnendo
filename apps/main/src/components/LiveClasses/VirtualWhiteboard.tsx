@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveWhiteboardState } from '../../types';
 import { subscribeLiveWhiteboard, updateLiveWhiteboard } from '../../services/liveSessionService';
@@ -6,26 +6,46 @@ import { subscribeLiveWhiteboard, updateLiveWhiteboard } from '../../services/li
 interface VirtualWhiteboardProps {
   classId: string;
   user: User;
+  canManageBoard: boolean;
 }
 
-export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, user }) => {
+function getWhiteboardErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === 'permission-denied') {
+    return 'Your whiteboard change could not be saved because this account does not have permission to update the shared board.';
+  }
+  return fallback;
+}
+
+export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, user, canManageBoard }) => {
   const [whiteboard, setWhiteboard] = useState<LiveWhiteboardState>({ content: '' });
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [syncState, setSyncState] = useState<'idle' | 'syncing'>('idle');
   const [error, setError] = useState('');
+  const syncTimeoutRef = useRef<number | null>(null);
+  const isApplyingRemoteRef = useRef(false);
+  const lastRemoteContentRef = useRef('');
+  const actorName = user.displayName || user.email || 'Learnendo user';
 
   useEffect(() => {
     setLoading(true);
     setError('');
+    lastRemoteContentRef.current = '';
 
     const unsubscribe = subscribeLiveWhiteboard(
       classId,
       (next) => {
         setWhiteboard(next);
-        setDraft(next.content ?? '');
+        const nextContent = next.content ?? '';
+        lastRemoteContentRef.current = nextContent;
+        isApplyingRemoteRef.current = true;
+        setDraft(nextContent);
         setLoading(false);
         setError('');
+        setSyncState('idle');
+        window.setTimeout(() => {
+          isApplyingRemoteRef.current = false;
+        }, 0);
       },
       (subscriptionError) => {
         console.warn('[VirtualWhiteboard] subscription failed:', subscriptionError);
@@ -33,42 +53,68 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
         setError('Unable to load the shared whiteboard right now.');
       },
     );
-    return unsubscribe;
+    return () => {
+      if (syncTimeoutRef.current) {
+        window.clearTimeout(syncTimeoutRef.current);
+      }
+      unsubscribe();
+    };
   }, [classId]);
 
-  const handleSave = async () => {
-    setSaving(true);
+  useEffect(() => {
+    if (loading || isApplyingRemoteRef.current) return () => {};
+    if (draft === lastRemoteContentRef.current) {
+      setSyncState('idle');
+      return () => {};
+    }
+
+    setSyncState('syncing');
     setError('');
-    try {
-      await updateLiveWhiteboard(
+
+    if (syncTimeoutRef.current) {
+      window.clearTimeout(syncTimeoutRef.current);
+    }
+
+    syncTimeoutRef.current = window.setTimeout(() => {
+      void updateLiveWhiteboard(
         classId,
         draft,
         user.uid,
-        user.displayName || user.email || 'Learnendo user',
-      );
-    } catch (error) {
-      console.warn('[VirtualWhiteboard] save failed:', error);
-      setError('Unable to update the shared whiteboard right now.');
-    } finally {
-      setSaving(false);
-    }
-  };
+        actorName,
+      )
+        .catch((saveError) => {
+          console.warn('[VirtualWhiteboard] autosync failed:', saveError);
+          setError(getWhiteboardErrorMessage(saveError, 'Unable to sync the shared whiteboard right now.'));
+          setSyncState('idle');
+        });
+    }, 150);
+
+    return () => {
+      if (syncTimeoutRef.current) {
+        window.clearTimeout(syncTimeoutRef.current);
+      }
+    };
+  }, [actorName, classId, draft, loading, user.uid]);
 
   const handleClear = async () => {
-    setSaving(true);
+    if (!canManageBoard) return;
+    if (syncTimeoutRef.current) {
+      window.clearTimeout(syncTimeoutRef.current);
+    }
+    setSyncState('syncing');
     setError('');
     try {
       await updateLiveWhiteboard(
         classId,
         '',
         user.uid,
-        user.displayName || user.email || 'Learnendo user',
+        actorName,
       );
     } catch (error) {
       console.warn('[VirtualWhiteboard] clear failed:', error);
-      setError('Unable to clear the shared whiteboard right now.');
+      setError(getWhiteboardErrorMessage(error, 'Unable to clear the shared whiteboard right now.'));
     } finally {
-      setSaving(false);
+      setSyncState('idle');
     }
   };
 
@@ -78,8 +124,13 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
         <div>
           <h2 className="text-sm font-black uppercase tracking-wide text-cyan-300">Virtual Whiteboard</h2>
           <p className="mt-1 text-sm text-slate-200">
-            Type prompts, corrections, examples, or short activities here. Everyone in the room sees the same board.
+            Type prompts, corrections, examples, or short activities here. Everyone in the room sees the same board in real time.
           </p>
+          {!canManageBoard ? (
+            <p className="mt-2 text-xs font-semibold text-cyan-200">
+              Your typing syncs automatically with the room. Only the teacher can clear the whole board.
+            </p>
+          ) : null}
         </div>
         {whiteboard.updatedAt ? (
           <div className="text-xs text-slate-400">
@@ -108,23 +159,20 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({ classId, u
         disabled={loading}
       />
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => void handleSave()}
-          disabled={saving || loading}
-          className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#0891b2] disabled:opacity-60"
-        >
-          {saving ? 'Saving...' : 'Update Whiteboard'}
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleClear()}
-          disabled={saving || loading || !draft.trim()}
-          className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200"
-        >
-          Clear Board
-        </button>
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <span className="text-xs text-slate-400">
+          {syncState === 'syncing' ? 'Syncing whiteboard...' : 'Shared board synced'}
+        </span>
+        {canManageBoard ? (
+          <button
+            type="button"
+            onClick={() => void handleClear()}
+            disabled={syncState === 'syncing' || loading || !draft.trim()}
+            className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-200"
+          >
+            Clear Board
+          </button>
+        ) : null}
       </div>
     </div>
   );

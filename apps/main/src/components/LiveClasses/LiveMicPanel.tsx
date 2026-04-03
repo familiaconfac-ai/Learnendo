@@ -75,6 +75,30 @@ function isParticipantCameraEnabled(participant: Participant): boolean {
   );
 }
 
+function getLiveKitConnectionErrorMessage(error: unknown, wsUrl?: string) {
+  const fallback = error instanceof Error ? error.message : 'Unable to join live audio.';
+  const normalized = fallback.toLowerCase();
+
+  let hostHint = '';
+  if (wsUrl) {
+    try {
+      hostHint = new URL(wsUrl).host;
+    } catch {
+      hostHint = '';
+    }
+  }
+
+  if (normalized.includes('invalid api key for domain')) {
+    return `LiveKit rejected the credentials for ${hostHint || 'this room host'}. Check whether LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET all belong to the same LiveKit Cloud project.`;
+  }
+
+  if (normalized.includes('could not establish signal connection')) {
+    return `LiveKit could not establish the signal connection${hostHint ? ` for ${hostHint}` : ''}. Check the /api/getToken logs and confirm the deployed credentials match the configured LiveKit Cloud domain.`;
+  }
+
+  return fallback;
+}
+
 export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
   classId,
   userId,
@@ -249,9 +273,22 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     setJoining(true);
     setTransportError('');
     setConnectionState(ConnectionState.Connecting);
+    let requestedWsUrl = '';
 
     try {
       const credentials = await requestLiveAudioCredentials({ classId, userId, userName, role });
+      requestedWsUrl = credentials.wsUrl;
+      console.info('[LiveMicPanel] joining live audio room', {
+        classId,
+        roomName: credentials.roomName,
+        wsHost: (() => {
+          try {
+            return new URL(credentials.wsUrl).host;
+          } catch {
+            return credentials.wsUrl;
+          }
+        })(),
+      });
       const nextRoom = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -357,7 +394,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
 
       return nextRoom;
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unable to join live audio.';
+      const message = getLiveKitConnectionErrorMessage(error, requestedWsUrl);
       setTransportError(message);
       setConnectionState(ConnectionState.Disconnected);
       throw error;

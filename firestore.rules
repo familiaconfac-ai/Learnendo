@@ -41,7 +41,10 @@ service cloud.firestore {
       return signedIn()
         && liveClassExists(classId)
         && liveClassDoc(classId).data.assignedStudentIds is list
-        && request.auth.uid in liveClassDoc(classId).data.assignedStudentIds;
+        && (
+          request.auth.uid in liveClassDoc(classId).data.assignedStudentIds
+          || (request.auth.token.email != null && request.auth.token.email in liveClassDoc(classId).data.assignedStudentIds)
+        );
     }
 
     function canAccessLiveClassRoom(classId) {
@@ -63,25 +66,60 @@ service cloud.firestore {
         && exerciseSessionDoc(classId).data.isActive == true;
     }
 
+    function canParticipantCreateWhiteboard(classId) {
+      return canAccessLiveClassRoom(classId)
+        && request.resource.data.keys().hasOnly([
+          'text',
+          'content',
+          'updatedAt',
+          'updatedBy',
+          'updatedByUid',
+          'updatedByName',
+        ])
+        && request.resource.data.updatedBy.uid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.text is string
+        && request.resource.data.content is string;
+    }
+
+    function canParticipantUpdateWhiteboard(classId) {
+      return canAccessLiveClassRoom(classId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'text',
+          'content',
+          'updatedAt',
+          'updatedBy',
+          'updatedByUid',
+          'updatedByName',
+        ])
+        && request.resource.data.updatedBy.uid == request.auth.uid
+        && request.resource.data.updatedByUid == request.auth.uid
+        && request.resource.data.updatedByName is string
+        && request.resource.data.text is string
+        && request.resource.data.content is string;
+    }
+
     function canStudentUpdateOwnExerciseBlock(classId) {
       return isStudentAssignedToClass(classId)
         && exerciseSessionIsActive(classId)
-        && resource.data.assignedTo == request.auth.uid
-        && resource.data.isLocked == false
-        && resource.data.status in ['pending', 'in_progress']
+        && (resource.data.responseLocks[request.auth.uid] == null || resource.data.responseLocks[request.auth.uid] == false)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'answerText',
-          'status',
+          'responses',
+          'responseStatuses',
           'updatedAt',
           'updatedBy',
         ])
+        && request.resource.data.responses is map
+        && request.resource.data.responseStatuses is map
+        && request.resource.data.responses.diff(resource.data.responses).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.responseStatuses.diff(resource.data.responseStatuses).affectedKeys().hasOnly([request.auth.uid])
         && request.resource.data.order == resource.data.order
         && request.resource.data.prompt == resource.data.prompt
-        && request.resource.data.assignedTo == resource.data.assignedTo
-        && request.resource.data.assignedToName == resource.data.assignedToName
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.isLocked == resource.data.isLocked
-        && request.resource.data.status in ['pending', 'in_progress']
+        && request.resource.data.responseLocks == resource.data.responseLocks
+        && request.resource.data.responses[request.auth.uid] is string
+        && request.resource.data.responseStatuses[request.auth.uid] in ['pending', 'in_progress']
         && request.resource.data.updatedBy.uid == request.auth.uid
         && request.resource.data.updatedBy.name is string;
     }
@@ -123,14 +161,19 @@ service cloud.firestore {
 
       match /session/{docId} {
         allow read: if canAccessLiveClassRoom(classId);
-        allow create, update: if isTeacherForClass(classId)
-          || (docId == 'whiteboard' && canAccessLiveClassRoom(classId));
+        allow create: if isTeacherForClass(classId)
+          || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId));
+        allow update: if isTeacherForClass(classId)
+          || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId));
         allow delete: if isTeacherForClass(classId);
       }
 
       match /shared/{docId} {
         allow read: if canAccessLiveClassRoom(classId);
-        allow create, update: if docId == 'whiteboard' && canAccessLiveClassRoom(classId);
+        allow create: if isTeacherForClass(classId)
+          || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId));
+        allow update: if isTeacherForClass(classId)
+          || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId));
         allow delete: if isTeacherForClass(classId);
       }
 

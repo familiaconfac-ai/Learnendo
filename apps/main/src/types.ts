@@ -240,11 +240,9 @@ export interface LiveExerciseBlock {
   id: string;
   order: number;
   prompt: string;
-  answerText: string;
-  assignedTo: string;
-  assignedToName: string;
-  status: LiveExerciseBlockStatus;
-  isLocked: boolean;
+  responses: Record<string, string>;
+  responseStatuses: Record<string, LiveExerciseBlockStatus>;
+  responseLocks: Record<string, boolean>;
   createdAt?: string;
   updatedAt?: string;
   updatedBy?: LiveExerciseActor;

@@ -2,12 +2,16 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveExerciseBlock, LiveExerciseBlockStatus, LiveExerciseSession } from '../../types';
 import {
+  clearExerciseBlockStudentResponse,
   createExerciseBlock,
   endExerciseSession,
   saveExerciseSession,
+  setExerciseBlockStudentLock,
+  setExerciseBlockStudentStatus,
   subscribeExerciseBlocks,
   subscribeExerciseSession,
   updateExerciseBlock,
+  updateExerciseBlockResponse,
 } from '../../services/liveSessionService';
 
 interface ExerciseSessionPanelProps {
@@ -33,6 +37,7 @@ interface StudentExerciseBlockCardProps {
   block: LiveExerciseBlock;
   actorUid: string;
   actorName: string;
+  actorLabel: string;
   classId: string;
   canEdit: boolean;
   sessionIsActive: boolean;
@@ -51,11 +56,32 @@ const statusClassName: Record<LiveExerciseBlockStatus, string> = {
 
 const getActorName = (user: User) => user.displayName || user.email || 'Learnendo user';
 
+function getExerciseErrorMessage(error: unknown, fallback: string) {
+  if (error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === 'permission-denied') {
+    return 'Your account does not have permission to update this exercise right now.';
+  }
+  return fallback;
+}
+
 const getStatusLabel = (status: LiveExerciseBlockStatus) => {
   if (status === 'in_progress') return 'In Progress';
   if (status === 'done') return 'Done';
   return 'Pending';
 };
+
+function getStudentResponse(block: LiveExerciseBlock, studentUid: string) {
+  return block.responses[studentUid] ?? '';
+}
+
+function getStudentStatus(block: LiveExerciseBlock, studentUid: string): LiveExerciseBlockStatus {
+  const mappedStatus = block.responseStatuses[studentUid];
+  if (mappedStatus) return mappedStatus;
+  return getStudentResponse(block, studentUid).trim() ? 'in_progress' : 'pending';
+}
+
+function isStudentLocked(block: LiveExerciseBlock, studentUid: string) {
+  return Boolean(block.responseLocks[studentUid]);
+}
 
 const TeacherExerciseBlockCard: React.FC<TeacherExerciseBlockCardProps> = ({
   block,
@@ -65,89 +91,82 @@ const TeacherExerciseBlockCard: React.FC<TeacherExerciseBlockCardProps> = ({
   classId,
 }) => {
   const [promptDraft, setPromptDraft] = useState(block.prompt);
-  const [assignedDraft, setAssignedDraft] = useState(block.assignedTo);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     setPromptDraft(block.prompt);
-    setAssignedDraft(block.assignedTo);
     setError('');
-  }, [block.assignedTo, block.id, block.prompt]);
+  }, [block.id, block.prompt]);
 
   const handleSaveDetails = async () => {
     setSaving(true);
     setError('');
     try {
-      const selectedStudent = roster.find((student) => student.uid === assignedDraft);
       await updateExerciseBlock(
         classId,
         block.id,
         {
           prompt: promptDraft,
-          assignedTo: assignedDraft,
-          assignedToName: selectedStudent?.label ?? '',
         },
         actorUid,
         actorName,
       );
     } catch (saveError) {
       console.warn('[ExerciseSessionPanel] block details update failed:', saveError);
-      setError('Unable to save this exercise block right now.');
+      setError(getExerciseErrorMessage(saveError, 'Unable to save this exercise block right now.'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleStatusChange = async (status: LiveExerciseBlockStatus) => {
+  const handleStatusChange = async (studentUid: string, status: LiveExerciseBlockStatus) => {
     setSaving(true);
     setError('');
     try {
-      await updateExerciseBlock(classId, block.id, { status }, actorUid, actorName);
+      await setExerciseBlockStudentStatus(classId, block.id, studentUid, status, actorUid, actorName);
     } catch (saveError) {
       console.warn('[ExerciseSessionPanel] block status update failed:', saveError);
-      setError('Unable to update the exercise status right now.');
+      setError(getExerciseErrorMessage(saveError, 'Unable to update the student status right now.'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleToggleLock = async () => {
+  const handleToggleLock = async (studentUid: string, nextLocked: boolean) => {
     setSaving(true);
     setError('');
     try {
-      await updateExerciseBlock(
+      await setExerciseBlockStudentLock(
         classId,
         block.id,
-        { isLocked: !block.isLocked },
+        studentUid,
+        nextLocked,
         actorUid,
         actorName,
       );
     } catch (saveError) {
       console.warn('[ExerciseSessionPanel] block lock update failed:', saveError);
-      setError('Unable to change edit permissions right now.');
+      setError(getExerciseErrorMessage(saveError, 'Unable to change edit permissions right now.'));
     } finally {
       setSaving(false);
     }
   };
 
-  const handleClearAnswer = async () => {
+  const handleClearAnswer = async (studentUid: string) => {
     setSaving(true);
     setError('');
     try {
-      await updateExerciseBlock(
+      await clearExerciseBlockStudentResponse(
         classId,
         block.id,
-        {
-          answerText: '',
-          status: 'pending',
-        },
+        studentUid,
         actorUid,
         actorName,
       );
     } catch (saveError) {
       console.warn('[ExerciseSessionPanel] block clear failed:', saveError);
-      setError('Unable to clear this response right now.');
+      setError(getExerciseErrorMessage(saveError, 'Unable to clear this response right now.'));
     } finally {
       setSaving(false);
     }
@@ -160,13 +179,15 @@ const TeacherExerciseBlockCard: React.FC<TeacherExerciseBlockCardProps> = ({
           <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-cyan-200">
             Exercise {block.order}
           </span>
-          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusClassName[block.status]}`}>
-            {getStatusLabel(block.status)}
+          <span className="rounded-full border border-slate-600 bg-slate-800 px-3 py-1 text-xs font-bold text-slate-200">
+            {roster.length} students
           </span>
         </div>
-        <span className="text-xs text-slate-400">
-          {block.assignedToName ? `Assigned to ${block.assignedToName}` : 'Unassigned'}
-        </span>
+        {block.updatedBy?.name ? (
+          <span className="text-xs text-slate-400">
+            Last change by {block.updatedBy.name}
+          </span>
+        ) : null}
       </div>
 
       {error ? (
@@ -185,74 +206,86 @@ const TeacherExerciseBlockCard: React.FC<TeacherExerciseBlockCardProps> = ({
         placeholder="Write the instruction or exercise prompt here..."
       />
 
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-        <select
-          value={assignedDraft}
-          onChange={(event) => setAssignedDraft(event.target.value)}
-          className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
-        >
-          <option value="">Assign later</option>
-          {roster.map((student) => (
-            <option key={student.uid} value={student.uid}>
-              {student.label}
-            </option>
-          ))}
-        </select>
+      <div className="mt-3 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={() => void handleSaveDetails()}
           disabled={saving}
           className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#0891b2] disabled:opacity-60"
         >
-          {saving ? 'Saving...' : 'Save Block'}
+          {saving ? 'Saving...' : 'Save Prompt'}
         </button>
       </div>
 
-      <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-900/80 p-3">
-        <p className="text-xs font-black uppercase tracking-wide text-slate-400">Student Response</p>
-        <p className="mt-2 min-h-[96px] whitespace-pre-wrap text-sm text-slate-100">
-          {block.answerText.trim() || 'No answer yet.'}
-        </p>
-        {block.updatedBy?.name ? (
-          <p className="mt-2 text-xs text-slate-500">
-            Last update by {block.updatedBy.name}
-          </p>
-        ) : null}
-      </div>
+      <div className="mt-4 grid grid-cols-1 gap-3">
+        {roster.map((student) => {
+          const response = getStudentResponse(block, student.uid);
+          const status = getStudentStatus(block, student.uid);
+          const locked = isStudentLocked(block, student.uid);
 
-      <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => void handleStatusChange('pending')}
-          disabled={saving}
-          className="rounded-xl border border-slate-600 px-3 py-2 text-xs font-bold text-slate-200"
-        >
-          Reset
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleStatusChange('done')}
-          disabled={saving}
-          className="rounded-xl border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-200"
-        >
-          Mark Done
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleToggleLock()}
-          disabled={saving}
-          className="rounded-xl border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-200"
-        >
-          {block.isLocked ? 'Unlock Editing' : 'Lock Editing'}
-        </button>
-        <button
-          type="button"
-          onClick={() => void handleClearAnswer()}
-          disabled={saving}
-          className="rounded-xl border border-rose-500/40 px-3 py-2 text-xs font-bold text-rose-200"
-        >
-          Clear Response
-        </button>
+          return (
+            <section key={student.uid} className="rounded-2xl border border-slate-700 bg-slate-900/70 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusClassName[status]}`}>
+                    {getStatusLabel(status)}
+                  </span>
+                  <span className="text-sm font-bold text-white">
+                    {student.label}
+                  </span>
+                  <span className={`text-xs ${student.isOnline ? 'text-emerald-300' : 'text-slate-500'}`}>
+                    {student.isOnline ? 'online' : 'offline'}
+                  </span>
+                </div>
+                <span className="text-xs text-slate-400">
+                  {locked ? 'Editing locked' : 'Live response'}
+                </span>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-3">
+                <p className="text-xs font-black uppercase tracking-wide text-slate-400">Response</p>
+                <p className="mt-2 min-h-[88px] whitespace-pre-wrap text-sm text-slate-100">
+                  {response.trim() || 'No answer yet.'}
+                </p>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleStatusChange(student.uid, 'pending')}
+                  disabled={saving}
+                  className="rounded-xl border border-slate-600 px-3 py-2 text-xs font-bold text-slate-200"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleStatusChange(student.uid, 'done')}
+                  disabled={saving}
+                  className="rounded-xl border border-emerald-500/40 px-3 py-2 text-xs font-bold text-emerald-200"
+                >
+                  Mark Done
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleToggleLock(student.uid, !locked)}
+                  disabled={saving}
+                  className="rounded-xl border border-amber-500/40 px-3 py-2 text-xs font-bold text-amber-200"
+                >
+                  {locked ? 'Unlock Editing' : 'Lock Editing'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleClearAnswer(student.uid)}
+                  disabled={saving}
+                  className="rounded-xl border border-rose-500/40 px-3 py-2 text-xs font-bold text-rose-200"
+                >
+                  Clear Response
+                </button>
+              </div>
+            </section>
+          );
+        })}
       </div>
     </article>
   );
@@ -262,35 +295,38 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
   block,
   actorUid,
   actorName,
+  actorLabel,
   classId,
   canEdit,
   sessionIsActive,
 }) => {
-  const [draft, setDraft] = useState(block.answerText);
+  const ownAnswer = getStudentResponse(block, actorUid);
+  const ownStatus = getStudentStatus(block, actorUid);
+  const locked = isStudentLocked(block, actorUid);
+  const [draft, setDraft] = useState(ownAnswer);
   const [saveState, setSaveState] = useState<'idle' | 'saving'>('idle');
   const [error, setError] = useState('');
 
   useEffect(() => {
-    setDraft(block.answerText);
+    setDraft(ownAnswer);
     setError('');
-  }, [block.answerText, block.id]);
+  }, [block.id, ownAnswer]);
 
   useEffect(() => {
-    if (!canEdit || draft === block.answerText) return () => {};
+    if (!canEdit || draft === ownAnswer) return () => {};
 
     const timeoutId = window.setTimeout(() => {
       const nextStatus: LiveExerciseBlockStatus = draft.trim()
-        ? (block.status === 'pending' ? 'in_progress' : block.status)
-        : (block.status === 'in_progress' ? 'pending' : block.status);
+        ? (ownStatus === 'done' ? 'done' : 'in_progress')
+        : 'pending';
 
       setSaveState('saving');
-      void updateExerciseBlock(
+      void updateExerciseBlockResponse(
         classId,
         block.id,
-        {
-          answerText: draft,
-          status: nextStatus,
-        },
+        actorUid,
+        draft,
+        nextStatus,
         actorUid,
         actorName,
       )
@@ -299,15 +335,15 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
         })
         .catch((saveError) => {
           console.warn('[ExerciseSessionPanel] answer autosave failed:', saveError);
-          setError('Unable to sync your answer right now.');
+          setError(getExerciseErrorMessage(saveError, 'Unable to sync your answer right now.'));
         })
         .finally(() => {
           setSaveState('idle');
         });
-    }, 500);
+    }, 400);
 
     return () => window.clearTimeout(timeoutId);
-  }, [actorName, actorUid, block.answerText, block.id, block.status, canEdit, classId, draft]);
+  }, [actorName, actorUid, block.id, canEdit, classId, draft, ownAnswer, ownStatus]);
 
   return (
     <article className="rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
@@ -316,14 +352,14 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
           <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-cyan-200">
             Exercise {block.order}
           </span>
-          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusClassName[block.status]}`}>
-            {getStatusLabel(block.status)}
+          <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusClassName[ownStatus]}`}>
+            {getStatusLabel(ownStatus)}
           </span>
         </div>
         <span className="text-xs text-slate-400">
-          {block.isLocked
+          {locked
             ? 'Locked by teacher'
-            : block.status === 'done'
+            : ownStatus === 'done'
               ? 'Marked done by teacher'
               : (sessionIsActive ? 'Live editing' : 'Session closed')}
         </span>
@@ -347,11 +383,11 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
         onChange={(event) => setDraft(event.target.value)}
         disabled={!canEdit}
         className="mt-3 h-32 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-70"
-        placeholder={canEdit ? 'Type your answer here. It syncs automatically.' : 'This exercise is read-only right now.'}
+        placeholder={canEdit ? 'Type your answer here. It syncs automatically.' : 'Your answer is read-only right now.'}
       />
 
-      <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
-        <span>{block.assignedToName ? `Assigned to ${block.assignedToName}` : 'Assignment pending'}</span>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+        <span>{actorLabel}</span>
         <span>{saveState === 'saving' ? 'Saving...' : 'Synced'}</span>
       </div>
     </article>
@@ -373,6 +409,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   const [savingSessionState, setSavingSessionState] = useState(false);
 
   const actorName = getActorName(user);
+  const actorLabel = user.displayName || user.email || 'My response';
 
   useEffect(() => {
     setLoadingSession(true);
@@ -415,15 +452,24 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
     return unsubscribe;
   }, [classId]);
 
-  const visibleBlocks = useMemo(() => {
-    if (isTeacher) return blocks;
-    return blocks.filter((block) => block.assignedTo === user.uid);
-  }, [blocks, isTeacher, user.uid]);
+  const visibleBlocks = useMemo(() => blocks, [blocks]);
 
-  const completedCount = useMemo(
-    () => blocks.filter((block) => block.status === 'done').length,
-    [blocks],
-  );
+  const completedCount = useMemo(() => {
+    if (isTeacher) {
+      return blocks.reduce(
+        (total, block) => total + assignedRoster.filter((student) => getStudentStatus(block, student.uid) === 'done').length,
+        0,
+      );
+    }
+    return blocks.filter((block) => getStudentStatus(block, user.uid) === 'done').length;
+  }, [assignedRoster, blocks, isTeacher, user.uid]);
+
+  const totalResponses = useMemo(() => {
+    if (isTeacher) {
+      return blocks.length * Math.max(assignedRoster.length, 1);
+    }
+    return blocks.length;
+  }, [assignedRoster.length, blocks.length, isTeacher]);
 
   const handleSaveSession = async (nextIsActive = true) => {
     setSavingSessionState(true);
@@ -491,12 +537,12 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   };
 
   return (
-    <div className="rounded-2xl border border-violet-500/30 bg-slate-900 p-4">
+    <div className="rounded-2xl border border-violet-500/30 bg-slate-900 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-sm font-black uppercase tracking-wide text-violet-300">Exercise Session</h2>
           <p className="mt-1 text-sm text-slate-200">
-            Create live activity blocks, assign them to students, and follow the answers in real time.
+            Every exercise stores one live response per student. Teachers can follow the whole class in real time.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
@@ -504,7 +550,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
             {session.isActive ? 'Live' : 'Inactive'}
           </span>
           <span className="rounded-full border border-slate-600 bg-slate-800 px-3 py-1 font-bold text-slate-200">
-            {completedCount}/{blocks.length} done
+            {completedCount}/{totalResponses} done
           </span>
         </div>
       </div>
@@ -568,7 +614,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
           <p className="mt-1 text-lg font-black text-white">{session.title}</p>
           <p className="mt-1 text-sm text-slate-300">
             {session.isActive
-              ? 'Answer only the exercises assigned to you. Your teacher sees updates live.'
+              ? 'Each exercise keeps your own answer private on this side while your teacher sees every response live.'
               : 'This exercise session is currently closed.'}
           </p>
         </div>
@@ -577,14 +623,14 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
       {!loadingSession && !loadingBlocks && blocks.length === 0 ? (
         <div className="mt-3 rounded-2xl border border-dashed border-slate-700 px-4 py-6 text-sm text-slate-300">
           {isTeacher
-            ? 'Create the session title and add the first exercise block. Each block can then be assigned to one student.'
+            ? 'Create the session title and add the first exercise block. Each block will collect one response per student.'
             : 'The teacher has not started an exercise session for this live class yet.'}
         </div>
       ) : null}
 
-      {!loadingBlocks && blocks.length > 0 && visibleBlocks.length === 0 && !isTeacher ? (
+      {isTeacher && assignedRoster.length === 0 ? (
         <div className="mt-3 rounded-2xl border border-dashed border-slate-700 px-4 py-6 text-sm text-slate-300">
-          You do not have an exercise assigned yet. Wait for your teacher to assign one to you.
+          Add students to this live class first so the panel can track one response per student.
         </div>
       ) : null}
 
@@ -606,8 +652,9 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
                 block={block}
                 actorUid={user.uid}
                 actorName={actorName}
+                actorLabel={actorLabel}
                 classId={classId}
-                canEdit={session.isActive && !block.isLocked && block.assignedTo === user.uid && block.status !== 'done'}
+                canEdit={session.isActive && !isStudentLocked(block, user.uid) && getStudentStatus(block, user.uid) !== 'done'}
                 sessionIsActive={session.isActive}
               />
             )
