@@ -252,8 +252,8 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({
             {updatingPermission
               ? 'Updating Access...'
               : allowStudentWhiteboardEdit
-                ? 'Disable Student Editing'
-                : 'Enable Student Editing'}
+                ? 'Disable Students Editing'
+                : 'Enable Students Editing'}
           </button>
         ) : null}
         {canManageBoard ? (
