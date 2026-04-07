@@ -71,24 +71,35 @@ export async function requestLiveAudioCredentials({
   const idToken = await auth.currentUser?.getIdToken?.().catch(() => '');
   const roomName = getLiveAudioRoomName(classId);
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      ...(idToken ? { authorization: `Bearer ${idToken}` } : {}),
-    },
-    body: JSON.stringify({
-      room: roomName,
-      username: userName,
-      participantIdentity: `${role}:${userId}`,
-      metadata: JSON.stringify({ classId, userId, role }),
-    }),
-  });
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        ...(idToken ? { authorization: `Bearer ${idToken}` } : {}),
+      },
+      body: JSON.stringify({
+        room: roomName,
+        username: userName,
+        participantIdentity: `${role}:${userId}`,
+        metadata: JSON.stringify({ classId, userId, role }),
+      }),
+    });
+  } catch (err) {
+    console.error('[LiveAudio] Network error calling', endpoint, err);
+    throw new Error('Network error calling live audio token endpoint.');
+  }
 
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
 
   if (!response.ok) {
     const errorText = await response.text();
+    console.error('[LiveAudio] Token endpoint error', {
+      endpoint,
+      status: response.status,
+      errorText,
+    });
     if (response.status === 404) {
       throw new Error(
         'Live audio token endpoint was not found at /api/getToken. In production, confirm the Vercel project Root Directory is apps/main. In development, run the app with `vercel dev` so API routes are available.',

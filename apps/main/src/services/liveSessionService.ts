@@ -52,6 +52,8 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   studentCameraMode: (data?.studentCameraMode ?? 'off') as LiveClassSession['studentCameraMode'],
   allowStudentWhiteboardEdit: Boolean(data?.allowStudentWhiteboardEdit),
   audioNotesEnabled: data?.audioNotesEnabled !== false,
+  mainStageMode: (data?.mainStageMode ?? 'board'),
+  isBoardLocked: Boolean(data?.isBoardLocked),
   lastUpdatedBy: data?.lastUpdatedBy ?? '',
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
 });
@@ -271,6 +273,8 @@ export async function updateLiveSession(
   if ('studentCameraMode' in patch) payload.studentCameraMode = patch.studentCameraMode ?? 'off';
   if ('allowStudentWhiteboardEdit' in patch) payload.allowStudentWhiteboardEdit = Boolean(patch.allowStudentWhiteboardEdit);
   if ('audioNotesEnabled' in patch) payload.audioNotesEnabled = patch.audioNotesEnabled !== false;
+  if ('mainStageMode' in patch) payload.mainStageMode = patch.mainStageMode ?? 'board';
+  if ('isBoardLocked' in patch) payload.isBoardLocked = Boolean(patch.isBoardLocked);
 
   await setDoc(
     sessionRef,

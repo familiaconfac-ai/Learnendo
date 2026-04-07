@@ -220,9 +220,11 @@ service cloud.firestore {
       match /shared/{docId} {
         allow read: if canAccessLiveClassRoom(classId);
         allow create: if isTeacherForClass(classId)
-          || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId));
+          || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId))
+          || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId) && studentWhiteboardEditingEnabled(classId));
         allow update: if isTeacherForClass(classId)
-          || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId));
+          || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId))
+          || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId) && studentWhiteboardEditingEnabled(classId));
         allow delete: if isTeacherForClass(classId);
       }
 
