@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   LiveKitRoom,
   VideoTrack,
   useTracks,
   useLocalParticipant,
   RoomAudioRenderer,
+  useRoomContext,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
-import { Track } from 'livekit-client';
+import { Track, RoomEvent } from 'livekit-client';
 import { isTrackReference } from '@livekit/components-core';
 import { CollaborativeBoard } from '../Board/CollaborativeBoard';
 import { User } from 'firebase/auth';
@@ -36,13 +37,13 @@ const StudentStage: React.FC<{
 }> = ({ liveClass, user, session }) => {
   const mainStageMode = session.mainStageMode || 'board';
   const [chatOpen, setChatOpen] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
 
+  const room = useRoomContext();
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
 
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
-
-  // Local camera track for self-preview
-  const localCamTrack = tracks.find((t) => t.participant?.isLocal);
 
   // Find teacher's video track by metadata role
   const teacherTrack = tracks.find((t) => {
@@ -52,6 +53,107 @@ const StudentStage: React.FC<{
       return meta.role === 'teacher';
     } catch { return false; }
   });
+
+  // ── Local camera preview via ref (direct MediaStream — bypasses useTracks) ──
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const el = localVideoRef.current;
+    if (!el) return;
+    if (!isCameraEnabled) {
+      el.srcObject = null;
+      return;
+    }
+    const attach = () => {
+      for (const pub of localParticipant.trackPublications.values()) {
+        if (pub.source === Track.Source.Camera && (pub as any).track?.mediaStreamTrack) {
+          el.srcObject = new MediaStream([(pub as any).track.mediaStreamTrack]);
+          el.play().catch(() => {});
+          console.log('[Student] Camera preview attached via ref');
+          return true;
+        }
+      }
+      return false;
+    };
+    if (!attach()) {
+      const t = setInterval(() => { if (attach()) clearInterval(t); }, 250);
+      const stop = setTimeout(() => clearInterval(t), 5000);
+      return () => { clearInterval(t); clearTimeout(stop); };
+    }
+  }, [localParticipant, isCameraEnabled]);
+
+  // ── Audio: room.startAudio() to defeat browser autoplay policy ──
+  const startAudio = useCallback(async () => {
+    try {
+      await room.startAudio();
+      setAudioPlaybackOk(true);
+      console.log('[Student] startAudio OK');
+    } catch (err) {
+      console.warn('[Student] startAudio failed:', err);
+    }
+  }, [room]);
+
+  useEffect(() => {
+    startAudio();
+    const h = () => startAudio();
+    document.addEventListener('click', h);
+    document.addEventListener('touchstart', h);
+    return () => {
+      document.removeEventListener('click', h);
+      document.removeEventListener('touchstart', h);
+    };
+  }, [startAudio]);
+
+  // ── Diagnostic logging (temporary) ──
+  useEffect(() => {
+    const onConn = () => console.log('[Student] Room connected');
+    const onDisc = () => console.log('[Student] Room disconnected');
+    const onSub = (track: any, _pub: any, p: any) =>
+      console.log('[Student] TrackSubscribed', track.kind, track.source, 'from', p.identity);
+    const onUnsub = (track: any, _pub: any, p: any) =>
+      console.log('[Student] TrackUnsubscribed', track.kind, track.source, 'from', p.identity);
+    const onLocalPub = (pub: any) =>
+      console.log('[Student] LocalTrackPublished', pub.kind, pub.source);
+    const onLocalUnpub = (pub: any) =>
+      console.log('[Student] LocalTrackUnpublished', pub.kind, pub.source);
+    const onAudio = () => {
+      const ok = room.canPlaybackAudio;
+      console.log('[Student] AudioPlaybackStatusChanged canPlayback:', ok);
+      setAudioPlaybackOk(ok);
+    };
+
+    room.on(RoomEvent.Connected, onConn);
+    room.on(RoomEvent.Disconnected, onDisc);
+    room.on(RoomEvent.TrackSubscribed, onSub);
+    room.on(RoomEvent.TrackUnsubscribed, onUnsub);
+    room.on(RoomEvent.LocalTrackPublished, onLocalPub);
+    room.on(RoomEvent.LocalTrackUnpublished, onLocalUnpub);
+    room.on(RoomEvent.AudioPlaybackStatusChanged, onAudio);
+
+    setAudioPlaybackOk(room.canPlaybackAudio);
+    console.log('[Student] Room state:', room.state, 'canPlayback:', room.canPlaybackAudio);
+
+    return () => {
+      room.off(RoomEvent.Connected, onConn);
+      room.off(RoomEvent.Disconnected, onDisc);
+      room.off(RoomEvent.TrackSubscribed, onSub);
+      room.off(RoomEvent.TrackUnsubscribed, onUnsub);
+      room.off(RoomEvent.LocalTrackPublished, onLocalPub);
+      room.off(RoomEvent.LocalTrackUnpublished, onLocalUnpub);
+      room.off(RoomEvent.AudioPlaybackStatusChanged, onAudio);
+    };
+  }, [room]);
+
+  // Remote audio track count (for debug panel)
+  const remoteAudioCount = (() => {
+    let count = 0;
+    for (const p of room.remoteParticipants.values()) {
+      for (const pub of p.trackPublications.values()) {
+        if (pub.source === Track.Source.Microphone && pub.isSubscribed) count++;
+      }
+    }
+    return count;
+  })();
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 px-2 pb-24 pt-4 flex flex-col items-center w-full">
@@ -69,11 +171,21 @@ const StudentStage: React.FC<{
 
       {/* PALCO PRINCIPAL */}
       <div className="relative w-full max-w-3xl flex flex-col items-center">
-        {/* Local camera preview (PIP) */}
-        {isCameraEnabled && localCamTrack && isTrackReference(localCamTrack) && (
-          <div className="absolute bottom-20 right-3 w-28 aspect-video rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg z-30 bg-black">
-            <VideoTrack trackRef={localCamTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {/* Local camera preview (PIP) — ref-based for reliability */}
+        {isCameraEnabled && (
+          <div className="absolute top-3 right-3 w-32 aspect-video rounded-xl overflow-hidden border-2 border-emerald-500/60 shadow-lg z-30 bg-black">
+            <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
           </div>
+        )}
+
+        {/* Audio blocked banner */}
+        {!audioPlaybackOk && (
+          <button
+            onClick={() => startAudio()}
+            className="w-full flex items-center justify-center gap-2 py-2 bg-amber-600/90 text-white text-sm font-bold rounded-xl mb-2 z-40 animate-pulse"
+          >
+            🔇 Toque aqui para ativar o áudio
+          </button>
         )}
         {mainStageMode === 'board' ? (
           <div className="w-full aspect-[16/9] rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 flex items-center justify-center mb-3 overflow-hidden transition-all p-2 md:p-4">
@@ -175,6 +287,15 @@ const StudentStage: React.FC<{
             <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
           </svg>
         </button>
+
+        {/* Debug toggle (temporary) */}
+        <button
+          onClick={() => setShowDebug(!showDebug)}
+          className="w-10 h-10 rounded-full flex items-center justify-center text-xs shadow transition bg-slate-800 hover:bg-slate-700 text-slate-400"
+          title="Debug"
+        >
+          🐛
+        </button>
       </div>
 
       {/* Chat */}
@@ -192,6 +313,18 @@ const StudentStage: React.FC<{
           />
         </div>
       </div>
+
+      {/* Debug panel (temporary) */}
+      {showDebug && (
+        <div className="fixed top-2 left-2 z-[200] bg-black/90 text-[10px] text-green-400 font-mono p-2 rounded-lg border border-green-800 max-w-[220px] leading-relaxed">
+          <div>room: {room.state}</div>
+          <div>mic: {isMicrophoneEnabled ? '🟢 on' : '🔴 off'}</div>
+          <div>cam: {isCameraEnabled ? '🟢 on' : '🔴 off'}</div>
+          <div>audio playback: {audioPlaybackOk ? '🟢 ok' : '🔴 blocked'}</div>
+          <div>remote audio tracks: {remoteAudioCount}</div>
+          <div>remote participants: {room.remoteParticipants.size}</div>
+        </div>
+      )}
     </div>
   );
 };

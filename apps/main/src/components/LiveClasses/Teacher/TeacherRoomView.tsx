@@ -6,9 +6,10 @@ import {
   useTracks,
   useParticipants,
   RoomAudioRenderer,
+  useRoomContext,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
-import { Track } from 'livekit-client';
+import { Track, RoomEvent } from 'livekit-client';
 import { isTrackReference } from '@livekit/components-core';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassSession, LiveClassPresence } from '../../../types';
@@ -35,6 +36,22 @@ const TeacherStage: React.FC<{
   
   const [viewMode, setViewMode] = useState<'camera' | 'board'>(session.mainStageMode || 'camera');
   const isBoardLocked = session.isBoardLocked ?? false;
+  const room = useRoomContext();
+
+  // ── Diagnostic logging (temporary) ──
+  useEffect(() => {
+    const onSub = (track: any, _pub: any, p: any) =>
+      console.log('[Teacher] TrackSubscribed', track.kind, track.source, 'from', p.identity);
+    const onUnsub = (track: any, _pub: any, p: any) =>
+      console.log('[Teacher] TrackUnsubscribed', track.kind, track.source, 'from', p.identity);
+    room.on(RoomEvent.TrackSubscribed, onSub);
+    room.on(RoomEvent.TrackUnsubscribed, onUnsub);
+    console.log('[Teacher] Room state:', room.state);
+    return () => {
+      room.off(RoomEvent.TrackSubscribed, onSub);
+      room.off(RoomEvent.TrackUnsubscribed, onUnsub);
+    };
+  }, [room]);
 
   useEffect(() => {
     if (session.mainStageMode) setViewMode(session.mainStageMode);
