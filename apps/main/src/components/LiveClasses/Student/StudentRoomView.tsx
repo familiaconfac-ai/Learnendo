@@ -3,6 +3,7 @@ import {
   LiveKitRoom,
   VideoTrack,
   useTracks,
+  useLocalParticipant,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { Track } from 'livekit-client';
@@ -33,6 +34,11 @@ const StudentStage: React.FC<{
   session: LiveClassSession;
 }> = ({ liveClass, user, session }) => {
   const mainStageMode = session.mainStageMode || 'board';
+  const [micOn, setMicOn] = useState(false);
+  const [camOn, setCamOn] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+
+  const { localParticipant } = useLocalParticipant();
 
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
 
@@ -89,25 +95,94 @@ const StudentStage: React.FC<{
 
       {/* Barra de controles mínimos */}
       <div className="fixed bottom-0 left-0 w-full flex justify-center gap-3 bg-slate-950/90 py-3 border-t border-slate-800 z-50 backdrop-blur-sm">
-        <button className="rounded-full bg-emerald-500/90 hover:bg-emerald-400 text-slate-900 font-bold px-5 py-2 text-sm shadow transition flex items-center justify-center" title="Microfone">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 1v22m0 0l-7-7m7 7l7-7" /></svg>
+        {/* Microfone */}
+        <button
+          onClick={() => {
+            const next = !micOn;
+            setMicOn(next);
+            localParticipant.setMicrophoneEnabled(next);
+          }}
+          className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow transition ${
+            micOn
+              ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
+              : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+          }`}
+          title={micOn ? 'Desligar microfone' : 'Ligar microfone'}
+        >
+          {micOn ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 01-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 01-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+              <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" />
+            </svg>
+          )}
         </button>
-        <button className="rounded-full bg-sky-500/90 hover:bg-sky-400 text-white font-bold px-5 py-2 text-sm shadow transition flex items-center justify-center" title="Câmera">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14" /></svg>
+
+        {/* Câmera */}
+        <button
+          onClick={() => {
+            const next = !camOn;
+            setCamOn(next);
+            localParticipant.setCameraEnabled(next);
+          }}
+          className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow transition ${
+            camOn
+              ? 'bg-sky-500 hover:bg-sky-400 text-white'
+              : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+          }`}
+          title={camOn ? 'Desligar câmera' : 'Ligar câmera'}
+        >
+          {camOn ? (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          ) : (
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" />
+            </svg>
+          )}
         </button>
-        <button className="rounded-full bg-violet-500/90 hover:bg-violet-400 text-white font-bold px-5 py-2 text-sm shadow transition flex items-center justify-center" title="Chat privado">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h14a2 2 0 012 2v8z" /></svg>
+
+        {/* Chat */}
+        <button
+          onClick={() => setChatOpen(!chatOpen)}
+          className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow transition ${
+            chatOpen
+              ? 'bg-violet-500 hover:bg-violet-400 text-white'
+              : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
+          }`}
+          title={chatOpen ? 'Fechar chat' : 'Abrir chat'}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
+          </svg>
         </button>
       </div>
 
-      {/* Chat privado */}
-      <div className="hidden">
-        <LiveClassChat
-          classId={liveClass.id}
-          user={user}
-          role="student"
-          allowAudioNotes={session.audioNotesEnabled !== false}
-        />
+      {/* Chat */}
+      <div className={chatOpen ? 'fixed inset-x-0 bottom-16 top-0 z-40 bg-slate-950/95 flex flex-col' : 'hidden'}>
+        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
+          <span className="text-white font-bold text-sm">Chat</span>
+          <button onClick={() => setChatOpen(false)} className="text-slate-400 hover:text-white text-lg">&times;</button>
+        </div>
+        <div className="flex-1 overflow-hidden">
+          <LiveClassChat
+            classId={liveClass.id}
+            user={user}
+            role="student"
+            allowAudioNotes={session.audioNotesEnabled !== false}
+          />
+        </div>
       </div>
     </div>
   );
