@@ -4,6 +4,7 @@ import {
   VideoTrack,
   useTracks,
   useLocalParticipant,
+  RoomAudioRenderer,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { Track } from 'livekit-client';
@@ -34,13 +35,14 @@ const StudentStage: React.FC<{
   session: LiveClassSession;
 }> = ({ liveClass, user, session }) => {
   const mainStageMode = session.mainStageMode || 'board';
-  const [micOn, setMicOn] = useState(false);
-  const [camOn, setCamOn] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
 
-  const { localParticipant } = useLocalParticipant();
+  const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
 
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+
+  // Local camera track for self-preview
+  const localCamTrack = tracks.find((t) => t.participant?.isLocal);
 
   // Find teacher's video track by metadata role
   const teacherTrack = tracks.find((t) => {
@@ -67,6 +69,12 @@ const StudentStage: React.FC<{
 
       {/* PALCO PRINCIPAL */}
       <div className="relative w-full max-w-3xl flex flex-col items-center">
+        {/* Local camera preview (PIP) */}
+        {isCameraEnabled && localCamTrack && isTrackReference(localCamTrack) && (
+          <div className="absolute bottom-20 right-3 w-28 aspect-video rounded-xl overflow-hidden border-2 border-slate-600 shadow-lg z-30 bg-black">
+            <VideoTrack trackRef={localCamTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+        )}
         {mainStageMode === 'board' ? (
           <div className="w-full aspect-[16/9] rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 flex items-center justify-center mb-3 overflow-hidden transition-all p-2 md:p-4">
             <CollaborativeBoard
@@ -98,18 +106,18 @@ const StudentStage: React.FC<{
         {/* Microfone */}
         <button
           onClick={() => {
-            const next = !micOn;
-            setMicOn(next);
-            localParticipant.setMicrophoneEnabled(next);
+            localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled).catch((err) => {
+              console.warn('[StudentRoomView] mic toggle failed:', err);
+            });
           }}
           className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow transition ${
-            micOn
+            isMicrophoneEnabled
               ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
               : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
           }`}
-          title={micOn ? 'Desligar microfone' : 'Ligar microfone'}
+          title={isMicrophoneEnabled ? 'Desligar microfone' : 'Ligar microfone'}
         >
-          {micOn ? (
+          {isMicrophoneEnabled ? (
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 01-14 0v-2" />
@@ -130,18 +138,18 @@ const StudentStage: React.FC<{
         {/* Câmera */}
         <button
           onClick={() => {
-            const next = !camOn;
-            setCamOn(next);
-            localParticipant.setCameraEnabled(next);
+            localParticipant.setCameraEnabled(!isCameraEnabled).catch((err) => {
+              console.warn('[StudentRoomView] camera toggle failed:', err);
+            });
           }}
           className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow transition ${
-            camOn
+            isCameraEnabled
               ? 'bg-sky-500 hover:bg-sky-400 text-white'
               : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
           }`}
-          title={camOn ? 'Desligar câmera' : 'Ligar câmera'}
+          title={isCameraEnabled ? 'Desligar câmera' : 'Ligar câmera'}
         >
-          {camOn ? (
+          {isCameraEnabled ? (
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
@@ -222,6 +230,7 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
 
   return (
     <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={false} audio={false}>
+      <RoomAudioRenderer />
       <StudentStage liveClass={liveClass} user={user} session={session} />
     </LiveKitRoom>
   );

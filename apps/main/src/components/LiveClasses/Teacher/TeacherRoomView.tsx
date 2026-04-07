@@ -5,6 +5,7 @@ import {
   VideoTrack,
   useTracks,
   useParticipants,
+  RoomAudioRenderer,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { Track } from 'livekit-client';
@@ -154,6 +155,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
 
   return (
     <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={true} audio={true}>
+      <RoomAudioRenderer />
       <TeacherStage liveClass={liveClass} session={session} handleUpdateSession={handleUpdateSession} />
     </LiveKitRoom>
   );
