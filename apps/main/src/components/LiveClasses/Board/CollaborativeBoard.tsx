@@ -9,6 +9,8 @@ interface CollaborativeBoardProps {
   userId: string;
   userName: string;
   readOnly?: boolean;
+  /** When true, hides all tldraw chrome (menus, page controls, etc.). Shows only the basic toolbar when not readOnly. */
+  hideChrome?: boolean;
 }
 
 /**
@@ -176,11 +178,17 @@ class BoardErrorBoundary extends React.Component<
 }
 
 // Componente de lousa colaborativa usando tldraw + Firestore sync
-export const CollaborativeBoard: React.FC<CollaborativeBoardProps> = ({ boardId, userId, userName, readOnly }) => {
+export const CollaborativeBoard: React.FC<CollaborativeBoardProps> = ({ boardId, userId, userName, readOnly, hideChrome }) => {
+  const wrapperClass = [
+    'w-full h-full min-h-[400px] bg-white rounded-2xl overflow-hidden tldraw-compact',
+    hideChrome ? 'tldraw-hide-chrome' : '',
+    hideChrome && readOnly ? 'tldraw-view-only' : '',
+  ].join(' ');
+
   return (
-    <div className="w-full h-full min-h-[400px] bg-white rounded-2xl overflow-hidden tldraw-compact">
+    <div className={wrapperClass}>
       <style>{`
-        /* ── Main toolbar → far bottom-right, scaled down ── */
+        /* ── Teacher / shared compact styles ── */
         .tldraw-compact .tlui-layout__bottom {
           position: absolute;
           bottom: 0;
@@ -196,20 +204,30 @@ export const CollaborativeBoard: React.FC<CollaborativeBoardProps> = ({ boardId,
           transform: scale(0.62);
           transform-origin: bottom right;
         }
-        /* Hide minimap / navigation in compact mode */
         .tldraw-compact .tlui-navigation-panel {
           display: none;
         }
-        /* ── Actions menu → top-left, next to hamburger & Page 1 ── */
         .tldraw-compact .tlui-actions-menu {
           position: fixed;
           top: 44px;
           left: 56px;
           z-index: 300;
         }
-        /* Hide the help/license badge so it doesn't fight for space */
         .tldraw-compact .tlui-help-menu {
           display: none;
+        }
+
+        /* ── Student: always hide top chrome (hamburger, Page 1, etc.) ── */
+        .tldraw-hide-chrome .tlui-layout__top {
+          display: none !important;
+        }
+        .tldraw-hide-chrome .tlui-actions-menu {
+          display: none !important;
+        }
+
+        /* ── Student locked (view-only): hide ALL controls ── */
+        .tldraw-view-only .tlui-layout__bottom {
+          display: none !important;
         }
       `}</style>
       <BoardErrorBoundary>

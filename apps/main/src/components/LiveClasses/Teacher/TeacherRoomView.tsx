@@ -80,10 +80,8 @@ const TeacherStage: React.FC<{
               />
             </div>
           )}
-        </div>
-
-        {/* BARRA DE FERRAMENTAS */}
-        <div className="mt-4 flex gap-3 bg-black/90 px-4 py-2 rounded-full border border-slate-700 z-[100]">
+          {/* BARRA DE FERRAMENTAS — sobreposta na base do palco */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-3 bg-black/90 px-4 py-2 rounded-full border border-slate-700 z-[100]">
           <button
             onClick={() => handleModeChange('camera')}
             className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center ${viewMode === 'camera' ? 'bg-blue-500' : 'bg-transparent'}`}
@@ -98,12 +96,13 @@ const TeacherStage: React.FC<{
           </button>
           {viewMode === 'board' && (
             <button
-              onClick={() => handleUpdateSession({ isBoardLocked: !isBoardLocked })}
+              onClick={() => handleUpdateSession({ isBoardLocked: !isBoardLocked, allowStudentWhiteboardEdit: isBoardLocked })}
               className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center ${isBoardLocked ? 'bg-red-500' : 'bg-emerald-500'}`}
             >
               {isBoardLocked ? '🔒' : '🔓'}
             </button>
           )}
+          </div>
         </div>
       </div>
 

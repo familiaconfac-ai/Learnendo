@@ -11,13 +11,13 @@ interface TeacherBoardProps {
  * Thin wrapper so TeacherRoomView can import from './CollaborativeBoard'.
  * Delegates to the shared Board/CollaborativeBoard which has Firestore sync.
  */
-const CollaborativeBoard: React.FC<TeacherBoardProps> = ({ roomId, isReadOnly, isLocked }) => {
+const CollaborativeBoard: React.FC<TeacherBoardProps> = ({ roomId, isReadOnly }) => {
   return (
     <SharedBoard
       boardId={`class-${roomId}`}
       userId="teacher"
       userName="Professor"
-      readOnly={isReadOnly || isLocked}
+      readOnly={isReadOnly}
     />
   );
 };

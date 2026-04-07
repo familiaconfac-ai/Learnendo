@@ -2,3 +2,6 @@
 .env*.local
 dev-dist
 dist
+
+.vercel
+.env*.local
