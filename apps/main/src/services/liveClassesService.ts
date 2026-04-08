@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { LiveClass, LiveClassGroup, LiveClassGroupInput, LiveClassInput, LiveClassMessage, LiveClassRole } from '../types';
+import type { SavedBattleTemplate } from '../components/LiveClasses/Battle/battleTypes';
 import type { UserRole } from './userRoles';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
@@ -110,6 +111,7 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   isPrivate: data.isPrivate ?? false,
   assignedStudentIds: Array.isArray(data.assignedStudentIds) ? data.assignedStudentIds : [],
   assignedStudentNames: Array.isArray(data.assignedStudentNames) ? data.assignedStudentNames : [],
+  battleTemplates: Array.isArray(data.battleTemplates) ? data.battleTemplates : [],
   status: deriveLiveClassStatus(data.date ?? '', data.time ?? ''),
   createdBy: data.createdBy ?? '',
   createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
@@ -359,6 +361,29 @@ export async function updateLiveClass(classId: string, input: Partial<LiveClassI
     payload,
   });
   await updateDoc(classRef, payload);
+}
+
+export async function appendLiveClassBattleTemplate(
+  classId: string,
+  template: SavedBattleTemplate,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId) return;
+
+  const classRef = doc(db, LIVE_CLASSES_COLLECTION, classId);
+  const snapshot = await getDoc(classRef);
+  if (!snapshot.exists()) {
+    throw new Error('Live class not found');
+  }
+
+  const data = snapshot.data() as Record<string, any>;
+  const existingTemplates = Array.isArray(data.battleTemplates) ? data.battleTemplates : [];
+  const nextTemplates = [template, ...existingTemplates].slice(0, 20);
+
+  await updateDoc(classRef, {
+    battleTemplates: nextTemplates,
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export async function deleteLiveClass(classId: string): Promise<void> {

@@ -1,212 +1,33 @@
+/**
+ * CollaborativeBoard — Excalidraw OSS edition
+ *
+ * Drop-in replacement for the previous tldraw-based component.
+ * Public props interface is unchanged so TeacherRoomView and StudentRoomView
+ * require no edits.
+ *
+ * Persistence is delegated to whiteboardAdapter (Firestore) using the same
+ * document path as before.
+ */
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Tldraw, useEditor, getSnapshot, loadSnapshot } from 'tldraw';
-import 'tldraw/tldraw.css';
-import { db } from '../../../services/firebase';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { Excalidraw } from '@excalidraw/excalidraw';
+import '@excalidraw/excalidraw/index.css';
+import type { AppState, BinaryFiles, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types';
+import type { ExcalidrawElement } from '@excalidraw/excalidraw/element/types';
+import { saveScene, subscribeToScene } from './whiteboardAdapter';
 
-interface CollaborativeBoardProps {
+export interface CollaborativeBoardProps {
   boardId: string;
   userId: string;
   userName: string;
   readOnly?: boolean;
-  /** When true, hides all tldraw chrome (menus, page controls, etc.). Shows only the basic toolbar when not readOnly. */
+  /**
+   * When true, hides the Excalidraw main-menu and footer controls.
+   * Used for the student view so the board feels like a plain canvas.
+   */
   hideChrome?: boolean;
 }
 
-/**
- * Inner component that runs inside <Tldraw> so useEditor() has context.
- * Syncs the tldraw store to/from Firestore in real time via
- * liveClasses/{classId}/shared/tldrawBoard.
- *
- * Uses client-based echo detection so a participant never reloads its own save,
- * but every remote save is applied immediately to the board.
- */
-const DOCUMENT_RECORD_TYPES = new Set(['shape', 'page', 'binding', 'asset']);
-const PERSISTED_RECORD_TYPES = new Set(['shape', 'binding', 'asset']);
-
-function countPersistedRecords(snapshot: { store?: Record<string, { typeName?: string }> } | null | undefined) {
-  return Object.values(snapshot?.store ?? {}).filter((record) => PERSISTED_RECORD_TYPES.has(record?.typeName ?? '')).length;
-}
-
-function hasPersistableChange(changes: {
-  added: Record<string, { typeName?: string }>;
-  updated: Record<string, { typeName?: string } | [unknown, { typeName?: string }]>;
-  removed: Record<string, { typeName?: string }>;
-}) {
-  const addedChanged = Object.values(changes.added).some((record) => PERSISTED_RECORD_TYPES.has(record?.typeName ?? ''));
-  if (addedChanged) return true;
-
-  const updatedChanged = Object.values(changes.updated).some((record) => {
-    const nextRecord = Array.isArray(record) ? record[1] : record;
-    return PERSISTED_RECORD_TYPES.has(nextRecord?.typeName ?? '');
-  });
-  if (updatedChanged) return true;
-
-  return Object.values(changes.removed).some((record) => PERSISTED_RECORD_TYPES.has(record?.typeName ?? ''));
-}
-
-const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: boolean }> = ({ boardId, userId, readOnly }) => {
-  const editor = useEditor();
-  const isRemoteUpdate = useRef(false);
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hasHydratedFromFirestore = useRef(false);
-  const hasExplicitUserEdit = useRef(false);
-  const lastRemotePersistedCount = useRef(0);
-  const clientId = useRef(`${userId}:${Math.random().toString(36).slice(2, 10)}`).current;
-
-  // Strip the "class-" prefix to get the actual classId for Firestore path
-  const classId = boardId.startsWith('class-') ? boardId.slice(6) : boardId;
-
-  // ── Save local changes to Firestore (debounced) ──
-  const saveToFirestore = useCallback(() => {
-    if (readOnly) return;
-    if (isRemoteUpdate.current) return;
-    if (!hasHydratedFromFirestore.current) return;
-    if (!hasExplicitUserEdit.current) {
-      console.log('[CollaborativeBoard] skip save before first explicit edit', { classId, userId, clientId });
-      return;
-    }
-    if (debounceTimer.current) clearTimeout(debounceTimer.current);
-
-    debounceTimer.current = setTimeout(async () => {
-      try {
-        if (!db) return;
-        const snapshot = getSnapshot(editor.store);
-        const persistedCount = countPersistedRecords(snapshot as { store?: Record<string, { typeName?: string }> });
-        console.log('[CollaborativeBoard] save triggered', {
-          classId,
-          userId,
-          clientId,
-          persistedCount,
-          lastRemotePersistedCount: lastRemotePersistedCount.current,
-        });
-        const docRef = doc(db, 'liveClasses', classId, 'shared', 'tldrawBoard');
-        await setDoc(docRef, {
-          snapshot: JSON.stringify(snapshot),
-          updatedAt: Date.now(),
-          updatedBy: userId,
-          updatedByUid: userId,
-          updatedByClientId: clientId,
-        }, { merge: true });
-      } catch (err) {
-        console.warn('[CollaborativeBoard] save error:', err);
-      }
-    }, 300);
-  }, [clientId, editor, classId, readOnly, userId]);
-
-  // ── Listen to local store changes and push to Firestore ──
-  useEffect(() => {
-    if (readOnly) {
-      return () => {};
-    }
-
-    const cleanup = editor.store.listen((entry) => {
-      if (!hasPersistableChange(entry.changes as {
-        added: Record<string, { typeName?: string }>;
-        updated: Record<string, { typeName?: string } | [unknown, { typeName?: string }]>;
-        removed: Record<string, { typeName?: string }>;
-      })) {
-        return;
-      }
-
-      hasExplicitUserEdit.current = true;
-      console.log('[CollaborativeBoard] explicit user edit detected', {
-        classId,
-        userId,
-        clientId,
-        added: Object.keys(entry.changes.added).length,
-        updated: Object.keys(entry.changes.updated).length,
-        removed: Object.keys(entry.changes.removed).length,
-      });
-      saveToFirestore();
-    }, { scope: 'document', source: 'user' });
-
-    return cleanup;
-  }, [editor, readOnly, saveToFirestore]);
-
-  // ── Listen to Firestore changes and merge into store ──
-  useEffect(() => {
-    if (!db) return;
-    const docRef = doc(db, 'liveClasses', classId, 'shared', 'tldrawBoard');
-
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (!docSnap.exists()) {
-        // No remote data yet; allow saves from this point on.
-        hasHydratedFromFirestore.current = true;
-        lastRemotePersistedCount.current = 0;
-        console.log('[CollaborativeBoard] remote snapshot missing', { classId, userId, clientId });
-        return;
-      }
-      const data = docSnap.data();
-      if (!data?.snapshot) {
-        hasHydratedFromFirestore.current = true;
-        lastRemotePersistedCount.current = 0;
-        console.log('[CollaborativeBoard] remote snapshot empty payload', { classId, userId, clientId });
-        return;
-      }
-
-      // Skip our own writes by client id so multiple tabs from the same account still sync.
-      if (data.updatedByClientId === clientId) {
-        hasHydratedFromFirestore.current = true;
-        const ownSnapshot = JSON.parse(data.snapshot);
-        lastRemotePersistedCount.current = countPersistedRecords(ownSnapshot as { store?: Record<string, { typeName?: string }> });
-        console.log('[CollaborativeBoard] remote echo ignored', {
-          classId,
-          userId,
-          clientId,
-          persistedCount: lastRemotePersistedCount.current,
-        });
-        return;
-      }
-
-      try {
-        const remoteSnapshot = JSON.parse(data.snapshot);
-        lastRemotePersistedCount.current = countPersistedRecords(remoteSnapshot as { store?: Record<string, { typeName?: string }> });
-        console.log('[CollaborativeBoard] remote snapshot applied', {
-          classId,
-          userId,
-          clientId,
-          persistedCount: lastRemotePersistedCount.current,
-          updatedByClientId: data.updatedByClientId ?? null,
-        });
-        isRemoteUpdate.current = true;
-        editor.store.mergeRemoteChanges(() => {
-          loadSnapshot(editor.store, remoteSnapshot);
-        });
-        hasHydratedFromFirestore.current = true;
-        setTimeout(() => { isRemoteUpdate.current = false; }, 100);
-      } catch (err) {
-        console.warn('[CollaborativeBoard] load error:', err);
-        hasHydratedFromFirestore.current = true;
-        isRemoteUpdate.current = false;
-      }
-    });
-
-    return () => {
-      unsubscribe();
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-    };
-  }, [clientId, editor, classId, readOnly]);
-
-  return null;
-};
-
-/**
- * Enforces readonly mode on the tldraw editor when the board is locked.
- * Must be rendered inside <Tldraw>.
- */
-const ReadOnlyEnforcer: React.FC = () => {
-  const editor = useEditor();
-  useEffect(() => {
-    editor.updateInstanceState({ isReadonly: true });
-    return () => {
-      editor.updateInstanceState({ isReadonly: false });
-    };
-  }, [editor]);
-  return null;
-};
-
-/** Error boundary so a tldraw crash doesn't white-screen the whole room. */
+/** Error boundary so an Excalidraw crash doesn't white-screen the whole room. */
 class BoardErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { hasError: boolean }
@@ -214,7 +35,7 @@ class BoardErrorBoundary extends React.Component<
   state = { hasError: false };
   static getDerivedStateFromError() { return { hasError: true }; }
   componentDidCatch(error: Error) {
-    console.warn('[CollaborativeBoard] tldraw error caught:', error.message);
+    console.warn('[CollaborativeBoard] Excalidraw error caught:', error.message);
   }
   render() {
     if (this.state.hasError) {
@@ -234,64 +55,143 @@ class BoardErrorBoundary extends React.Component<
   }
 }
 
-// Componente de lousa colaborativa usando tldraw + Firestore sync
-export const CollaborativeBoard: React.FC<CollaborativeBoardProps> = ({ boardId, userId, userName, readOnly, hideChrome }) => {
+/**
+ * CollaborativeBoard — Excalidraw + Firestore real-time sync.
+ *
+ * Sync strategy (mirrors the previous tldraw approach):
+ *  1. On mount, subscribe to the Firestore document via whiteboardAdapter.
+ *  2. When the first snapshot arrives (or the doc is missing) mark isHydrated.
+ *  3. If the Excalidraw API is already available, apply remote elements via
+ *     updateScene(); otherwise queue them in pendingScene and apply in the
+ *     excalidrawAPI callback — removing the API-vs-snapshot race condition.
+ *  4. On every user-driven onChange, debounce a Firestore write (300 ms).
+ *     Remote updates set isRemoteUpdate while active to prevent echo saves.
+ */
+export const CollaborativeBoard: React.FC<CollaborativeBoardProps> = ({
+  boardId,
+  userId,
+  readOnly,
+  hideChrome,
+}) => {
+  // ── Refs ──────────────────────────────────────────────────────────────────
+  const excalidrawAPI = useRef<ExcalidrawImperativeAPI | null>(null);
+  const isHydrated = useRef(false);
+  const pendingScene = useRef<ExcalidrawElement[] | null>(null);
+  const isRemoteUpdate = useRef(false);
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Each mount gets a unique clientId so that a participant's own Firestore
+   * write is not replayed back to them (even across multiple browser tabs of
+   * the same account).
+   */
+  const clientId = useRef(
+    `${userId}:${Math.random().toString(36).slice(2, 10)}`,
+  ).current;
+
+  // ── Firestore subscription ────────────────────────────────────────────────
+  useEffect(() => {
+    const adapterOptions = { boardId, userId, clientId };
+
+    const unsubscribe = subscribeToScene(
+      adapterOptions,
+      // onScene — called for every remote delta from a different client
+      (elements) => {
+        if (excalidrawAPI.current && isHydrated.current) {
+          isRemoteUpdate.current = true;
+          excalidrawAPI.current.updateScene({ elements });
+          setTimeout(() => { isRemoteUpdate.current = false; }, 100);
+        } else {
+          // API not ready yet; buffer and apply once it is
+          pendingScene.current = elements;
+        }
+      },
+      // onHydrated — called after the first snapshot (even if empty)
+      () => {
+        isHydrated.current = true;
+        if (pendingScene.current === null) {
+          // Nothing queued — API may or may not be ready; that's fine,
+          // subsequent saves will start flowing after the first user edit.
+        }
+      },
+    );
+
+    return () => {
+      unsubscribe();
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, [boardId, userId, clientId]);
+
+  // ── Excalidraw API callback ───────────────────────────────────────────────
+  const handleAPI = useCallback((api: ExcalidrawImperativeAPI) => {
+    excalidrawAPI.current = api;
+    // Apply any scene that arrived from Firestore before the API was ready
+    if (pendingScene.current !== null) {
+      const elements = pendingScene.current;
+      pendingScene.current = null;
+      isRemoteUpdate.current = true;
+      api.updateScene({ elements });
+      isHydrated.current = true;
+      setTimeout(() => { isRemoteUpdate.current = false; }, 100);
+    } else {
+      // No pending scene; mark hydrated if subscribeToScene hasn't already
+      isHydrated.current = true;
+    }
+  }, []);
+
+  // ── onChange — debounced save to Firestore ────────────────────────────────
+  const handleChange = useCallback(
+    (elements: readonly ExcalidrawElement[], _appState: AppState, _files: BinaryFiles) => {
+      if (readOnly || isRemoteUpdate.current || !isHydrated.current) return;
+
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(() => {
+        saveScene({ boardId, userId, clientId }, elements).catch((err) => {
+          console.warn('[CollaborativeBoard] save error:', err);
+        });
+      }, 300);
+    },
+    [boardId, readOnly, userId, clientId],
+  );
+
+  // ── Render ────────────────────────────────────────────────────────────────
   const wrapperClass = [
-    'w-full h-full min-h-[400px] bg-white rounded-2xl overflow-hidden tldraw-compact',
-    hideChrome ? 'tldraw-hide-chrome' : '',
-    hideChrome && readOnly ? 'tldraw-view-only' : '',
+    'w-full h-full min-h-[400px] bg-white rounded-2xl overflow-hidden excalidraw-board',
+    hideChrome ? 'excalidraw-hide-chrome' : '',
   ].join(' ');
 
   return (
     <div className={wrapperClass}>
+      {/* Scoped styles — hide Excalidraw chrome for the student view */}
       <style>{`
-        /* ── Teacher / shared compact styles ── */
-        .tldraw-compact .tlui-layout__bottom {
-          position: absolute;
-          bottom: 0;
-          right: 0;
-          left: auto !important;
-          width: auto;
-          z-index: 300;
-          pointer-events: none;
-        }
-        .tldraw-compact .tlui-layout__bottom__main {
-          justify-content: flex-end;
-          pointer-events: all;
-          transform: scale(0.62);
-          transform-origin: bottom right;
-        }
-        .tldraw-compact .tlui-navigation-panel {
-          display: none;
-        }
-        .tldraw-compact .tlui-actions-menu {
-          position: fixed;
-          top: 44px;
-          left: 56px;
-          z-index: 300;
-        }
-        .tldraw-compact .tlui-help-menu {
-          display: none;
-        }
-
-        /* ── Student: always hide top chrome (hamburger, Page 1, etc.) ── */
-        .tldraw-hide-chrome .tlui-layout__top {
+        /* Student: hide main menu button and footer */
+        .excalidraw-hide-chrome .main-menu-trigger {
           display: none !important;
         }
-        .tldraw-hide-chrome .tlui-actions-menu {
+        .excalidraw-hide-chrome footer,
+        .excalidraw-hide-chrome .App-footer {
           display: none !important;
         }
-
-        /* ── Student locked (view-only): hide ALL controls ── */
-        .tldraw-view-only .tlui-layout__bottom {
-          display: none !important;
+        /* Compact: scale down the toolbar in embedded contexts */
+        .excalidraw-board .App-toolbar {
+          transform: scale(0.85);
+          transform-origin: bottom center;
         }
       `}</style>
       <BoardErrorBoundary>
-        <Tldraw inferDarkMode={false}>
-          <FirestoreSync boardId={boardId} userId={userId} readOnly={readOnly} />
-          {readOnly && <ReadOnlyEnforcer />}
-        </Tldraw>
+        <Excalidraw
+          excalidrawAPI={handleAPI}
+          onChange={handleChange}
+          viewModeEnabled={readOnly}
+          theme="light"
+          UIOptions={{
+            canvasActions: {
+              export: false,
+              saveToActiveFile: false,
+              loadScene: false,
+              toggleTheme: false,
+            },
+          }}
+        />
       </BoardErrorBoundary>
     </div>
   );

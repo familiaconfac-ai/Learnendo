@@ -5,6 +5,8 @@ import { subscribeLivePresence, subscribeLiveSession } from '../../services/live
 import { getLiveClassMeetLink, getLiveClassPresentationLink } from '../../services/liveClassesService';
 import { LiveClassChat } from './LiveClassChat';
 import { TeacherLiveControlPanel } from './TeacherLiveControlPanel';
+import { BattlePracticeView } from './Battle/BattlePracticeView';
+import type { SavedBattleTemplate } from './Battle/battleTypes';
 
 interface LiveClassDetailsPageProps {
   liveClass: LiveClass;
@@ -54,6 +56,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   onOpenClassContent,
 }) => {
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
+  const [selectedBattleTemplate, setSelectedBattleTemplate] = useState<SavedBattleTemplate | null>(null);
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
     activeWorkbookId: null,
@@ -104,6 +107,10 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
       isOnline: onlinePresence.some((item) => item.uid === uid),
     }));
   }, [liveClass.assignedStudentIds, liveClass.assignedStudentNames, onlinePresence]);
+  const battleTemplates = useMemo(
+    () => (liveClass.battleTemplates ?? []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [liveClass.battleTemplates]
+  );
 
   return (
     <div className="min-h-screen bg-slate-900 px-3 pb-28 pt-6 sm:px-4">
@@ -290,6 +297,58 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
           allowAudioNotes={session.audioNotesEnabled !== false}
         />
       </div>
+
+      <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-800 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-wide text-orange-300">Learnendo Battle</h2>
+            <p className="mt-1 text-sm text-slate-300">
+              Battles salvos nesta aula para treino solo fora do horario.
+            </p>
+          </div>
+          <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-black uppercase tracking-wide text-slate-300">
+            {battleTemplates.length} salvos
+          </span>
+        </div>
+
+        {battleTemplates.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-400">
+            Quando o professor iniciar um Learnendo Battle nesta aula, ele ficara registrado aqui.
+          </p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {battleTemplates.map((template) => (
+              <article key={template.id} className="rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-black text-white">{template.title}</h3>
+                    <p className="mt-1 text-xs text-slate-400">
+                      {template.questions.length} perguntas • {template.config.timePerQuestion}s por pergunta • salvo em {new Date(template.createdAt).toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBattleTemplate(template)}
+                    className="rounded-xl bg-orange-500 px-3 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#c2410c]"
+                  >
+                    Jogar solo
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {selectedBattleTemplate && (
+        <BattlePracticeView
+          template={selectedBattleTemplate}
+          uid={user.uid}
+          name={user.displayName || user.email || (isTeacher ? 'Professor' : 'Aluno')}
+          isTeacher={isTeacher}
+          onClose={() => setSelectedBattleTemplate(null)}
+        />
+      )}
     </div>
   );
 };

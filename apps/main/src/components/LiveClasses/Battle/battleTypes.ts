@@ -30,6 +30,14 @@ export interface BattleQuestion {
   playAudioOnce?: boolean;  // audio prompt can only be heard once in battle
 }
 
+export interface SavedBattleTemplate {
+  id: string;
+  title: string;
+  createdAt: string;
+  config: BattleConfig;
+  questions: BattleQuestion[];
+}
+
 export interface BattleParticipant {
   uid: string;
   name: string;

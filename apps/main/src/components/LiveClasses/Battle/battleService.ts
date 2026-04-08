@@ -18,6 +18,7 @@ import {
   buildInitialBattleScores,
   evaluateBattleAnswer,
   getExpectedBattleParticipantIds,
+  sanitizeBattleQuestions,
 } from './battleUtils';
 
 function battleDocRef(classId: string) {
@@ -39,12 +40,16 @@ export async function createBattleSession(
   // shuffled order.  If omitted, questions are generated here.
   precomputedQuestions?: BattleQuestion[]
 ): Promise<void> {
-  const questions: BattleQuestion[] = precomputedQuestions ?? getBattleQuestions({
+  const generatedQuestions: BattleQuestion[] = precomputedQuestions ?? getBattleQuestions({
     questionCount: config.questionCount,
     scope: config.scope,
     lessonId: config.lessonId,
     workbookId: config.workbookId,
   });
+  const questions = sanitizeBattleQuestions(generatedQuestions);
+  if (questions.length === 0) {
+    throw new Error('Nenhuma pergunta valida foi encontrada para iniciar o Battle.');
+  }
 
   const session: Omit<BattleSession, 'id'> = {
     status: 'lobby',

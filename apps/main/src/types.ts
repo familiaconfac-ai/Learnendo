@@ -1,3 +1,5 @@
+import type { SavedBattleTemplate } from './components/LiveClasses/Battle/battleTypes';
+
 export interface Course {
   id: string;
   title: string;
@@ -127,6 +129,7 @@ export interface LiveClass {
   isPrivate?: boolean;
   assignedStudentIds?: string[];
   assignedStudentNames?: string[];
+  battleTemplates?: SavedBattleTemplate[];
   status: LiveClassStatus;
   createdBy: string;
   createdAt?: string;

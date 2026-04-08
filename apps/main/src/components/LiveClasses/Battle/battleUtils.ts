@@ -1,4 +1,4 @@
-import type { BattleAnswer, BattleConfig, BattleQuestion, BattleSession } from './battleTypes';
+import type { BattleAnswer, BattleConfig, BattleQuestion, BattleSession, SavedBattleTemplate } from './battleTypes';
 
 export function getBattleLanguage(courseId?: string): string {
   if (courseId === 'portuguese_foreigners') return 'pt';
@@ -34,6 +34,71 @@ function normalizeBattleText(value: string): string {
     .replace(/\s+/g, ' ');
 }
 
+function normalizeOptionalText(value?: string): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function uniqueValues(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion | null {
+  const id = normalizeOptionalText(question.id) ?? `battle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const text = normalizeOptionalText(question.text);
+  if (!text) return null;
+
+  if (isChoiceQuestion(question)) {
+    const options = uniqueValues((question.options ?? []).map((option) => option.trim()));
+    if (options.length < 2) return null;
+
+    const fallbackCorrectOption = normalizeOptionalText(question.correctText);
+    const matchedCorrectIndex = fallbackCorrectOption ? options.findIndex((option) => option === fallbackCorrectOption) : -1;
+    const requestedCorrectIndex = typeof question.correctIndex === 'number' ? question.correctIndex : -1;
+    const correctIndex = requestedCorrectIndex >= 0 && requestedCorrectIndex < options.length
+      ? requestedCorrectIndex
+      : matchedCorrectIndex >= 0
+      ? matchedCorrectIndex
+      : 0;
+
+    return {
+      id,
+      kind: question.kind,
+      text,
+      options,
+      correctIndex,
+      ...(normalizeOptionalText(question.hint) ? { hint: normalizeOptionalText(question.hint) } : {}),
+      ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
+    };
+  }
+
+  const acceptedAnswers = uniqueValues([
+    normalizeOptionalText(question.correctText) ?? '',
+    ...((question.acceptedAnswers ?? []).map((answer) => answer.trim())),
+  ]);
+  if (acceptedAnswers.length === 0) return null;
+
+  const correctText = acceptedAnswers[0];
+
+  return {
+    id,
+    kind: question.kind,
+    text,
+    correctText,
+    acceptedAnswers,
+    playAudioOnce: question.playAudioOnce !== false,
+    ...(normalizeOptionalText(question.hint) ? { hint: normalizeOptionalText(question.hint) } : {}),
+    ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
+    ...(normalizeOptionalText(question.promptAudioText) ? { promptAudioText: normalizeOptionalText(question.promptAudioText) } : {}),
+  };
+}
+
+export function sanitizeBattleQuestions(questions: BattleQuestion[]): BattleQuestion[] {
+  return questions
+    .map((question) => sanitizeBattleQuestion(question))
+    .filter((question): question is BattleQuestion => question !== null);
+}
+
 export function evaluateBattleAnswer(
   question: BattleQuestion,
   payload: { optionIndex?: number; responseText?: string }
@@ -61,7 +126,10 @@ export function getExpectedBattleParticipantIds(
 ): string[] {
   const allParticipantIds = Object.keys(session.scores ?? {});
   if (session.config.includeTeacher) return allParticipantIds;
-  return allParticipantIds.filter((uid) => uid !== teacherUid);
+
+  const studentIds = allParticipantIds.filter((uid) => uid !== teacherUid);
+  if (studentIds.length > 0) return studentIds;
+  return [teacherUid];
 }
 
 export function buildInitialBattleScores(
@@ -87,4 +155,27 @@ export function getMyBattleAnswer(
   uid: string
 ): BattleAnswer | undefined {
   return session.currentAnswers?.[uid];
+}
+
+export function buildSavedBattleTemplate(
+  config: BattleConfig,
+  questions: BattleQuestion[],
+  fallbackTitle?: string
+): SavedBattleTemplate {
+  const createdAt = new Date().toISOString();
+  const formattedDate = new Date(createdAt).toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  return {
+    id: `battle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    title: fallbackTitle?.trim() || `Learnendo Battle ${formattedDate}`,
+    createdAt,
+    config,
+    questions: sanitizeBattleQuestions(questions),
+  };
 }

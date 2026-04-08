@@ -12,6 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, BattleQuestion } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
+import { sanitizeBattleQuestion, sanitizeBattleQuestions } from './battleUtils';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 function buildExcludedKey(params: {
@@ -165,28 +166,28 @@ export const BattleSetupModal: React.FC<Props> = ({
       .map((entry) => entry.trim())
       .filter(Boolean);
 
-    return {
+    const baseQuestion: BattleQuestion = {
       id: baseId,
       kind: editDraft.kind,
       text: editDraft.text,
-      options: editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice'
-        ? editDraft.options
-        : undefined,
-      correctIndex: editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice'
-        ? editDraft.correctIndex
-        : undefined,
-      correctText: editDraft.kind === 'audio-open' || editDraft.kind === 'speaking'
-        ? editDraft.correctText
-        : undefined,
-      acceptedAnswers: editDraft.kind === 'audio-open' || editDraft.kind === 'speaking'
-        ? acceptedAnswers
-        : undefined,
-      promptAudioText: editDraft.kind === 'audio-open' || editDraft.kind === 'speaking'
-        ? (editDraft.promptAudioText || editDraft.text)
-        : undefined,
-      playAudioOnce: editDraft.kind === 'audio-open' || editDraft.kind === 'speaking',
-      imageUrl: editDraft.imageUrl || undefined,
+      ...(editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice'
+        ? {
+            options: editDraft.options,
+            correctIndex: editDraft.correctIndex,
+          }
+        : {}),
+      ...(editDraft.kind === 'audio-open' || editDraft.kind === 'speaking'
+        ? {
+            correctText: editDraft.correctText,
+            acceptedAnswers,
+            promptAudioText: editDraft.promptAudioText || editDraft.text,
+            playAudioOnce: true,
+          }
+        : {}),
+      ...(editDraft.imageUrl.trim() ? { imageUrl: editDraft.imageUrl.trim() } : {}),
     };
+
+    return sanitizeBattleQuestion(baseQuestion) ?? baseQuestion;
   }
 
   function getEffectiveQuestions(): BattleQuestion[] {
@@ -250,7 +251,16 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   function saveEdit() {
     if (editingIdx === null || !editDraft) return;
-    setQuestions(getEffectiveQuestions());
+    const currentQuestion = questions[editingIdx];
+    const sanitizedQuestion = sanitizeBattleQuestion(draftToQuestion(currentQuestion.id));
+    if (!sanitizedQuestion) {
+      window.alert('Essa pergunta ficou incompleta. Revise o enunciado e a resposta correta antes de salvar.');
+      return;
+    }
+
+    setQuestions(questions.map((question, index) => (
+      index === editingIdx ? sanitizedQuestion : question
+    )));
     setEditingIdx(null);
     setEditDraft(null);
   }
@@ -293,7 +303,9 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   /** ✅ Confirmar Lista Final — launch with curated questions */
   function handleConfirm() {
-    const finalQs = getEffectiveQuestions().filter(q => !excludedIds.has(q.id));
+    const finalQs = sanitizeBattleQuestions(
+      getEffectiveQuestions().filter(q => !excludedIds.has(q.id))
+    );
     if (finalQs.length === 0) return;
     onStart(buildConfig(finalQs.length), finalQs);
   }

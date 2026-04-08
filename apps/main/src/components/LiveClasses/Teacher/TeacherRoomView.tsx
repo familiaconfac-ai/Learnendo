@@ -18,7 +18,8 @@ import { BattleSetupModal } from '../Battle/BattleSetupModal';
 import { BattleHostView } from '../Battle/BattleHostView';
 import { BattleSession, BattleConfig, BattleQuestion } from '../Battle/battleTypes';
 import { subscribeBattleSession, createBattleSession, deleteBattleSession } from '../Battle/battleService';
-import { buildInitialBattleScores } from '../Battle/battleUtils';
+import { buildInitialBattleScores, buildSavedBattleTemplate, sanitizeBattleQuestions } from '../Battle/battleUtils';
+import { appendLiveClassBattleTemplate } from '../../../services/liveClassesService';
 
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
@@ -60,13 +61,19 @@ const TeacherStage: React.FC<{
   }, [liveClass.id]);
 
   async function handleLaunchBattle(config: BattleConfig, questions: BattleQuestion[]) {
+    const sanitizedQuestions = sanitizeBattleQuestions(questions);
+    if (sanitizedQuestions.length === 0) {
+      window.alert('Nenhuma pergunta valida foi encontrada para iniciar o Battle.');
+      return;
+    }
+
     setShowBattleSetup(false);
     const now = Date.now();
     const optimisticSession: BattleSession = {
       id: liveClass.id,
       status: 'lobby',
       config,
-      questions,
+      questions: sanitizedQuestions,
       currentQuestionIndex: 0,
       questionStartedAt: 0,
       scores: buildInitialBattleScores(config, teacherUid, teacherName),
@@ -76,8 +83,20 @@ const TeacherStage: React.FC<{
     };
     setBattleSession(optimisticSession);
 
-    createBattleSession(liveClass.id, config, teacherUid, teacherName, questions).catch((err) => {
+    createBattleSession(liveClass.id, config, teacherUid, teacherName, sanitizedQuestions).catch((err) => {
       console.error('[Battle] Firestore sync failed:', err);
+      setBattleSession(null);
+      setShowBattleSetup(true);
+      window.alert('Nao foi possivel iniciar o Battle. Revise a pergunta editada e tente novamente.');
+    });
+
+    const savedTemplate = buildSavedBattleTemplate(
+      config,
+      sanitizedQuestions,
+      `${liveClass.title} • Battle ${new Date().toLocaleDateString('pt-BR')}`
+    );
+    appendLiveClassBattleTemplate(liveClass.id, savedTemplate).catch((err) => {
+      console.warn('[Battle] save template failed:', err);
     });
   }
 

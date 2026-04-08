@@ -54,11 +54,12 @@ export const BattleHostView: React.FC<Props> = ({
     () => getExpectedBattleParticipantIds(session, teacherUid),
     [session, teacherUid]
   );
+  const teacherCanPlay = expectedParticipantIds.includes(teacherUid);
   const answerCount = Object.keys(session.currentAnswers).length;
   const timeRatio = timeLeft / session.config.timePerQuestion;
   const myAnswer = getMyBattleAnswer(session, teacherUid);
   const teacherHasAnswered = !!myAnswer;
-  const showTeacherInScores = includeTeacher;
+  const showTeacherInScores = includeTeacher || teacherCanPlay;
   const visibleScores = useMemo(
     () => showTeacherInScores
       ? session.scores
@@ -181,13 +182,13 @@ export const BattleHostView: React.FC<Props> = ({
   }
 
   async function handleTeacherChoice(optionIndex: number) {
-    if (!includeTeacher || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active') return;
+    if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active') return;
     setSelectedOption(optionIndex);
     await submitBattleAnswer(classId, session, teacherUid, session.scores[teacherUid]?.name || 'Professor', { optionIndex });
   }
 
   async function handleTeacherOpenAnswer() {
-    if (!includeTeacher || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
+    if (!teacherCanPlay || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
     await submitBattleAnswer(
       classId,
       session,
@@ -289,7 +290,9 @@ export const BattleHostView: React.FC<Props> = ({
               <p className="text-slate-600 text-xs">
                 {includeTeacher
                   ? 'Professor participa do placar nesta batalha.'
-                  : 'Professor só comanda a partida nesta batalha.'}
+                  : teacherCanPlay
+                    ? 'Modo solo do professor ativo para teste.'
+                    : 'Professor só comanda a partida nesta batalha.'}
               </p>
               <button
                 onClick={handleStart}
@@ -329,7 +332,7 @@ export const BattleHostView: React.FC<Props> = ({
                       <button
                         key={index}
                         onClick={() => handleTeacherChoice(index)}
-                        disabled={session.status !== 'active' || (!includeTeacher ? true : teacherHasAnswered)}
+                        disabled={session.status !== 'active' || (!teacherCanPlay ? true : teacherHasAnswered)}
                         className={`py-4 px-3 rounded-xl border-2 text-center text-sm font-bold transition-all ${
                           showCorrect && isCorrect
                             ? 'border-green-500 bg-green-500/20 text-green-300'
@@ -350,11 +353,11 @@ export const BattleHostView: React.FC<Props> = ({
                   <textarea
                     value={typedAnswer}
                     onChange={(event) => setTypedAnswer(event.target.value)}
-                    disabled={!includeTeacher || teacherHasAnswered || session.status !== 'active'}
+                    disabled={!teacherCanPlay || teacherHasAnswered || session.status !== 'active'}
                     placeholder={question.kind === 'speaking' ? 'Resposta do professor...' : 'Digite a resposta do professor...'}
                     className="w-full min-h-28 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
                   />
-                  {includeTeacher && (
+                  {teacherCanPlay && (
                     <div className="flex gap-3">
                       {question.kind === 'speaking' && (
                         <button
