@@ -187,9 +187,19 @@ const StudentStage: React.FC<{
   })();
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 px-2 pb-24 pt-4 flex flex-col items-center w-full">
+    <>
+    {/* ── Mobile landscape: board fills most of screen ───────────────────── */}
+    <style>{`
+      @media (orientation: landscape) and (max-width: 767px) {
+        .student-stage-root { padding-top: 0.25rem !important; padding-bottom: 3.5rem !important; }
+        .student-title-bar { display: none !important; }
+        .student-main-stage { min-height: 75vh !important; aspect-ratio: unset !important; }
+        .student-local-preview { width: 4.5rem !important; }
+      }
+    `}</style>
+    <div className="student-stage-root min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 px-2 pb-20 pt-2 sm:pb-24 sm:pt-4 flex flex-col items-center w-full">
       {/* Título da sala */}
-      <div className="w-full max-w-3xl mb-3 flex items-center justify-between px-2">
+      <div className="student-title-bar w-full max-w-3xl mb-2 sm:mb-3 flex items-center justify-between px-2">
         <h1 className="text-lg md:text-xl font-black text-white truncate drop-shadow">
           {liveClass.title}
         </h1>
@@ -214,7 +224,7 @@ const StudentStage: React.FC<{
           </button>
         )}
 
-        <div className="relative w-full aspect-[16/9] rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 mb-3 overflow-hidden transition-all">
+        <div className="student-main-stage relative w-full min-h-[55vw] sm:aspect-[16/9] sm:min-h-0 rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 mb-3 overflow-hidden transition-all">
           {/* CAMERA DO PROFESSOR — sempre montada, só escondida */}
           <div
             className={`absolute inset-0 bg-black flex items-center justify-center transition-opacity ${
@@ -275,7 +285,7 @@ const StudentStage: React.FC<{
 
           {/* Preview local do aluno */}
           {isCameraEnabled && (
-            <div className="absolute top-3 right-3 w-32 aspect-video rounded-xl overflow-hidden border-2 border-emerald-500/60 shadow-lg z-30 bg-black">
+            <div className="student-local-preview absolute top-2 right-2 sm:top-3 sm:right-3 w-20 sm:w-32 aspect-video rounded-xl overflow-hidden border-2 border-emerald-500/60 shadow-lg z-30 bg-black">
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -289,7 +299,7 @@ const StudentStage: React.FC<{
       </div>
 
       {/* Barra de controles mínimos */}
-      <div className="fixed bottom-0 left-0 w-full flex justify-center gap-3 bg-slate-950/90 py-3 border-t border-slate-800 z-50 backdrop-blur-sm">
+      <div className="fixed bottom-0 left-0 w-full flex justify-center gap-3 bg-slate-950/90 py-2 sm:py-3 border-t border-slate-800 z-50 backdrop-blur-sm">
         {/* Microfone */}
         <button
           onClick={() => {
@@ -460,6 +470,7 @@ const StudentStage: React.FC<{
         />
       )}
     </div>
+    </>
   );
 };
 

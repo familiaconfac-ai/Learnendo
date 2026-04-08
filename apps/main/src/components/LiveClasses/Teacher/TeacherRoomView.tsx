@@ -133,9 +133,26 @@ const TeacherStage: React.FC<{
   };
 
   return (
-    <div className="relative w-screen h-screen bg-black overflow-hidden flex">
-      <div className="flex-1 flex flex-col items-center justify-center min-w-0">
-        <div className="relative w-full max-w-3xl aspect-[16/9] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900/80 shadow-xl">
+    <>
+    {/* ── Mobile responsive overrides ───────────────────────────────────────── */}
+    <style>{`
+      @media (orientation: landscape) and (max-width: 767px) {
+        .teacher-stage-root { flex-direction: row !important; }
+        .teacher-stage-sidebar {
+          flex-direction: column !important;
+          width: 4rem !important;
+          height: 100% !important;
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          border-top: none !important;
+          border-left: 1px solid rgba(30,41,59,0.8) !important;
+        }
+        .teacher-stage-sidebar .student-tile { width: 3rem !important; height: 2.25rem !important; }
+      }
+    `}</style>
+    <div className="teacher-stage-root relative w-screen h-screen bg-black overflow-hidden flex flex-col sm:flex-row">
+      <div className="flex-1 flex flex-col items-center justify-center min-w-0 min-h-0">
+        <div className="relative w-full flex-1 sm:flex-none sm:max-w-3xl sm:aspect-[16/9] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900/80 shadow-xl">
           
           {/* CAMERA */}
           {viewMode === 'camera' && (
@@ -152,7 +169,7 @@ const TeacherStage: React.FC<{
 
           {/* LOUSA */}
           {viewMode === 'board' && (
-            <div className="w-full h-full bg-white">
+            <div className="w-full h-full bg-white pb-12 sm:pb-0">
               <CollaborativeBoard
                 roomId={liveClass.id}
                 userId={teacherUid}
@@ -164,25 +181,25 @@ const TeacherStage: React.FC<{
           )}
 
           {/* BARRA DE FERRAMENTAS */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-3 bg-black/90 px-4 py-2 rounded-full border border-slate-700 z-[100]">
+          <div className="absolute bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 sm:gap-3 bg-black/90 px-2.5 sm:px-4 py-1 sm:py-2 rounded-full border border-slate-700 z-[100]">
             <button
               onClick={() => handleModeChange('camera')}
-              className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center transition-all ${viewMode === 'camera' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
+              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'camera' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
             >
               🎥
             </button>
             <button
               onClick={() => handleModeChange('board')}
-              className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center transition-all ${viewMode === 'board' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
+              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'board' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
             >
               ✏️
             </button>
-            
+
             {viewMode === 'board' && (
               <button
                 onClick={toggleBoardLock}
                 title={isBoardLocked ? "Liberar edição para alunos" : "Bloquear edição dos alunos"}
-                className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center transition-colors ${isBoardLocked ? 'bg-red-600' : 'bg-emerald-600'}`}
+                className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-colors ${isBoardLocked ? 'bg-red-600' : 'bg-emerald-600'}`}
               >
                 {isBoardLocked ? '🔒' : '🔓'}
               </button>
@@ -191,7 +208,7 @@ const TeacherStage: React.FC<{
             <button
               onClick={() => setShowBattleSetup(true)}
               title="Learnendo Battle"
-              className="w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center bg-orange-600 hover:bg-orange-500 transition-colors"
+              className="w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center bg-orange-600 hover:bg-orange-500 transition-colors"
             >
               ⚔️
             </button>
@@ -199,22 +216,22 @@ const TeacherStage: React.FC<{
         </div>
       </div>
 
-      {/* SIDEBAR ALUNOS */}
-      <div className="w-28 md:w-36 flex flex-col gap-2 items-center pt-3 pb-3 bg-slate-950/80 border-l border-slate-800 overflow-y-auto">
-        <span className="text-[10px] uppercase text-slate-500 font-bold tracking-wider mb-1">Alunos</span>
+      {/* SIDEBAR ALUNOS — horizontal strip on mobile portrait, vertical column on sm+ */}
+      <div className="teacher-stage-sidebar flex flex-row sm:flex-col gap-2 items-center px-2 sm:px-0 py-1 sm:py-3 bg-slate-950/80 border-t sm:border-t-0 sm:border-l border-slate-800 overflow-x-auto sm:overflow-y-auto w-full sm:w-28 md:w-36 h-14 sm:h-auto flex-shrink-0">
+        <span className="text-[9px] sm:text-[10px] uppercase text-slate-500 font-bold tracking-wider whitespace-nowrap mb-0 sm:mb-1">Alunos</span>
         {remoteParticipants.length === 0 && (
-          <span className="text-[10px] text-slate-600">Nenhum</span>
+          <span className="text-[9px] sm:text-[10px] text-slate-600 whitespace-nowrap">Nenhum</span>
         )}
         {remoteParticipants.map((p) => {
           const pTrack = allTracks.find((t) => t.participant?.sid === p.sid && !t.participant?.isLocal);
           return (
-            <div key={p.sid} className="w-24 h-16 rounded-xl bg-black border border-slate-700 overflow-hidden flex items-center justify-center relative">
+            <div key={p.sid} className="student-tile w-16 h-10 sm:w-24 sm:h-16 rounded-lg sm:rounded-xl bg-black border border-slate-700 overflow-hidden flex items-center justify-center relative flex-shrink-0">
               {pTrack && isTrackReference(pTrack) ? (
                 <VideoTrack trackRef={pTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               ) : (
-                <span className="text-[10px] text-slate-500">Sem cam</span>
+                <span className="text-[9px] text-slate-500">Sem cam</span>
               )}
-              <span className="absolute bottom-0.5 left-1 text-[9px] text-slate-300 bg-slate-800/80 px-1 rounded font-semibold truncate max-w-[90%]">
+              <span className="absolute bottom-0.5 left-1 text-[8px] sm:text-[9px] text-slate-300 bg-slate-800/80 px-1 rounded font-semibold truncate max-w-[90%]">
                 {p.name || p.identity}
               </span>
             </div>
@@ -242,6 +259,7 @@ const TeacherStage: React.FC<{
         />
       )}
     </div>
+    </>
   );
 };
 
