@@ -14,6 +14,10 @@ import { isTrackReference } from '@livekit/components-core';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassSession, LiveClassPresence } from '../../../types';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
+import { BattleSetupModal } from '../Battle/BattleSetupModal';
+import { BattleHostView } from '../Battle/BattleHostView';
+import { BattleSession, BattleConfig, BattleQuestion } from '../Battle/battleTypes';
+import { subscribeBattleSession, createBattleSession, deleteBattleSession } from '../Battle/battleService';
 
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
@@ -28,30 +32,60 @@ interface TeacherRoomViewProps {
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
 }
 
-const TeacherStage: React.FC<{ 
+const TeacherStage: React.FC<{
   liveClass: LiveClass;
   session: LiveClassSession;
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
-}> = ({ liveClass, session, handleUpdateSession }) => {
-  
+  teacherUid: string;
+  teacherName: string;
+}> = ({ liveClass, session, handleUpdateSession, teacherUid, teacherName }) => {
+
   const [viewMode, setViewMode] = useState<'camera' | 'board'>(session.mainStageMode || 'camera');
-  const isBoardLocked = session.isBoardLocked ?? false;
   const room = useRoomContext();
 
-  // ── Diagnostic logging (temporary) ──
+  /** * LOGICA DA LOUSA CORRIGIDA:
+   * A trava agora é reativa. Se 'allowStudentWhiteboardEdit' for false, 
+   * consideramos a lousa como bloqueada.
+   */
+  const isBoardLocked = session.allowStudentWhiteboardEdit === false;
+
+  // ── Battle state ───────────────────────────────────────────────────────────
+  const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
+  const [showBattleSetup, setShowBattleSetup] = useState(false);
+
   useEffect(() => {
-    const onSub = (track: any, _pub: any, p: any) =>
-      console.log('[Teacher] TrackSubscribed', track.kind, track.source, 'from', p.identity);
-    const onUnsub = (track: any, _pub: any, p: any) =>
-      console.log('[Teacher] TrackUnsubscribed', track.kind, track.source, 'from', p.identity);
-    room.on(RoomEvent.TrackSubscribed, onSub);
-    room.on(RoomEvent.TrackUnsubscribed, onUnsub);
-    console.log('[Teacher] Room state:', room.state);
-    return () => {
-      room.off(RoomEvent.TrackSubscribed, onSub);
-      room.off(RoomEvent.TrackUnsubscribed, onUnsub);
+    const unsub = subscribeBattleSession(liveClass.id, setBattleSession);
+    return unsub;
+  }, [liveClass.id]);
+
+  async function handleLaunchBattle(config: BattleConfig, questions: BattleQuestion[]) {
+    setShowBattleSetup(false);
+    const now = Date.now();
+    const optimisticSession: BattleSession = {
+      id: liveClass.id,
+      status: 'lobby',
+      config,
+      questions,
+      currentQuestionIndex: 0,
+      questionStartedAt: 0,
+      scores: {
+        [teacherUid]: { uid: teacherUid, name: teacherName, score: 0, streak: 0, lastAnswerCorrect: null },
+      },
+      currentAnswers: {},
+      createdAt: now,
+      updatedAt: now,
     };
-  }, [room]);
+    setBattleSession(optimisticSession);
+
+    createBattleSession(liveClass.id, config, teacherUid, teacherName, questions).catch((err) => {
+      console.error('[Battle] Firestore sync failed:', err);
+    });
+  }
+
+  async function handleCloseBattle() {
+    await deleteBattleSession(liveClass.id);
+    setBattleSession(null);
+  }
 
   useEffect(() => {
     if (session.mainStageMode) setViewMode(session.mainStageMode);
@@ -61,8 +95,6 @@ const TeacherStage: React.FC<{
   const localTrack = tracks.find((t) => t.participant?.isLocal);
   const participants = useParticipants();
   const remoteParticipants = participants.filter((p) => !p.isLocal);
-
-  // Remote participant video tracks
   const allTracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
 
   const handleModeChange = (newMode: 'camera' | 'board') => {
@@ -70,11 +102,23 @@ const TeacherStage: React.FC<{
     handleUpdateSession({ mainStageMode: newMode });
   };
 
+  /**
+   * FUNÇÃO DE TRAVA CORRIGIDA:
+   * Atualiza as duas variáveis simultaneamente para evitar conflitos de estado.
+   */
+  const toggleBoardLock = () => {
+    const nextLockedState = !isBoardLocked;
+    handleUpdateSession({ 
+      isBoardLocked: nextLockedState,
+      allowStudentWhiteboardEdit: !nextLockedState 
+    });
+  };
+
   return (
     <div className="relative w-screen h-screen bg-black overflow-hidden flex">
-      {/* CENTRO — palco principal, mesma base do aluno */}
       <div className="flex-1 flex flex-col items-center justify-center min-w-0">
         <div className="relative w-full max-w-3xl aspect-[16/9] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900/80 shadow-xl">
+          
           {/* CAMERA */}
           {viewMode === 'camera' && (
             <div className="w-full h-full flex items-center justify-center bg-black">
@@ -93,38 +137,49 @@ const TeacherStage: React.FC<{
             <div className="w-full h-full bg-white">
               <CollaborativeBoard
                 roomId={liveClass.id}
-                isReadOnly={false}
+                isReadOnly={false} // Professor sempre tem acesso total
                 isLocked={isBoardLocked}
               />
             </div>
           )}
-          {/* BARRA DE FERRAMENTAS — sobreposta na base do palco */}
+
+          {/* BARRA DE FERRAMENTAS */}
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-3 bg-black/90 px-4 py-2 rounded-full border border-slate-700 z-[100]">
-          <button
-            onClick={() => handleModeChange('camera')}
-            className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center ${viewMode === 'camera' ? 'bg-blue-500' : 'bg-transparent'}`}
-          >
-            🎥
-          </button>
-          <button
-            onClick={() => handleModeChange('board')}
-            className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center ${viewMode === 'board' ? 'bg-blue-500' : 'bg-transparent'}`}
-          >
-            ✏️
-          </button>
-          {viewMode === 'board' && (
             <button
-              onClick={() => handleUpdateSession({ isBoardLocked: !isBoardLocked, allowStudentWhiteboardEdit: isBoardLocked })}
-              className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center ${isBoardLocked ? 'bg-red-500' : 'bg-emerald-500'}`}
+              onClick={() => handleModeChange('camera')}
+              className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center transition-all ${viewMode === 'camera' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
             >
-              {isBoardLocked ? '🔒' : '🔓'}
+              🎥
             </button>
-          )}
+            <button
+              onClick={() => handleModeChange('board')}
+              className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center transition-all ${viewMode === 'board' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
+            >
+              ✏️
+            </button>
+            
+            {viewMode === 'board' && (
+              <button
+                onClick={toggleBoardLock}
+                title={isBoardLocked ? "Liberar edição para alunos" : "Bloquear edição dos alunos"}
+                className={`w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center transition-colors ${isBoardLocked ? 'bg-red-600' : 'bg-emerald-600'}`}
+              >
+                {isBoardLocked ? '🔒' : '🔓'}
+              </button>
+            )}
+
+            <button
+              onClick={() => setShowBattleSetup(true)}
+              title="Learnendo Battle"
+              className="w-11 h-11 rounded-full border-none cursor-pointer text-xl flex items-center justify-center bg-orange-600 hover:bg-orange-500 transition-colors"
+            >
+              ⚔️
+            </button>
           </div>
         </div>
       </div>
 
-      {/* SIDEBAR DIREITA — alunos conectados */}
+      {/* SIDEBAR ALUNOS */}
       <div className="w-28 md:w-36 flex flex-col gap-2 items-center pt-3 pb-3 bg-slate-950/80 border-l border-slate-800 overflow-y-auto">
         <span className="text-[10px] uppercase text-slate-500 font-bold tracking-wider mb-1">Alunos</span>
         {remoteParticipants.length === 0 && (
@@ -146,6 +201,26 @@ const TeacherStage: React.FC<{
           );
         })}
       </div>
+
+      {/* Overlays Battle */}
+      {showBattleSetup && (
+        <BattleSetupModal
+          onStart={handleLaunchBattle}
+          onClose={() => setShowBattleSetup(false)}
+          defaultLessonId={liveClass.lessonId?.toString()}
+          defaultWorkbookId={liveClass.workbookId}
+          defaultCourseId={liveClass.courseId}
+        />
+      )}
+      {battleSession && battleSession.status !== 'idle' && (
+        <BattleHostView
+          session={battleSession}
+          classId={liveClass.id}
+          teacherUid={teacherUid}
+          onClose={handleCloseBattle}
+          onNewBattle={() => { void handleCloseBattle().then(() => setShowBattleSetup(true)); }}
+        />
+      )}
     </div>
   );
 };
@@ -159,21 +234,38 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
     const getCreds = async () => {
       try {
         const creds = await requestLiveAudioCredentials({
-          classId: liveClass.id, userId: user.uid, userName: user.displayName || 'Professor', role: 'teacher',
+          classId: liveClass.id, 
+          userId: user.uid, 
+          userName: user.displayName || 'Professor', 
+          role: 'teacher',
         });
         setToken(creds.token);
         setWsUrl(creds.wsUrl);
-      } catch (err) { console.error(err); }
+      } catch (err) { 
+        console.error("Erro ao obter credenciais LiveKit:", err); 
+      }
     };
     getCreds();
-  }, [liveClass.id, user.uid]);
+  }, [liveClass.id, user.uid, user.displayName]);
 
-  if (!token || !wsUrl) return <div style={{ background: '#000', height: '100vh' }} />;
+  if (!token || !wsUrl) {
+    return (
+      <div className="w-screen h-screen bg-black flex items-center justify-center">
+        <div className="text-slate-500 animate-pulse">Conectando à sala...</div>
+      </div>
+    );
+  }
 
   return (
     <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={true} audio={true}>
       <RoomAudioRenderer />
-      <TeacherStage liveClass={liveClass} session={session} handleUpdateSession={handleUpdateSession} />
+      <TeacherStage
+        liveClass={liveClass}
+        session={session}
+        handleUpdateSession={handleUpdateSession}
+        teacherUid={user.uid}
+        teacherName={user.displayName || 'Professor'}
+      />
     </LiveKitRoom>
   );
 };

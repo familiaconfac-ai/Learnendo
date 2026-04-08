@@ -15,6 +15,9 @@ import { User } from 'firebase/auth';
 import { LiveClass, LiveClassSession, LiveClassPresence } from '../../../types';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import { LiveClassChat } from '../LiveClassChat';
+import { BattlePlayerView } from '../Battle/BattlePlayerView';
+import { BattleSession } from '../Battle/battleTypes';
+import { subscribeBattleSession } from '../Battle/battleService';
 
 interface StudentRoomViewProps {
   liveClass: LiveClass;
@@ -40,6 +43,21 @@ const StudentStage: React.FC<{
   const [showDebug, setShowDebug] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
 
+  // ── Battle subscription ────────────────────────────────────────────────────
+  const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
+  useEffect(() => {
+    console.log('[Battle:Student] subscribing, classId:', liveClass.id);
+    const unsub = subscribeBattleSession(liveClass.id, (s) => {
+      console.log('[Battle:Student] snapshot — status:', s?.status ?? 'null (no doc)');
+      if (s && s.status !== 'idle') {
+        setBattleSession(s);
+      } else {
+        setBattleSession(null);
+      }
+    });
+    return unsub;
+  }, [liveClass.id]);
+
   const room = useRoomContext();
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
 
@@ -51,7 +69,9 @@ const StudentStage: React.FC<{
     try {
       const meta = JSON.parse(t.participant.metadata || '{}');
       return meta.role === 'teacher';
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   });
 
   // ── Local camera preview via ref (direct MediaStream — bypasses useTracks) ──
@@ -60,10 +80,12 @@ const StudentStage: React.FC<{
   useEffect(() => {
     const el = localVideoRef.current;
     if (!el) return;
+
     if (!isCameraEnabled) {
       el.srcObject = null;
       return;
     }
+
     const attach = () => {
       for (const pub of localParticipant.trackPublications.values()) {
         if (pub.source === Track.Source.Camera && (pub as any).track?.mediaStreamTrack) {
@@ -75,10 +97,17 @@ const StudentStage: React.FC<{
       }
       return false;
     };
+
     if (!attach()) {
-      const t = setInterval(() => { if (attach()) clearInterval(t); }, 250);
+      const t = setInterval(() => {
+        if (attach()) clearInterval(t);
+      }, 250);
       const stop = setTimeout(() => clearInterval(t), 5000);
-      return () => { clearInterval(t); clearTimeout(stop); };
+
+      return () => {
+        clearInterval(t);
+        clearTimeout(stop);
+      };
     }
   }, [localParticipant, isCameraEnabled]);
 
@@ -95,9 +124,11 @@ const StudentStage: React.FC<{
 
   useEffect(() => {
     startAudio();
+
     const h = () => startAudio();
     document.addEventListener('click', h);
     document.addEventListener('touchstart', h);
+
     return () => {
       document.removeEventListener('click', h);
       document.removeEventListener('touchstart', h);
@@ -159,7 +190,9 @@ const StudentStage: React.FC<{
     <div className="min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 px-2 pb-24 pt-4 flex flex-col items-center w-full">
       {/* Título da sala */}
       <div className="w-full max-w-3xl mb-3 flex items-center justify-between px-2">
-        <h1 className="text-lg md:text-xl font-black text-white truncate drop-shadow">{liveClass.title}</h1>
+        <h1 className="text-lg md:text-xl font-black text-white truncate drop-shadow">
+          {liveClass.title}
+        </h1>
         <button
           type="button"
           className="text-xs md:text-sm font-bold text-rose-400 hover:bg-rose-900/20 rounded-lg px-3 py-1 transition"
@@ -171,13 +204,6 @@ const StudentStage: React.FC<{
 
       {/* PALCO PRINCIPAL */}
       <div className="relative w-full max-w-3xl flex flex-col items-center">
-        {/* Local camera preview (PIP) — ref-based for reliability */}
-        {isCameraEnabled && (
-          <div className="absolute top-3 right-3 w-32 aspect-video rounded-xl overflow-hidden border-2 border-emerald-500/60 shadow-lg z-30 bg-black">
-            <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-          </div>
-        )}
-
         {/* Audio blocked banner */}
         {!audioPlaybackOk && (
           <button
@@ -187,30 +213,79 @@ const StudentStage: React.FC<{
             🔇 Toque aqui para ativar o áudio
           </button>
         )}
-        {mainStageMode === 'board' ? (
-          <div className="w-full aspect-[16/9] rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 flex items-center justify-center mb-3 overflow-hidden transition-all p-2 md:p-4">
-            <CollaborativeBoard
-              boardId={`class-${liveClass.id}`}
-              userId={user.uid}
-              userName={user.displayName || user.email || 'Aluno'}
-              readOnly={!session.allowStudentWhiteboardEdit}
-              hideChrome
-            />
-          </div>
-        ) : (
-          <div className="w-full aspect-[16/9] bg-black rounded-2xl shadow-xl border border-slate-800 flex items-center justify-center mb-3 overflow-hidden transition-all">
+
+        <div className="relative w-full aspect-[16/9] rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 mb-3 overflow-hidden transition-all">
+          {/* CAMERA DO PROFESSOR — sempre montada, só escondida */}
+          <div
+            className={`absolute inset-0 bg-black flex items-center justify-center transition-opacity ${
+              mainStageMode === 'camera'
+                ? 'opacity-100 pointer-events-auto z-10'
+                : 'opacity-0 pointer-events-none z-0'
+            }`}
+          >
             {teacherTrack && isTrackReference(teacherTrack) ? (
-              <VideoTrack trackRef={teacherTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <VideoTrack
+                trackRef={teacherTrack}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
             ) : (
               <div className="flex flex-col items-center justify-center w-full h-full">
                 <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mb-2">
-                  <svg className="w-8 h-8 text-slate-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M4 6h16M4 6v12a2 2 0 002 2h8a2 2 0 002-2V6M4 6l4 4m0 0l4-4m-4 4v12" /></svg>
+                  <svg
+                    className="w-8 h-8 text-slate-500"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
                 </div>
-                <span className="text-slate-400 text-base font-medium">Aguardando câmera do professor…</span>
+                <span className="text-slate-400 text-base font-medium">
+                  Aguardando câmera do professor…
+                </span>
               </div>
             )}
           </div>
-        )}
+
+          {/* LOUSA — sempre montada, só escondida */}
+          <div
+            className={`absolute inset-0 transition-opacity ${
+              mainStageMode === 'board'
+                ? 'opacity-100 pointer-events-auto z-20'
+                : 'opacity-0 pointer-events-none z-0'
+            }`}
+          >
+            <div className="w-full h-full bg-slate-900/80 p-2 md:p-4">
+              <div className="w-full h-full bg-white rounded-xl overflow-hidden">
+                <CollaborativeBoard
+                  boardId={`class-${liveClass.id}`}
+                  userId={user.uid}
+                  userName={user.displayName || user.email || 'Aluno'}
+                  readOnly={!session.allowStudentWhiteboardEdit}
+                  hideChrome
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Preview local do aluno */}
+          {isCameraEnabled && (
+            <div className="absolute top-3 right-3 w-32 aspect-video rounded-xl overflow-hidden border-2 border-emerald-500/60 shadow-lg z-30 bg-black">
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Barra de controles mínimos */}
@@ -230,16 +305,44 @@ const StudentStage: React.FC<{
           title={isMicrophoneEnabled ? 'Desligar microfone' : 'Ligar microfone'}
         >
           {isMicrophoneEnabled ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 01-14 0v-2" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19 10v2a7 7 0 01-14 0v-2"
+              />
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
           ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 01-14 0v-2" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M19 10v2a7 7 0 01-14 0v-2"
+              />
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
               <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" />
@@ -262,12 +365,32 @@ const StudentStage: React.FC<{
           title={isCameraEnabled ? 'Desligar câmera' : 'Ligar câmera'}
         >
           {isCameraEnabled ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
             </svg>
           ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+              />
               <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" />
             </svg>
           )}
@@ -283,26 +406,49 @@ const StudentStage: React.FC<{
           }`}
           title={chatOpen ? 'Fechar chat' : 'Abrir chat'}
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"
+            />
           </svg>
         </button>
 
-        {/* Debug toggle (temporary) */}
-        <button
-          onClick={() => setShowDebug(!showDebug)}
-          className="w-10 h-10 rounded-full flex items-center justify-center text-xs shadow transition bg-slate-800 hover:bg-slate-700 text-slate-400"
-          title="Debug"
-        >
-          🐛
-        </button>
+        {/* Debug toggle — dev only */}
+        {import.meta.env.DEV && (
+          <button
+            onClick={() => setShowDebug(!showDebug)}
+            className="w-10 h-10 rounded-full flex items-center justify-center text-xs shadow transition bg-slate-800 hover:bg-slate-700 text-slate-400"
+            title="Debug"
+          >
+            🐛
+          </button>
+        )}
       </div>
 
       {/* Chat */}
-      <div className={chatOpen ? 'fixed inset-x-0 bottom-16 top-0 z-40 bg-slate-950/95 flex flex-col' : 'hidden'}>
+      <div
+        className={
+          chatOpen
+            ? 'fixed inset-x-0 bottom-16 top-0 z-40 bg-slate-950/95 flex flex-col'
+            : 'hidden'
+        }
+      >
         <div className="flex items-center justify-between px-4 py-2 border-b border-slate-800">
           <span className="text-white font-bold text-sm">Chat</span>
-          <button onClick={() => setChatOpen(false)} className="text-slate-400 hover:text-white text-lg">&times;</button>
+          <button
+            onClick={() => setChatOpen(false)}
+            className="text-slate-400 hover:text-white text-lg"
+          >
+            &times;
+          </button>
         </div>
         <div className="flex-1 overflow-hidden">
           <LiveClassChat
@@ -314,8 +460,8 @@ const StudentStage: React.FC<{
         </div>
       </div>
 
-      {/* Debug panel (temporary) */}
-      {showDebug && (
+      {/* Debug panel — dev only */}
+      {import.meta.env.DEV && showDebug && (
         <div className="fixed top-2 left-2 z-[200] bg-black/90 text-[10px] text-green-400 font-mono p-2 rounded-lg border border-green-800 max-w-[220px] leading-relaxed">
           <div>room: {room.state}</div>
           <div>mic: {isMicrophoneEnabled ? '🟢 on' : '🔴 off'}</div>
@@ -323,7 +469,19 @@ const StudentStage: React.FC<{
           <div>audio playback: {audioPlaybackOk ? '🟢 ok' : '🔴 blocked'}</div>
           <div>remote audio tracks: {remoteAudioCount}</div>
           <div>remote participants: {room.remoteParticipants.size}</div>
+          <div>board mode: {mainStageMode}</div>
+          <div>student can edit: {session.allowStudentWhiteboardEdit ? 'yes' : 'no'}</div>
         </div>
+      )}
+
+      {/* ── Battle overlay ─────────────────────────────────────────────────── */}
+      {battleSession && (
+        <BattlePlayerView
+          session={battleSession}
+          classId={liveClass.id}
+          uid={user.uid}
+          name={user.displayName || user.email || 'Aluno'}
+        />
       )}
     </div>
   );
