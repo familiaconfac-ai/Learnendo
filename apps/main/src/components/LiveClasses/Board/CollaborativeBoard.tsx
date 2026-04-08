@@ -22,6 +22,24 @@ interface CollaborativeBoardProps {
  * but every remote save is applied immediately to the board.
  */
 const DOCUMENT_RECORD_TYPES = new Set(['shape', 'page', 'binding', 'asset']);
+const PERSISTED_RECORD_TYPES = new Set(['shape', 'binding', 'asset']);
+
+function hasPersistableChange(changes: {
+  added: Record<string, { typeName?: string }>;
+  updated: Record<string, { typeName?: string } | [unknown, { typeName?: string }]>;
+  removed: Record<string, { typeName?: string }>;
+}) {
+  const addedChanged = Object.values(changes.added).some((record) => PERSISTED_RECORD_TYPES.has(record?.typeName ?? ''));
+  if (addedChanged) return true;
+
+  const updatedChanged = Object.values(changes.updated).some((record) => {
+    const nextRecord = Array.isArray(record) ? record[1] : record;
+    return PERSISTED_RECORD_TYPES.has(nextRecord?.typeName ?? '');
+  });
+  if (updatedChanged) return true;
+
+  return Object.values(changes.removed).some((record) => PERSISTED_RECORD_TYPES.has(record?.typeName ?? ''));
+}
 
 const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: boolean }> = ({ boardId, userId, readOnly }) => {
   const editor = useEditor();
@@ -64,7 +82,14 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
       return () => {};
     }
 
-    const cleanup = editor.store.listen(() => {
+    const cleanup = editor.store.listen((entry) => {
+      if (!hasPersistableChange(entry.changes as {
+        added: Record<string, { typeName?: string }>;
+        updated: Record<string, { typeName?: string } | [unknown, { typeName?: string }]>;
+        removed: Record<string, { typeName?: string }>;
+      })) {
+        return;
+      }
       saveToFirestore();
     }, { scope: 'document', source: 'user' });
 
