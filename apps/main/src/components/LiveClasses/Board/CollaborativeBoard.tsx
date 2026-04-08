@@ -27,7 +27,7 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
   const editor = useEditor();
   const isRemoteUpdate = useRef(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isFirstLoad = useRef(true);
+  const hasHydratedFromFirestore = useRef(false);
   const clientId = useRef(`${userId}:${Math.random().toString(36).slice(2, 10)}`).current;
 
   // Strip the "class-" prefix to get the actual classId for Firestore path
@@ -37,6 +37,7 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
   const saveToFirestore = useCallback(() => {
     if (readOnly) return;
     if (isRemoteUpdate.current) return;
+    if (!hasHydratedFromFirestore.current) return;
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
     debounceTimer.current = setTimeout(async () => {
@@ -77,15 +78,21 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
 
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (!docSnap.exists()) {
-        // No remote data yet; allow saves to proceed
-        isFirstLoad.current = false;
+        // No remote data yet; allow saves from this point on.
+        hasHydratedFromFirestore.current = true;
         return;
       }
       const data = docSnap.data();
-      if (!data?.snapshot) return;
+      if (!data?.snapshot) {
+        hasHydratedFromFirestore.current = true;
+        return;
+      }
 
       // Skip our own writes by client id so multiple tabs from the same account still sync.
-      if (data.updatedByClientId === clientId) return;
+      if (data.updatedByClientId === clientId) {
+        hasHydratedFromFirestore.current = true;
+        return;
+      }
 
       try {
         const remoteSnapshot = JSON.parse(data.snapshot);
@@ -93,10 +100,11 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
         editor.store.mergeRemoteChanges(() => {
           loadSnapshot(editor.store, remoteSnapshot);
         });
-        isFirstLoad.current = false;
+        hasHydratedFromFirestore.current = true;
         setTimeout(() => { isRemoteUpdate.current = false; }, 100);
       } catch (err) {
         console.warn('[CollaborativeBoard] load error:', err);
+        hasHydratedFromFirestore.current = true;
         isRemoteUpdate.current = false;
       }
     });
