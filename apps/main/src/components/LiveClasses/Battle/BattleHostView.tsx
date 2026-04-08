@@ -1,46 +1,90 @@
-// ── Learnendo Battle — Host View (Teacher) ────────────────────────────────────
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { appLangToTts, speak } from '../../../services/ttsService';
 import type { BattleSession } from './battleTypes';
 import {
-  startBattle, advanceBattleQuestion, showBattleAnswer, endBattle,
+  advanceBattleQuestion,
+  endBattle,
+  showBattleAnswer,
+  startBattle,
+  submitBattleAnswer,
 } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
+import {
+  getBattleCorrectAnswerLabel,
+  getBattleLanguage,
+  getBattlePromptAudioText,
+  getExpectedBattleParticipantIds,
+  getMyBattleAnswer,
+  isChoiceQuestion,
+} from './battleUtils';
 
 interface Props {
   session: BattleSession;
   classId: string;
   teacherUid: string;
-  onClose: () => void;   // called when teacher closes/ends battle
+  onClose: () => void;
   onNewBattle: () => void;
 }
 
 export const BattleHostView: React.FC<Props> = ({
-  session, classId, teacherUid, onClose, onNewBattle
+  session,
+  classId,
+  teacherUid,
+  onClose,
+  onNewBattle,
 }) => {
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
   const [busy, setBusy] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [musicMuted, setMusicMuted] = useState(true);
+  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [typedAnswer, setTypedAnswer] = useState('');
+  const [isListening, setIsListening] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const promptPlayedRef = useRef<string>('');
 
-  // Initialise audio element once (points to public/sounds/battle_theme.mp3)
+  const questionIdx = session.currentQuestionIndex;
+  const question = session.questions[questionIdx];
+  const totalQ = session.questions.length;
+  const includeTeacher = !!session.config.includeTeacher;
+  const battleLanguage = getBattleLanguage(session.config.courseId);
+  const expectedParticipantIds = useMemo(
+    () => getExpectedBattleParticipantIds(session, teacherUid),
+    [session, teacherUid]
+  );
+  const answerCount = Object.keys(session.currentAnswers).length;
+  const timeRatio = timeLeft / session.config.timePerQuestion;
+  const myAnswer = getMyBattleAnswer(session, teacherUid);
+  const teacherHasAnswered = !!myAnswer;
+  const showTeacherInScores = includeTeacher;
+  const visibleScores = useMemo(
+    () => showTeacherInScores
+      ? session.scores
+      : Object.fromEntries(Object.entries(session.scores).filter(([uid]) => uid !== teacherUid)),
+    [session.scores, showTeacherInScores, teacherUid]
+  );
+  const leaderboard = useMemo(
+    () => Object.values(visibleScores).sort((a, b) => b.score - a.score).slice(0, 5),
+    [visibleScores]
+  );
+
   useEffect(() => {
-    const a = new Audio('/sounds/battle_theme.mp3');
-    a.loop = true;
-    a.volume = 0.4;
-    audioRef.current = a;
-    return () => { a.pause(); };
+    const audio = new Audio('/sounds/battle_theme.mp3');
+    audio.loop = true;
+    audio.volume = 0.4;
+    audioRef.current = audio;
+    return () => { audio.pause(); };
   }, []);
 
-  // Play/pause based on status and mute toggle
   useEffect(() => {
-    const a = audioRef.current;
-    if (!a) return;
+    const audio = audioRef.current;
+    if (!audio) return;
     if (session.status === 'active' && !musicMuted) {
-      a.play().catch(() => {}); // fails silently if file missing
+      audio.play().catch(() => {});
     } else {
-      a.pause();
+      audio.pause();
     }
   }, [session.status, musicMuted]);
 
@@ -48,78 +92,24 @@ export const BattleHostView: React.FC<Props> = ({
     if (audioRef.current) audioRef.current.volume = musicMuted ? 0 : 0.4;
   }, [musicMuted]);
 
-  const questionIdx = session.currentQuestionIndex;
-  const question = session.questions[questionIdx];
-  const totalQ = session.questions.length;
-  // Students only — the teacher/host is NOT a respondent and must not be counted
-  const studentUids = useMemo(
-    () => Object.keys(session.scores).filter(id => id !== teacherUid),
-    [session.scores, teacherUid]
-  );
-  const answerCount = Object.keys(session.currentAnswers).length;
-  const timeRatio = timeLeft / session.config.timePerQuestion;
-  const visibleScores = useMemo(
-    () => Object.fromEntries(
-      Object.entries(session.scores).filter(([uid]) => uid !== teacherUid)
-    ),
-    [session.scores, teacherUid]
-  );
-
-  // ── Round summary (computed when showing-answer) ──────────────────────────
-  const roundSummary = useMemo(() => {
-    if (session.status !== 'showing-answer' || !question) return null;
-    const answers = Object.values(session.currentAnswers);
-    const correct = answers.filter(a => a.optionIndex === question.correctIndex).length;
-    const wrong = answers.filter(a => a.optionIndex !== question.correctIndex).length;
-    const unanswered = studentUids.length - answers.filter(a => studentUids.includes(a.uid)).length;
-    return { correct, wrong, unanswered };
-  }, [session.status, session.currentAnswers, question, studentUids]);
-
-  // ── Auto-reveal: when all students have answered, call showBattleAnswer ───
-  const autoRevealFiredRef = useRef<number>(-1); // tracks which questionIdx was auto-revealed
   useEffect(() => {
-    if (session.status !== 'active') return;
-    if (studentUids.length === 0) return;
-    if (autoRevealFiredRef.current === questionIdx) return; // already fired this question
-
-    const allAnswered = studentUids.every(id => id in session.currentAnswers);
-    if (!allAnswered) return;
-
-    autoRevealFiredRef.current = questionIdx;
-    showBattleAnswer(classId).catch(err =>
-      console.error('[Battle] auto-reveal failed:', err)
-    );
-  }, [session.status, session.currentAnswers, studentUids, questionIdx, classId]);
-
-  // ── Timer expiry auto-reveal: if time runs out before all answer, reveal now ──
-  useEffect(() => {
-    if (session.status !== 'active') return;
-    if (timeLeft > 0) return;
-    if (autoRevealFiredRef.current === questionIdx) return; // already fired
-    autoRevealFiredRef.current = questionIdx;
-    showBattleAnswer(classId).catch(err =>
-      console.error('[Battle] timer-expiry auto-reveal failed:', err)
-    );
-  }, [timeLeft, session.status, questionIdx, classId]);
-
-  // Reset auto-reveal guard on question advance
-  useEffect(() => {
-    // When question changes, the guard resets automatically because questionIdx changed
-  }, [questionIdx]);
-
-  // Reset timer on question change
-  useEffect(() => {
+    setSelectedOption(null);
+    setTypedAnswer('');
     setTimeLeft(session.config.timePerQuestion);
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+      recognitionRef.current = null;
+      setIsListening(false);
+    }
   }, [questionIdx, session.config.timePerQuestion]);
 
-  // Countdown when active
   useEffect(() => {
     if (session.status !== 'active') {
       if (timerRef.current) clearInterval(timerRef.current);
       return;
     }
-    if (timerRef.current) clearInterval(timerRef.current);
 
+    if (timerRef.current) clearInterval(timerRef.current);
     const start = session.questionStartedAt;
     timerRef.current = setInterval(() => {
       const elapsed = Date.now() - start;
@@ -134,24 +124,94 @@ export const BattleHostView: React.FC<Props> = ({
     if (session.status === 'finished') setShowResults(true);
   }, [session.status]);
 
-  // Sorted leaderboard
-  const leaderboard = useMemo(
-    () => Object.values(visibleScores).sort((a, b) => b.score - a.score).slice(0, 5),
-    [visibleScores]
-  );
+  useEffect(() => {
+    if (!question || session.status !== 'active' || !question.playAudioOnce) return;
+    const promptKey = `${session.id}:${question.id}:${session.status}`;
+    if (promptPlayedRef.current === promptKey) return;
+    promptPlayedRef.current = promptKey;
+    window.setTimeout(() => {
+      speak(getBattlePromptAudioText(question), battleLanguage);
+    }, 250);
+  }, [session.id, session.status, question, battleLanguage]);
+
+  useEffect(() => {
+    if (session.status !== 'active') return;
+    if (expectedParticipantIds.length === 0) return;
+
+    const allAnswered = expectedParticipantIds.every((uid) => uid in session.currentAnswers);
+    if (!allAnswered) return;
+
+    showBattleAnswer(classId).catch((error) => {
+      console.error('[Battle] auto-reveal failed:', error);
+    });
+  }, [session.status, expectedParticipantIds, session.currentAnswers, classId]);
+
+  useEffect(() => {
+    if (session.status !== 'active' || timeLeft > 0) return;
+    showBattleAnswer(classId).catch((error) => {
+      console.error('[Battle] timer auto-reveal failed:', error);
+    });
+  }, [session.status, timeLeft, classId]);
+
+  function startSpeechRecognition() {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Reconhecimento de voz não está disponível neste navegador.');
+      return;
+    }
+
+    if (recognitionRef.current) {
+      try { recognitionRef.current.abort(); } catch {}
+    }
+
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    recognition.lang = appLangToTts(battleLanguage);
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+    recognition.onresult = (event: any) => {
+      const transcript = event?.results?.[0]?.[0]?.transcript ?? '';
+      setTypedAnswer(transcript);
+      setIsListening(false);
+    };
+    recognition.start();
+  }
+
+  async function handleTeacherChoice(optionIndex: number) {
+    if (!includeTeacher || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active') return;
+    setSelectedOption(optionIndex);
+    await submitBattleAnswer(classId, session, teacherUid, session.scores[teacherUid]?.name || 'Professor', { optionIndex });
+  }
+
+  async function handleTeacherOpenAnswer() {
+    if (!includeTeacher || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
+    await submitBattleAnswer(
+      classId,
+      session,
+      teacherUid,
+      session.scores[teacherUid]?.name || 'Professor',
+      { responseText: typedAnswer.trim() }
+    );
+  }
 
   async function handleStart() {
     setBusy(true);
     try { await startBattle(classId); } finally { setBusy(false); }
   }
+
   async function handleShowAnswer() {
     setBusy(true);
     try { await showBattleAnswer(classId); } finally { setBusy(false); }
   }
+
   async function handleNext() {
     setBusy(true);
     try { await advanceBattleQuestion(classId, questionIdx + 1, totalQ); } finally { setBusy(false); }
   }
+
   async function handleEnd() {
     setBusy(true);
     try { await endBattle(classId); } finally { setBusy(false); }
@@ -165,16 +225,19 @@ export const BattleHostView: React.FC<Props> = ({
         onNewBattle={onNewBattle}
         onClose={onClose}
         isTeacher
-        hiddenUids={[teacherUid]}
+        hiddenUids={showTeacherInScores ? [] : [teacherUid]}
       />
     );
   }
 
+  const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
+  const correctCount = Object.values(session.currentAnswers).filter((answer) => answer.isCorrect).length;
+  const wrongCount = Object.values(session.currentAnswers).filter((answer) => !answer.isCorrect).length;
+  const unansweredCount = Math.max(0, expectedParticipantIds.length - Object.keys(session.currentAnswers).length);
+
   return (
     <div className="fixed inset-0 z-[9000] flex bg-slate-950 select-none">
-      {/* Main area */}
       <div className="flex-1 flex flex-col">
-        {/* Top bar */}
         <div className="flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <span className="text-lg">⚔️</span>
@@ -184,12 +247,13 @@ export const BattleHostView: React.FC<Props> = ({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {/* Music mute — plays public/sounds/battle_theme.mp3 when unmuted */}
             <button
-              onClick={() => setMusicMuted(m => !m)}
+              onClick={() => setMusicMuted((value) => !value)}
               title={musicMuted ? 'Unmute battle music' : 'Mute battle music'}
               className="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-xs transition"
-            >{musicMuted ? '🔇' : '🔉'}</button>
+            >
+              {musicMuted ? '🔇' : '🔉'}
+            </button>
             <button
               onClick={handleEnd}
               className="text-xs text-slate-500 hover:text-red-400 transition"
@@ -199,7 +263,6 @@ export const BattleHostView: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Timer bar */}
         <div className="h-1.5 bg-slate-800">
           <div
             className="h-full transition-all duration-200"
@@ -210,22 +273,23 @@ export const BattleHostView: React.FC<Props> = ({
           />
         </div>
 
-        {/* Question */}
         <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6">
           {session.status === 'lobby' ? (
             <div className="text-center space-y-4">
               <div className="text-5xl">⚔️</div>
               <h2 className="text-2xl font-black text-white">Sala de Batalha Aberta!</h2>
               <p className="text-slate-400 text-sm">
-                {studentUids.length > 0
-                  ? `${studentUids.length} aluno${studentUids.length !== 1 ? 's' : ''} entrou na sala`
-                  : 'Aguardando alunos entrarem…'}
+                {expectedParticipantIds.length > 0
+                  ? `${expectedParticipantIds.length} participante${expectedParticipantIds.length !== 1 ? 's' : ''} pronto${expectedParticipantIds.length !== 1 ? 's' : ''}`
+                  : 'Aguardando alunos entrarem...'}
               </p>
               <p className="text-slate-500 text-xs">
                 {totalQ} perguntas · {session.config.timePerQuestion}s cada · {session.config.difficulty}
               </p>
               <p className="text-slate-600 text-xs">
-                Os alunos entram automaticamente ao acessar a aula
+                {includeTeacher
+                  ? 'Professor participa do placar nesta batalha.'
+                  : 'Professor só comanda a partida nesta batalha.'}
               </p>
               <button
                 onClick={handleStart}
@@ -237,77 +301,129 @@ export const BattleHostView: React.FC<Props> = ({
             </div>
           ) : question ? (
             <>
-              <div className="w-full max-w-lg bg-slate-800/80 rounded-2xl p-6 text-center shadow-lg">
-                <p className="text-xs text-slate-500 mb-2 uppercase tracking-wider">Question {questionIdx + 1}</p>
+              <div className="w-full max-w-2xl bg-slate-800/80 rounded-2xl p-6 text-center shadow-lg space-y-4">
+                <p className="text-xs text-slate-500 uppercase tracking-wider">Question {questionIdx + 1}</p>
                 <div className="text-3xl font-bold text-white leading-snug">{question.text}</div>
+                {question.imageUrl && (
+                  <img
+                    src={question.imageUrl}
+                    alt="Question reference"
+                    className="mx-auto max-h-52 w-auto rounded-xl border border-slate-700 object-contain bg-slate-900"
+                  />
+                )}
+                {question.kind === 'audio-open' && (
+                  <p className="text-xs text-amber-300">Áudio toca uma vez só para a turma.</p>
+                )}
+                {question.kind === 'speaking' && (
+                  <p className="text-xs text-amber-300">Speaking com frase completa. A turma responde falando.</p>
+                )}
               </div>
 
-              <div className="w-full max-w-lg grid grid-cols-2 gap-3">
-                {question.options.map((opt, i) => {
-                  const isCorrect = i === question.correctIndex;
-                  const showCorrect = session.status === 'showing-answer';
-                  return (
-                    <div
-                      key={i}
-                      className={`py-4 px-3 rounded-xl border-2 text-center text-sm font-bold transition-all ${
-                        showCorrect && isCorrect
-                          ? 'border-green-500 bg-green-500/20 text-green-300'
-                          : showCorrect
-                          ? 'border-slate-700 text-slate-500'
-                          : 'border-slate-600 text-white'
-                      }`}
-                    >
-                      {opt}
+              {isChoiceQuestion(question) ? (
+                <div className="w-full max-w-lg grid grid-cols-2 gap-3">
+                  {(question.options ?? []).map((opt, index) => {
+                    const showCorrect = session.status === 'showing-answer';
+                    const isCorrect = index === question.correctIndex;
+                    const isTeacherSelection = selectedOption === index;
+                    return (
+                      <button
+                        key={index}
+                        onClick={() => handleTeacherChoice(index)}
+                        disabled={session.status !== 'active' || (!includeTeacher ? true : teacherHasAnswered)}
+                        className={`py-4 px-3 rounded-xl border-2 text-center text-sm font-bold transition-all ${
+                          showCorrect && isCorrect
+                            ? 'border-green-500 bg-green-500/20 text-green-300'
+                            : isTeacherSelection
+                            ? 'border-orange-500 bg-orange-500/20 text-orange-300'
+                            : showCorrect
+                            ? 'border-slate-700 text-slate-500'
+                            : 'border-slate-600 text-white'
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="w-full max-w-lg space-y-3">
+                  <textarea
+                    value={typedAnswer}
+                    onChange={(event) => setTypedAnswer(event.target.value)}
+                    disabled={!includeTeacher || teacherHasAnswered || session.status !== 'active'}
+                    placeholder={question.kind === 'speaking' ? 'Resposta do professor...' : 'Digite a resposta do professor...'}
+                    className="w-full min-h-28 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
+                  />
+                  {includeTeacher && (
+                    <div className="flex gap-3">
+                      {question.kind === 'speaking' && (
+                        <button
+                          onClick={startSpeechRecognition}
+                          disabled={teacherHasAnswered || isListening || session.status !== 'active'}
+                          className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                        >
+                          {isListening ? 'Ouvindo...' : '🎤 Professor responde'}
+                        </button>
+                      )}
+                      <button
+                        onClick={handleTeacherOpenAnswer}
+                        disabled={!typedAnswer.trim() || teacherHasAnswered || session.status !== 'active'}
+                        className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                      >
+                        Confirmar resposta do professor
+                      </button>
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center gap-3 text-sm text-slate-400">
                 <span>⏱ {Math.ceil(timeLeft)}s</span>
                 <span>·</span>
-                <span>{answerCount} / {studentUids.length} responderam</span>
+                <span>{answerCount} / {expectedParticipantIds.length} responderam</span>
               </div>
 
-              {/* Round summary — shown when answer is revealed */}
-              {session.status === 'showing-answer' && roundSummary && (
-                <div className="flex gap-4">
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/15 border border-green-500/30">
-                    <span className="text-green-400 text-lg">✅</span>
-                    <div className="text-center">
-                      <div className="text-2xl font-black text-green-400">{roundSummary.correct}</div>
-                      <div className="text-[10px] text-slate-400 uppercase tracking-wide">Correto</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/15 border border-red-500/30">
-                    <span className="text-red-400 text-lg">❌</span>
-                    <div className="text-center">
-                      <div className="text-2xl font-black text-red-400">{roundSummary.wrong}</div>
-                      <div className="text-[10px] text-slate-400 uppercase tracking-wide">Errado</div>
-                    </div>
-                  </div>
-                  {roundSummary.unanswered > 0 && (
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700/40 border border-slate-600/30">
-                      <span className="text-slate-400 text-lg">⏰</span>
+              {session.status === 'showing-answer' && (
+                <>
+                  <p className="text-sm text-green-300">
+                    Resposta correta: <span className="font-bold">{answerLabel || '—'}</span>
+                  </p>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/15 border border-green-500/30">
+                      <span className="text-green-400 text-lg">✅</span>
                       <div className="text-center">
-                        <div className="text-2xl font-black text-slate-400">{roundSummary.unanswered}</div>
-                        <div className="text-[10px] text-slate-400 uppercase tracking-wide">Sem resposta</div>
+                        <div className="text-2xl font-black text-green-400">{correctCount}</div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wide">Correto</div>
                       </div>
                     </div>
-                  )}
-                </div>
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/15 border border-red-500/30">
+                      <span className="text-red-400 text-lg">❌</span>
+                      <div className="text-center">
+                        <div className="text-2xl font-black text-red-400">{wrongCount}</div>
+                        <div className="text-[10px] text-slate-400 uppercase tracking-wide">Errado</div>
+                      </div>
+                    </div>
+                    {unansweredCount > 0 && (
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700/40 border border-slate-600/30">
+                        <span className="text-slate-400 text-lg">⏰</span>
+                        <div className="text-center">
+                          <div className="text-2xl font-black text-slate-400">{unansweredCount}</div>
+                          <div className="text-[10px] text-slate-400 uppercase tracking-wide">Sem resposta</div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </>
           ) : null}
         </div>
 
-        {/* Controls */}
         <div className="flex justify-center gap-3 px-5 pb-5">
           {session.status === 'active' && (
             <button
               onClick={handleShowAnswer}
               disabled={busy}
-              title="Revelar resposta agora (auto-revela quando todos responderem)"
               className="px-6 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-semibold text-sm transition disabled:opacity-50"
             >
               👁 Revelar Resposta
@@ -325,23 +441,22 @@ export const BattleHostView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Sidebar: leaderboard */}
       <div className="w-52 bg-slate-900 border-l border-slate-800 flex flex-col">
         <div className="px-4 py-3 border-b border-slate-800">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Placar</p>
         </div>
         <div className="flex-1 overflow-y-auto py-2">
-          {leaderboard.map((p, i) => (
-            <div key={p.uid} className="flex items-center gap-2 px-4 py-2">
+          {leaderboard.map((player, index) => (
+            <div key={player.uid} className="flex items-center gap-2 px-4 py-2">
               <span className="text-sm w-5 text-center text-slate-500">
-                {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i + 1}`}
+                {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
               </span>
-              <span className="flex-1 text-xs text-white truncate">{p.name}</span>
-              <span className="text-xs font-bold text-orange-400">{p.score.toLocaleString()}</span>
+              <span className="flex-1 text-xs text-white truncate">{player.name}</span>
+              <span className="text-xs font-bold text-orange-400">{player.score.toLocaleString()}</span>
             </div>
           ))}
           {leaderboard.length === 0 && (
-            <p className="text-center text-slate-600 text-xs mt-6">Nenhum aluno ainda</p>
+            <p className="text-center text-slate-600 text-xs mt-6">Nenhum participante ainda</p>
           )}
         </div>
       </div>

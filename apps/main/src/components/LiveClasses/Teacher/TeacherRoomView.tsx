@@ -18,6 +18,7 @@ import { BattleSetupModal } from '../Battle/BattleSetupModal';
 import { BattleHostView } from '../Battle/BattleHostView';
 import { BattleSession, BattleConfig, BattleQuestion } from '../Battle/battleTypes';
 import { subscribeBattleSession, createBattleSession, deleteBattleSession } from '../Battle/battleService';
+import { buildInitialBattleScores } from '../Battle/battleUtils';
 
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
@@ -68,9 +69,7 @@ const TeacherStage: React.FC<{
       questions,
       currentQuestionIndex: 0,
       questionStartedAt: 0,
-      scores: {
-        [teacherUid]: { uid: teacherUid, name: teacherName, score: 0, streak: 0, lastAnswerCorrect: null },
-      },
+      scores: buildInitialBattleScores(config, teacherUid, teacherName),
       currentAnswers: {},
       createdAt: now,
       updatedAt: now,

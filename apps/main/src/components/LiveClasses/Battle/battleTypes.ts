@@ -3,12 +3,14 @@
 export type BattleDifficulty = 'easy' | 'normal' | 'hard';
 export type BattleScope = 'current-lesson' | 'current-book' | 'review';
 export type BattleStatus = 'idle' | 'lobby' | 'active' | 'showing-answer' | 'finished';
+export type BattleQuestionKind = 'multiple-choice' | 'image-choice' | 'audio-open' | 'speaking';
 
 export interface BattleConfig {
   scope: BattleScope;
   difficulty: BattleDifficulty;
   questionCount: number;           // UI offers 5/10/20 but editor can trim to any count
   timePerQuestion: 5 | 10 | 15; // seconds
+  includeTeacher?: boolean;
   courseId?: string;
   workbookId?: number;
   lessonId?: string;
@@ -16,11 +18,16 @@ export interface BattleConfig {
 
 export interface BattleQuestion {
   id: string;
+  kind: BattleQuestionKind;
   text: string;          // question / prompt shown to students
-  options: string[];      // always 4 choices for MVP
-  correctIndex: number;   // 0-based index into options
+  options?: string[];      // multiple-choice options when applicable
+  correctIndex?: number;   // 0-based index into options
+  correctText?: string;    // expected free-text answer for audio / speaking
+  acceptedAnswers?: string[]; // normalized accepted answer variants
   hint?: string;          // optional extra context
   imageUrl?: string;      // optional image thumbnail shown in editor & question card
+  promptAudioText?: string; // text spoken via TTS when the question starts
+  playAudioOnce?: boolean;  // audio prompt can only be heard once in battle
 }
 
 export interface BattleParticipant {
@@ -34,7 +41,9 @@ export interface BattleParticipant {
 export interface BattleAnswer {
   uid: string;
   name: string;
-  optionIndex: number;
+  optionIndex?: number;
+  responseText?: string;
+  isCorrect: boolean;
   answeredAt: number; // Date.now() ms
 }
 

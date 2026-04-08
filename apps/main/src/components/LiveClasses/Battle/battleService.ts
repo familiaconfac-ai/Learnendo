@@ -14,6 +14,11 @@ import type {
   BattleSession, BattleConfig, BattleQuestion, BattleParticipant, BattleAnswer
 } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
+import {
+  buildInitialBattleScores,
+  evaluateBattleAnswer,
+  getExpectedBattleParticipantIds,
+} from './battleUtils';
 
 function battleDocRef(classId: string) {
   // Path intentionally moved from liveClasses/{id}/battle/session
@@ -47,9 +52,7 @@ export async function createBattleSession(
     questions,
     currentQuestionIndex: 0,
     questionStartedAt: 0,
-    scores: {
-      [teacherUid]: { uid: teacherUid, name: teacherName, score: 0, streak: 0, lastAnswerCorrect: null },
-    },
+    scores: buildInitialBattleScores(config, teacherUid, teacherName),
     currentAnswers: {},
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -132,7 +135,10 @@ export async function submitBattleAnswer(
   session: BattleSession,
   uid: string,
   name: string,
-  optionIndex: number
+  payload: {
+    optionIndex?: number;
+    responseText?: string;
+  }
 ): Promise<void> {
   // Guard: already answered this question in the current snapshot
   if (uid in (session.currentAnswers ?? {})) return;
@@ -144,7 +150,7 @@ export async function submitBattleAnswer(
   const question = session.questions[qIdx];
   if (!question) return;
 
-  const isCorrect = optionIndex === question.correctIndex;
+  const isCorrect = evaluateBattleAnswer(question, payload);
 
   // Speed bonus — 0–500 proportional to time remaining
   const startedAt = session.questionStartedAt ?? 0;
@@ -163,7 +169,14 @@ export async function submitBattleAnswer(
   const streakBonus = isCorrect ? Math.min(200, newStreak * 50) : 0;
   const newScore = prev.score + baseScore + speedBonus + streakBonus;
 
-  const answer: BattleAnswer = { uid, name, optionIndex, answeredAt };
+  const answer: BattleAnswer = {
+    uid,
+    name,
+    optionIndex: payload.optionIndex,
+    responseText: payload.responseText,
+    isCorrect,
+    answeredAt,
+  };
   const updatedParticipant: BattleParticipant = {
     uid, name, score: newScore, streak: newStreak, lastAnswerCorrect: isCorrect,
   };
@@ -189,11 +202,10 @@ export async function autoRevealIfAllAnswered(
 ): Promise<void> {
   if (session.status !== 'active') return;
 
-  // Students only (exclude teacher from the "must answer" list)
-  const studentUids = Object.keys(session.scores).filter(id => id !== teacherUid);
-  if (studentUids.length === 0) return; // no students yet
+  const participantIds = getExpectedBattleParticipantIds(session, teacherUid);
+  if (participantIds.length === 0) return;
 
-  const allAnswered = studentUids.every(id => id in session.currentAnswers);
+  const allAnswered = participantIds.every(id => id in session.currentAnswers);
   if (!allAnswered) return;
 
   await showBattleAnswer(classId);

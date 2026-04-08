@@ -1,5 +1,6 @@
 // ── Learnendo Battle — question picker ────────────────────────────────────────
 import { PRACTICE_ITEMS, WORKBOOK_NUMBER } from '../../../constants';
+import type { PracticeItem } from '../../../types';
 import type { BattleConfig, BattleQuestion } from './battleTypes';
 
 function shuffle<T>(arr: T[]): T[] {
@@ -31,15 +32,36 @@ function ensureFourOptions(opts: string[] | undefined, correct: string): string[
   return [...pool].slice(0, 4);
 }
 
+function isVisualPrompt(item: PracticeItem): boolean {
+  const instruction = item.instruction.toLowerCase();
+  const displayValue = String(item.displayValue ?? '').toLowerCase();
+  const hasImportedImage = /^https?:\/\//.test(String(item.displayValue ?? ''));
+
+  if (hasImportedImage) return false;
+
+  return (
+    instruction.includes('what is this') ||
+    instruction.includes('what color') ||
+    instruction.includes('identify the color') ||
+    instruction.includes('identify the') ||
+    displayValue.startsWith('fa-')
+  );
+}
+
+function canUseInBattle(item: PracticeItem): boolean {
+  if (!item.correctValue) return false;
+  if (!(item.type === 'multiple-choice' || item.type === 'identification')) return false;
+  if (isVisualPrompt(item)) return false;
+  return true;
+}
+
 export function getBattleQuestions(
   config: Pick<BattleConfig, 'questionCount' | 'scope' | 'lessonId' | 'workbookId'>
 ): BattleQuestion[] {
   const { questionCount, scope, lessonId, workbookId } = config;
 
   // Filtra apenas itens válidos
-  let pool = PRACTICE_ITEMS.filter(
-    p => p.type === 'multiple-choice' || p.type === 'identification'
-  );
+  let pool = PRACTICE_ITEMS.filter(canUseInBattle);
 
   console.log(`[Battle] Iniciando busca. Total no banco: ${pool.length}`);
 
@@ -68,7 +90,7 @@ export function getBattleQuestions(
   // voltamos para o pool geral para o jogo não travar.
   if (pool.length === 0) {
     console.warn("[Battle] Nenhum item encontrado no filtro. Usando banco geral.");
-    pool = PRACTICE_ITEMS.filter(p => p.correctValue);
+    pool = PRACTICE_ITEMS.filter(canUseInBattle);
   }
 
   const selected = shuffle(pool).slice(0, questionCount);
@@ -93,7 +115,9 @@ export function getBattleQuestions(
 
     return {
       id: item.id || Math.random().toString(),
+      kind: /^https?:\/\//.test(String(item.displayValue ?? '')) ? 'image-choice' : 'multiple-choice',
       text: questionText,
+      imageUrl: /^https?:\/\//.test(String(item.displayValue ?? '')) ? String(item.displayValue) : undefined,
       options: shuffledOptions,
       correctIndex: correctIndex >= 0 ? correctIndex : 0,
     };

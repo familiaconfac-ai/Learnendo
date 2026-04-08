@@ -10,7 +10,7 @@
 // preference survives page refreshes and future sessions.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import type { BattleConfig, BattleDifficulty, BattleScope, BattleQuestion } from './battleTypes';
+import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, BattleQuestion } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
@@ -49,9 +49,13 @@ function persistExcluded(storageKey: string, ids: Set<string>) {
 type Step = 'config' | 'curate';
 
 interface EditDraft {
+  kind: BattleQuestionKind;
   text: string;
   options: string[];
   correctIndex: number;
+  correctText: string;
+  acceptedAnswersText: string;
+  promptAudioText: string;
   imageUrl: string;
 }
 
@@ -77,6 +81,12 @@ const DIFFICULTIES: { value: BattleDifficulty; label: string; emoji: string }[] 
 
 const QUESTION_COUNTS = [5, 10, 20] as const;
 const TIME_OPTIONS    = [5, 10, 15]  as const;
+const QUESTION_KINDS: { value: BattleQuestionKind; label: string }[] = [
+  { value: 'multiple-choice', label: 'Objetiva' },
+  { value: 'image-choice', label: 'Com imagem' },
+  { value: 'audio-open', label: 'Escuta' },
+  { value: 'speaking', label: 'Speaking' },
+];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export const BattleSetupModal: React.FC<Props> = ({
@@ -89,6 +99,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [difficulty,      setDifficulty]      = useState<BattleDifficulty>('normal');
   const [questionCount,   setQuestionCount]   = useState<5 | 10 | 20>(10);
   const [timePerQuestion, setTimePerQuestion] = useState<5 | 10 | 15>(10);
+  const [includeTeacher,  setIncludeTeacher]  = useState(false);
 
   // ── Step 2 state ────────────────────────────────────────────────────────
   const [questions,    setQuestions]    = useState<BattleQuestion[]>([]);
@@ -131,9 +142,50 @@ export const BattleSetupModal: React.FC<Props> = ({
       difficulty,
       questionCount: count,
       timePerQuestion,
+      includeTeacher,
       courseId:    defaultCourseId,
       workbookId:  defaultWorkbookId,
       lessonId:    defaultLessonId,
+    };
+  }
+
+  function draftToQuestion(baseId: string): BattleQuestion {
+    if (!editDraft) {
+      return {
+        id: baseId,
+        kind: 'multiple-choice',
+        text: '',
+        options: ['', '', '', ''],
+        correctIndex: 0,
+      };
+    }
+
+    const acceptedAnswers = editDraft.acceptedAnswersText
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    return {
+      id: baseId,
+      kind: editDraft.kind,
+      text: editDraft.text,
+      options: editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice'
+        ? editDraft.options
+        : undefined,
+      correctIndex: editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice'
+        ? editDraft.correctIndex
+        : undefined,
+      correctText: editDraft.kind === 'audio-open' || editDraft.kind === 'speaking'
+        ? editDraft.correctText
+        : undefined,
+      acceptedAnswers: editDraft.kind === 'audio-open' || editDraft.kind === 'speaking'
+        ? acceptedAnswers
+        : undefined,
+      promptAudioText: editDraft.kind === 'audio-open' || editDraft.kind === 'speaking'
+        ? (editDraft.promptAudioText || editDraft.text)
+        : undefined,
+      playAudioOnce: editDraft.kind === 'audio-open' || editDraft.kind === 'speaking',
+      imageUrl: editDraft.imageUrl || undefined,
     };
   }
 
@@ -141,13 +193,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     if (editingIdx === null || !editDraft) return questions;
 
     return questions.map((q, i) =>
-      i !== editingIdx ? q : {
-        ...q,
-        text: editDraft.text,
-        options: editDraft.options,
-        correctIndex: editDraft.correctIndex,
-        imageUrl: editDraft.imageUrl || undefined,
-      }
+      i !== editingIdx ? q : draftToQuestion(q.id)
     );
   }
 
@@ -186,9 +232,13 @@ export const BattleSetupModal: React.FC<Props> = ({
     const q = questions[idx];
     setEditingIdx(idx);
     setEditDraft({
+      kind: q.kind,
       text: q.text,
-      options: [...q.options],
-      correctIndex: q.correctIndex,
+      options: [...(q.options ?? ['', '', '', ''])],
+      correctIndex: q.correctIndex ?? 0,
+      correctText: q.correctText ?? '',
+      acceptedAnswersText: (q.acceptedAnswers ?? []).join(', '),
+      promptAudioText: q.promptAudioText ?? '',
       imageUrl: q.imageUrl ?? '',
     });
   }
@@ -203,6 +253,29 @@ export const BattleSetupModal: React.FC<Props> = ({
     setQuestions(getEffectiveQuestions());
     setEditingIdx(null);
     setEditDraft(null);
+  }
+
+  function addCustomQuestion() {
+    const newId = `custom_${Date.now()}`;
+    const newQuestion: BattleQuestion = {
+      id: newId,
+      kind: 'multiple-choice',
+      text: 'Nova pergunta',
+      options: ['Opção 1', 'Opção 2', 'Opção 3', 'Opção 4'],
+      correctIndex: 0,
+    };
+    setQuestions(prev => [...prev, newQuestion]);
+    setEditingIdx(questions.length);
+    setEditDraft({
+      kind: 'multiple-choice',
+      text: 'Nova pergunta',
+      options: ['Opção 1', 'Opção 2', 'Opção 3', 'Opção 4'],
+      correctIndex: 0,
+      correctText: '',
+      acceptedAnswersText: '',
+      promptAudioText: '',
+      imageUrl: '',
+    });
   }
 
   function duplicateQuestion(idx: number) {
@@ -325,6 +398,23 @@ export const BattleSetupModal: React.FC<Props> = ({
                 ))}
               </div>
             </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 px-4 py-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeTeacher}
+                  onChange={(e) => setIncludeTeacher(e.target.checked)}
+                  className="mt-1 h-4 w-4 accent-orange-500"
+                />
+                <div>
+                  <div className="text-sm font-semibold text-white">Professor participa da batalha</div>
+                  <div className="text-xs text-slate-400">
+                    Ative para o professor responder junto com os alunos e entrar no placar.
+                  </div>
+                </div>
+              </label>
+            </div>
           </div>
 
           {/* Footer — two launch paths */}
@@ -363,6 +453,13 @@ export const BattleSetupModal: React.FC<Props> = ({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={addCustomQuestion}
+              title="Adicionar pergunta personalizada"
+              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
+            >
+              + Nova pergunta
+            </button>
             <button onClick={handleReshuffle} title="Novo sorteio de perguntas"
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition">
               🔀 Novo sorteio
@@ -433,7 +530,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                 </div>
 
                 {/* Options mini-preview */}
-                {!isEditing && !excluded && (
+                {!isEditing && !excluded && q.options && q.options.length > 0 && (
                   <div className="grid grid-cols-2 gap-1 px-3 pb-2.5">
                     {q.options.map((opt, optIdx) => (
                       <div key={optIdx}
@@ -445,6 +542,14 @@ export const BattleSetupModal: React.FC<Props> = ({
                         {optIdx === q.correctIndex ? '✓ ' : ''}{opt}
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {!isEditing && !excluded && (!q.options || q.options.length === 0) && (
+                  <div className="px-3 pb-2.5">
+                    <div className="text-[11px] px-2 py-2 rounded border border-green-600/60 bg-green-600/10 text-green-400">
+                      Resposta esperada: {q.correctText || q.acceptedAnswers?.[0] || '—'}
+                    </div>
                   </div>
                 )}
 
@@ -460,6 +565,19 @@ export const BattleSetupModal: React.FC<Props> = ({
                         onChange={e => setEditDraft(d => d ? { ...d, text: e.target.value } : d)}
                         className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500"
                       />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">Tipo de pergunta</label>
+                      <select
+                        value={editDraft.kind}
+                        onChange={e => setEditDraft(d => d ? { ...d, kind: e.target.value as BattleQuestionKind } : d)}
+                        className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500"
+                      >
+                        {QUESTION_KINDS.map(kind => (
+                          <option key={kind.value} value={kind.value}>{kind.label}</option>
+                        ))}
+                      </select>
                     </div>
 
                     {/* Image URL field */}
@@ -484,6 +602,38 @@ export const BattleSetupModal: React.FC<Props> = ({
                         )}
                       </div>
                     </div>
+
+                    {(editDraft.kind === 'audio-open' || editDraft.kind === 'speaking') && (
+                      <>
+                        <div>
+                          <label className="text-[10px] text-slate-500 uppercase tracking-wide">Texto do áudio</label>
+                          <input
+                            value={editDraft.promptAudioText}
+                            onChange={e => setEditDraft(d => d ? { ...d, promptAudioText: e.target.value } : d)}
+                            placeholder="Ex.: What is two plus two?"
+                            className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500 uppercase tracking-wide">Resposta correta principal</label>
+                          <input
+                            value={editDraft.correctText}
+                            onChange={e => setEditDraft(d => d ? { ...d, correctText: e.target.value } : d)}
+                            placeholder={editDraft.kind === 'speaking' ? "Ex.: it's an apple" : 'Ex.: 4'}
+                            className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] text-slate-500 uppercase tracking-wide">Variações aceitas</label>
+                          <input
+                            value={editDraft.acceptedAnswersText}
+                            onChange={e => setEditDraft(d => d ? { ...d, acceptedAnswersText: e.target.value } : d)}
+                            placeholder="Resposta 1, resposta 2, resposta 3"
+                            className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
+                          />
+                        </div>
+                      </>
+                    )}
 
                     {/* Options editor */}
                     <div>
