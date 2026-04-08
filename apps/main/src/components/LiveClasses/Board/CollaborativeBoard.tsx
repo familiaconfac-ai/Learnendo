@@ -24,6 +24,10 @@ interface CollaborativeBoardProps {
 const DOCUMENT_RECORD_TYPES = new Set(['shape', 'page', 'binding', 'asset']);
 const PERSISTED_RECORD_TYPES = new Set(['shape', 'binding', 'asset']);
 
+function countPersistedRecords(snapshot: { store?: Record<string, { typeName?: string }> } | null | undefined) {
+  return Object.values(snapshot?.store ?? {}).filter((record) => PERSISTED_RECORD_TYPES.has(record?.typeName ?? '')).length;
+}
+
 function hasPersistableChange(changes: {
   added: Record<string, { typeName?: string }>;
   updated: Record<string, { typeName?: string } | [unknown, { typeName?: string }]>;
@@ -46,6 +50,8 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
   const isRemoteUpdate = useRef(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasHydratedFromFirestore = useRef(false);
+  const hasExplicitUserEdit = useRef(false);
+  const lastRemotePersistedCount = useRef(0);
   const clientId = useRef(`${userId}:${Math.random().toString(36).slice(2, 10)}`).current;
 
   // Strip the "class-" prefix to get the actual classId for Firestore path
@@ -56,12 +62,24 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
     if (readOnly) return;
     if (isRemoteUpdate.current) return;
     if (!hasHydratedFromFirestore.current) return;
+    if (!hasExplicitUserEdit.current) {
+      console.log('[CollaborativeBoard] skip save before first explicit edit', { classId, userId, clientId });
+      return;
+    }
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 
     debounceTimer.current = setTimeout(async () => {
       try {
         if (!db) return;
         const snapshot = getSnapshot(editor.store);
+        const persistedCount = countPersistedRecords(snapshot as { store?: Record<string, { typeName?: string }> });
+        console.log('[CollaborativeBoard] save triggered', {
+          classId,
+          userId,
+          clientId,
+          persistedCount,
+          lastRemotePersistedCount: lastRemotePersistedCount.current,
+        });
         const docRef = doc(db, 'liveClasses', classId, 'shared', 'tldrawBoard');
         await setDoc(docRef, {
           snapshot: JSON.stringify(snapshot),
@@ -90,6 +108,16 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
       })) {
         return;
       }
+
+      hasExplicitUserEdit.current = true;
+      console.log('[CollaborativeBoard] explicit user edit detected', {
+        classId,
+        userId,
+        clientId,
+        added: Object.keys(entry.changes.added).length,
+        updated: Object.keys(entry.changes.updated).length,
+        removed: Object.keys(entry.changes.removed).length,
+      });
       saveToFirestore();
     }, { scope: 'document', source: 'user' });
 
@@ -105,22 +133,42 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
       if (!docSnap.exists()) {
         // No remote data yet; allow saves from this point on.
         hasHydratedFromFirestore.current = true;
+        lastRemotePersistedCount.current = 0;
+        console.log('[CollaborativeBoard] remote snapshot missing', { classId, userId, clientId });
         return;
       }
       const data = docSnap.data();
       if (!data?.snapshot) {
         hasHydratedFromFirestore.current = true;
+        lastRemotePersistedCount.current = 0;
+        console.log('[CollaborativeBoard] remote snapshot empty payload', { classId, userId, clientId });
         return;
       }
 
       // Skip our own writes by client id so multiple tabs from the same account still sync.
       if (data.updatedByClientId === clientId) {
         hasHydratedFromFirestore.current = true;
+        const ownSnapshot = JSON.parse(data.snapshot);
+        lastRemotePersistedCount.current = countPersistedRecords(ownSnapshot as { store?: Record<string, { typeName?: string }> });
+        console.log('[CollaborativeBoard] remote echo ignored', {
+          classId,
+          userId,
+          clientId,
+          persistedCount: lastRemotePersistedCount.current,
+        });
         return;
       }
 
       try {
         const remoteSnapshot = JSON.parse(data.snapshot);
+        lastRemotePersistedCount.current = countPersistedRecords(remoteSnapshot as { store?: Record<string, { typeName?: string }> });
+        console.log('[CollaborativeBoard] remote snapshot applied', {
+          classId,
+          userId,
+          clientId,
+          persistedCount: lastRemotePersistedCount.current,
+          updatedByClientId: data.updatedByClientId ?? null,
+        });
         isRemoteUpdate.current = true;
         editor.store.mergeRemoteChanges(() => {
           loadSnapshot(editor.store, remoteSnapshot);
