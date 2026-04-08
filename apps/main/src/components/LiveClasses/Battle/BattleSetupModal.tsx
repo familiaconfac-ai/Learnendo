@@ -53,7 +53,7 @@ interface EditDraft {
   kind: BattleQuestionKind;
   text: string;
   options: string[];
-  correctIndex: number;
+  correctIndexes: number[];
   correctText: string;
   acceptedAnswersText: string;
   promptAudioText: string;
@@ -85,7 +85,8 @@ const TIME_OPTIONS    = [5, 10, 15]  as const;
 const QUESTION_KINDS: { value: BattleQuestionKind; label: string }[] = [
   { value: 'multiple-choice', label: 'Objetiva' },
   { value: 'image-choice', label: 'Com imagem' },
-  { value: 'audio-open', label: 'Escuta' },
+  { value: 'audio-choice', label: 'Escuta + alternativas' },
+  { value: 'audio-open', label: 'Escuta + escrita' },
   { value: 'speaking', label: 'Speaking' },
 ];
 
@@ -157,6 +158,7 @@ export const BattleSetupModal: React.FC<Props> = ({
         kind: 'multiple-choice',
         text: '',
         options: ['', '', '', ''],
+        correctIndexes: [0],
         correctIndex: 0,
       };
     }
@@ -170,18 +172,23 @@ export const BattleSetupModal: React.FC<Props> = ({
       id: baseId,
       kind: editDraft.kind,
       text: editDraft.text,
-      ...(editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice'
+      ...(editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice' || editDraft.kind === 'audio-choice'
         ? {
             options: editDraft.options,
-            correctIndex: editDraft.correctIndex,
+            correctIndexes: editDraft.correctIndexes,
+            correctIndex: editDraft.correctIndexes[0] ?? 0,
+          }
+        : {}),
+      ...((editDraft.kind === 'audio-choice' || editDraft.kind === 'audio-open' || editDraft.kind === 'speaking')
+        ? {
+            promptAudioText: editDraft.promptAudioText || editDraft.text,
+            playAudioOnce: true,
           }
         : {}),
       ...(editDraft.kind === 'audio-open' || editDraft.kind === 'speaking'
         ? {
             correctText: editDraft.correctText,
             acceptedAnswers,
-            promptAudioText: editDraft.promptAudioText || editDraft.text,
-            playAudioOnce: true,
           }
         : {}),
       ...(editDraft.imageUrl.trim() ? { imageUrl: editDraft.imageUrl.trim() } : {}),
@@ -236,7 +243,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       kind: q.kind,
       text: q.text,
       options: [...(q.options ?? ['', '', '', ''])],
-      correctIndex: q.correctIndex ?? 0,
+      correctIndexes: q.correctIndexes?.length ? [...q.correctIndexes] : [q.correctIndex ?? 0],
       correctText: q.correctText ?? '',
       acceptedAnswersText: (q.acceptedAnswers ?? []).join(', '),
       promptAudioText: q.promptAudioText ?? '',
@@ -272,6 +279,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       kind: 'multiple-choice',
       text: 'Nova pergunta',
       options: ['Opção 1', 'Opção 2', 'Opção 3', 'Opção 4'],
+      correctIndexes: [0],
       correctIndex: 0,
     };
     setQuestions(prev => [...prev, newQuestion]);
@@ -280,7 +288,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       kind: 'multiple-choice',
       text: 'Nova pergunta',
       options: ['Opção 1', 'Opção 2', 'Opção 3', 'Opção 4'],
-      correctIndex: 0,
+      correctIndexes: [0],
       correctText: '',
       acceptedAnswersText: '',
       promptAudioText: '',
@@ -547,11 +555,11 @@ export const BattleSetupModal: React.FC<Props> = ({
                     {q.options.map((opt, optIdx) => (
                       <div key={optIdx}
                         className={`text-[11px] px-2 py-1 rounded border truncate ${
-                          optIdx === q.correctIndex
+                          (q.correctIndexes ?? [q.correctIndex ?? 0]).includes(optIdx)
                             ? 'border-green-600/60 bg-green-600/10 text-green-400'
                             : 'border-slate-700/60 text-slate-500'
                         }`}>
-                        {optIdx === q.correctIndex ? '✓ ' : ''}{opt}
+                        {(q.correctIndexes ?? [q.correctIndex ?? 0]).includes(optIdx) ? '✓ ' : ''}{opt}
                       </div>
                     ))}
                   </div>
@@ -615,7 +623,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                       </div>
                     </div>
 
-                    {(editDraft.kind === 'audio-open' || editDraft.kind === 'speaking') && (
+                    {(editDraft.kind === 'audio-choice' || editDraft.kind === 'audio-open' || editDraft.kind === 'speaking') && (
                       <>
                         <div>
                           <label className="text-[10px] text-slate-500 uppercase tracking-wide">Texto do áudio</label>
@@ -626,6 +634,8 @@ export const BattleSetupModal: React.FC<Props> = ({
                             className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
                           />
                         </div>
+                        {(editDraft.kind === 'audio-open' || editDraft.kind === 'speaking') && (
+                          <>
                         <div>
                           <label className="text-[10px] text-slate-500 uppercase tracking-wide">Resposta correta principal</label>
                           <input
@@ -644,22 +654,37 @@ export const BattleSetupModal: React.FC<Props> = ({
                             className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
                           />
                         </div>
+                          </>
+                        )}
                       </>
                     )}
 
                     {/* Options editor */}
+                    {(editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice' || editDraft.kind === 'audio-choice') && (
                     <div>
                       <label className="text-[10px] text-slate-500 uppercase tracking-wide">
-                        Alternativas — radio = resposta correta
+                        Alternativas — marque uma ou mais corretas
                       </label>
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Uma correta responde no clique. VÃ¡rias corretas exigem marcar tudo e confirmar.
+                      </p>
                       <div className="mt-1 space-y-1.5">
                         {editDraft.options.map((opt, optIdx) => (
                           <div key={optIdx} className="flex items-center gap-2">
                             <input
-                              type="radio"
-                              name={`correct-${q.id}`}
-                              checked={editDraft.correctIndex === optIdx}
-                              onChange={() => setEditDraft(d => d ? { ...d, correctIndex: optIdx } : d)}
+                              type="checkbox"
+                              checked={editDraft.correctIndexes.includes(optIdx)}
+                              onChange={() => setEditDraft(d => {
+                                if (!d) return d;
+                                const isCorrect = d.correctIndexes.includes(optIdx);
+                                const nextIndexes = isCorrect
+                                  ? d.correctIndexes.filter((index) => index !== optIdx)
+                                  : [...d.correctIndexes, optIdx].sort((a, b) => a - b);
+                                return {
+                                  ...d,
+                                  correctIndexes: nextIndexes.length > 0 ? nextIndexes : [optIdx],
+                                };
+                              })}
                               className="accent-green-500 cursor-pointer"
                             />
                             <input
@@ -671,13 +696,14 @@ export const BattleSetupModal: React.FC<Props> = ({
                                 return { ...d, options: opts };
                               })}
                               className={`flex-1 bg-slate-700 border rounded px-2 py-1 text-sm text-white outline-none focus:border-orange-500 ${
-                                editDraft.correctIndex === optIdx ? 'border-green-600' : 'border-slate-600'
+                                editDraft.correctIndexes.includes(optIdx) ? 'border-green-600' : 'border-slate-600'
                               }`}
                             />
                           </div>
                         ))}
                       </div>
                     </div>
+                    )}
 
                     <div className="flex gap-2">
                       <button

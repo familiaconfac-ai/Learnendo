@@ -3,7 +3,7 @@
 export type BattleDifficulty = 'easy' | 'normal' | 'hard';
 export type BattleScope = 'current-lesson' | 'current-book' | 'review';
 export type BattleStatus = 'idle' | 'lobby' | 'active' | 'showing-answer' | 'finished';
-export type BattleQuestionKind = 'multiple-choice' | 'image-choice' | 'audio-open' | 'speaking';
+export type BattleQuestionKind = 'multiple-choice' | 'image-choice' | 'audio-choice' | 'audio-open' | 'speaking';
 
 export interface BattleConfig {
   scope: BattleScope;
@@ -22,6 +22,7 @@ export interface BattleQuestion {
   text: string;          // question / prompt shown to students
   options?: string[];      // multiple-choice options when applicable
   correctIndex?: number;   // 0-based index into options
+  correctIndexes?: number[]; // allows one or more correct alternatives
   correctText?: string;    // expected free-text answer for audio / speaking
   acceptedAnswers?: string[]; // normalized accepted answer variants
   hint?: string;          // optional extra context
@@ -50,6 +51,7 @@ export interface BattleAnswer {
   uid: string;
   name: string;
   optionIndex?: number;
+  optionIndexes?: number[];
   responseText?: string;
   isCorrect: boolean;
   answeredAt: number; // Date.now() ms

@@ -5,6 +5,7 @@ import { joinBattle, submitBattleAnswer } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
   getBattleCorrectAnswerLabel,
+  getBattleCorrectIndexes,
   getBattleLanguage,
   getBattlePromptAudioText,
   getMyBattleAnswer,
@@ -40,7 +41,7 @@ interface Props {
 }
 
 export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name }) => {
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
@@ -64,6 +65,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   const timeRatio = timeLeft / session.config.timePerQuestion;
   const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
   const showMicButton = question?.kind === 'speaking';
+  const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
 
   useEffect(() => {
     musicRef.current = createBattleAudio();
@@ -90,7 +92,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }, [classId, uid, name, session.scores]);
 
   useEffect(() => {
-    setSelectedOption(null);
+    setSelectedOptions([]);
     setTypedAnswer('');
     setSubmitted(false);
     setTimeLeft(session.config.timePerQuestion);
@@ -158,16 +160,37 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     recognition.start();
   }
 
-  async function lockChoiceAnswer(optionIndex: number) {
-    if (!question || !isChoiceQuestion(question) || hasAnswered || session.status !== 'active') return;
-    setSelectedOption(optionIndex);
+  async function submitChoiceAnswer(optionIndexes: number[]) {
+    if (!question || !isChoiceQuestion(question) || hasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
     setSubmitted(true);
     try {
-      await submitBattleAnswer(classId, session, uid, name, { optionIndex });
+      await submitBattleAnswer(classId, session, uid, name, {
+        optionIndex: optionIndexes[0],
+        optionIndexes,
+      });
     } catch (error) {
       console.error('[Battle] submit answer failed', error);
       setSubmitted(false);
     }
+  }
+
+  function toggleChoiceSelection(optionIndex: number) {
+    if (!question || !isChoiceQuestion(question) || hasAnswered || session.status !== 'active') return;
+    if (!requiresChoiceConfirmation) {
+      setSelectedOptions([optionIndex]);
+      void submitChoiceAnswer([optionIndex]);
+      return;
+    }
+    setSelectedOptions((current) => (
+      current.includes(optionIndex)
+        ? current.filter((value) => value !== optionIndex)
+        : [...current, optionIndex].sort((a, b) => a - b)
+    ));
+  }
+
+  async function confirmChoiceAnswer() {
+    if (!requiresChoiceConfirmation || selectedOptions.length === 0) return;
+    await submitChoiceAnswer(selectedOptions);
   }
 
   async function submitOpenAnswer() {
@@ -294,6 +317,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
               className="mx-auto max-h-48 w-auto rounded-xl border border-slate-700 object-contain bg-slate-900"
             />
           )}
+          {question.kind === 'audio-choice' && (
+            <p className="text-xs text-amber-300">
+              Escute apenas uma vez e escolha a resposta entre as alternativas.
+            </p>
+          )}
           {question.kind === 'audio-open' && (
             <p className="text-xs text-amber-300">
               Escute apenas uma vez e digite a resposta.
@@ -308,27 +336,38 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
         </div>
 
         {isChoiceQuestion(question) ? (
-          <div className="w-full max-w-sm grid grid-cols-2 gap-3">
-            {(question.options ?? []).map((opt, index) => {
-              const isSelected = selectedOption === index;
-              return (
-                <button
-                  key={index}
-                  onClick={() => lockChoiceAnswer(index)}
-                  disabled={hasAnswered}
-                  className={`py-4 px-3 rounded-xl border-2 text-sm font-bold transition-all active:scale-95 ${
-                    isSelected
-                      ? 'border-orange-500 bg-orange-500/20 text-orange-300'
-                      : hasAnswered
-                      ? 'border-slate-700 text-slate-600 cursor-not-allowed'
-                      : 'border-slate-600 text-white hover:border-orange-400 hover:bg-orange-400/10'
-                  }`}
-                >
-                  {opt}
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="w-full max-w-sm grid grid-cols-2 gap-3">
+              {(question.options ?? []).map((opt, index) => {
+                const isSelected = selectedOptions.includes(index);
+                return (
+                  <button
+                    key={index}
+                    onClick={() => toggleChoiceSelection(index)}
+                    disabled={hasAnswered}
+                    className={`py-4 px-3 rounded-xl border-2 text-sm font-bold transition-all active:scale-95 ${
+                      isSelected
+                        ? 'border-orange-500 bg-orange-500/20 text-orange-300'
+                        : hasAnswered
+                        ? 'border-slate-700 text-slate-600 cursor-not-allowed'
+                        : 'border-slate-600 text-white hover:border-orange-400 hover:bg-orange-400/10'
+                    }`}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+            {requiresChoiceConfirmation && (
+              <button
+                onClick={confirmChoiceAnswer}
+                disabled={hasAnswered || selectedOptions.length === 0}
+                className="w-full max-w-sm rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              >
+                Confirmar resposta
+              </button>
+            )}
+          </>
         ) : (
           <div className="w-full max-w-sm space-y-3">
             <textarea

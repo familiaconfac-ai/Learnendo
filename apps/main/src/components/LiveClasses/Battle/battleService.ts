@@ -142,6 +142,7 @@ export async function submitBattleAnswer(
   name: string,
   payload: {
     optionIndex?: number;
+    optionIndexes?: number[];
     responseText?: string;
   }
 ): Promise<void> {
@@ -178,6 +179,7 @@ export async function submitBattleAnswer(
     uid,
     name,
     optionIndex: payload.optionIndex,
+    optionIndexes: payload.optionIndexes,
     responseText: payload.responseText,
     isCorrect,
     answeredAt,

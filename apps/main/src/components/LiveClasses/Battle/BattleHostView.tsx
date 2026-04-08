@@ -11,6 +11,7 @@ import {
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
   getBattleCorrectAnswerLabel,
+  getBattleCorrectIndexes,
   getBattleLanguage,
   getBattlePromptAudioText,
   getExpectedBattleParticipantIds,
@@ -37,9 +38,10 @@ export const BattleHostView: React.FC<Props> = ({
   const [busy, setBusy] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [musicMuted, setMusicMuted] = useState(true);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [teacherSubmitting, setTeacherSubmitting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -58,7 +60,8 @@ export const BattleHostView: React.FC<Props> = ({
   const answerCount = Object.keys(session.currentAnswers).length;
   const timeRatio = timeLeft / session.config.timePerQuestion;
   const myAnswer = getMyBattleAnswer(session, teacherUid);
-  const teacherHasAnswered = !!myAnswer;
+  const teacherHasAnswered = !!myAnswer || teacherSubmitting;
+  const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const showTeacherInScores = includeTeacher || teacherCanPlay;
   const visibleScores = useMemo(
     () => showTeacherInScores
@@ -94,8 +97,9 @@ export const BattleHostView: React.FC<Props> = ({
   }, [musicMuted]);
 
   useEffect(() => {
-    setSelectedOption(null);
+    setSelectedOptions([]);
     setTypedAnswer('');
+    setTeacherSubmitting(false);
     setTimeLeft(session.config.timePerQuestion);
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
@@ -181,21 +185,66 @@ export const BattleHostView: React.FC<Props> = ({
     recognition.start();
   }
 
-  async function handleTeacherChoice(optionIndex: number) {
+  function shouldRevealAfterTeacherAnswer() {
+    return expectedParticipantIds.every((uid) => uid === teacherUid || uid in session.currentAnswers);
+  }
+
+  async function submitTeacherChoice(optionIndexes: number[]) {
+    if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
+    setTeacherSubmitting(true);
+    try {
+      await submitBattleAnswer(classId, session, teacherUid, session.scores[teacherUid]?.name || 'Professor', {
+        optionIndex: optionIndexes[0],
+        optionIndexes,
+      });
+      setTimeLeft(0);
+      if (shouldRevealAfterTeacherAnswer()) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        await showBattleAnswer(classId);
+      }
+    } finally {
+      setTeacherSubmitting(false);
+    }
+  }
+
+  function toggleTeacherChoice(optionIndex: number) {
     if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active') return;
-    setSelectedOption(optionIndex);
-    await submitBattleAnswer(classId, session, teacherUid, session.scores[teacherUid]?.name || 'Professor', { optionIndex });
+    if (!requiresChoiceConfirmation) {
+      setSelectedOptions([optionIndex]);
+      void submitTeacherChoice([optionIndex]);
+      return;
+    }
+    setSelectedOptions((current) => (
+      current.includes(optionIndex)
+        ? current.filter((value) => value !== optionIndex)
+        : [...current, optionIndex].sort((a, b) => a - b)
+    ));
+  }
+
+  async function confirmTeacherChoice() {
+    if (!requiresChoiceConfirmation || selectedOptions.length === 0) return;
+    await submitTeacherChoice(selectedOptions);
   }
 
   async function handleTeacherOpenAnswer() {
     if (!teacherCanPlay || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
-    await submitBattleAnswer(
-      classId,
-      session,
-      teacherUid,
-      session.scores[teacherUid]?.name || 'Professor',
-      { responseText: typedAnswer.trim() }
-    );
+    setTeacherSubmitting(true);
+    try {
+      await submitBattleAnswer(
+        classId,
+        session,
+        teacherUid,
+        session.scores[teacherUid]?.name || 'Professor',
+        { responseText: typedAnswer.trim() }
+      );
+      setTimeLeft(0);
+      if (shouldRevealAfterTeacherAnswer()) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        await showBattleAnswer(classId);
+      }
+    } finally {
+      setTeacherSubmitting(false);
+    }
   }
 
   async function handleStart() {
@@ -314,6 +363,9 @@ export const BattleHostView: React.FC<Props> = ({
                     className="mx-auto max-h-52 w-auto rounded-xl border border-slate-700 object-contain bg-slate-900"
                   />
                 )}
+                {question.kind === 'audio-choice' && (
+                  <p className="text-xs text-amber-300">Audio toca uma vez so e a turma escolhe entre as alternativas.</p>
+                )}
                 {question.kind === 'audio-open' && (
                   <p className="text-xs text-amber-300">Áudio toca uma vez só para a turma.</p>
                 )}
@@ -323,31 +375,42 @@ export const BattleHostView: React.FC<Props> = ({
               </div>
 
               {isChoiceQuestion(question) ? (
-                <div className="w-full max-w-lg grid grid-cols-2 gap-3">
-                  {(question.options ?? []).map((opt, index) => {
-                    const showCorrect = session.status === 'showing-answer';
-                    const isCorrect = index === question.correctIndex;
-                    const isTeacherSelection = selectedOption === index;
-                    return (
-                      <button
-                        key={index}
-                        onClick={() => handleTeacherChoice(index)}
-                        disabled={session.status !== 'active' || (!teacherCanPlay ? true : teacherHasAnswered)}
-                        className={`py-4 px-3 rounded-xl border-2 text-center text-sm font-bold transition-all ${
-                          showCorrect && isCorrect
-                            ? 'border-green-500 bg-green-500/20 text-green-300'
-                            : isTeacherSelection
-                            ? 'border-orange-500 bg-orange-500/20 text-orange-300'
-                            : showCorrect
-                            ? 'border-slate-700 text-slate-500'
-                            : 'border-slate-600 text-white'
-                        }`}
-                      >
-                        {opt}
-                      </button>
-                    );
-                  })}
-                </div>
+                <>
+                  <div className="w-full max-w-lg grid grid-cols-2 gap-3">
+                    {(question.options ?? []).map((opt, index) => {
+                      const showCorrect = session.status === 'showing-answer';
+                      const isCorrect = (question.correctIndexes ?? [question.correctIndex ?? 0]).includes(index);
+                      const isTeacherSelection = selectedOptions.includes(index);
+                      return (
+                        <button
+                          key={index}
+                          onClick={() => toggleTeacherChoice(index)}
+                          disabled={session.status !== 'active' || (!teacherCanPlay ? true : teacherHasAnswered)}
+                          className={`py-4 px-3 rounded-xl border-2 text-center text-sm font-bold transition-all ${
+                            showCorrect && isCorrect
+                              ? 'border-green-500 bg-green-500/20 text-green-300'
+                              : isTeacherSelection
+                              ? 'border-orange-500 bg-orange-500/20 text-orange-300'
+                              : showCorrect
+                              ? 'border-slate-700 text-slate-500'
+                              : 'border-slate-600 text-white'
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {teacherCanPlay && requiresChoiceConfirmation && (
+                    <button
+                      onClick={confirmTeacherChoice}
+                      disabled={teacherHasAnswered || selectedOptions.length === 0 || session.status !== 'active'}
+                      className="w-full max-w-lg rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                    >
+                      Confirmar resposta do professor
+                    </button>
+                  )}
+                </>
               ) : (
                 <div className="w-full max-w-lg space-y-3">
                   <textarea

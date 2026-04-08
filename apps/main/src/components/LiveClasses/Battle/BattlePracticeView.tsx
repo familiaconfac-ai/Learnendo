@@ -5,6 +5,7 @@ import { BattleResultsScreen } from './BattleResultsScreen';
 import {
   evaluateBattleAnswer,
   getBattleCorrectAnswerLabel,
+  getBattleCorrectIndexes,
   getBattleLanguage,
   getBattlePromptAudioText,
   isChoiceQuestion,
@@ -27,9 +28,9 @@ export const BattlePracticeView: React.FC<Props> = ({
 }) => {
   const [status, setStatus] = useState<'lobby' | 'active' | 'showing-answer' | 'finished'>('lobby');
   const [questionIndex, setQuestionIndex] = useState(0);
-  const [selectedOption, setSelectedOption] = useState<number | null>(null);
+  const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
-  const [timeLeft, setTimeLeft] = useState(template.config.timePerQuestion);
+  const [timeLeft, setTimeLeft] = useState<number>(template.config.timePerQuestion);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
   const [lastAnswerCorrect, setLastAnswerCorrect] = useState<boolean | null>(null);
@@ -45,6 +46,7 @@ export const BattlePracticeView: React.FC<Props> = ({
   const totalQuestions = template.questions.length;
   const battleLanguage = getBattleLanguage(template.config.courseId);
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
+  const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const scores = useMemo(() => ({
     [uid]: {
       uid,
@@ -80,7 +82,7 @@ export const BattlePracticeView: React.FC<Props> = ({
   }, [musicMuted]);
 
   useEffect(() => {
-    setSelectedOption(null);
+    setSelectedOptions([]);
     setTypedAnswer('');
     setTimeLeft(template.config.timePerQuestion);
     setIsListening(false);
@@ -152,7 +154,7 @@ export const BattlePracticeView: React.FC<Props> = ({
     recognition.start();
   }
 
-  function lockAnswer(payload: { optionIndex?: number; responseText?: string }) {
+  function lockAnswer(payload: { optionIndex?: number; optionIndexes?: number[]; responseText?: string }) {
     if (!question || status !== 'active') return;
 
     const isCorrect = evaluateBattleAnswer(question, payload);
@@ -163,12 +165,28 @@ export const BattlePracticeView: React.FC<Props> = ({
       ? 500 + Math.round(speedRatio * 500) + Math.min(200, nextStreak * 50)
       : 0;
 
-    if (payload.optionIndex != null) setSelectedOption(payload.optionIndex);
+    if (payload.optionIndexes?.length) setSelectedOptions(payload.optionIndexes);
+    else if (payload.optionIndex != null) setSelectedOptions([payload.optionIndex]);
     if (payload.responseText) setTypedAnswer(payload.responseText);
     setScore((value) => value + gainedScore);
     setStreak(nextStreak);
     setLastAnswerCorrect(isCorrect);
     setStatus('showing-answer');
+  }
+
+  function handlePracticeChoice(optionIndex: number) {
+    if (!question || !isChoiceQuestion(question) || status !== 'active') return;
+    if (!requiresChoiceConfirmation) {
+      setSelectedOptions([optionIndex]);
+      lockAnswer({ optionIndex, optionIndexes: [optionIndex] });
+      return;
+    }
+
+    setSelectedOptions((current) => (
+      current.includes(optionIndex)
+        ? current.filter((value) => value !== optionIndex)
+        : [...current, optionIndex].sort((a, b) => a - b)
+    ));
   }
 
   function handleNext() {
@@ -255,26 +273,38 @@ export const BattlePracticeView: React.FC<Props> = ({
                   className="mx-auto max-h-48 w-auto rounded-xl border border-slate-700 object-contain bg-slate-900"
                 />
               )}
+              {question.kind === 'audio-choice' && <p className="text-xs text-amber-300">Escute uma vez e escolha entre as alternativas.</p>}
               {question.kind === 'audio-open' && <p className="text-xs text-amber-300">Escute uma vez e responda.</p>}
               {question.kind === 'speaking' && <p className="text-xs text-amber-300">Responda falando uma frase completa.</p>}
             </div>
 
             {status === 'active' && isChoiceQuestion(question) ? (
-              <div className="w-full max-w-sm grid grid-cols-2 gap-3">
-                {(question.options ?? []).map((option, index) => (
+              <>
+                <div className="w-full max-w-sm grid grid-cols-2 gap-3">
+                  {(question.options ?? []).map((option, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handlePracticeChoice(index)}
+                      className={`py-4 px-3 rounded-xl border-2 text-sm font-bold transition-all active:scale-95 ${
+                        selectedOptions.includes(index)
+                          ? 'border-orange-500 bg-orange-500/20 text-orange-300'
+                          : 'border-slate-600 text-white hover:border-orange-400 hover:bg-orange-400/10'
+                      }`}
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+                {requiresChoiceConfirmation && (
                   <button
-                    key={index}
-                    onClick={() => lockAnswer({ optionIndex: index })}
-                    className={`py-4 px-3 rounded-xl border-2 text-sm font-bold transition-all active:scale-95 ${
-                      selectedOption === index
-                        ? 'border-orange-500 bg-orange-500/20 text-orange-300'
-                        : 'border-slate-600 text-white hover:border-orange-400 hover:bg-orange-400/10'
-                    }`}
+                    onClick={() => lockAnswer({ optionIndex: selectedOptions[0], optionIndexes: selectedOptions })}
+                    disabled={selectedOptions.length === 0}
+                    className="w-full max-w-sm rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                   >
-                    {option}
+                    Confirmar resposta
                   </button>
-                ))}
-              </div>
+                )}
+              </>
             ) : status === 'active' ? (
               <div className="w-full max-w-sm space-y-3">
                 <textarea

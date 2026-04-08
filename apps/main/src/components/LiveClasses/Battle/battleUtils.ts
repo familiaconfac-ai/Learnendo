@@ -9,7 +9,25 @@ export function getBattleLanguage(courseId?: string): string {
 }
 
 export function isChoiceQuestion(question: BattleQuestion): boolean {
-  return question.kind === 'multiple-choice' || question.kind === 'image-choice';
+  return question.kind === 'multiple-choice' || question.kind === 'image-choice' || question.kind === 'audio-choice';
+}
+
+export function getBattleCorrectIndexes(question: BattleQuestion): number[] {
+  if (!isChoiceQuestion(question)) return [];
+
+  const requestedIndexes = (question.correctIndexes ?? [])
+    .filter((index) => Number.isInteger(index))
+    .filter((index) => index >= 0 && index < (question.options?.length ?? 0));
+
+  if (requestedIndexes.length > 0) {
+    return Array.from(new Set(requestedIndexes)).sort((a, b) => a - b);
+  }
+
+  if (typeof question.correctIndex === 'number' && question.correctIndex >= 0) {
+    return [question.correctIndex];
+  }
+
+  return [];
 }
 
 export function getBattlePromptAudioText(question: BattleQuestion): string {
@@ -18,8 +36,11 @@ export function getBattlePromptAudioText(question: BattleQuestion): string {
 
 export function getBattleCorrectAnswerLabel(question: BattleQuestion): string {
   if (isChoiceQuestion(question)) {
-    if (!question.options || question.correctIndex == null) return '';
-    return question.options[question.correctIndex] ?? '';
+    if (!question.options) return '';
+    return getBattleCorrectIndexes(question)
+      .map((index) => question.options?.[index] ?? '')
+      .filter(Boolean)
+      .join(' • ');
   }
 
   return question.correctText?.trim() || question.acceptedAnswers?.[0]?.trim() || '';
@@ -54,21 +75,31 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
 
     const fallbackCorrectOption = normalizeOptionalText(question.correctText);
     const matchedCorrectIndex = fallbackCorrectOption ? options.findIndex((option) => option === fallbackCorrectOption) : -1;
+    const requestedCorrectIndexes = (question.correctIndexes ?? [])
+      .filter((index) => Number.isInteger(index))
+      .filter((index) => index >= 0 && index < options.length);
     const requestedCorrectIndex = typeof question.correctIndex === 'number' ? question.correctIndex : -1;
-    const correctIndex = requestedCorrectIndex >= 0 && requestedCorrectIndex < options.length
-      ? requestedCorrectIndex
-      : matchedCorrectIndex >= 0
-      ? matchedCorrectIndex
-      : 0;
+    const correctIndexes = uniqueValues([
+      ...requestedCorrectIndexes.map(String),
+      ...(requestedCorrectIndex >= 0 && requestedCorrectIndex < options.length ? [String(requestedCorrectIndex)] : []),
+      ...(matchedCorrectIndex >= 0 ? [String(matchedCorrectIndex)] : []),
+    ]).map(Number).sort((a, b) => a - b);
+
+    if (correctIndexes.length === 0) {
+      correctIndexes.push(0);
+    }
 
     return {
       id,
       kind: question.kind,
       text,
       options,
-      correctIndex,
+      correctIndex: correctIndexes[0],
+      correctIndexes,
       ...(normalizeOptionalText(question.hint) ? { hint: normalizeOptionalText(question.hint) } : {}),
       ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
+      ...(normalizeOptionalText(question.promptAudioText) ? { promptAudioText: normalizeOptionalText(question.promptAudioText) } : {}),
+      ...(question.playAudioOnce ? { playAudioOnce: true } : {}),
     };
   }
 
@@ -101,10 +132,19 @@ export function sanitizeBattleQuestions(questions: BattleQuestion[]): BattleQues
 
 export function evaluateBattleAnswer(
   question: BattleQuestion,
-  payload: { optionIndex?: number; responseText?: string }
+  payload: { optionIndex?: number; optionIndexes?: number[]; responseText?: string }
 ): boolean {
   if (isChoiceQuestion(question)) {
-    return payload.optionIndex != null && payload.optionIndex === question.correctIndex;
+    const selectedIndexes = Array.from(new Set([
+      ...(payload.optionIndexes ?? []),
+      ...(payload.optionIndex != null ? [payload.optionIndex] : []),
+    ]))
+      .filter((index) => Number.isInteger(index))
+      .sort((a, b) => a - b);
+
+    const correctIndexes = getBattleCorrectIndexes(question);
+    if (selectedIndexes.length !== correctIndexes.length) return false;
+    return selectedIndexes.every((value, index) => value === correctIndexes[index]);
   }
 
   const response = normalizeBattleText(payload.responseText ?? '');
