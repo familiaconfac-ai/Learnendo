@@ -15,6 +15,15 @@ service cloud.firestore {
         && userDoc().data.role == 'admin';
     }
 
+    function isTeacherAccount() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (
+          userDoc().data.role == 'teacher'
+          || userDoc().data.role == 'admin'
+        );
+    }
+
     function isOwner(uid) {
       return signedIn() && request.auth.uid == uid;
     }
@@ -37,6 +46,15 @@ service cloud.firestore {
         );
     }
 
+    function isTeacherForLiveClassData(data) {
+      return signedIn()
+        && (
+          isAdmin()
+          || data.createdBy == request.auth.uid
+          || data.teacherUid == request.auth.uid
+        );
+    }
+
     function isStudentAssignedToClass(classId) {
       return signedIn()
         && liveClassExists(classId)
@@ -47,12 +65,20 @@ service cloud.firestore {
         );
     }
 
+    function isStudentAssignedToLiveClassData(data) {
+      return signedIn()
+        && data.assignedStudentIds is list
+        && (
+          request.auth.uid in data.assignedStudentIds
+          || (request.auth.token.email != null && request.auth.token.email in data.assignedStudentIds)
+        );
+    }
+
     function canAccessLiveClassRoom(classId) {
       return signedIn()
         && liveClassExists(classId)
         && (
           isTeacherForClass(classId)
-          || liveClassDoc(classId).data.isPrivate != true
           || isStudentAssignedToClass(classId)
         );
     }
@@ -174,7 +200,8 @@ service cloud.firestore {
     }
 
     match /users/{uid} {
-      allow read, create, update, delete: if isOwner(uid) || isAdmin();
+      allow read: if isOwner(uid) || isAdmin() || isTeacherAccount();
+      allow create, update, delete: if isOwner(uid) || isAdmin();
 
       match /{document=**} {
         allow read, create, update, delete: if isOwner(uid) || isAdmin();
@@ -191,29 +218,43 @@ service cloud.firestore {
     }
 
     match /liveClassGroups/{groupId} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.createdBy == request.auth.uid;
+      allow list: if isTeacherAccount();
+      allow get: if isAdmin() || (signedIn() && resource.data.createdBy == request.auth.uid);
+      allow create: if isTeacherAccount() && request.resource.data.createdBy == request.auth.uid;
       allow update, delete: if isAdmin() || resource.data.createdBy == request.auth.uid;
     }
 
     match /liveClasses/{classId} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && (
-          isAdmin()
-          || (
-            request.resource.data.createdBy == request.auth.uid
-            && request.resource.data.teacherUid == request.auth.uid
-          )
-        );
-      allow update, delete: if isTeacherForClass(classId);
+      allow list: if signedIn();
+      allow get: if isTeacherForLiveClassData(resource.data) || isStudentAssignedToLiveClassData(resource.data);
+      allow create: if isTeacherAccount()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.teacherUid == request.auth.uid;
+      allow update, delete: if isTeacherForLiveClassData(resource.data);
 
       match /session/{docId} {
         allow read: if canAccessLiveClassRoom(classId);
         allow create: if isTeacherForClass(classId)
           || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId));
         allow update: if isTeacherForClass(classId)
-          || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId));
+          || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId))
+          // Learnendo Battle: students may update only their own answer+score fields
+          || (
+            docId == 'battle'
+            && canAccessLiveClassRoom(classId)
+            && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['currentAnswers', 'scores', 'updatedAt'])
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['currentAnswers'])
+              || request.resource.data.currentAnswers.diff(resource.data.currentAnswers).affectedKeys()
+                  .hasOnly([request.auth.uid])
+            )
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['scores'])
+              || request.resource.data.scores.diff(resource.data.scores).affectedKeys()
+                  .hasOnly([request.auth.uid])
+            )
+          );
         allow delete: if isTeacherForClass(classId);
       }
 
@@ -221,10 +262,10 @@ service cloud.firestore {
         allow read: if canAccessLiveClassRoom(classId);
         allow create: if isTeacherForClass(classId)
           || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId))
-          || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId) && studentWhiteboardEditingEnabled(classId));
+          || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId));
         allow update: if isTeacherForClass(classId)
           || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId))
-          || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId) && studentWhiteboardEditingEnabled(classId));
+          || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId));
         allow delete: if isTeacherForClass(classId);
       }
 

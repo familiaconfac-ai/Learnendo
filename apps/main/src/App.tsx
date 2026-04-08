@@ -33,6 +33,15 @@ import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 import { trackLessonCompletion } from './services/progressService';
 import { lesson1NewWords } from './data/workbook1/lesson1';
 import { subscribeLiveSession, updateLiveSession } from './services/liveSessionService';
+import {
+  getAllowedViewModes,
+  getUserViewModeStorageKey,
+  normalizeUserViewMode,
+  PENDING_VIEW_MODE_STORAGE_KEY,
+  subscribeUserAccountProfile,
+  UserAccountProfile,
+  UserViewMode,
+} from './services/userRoles';
 
 /** Accumulated unique word count per lesson number.
  * Lesson N value = sum of all new words introduced from lesson 1 through N.
@@ -94,6 +103,11 @@ const COURSE_SELECTOR_OPTIONS = [
 
 const VALID_LANGUAGES = new Set<LessonLanguageCode>(['en', 'pt', 'es', 'el', 'he']);
 const VALID_SECTIONS = new Set<SectionType>(Object.values(SectionType));
+const VIEW_MODE_LABELS: Record<UserViewMode, string> = {
+  student: 'Student',
+  teacher: 'Teacher',
+  admin: 'Admin',
+};
 
 /**
  * validateAndFixState — pure state guard.
@@ -306,6 +320,8 @@ const App: React.FC = () => {
   const [lessonTestCompleted, setLessonTestCompleted] = useState<Record<number, boolean>>({});
   const [lessonTestScores, setLessonTestScores] = useState<Record<number, number>>({});
   const [user, setUser] = useState<User | null>(null);
+  const [userAccountProfile, setUserAccountProfile] = useState<UserAccountProfile | null>(null);
+  const [userViewMode, setUserViewMode] = useState<UserViewMode>('student');
   const [authReady, setAuthReady] = useState(false);
   /** True once the Firestore courseProgress/main snapshot has responded (even if empty).
    *  The main UI is not rendered until this is true, preventing the empty-state flicker. */
@@ -317,7 +333,13 @@ const App: React.FC = () => {
   const [conversionReason, setConversionReason] = useState<string | undefined>();
   const [conversionSuccess, setConversionSuccess] = useState(false);
   const [showGrammarModal, setShowGrammarModal] = useState(false);
-  const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
+  const userRole = userAccountProfile?.role ?? 'student';
+  const isAdmin = userRole === 'admin';
+  const isTeacherAccount = userRole === 'teacher' || userRole === 'admin';
+  const canManageUsers = isAdmin;
+  const canManageLiveClasses = isAdmin || (isTeacherAccount && userViewMode !== 'student');
+  const liveClassViewerRole = userRole === 'teacher' && !canManageLiveClasses ? 'student' : userRole;
+  const availableViewModes = getAllowedViewModes(userRole);
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
   const languagePlacementDone = Boolean((progress.tests as any)?.placements?.[language]);
   const localPlacementDone = user?.uid
@@ -401,6 +423,54 @@ const App: React.FC = () => {
   const lastUserActionRef = useRef<number>(0);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setUserAccountProfile(null);
+      setUserViewMode('student');
+      return;
+    }
+
+    const storageKey = getUserViewModeStorageKey(user.uid);
+    let pendingMode = typeof window !== 'undefined'
+      ? localStorage.getItem(PENDING_VIEW_MODE_STORAGE_KEY)
+      : null;
+    let initialRequestedMode = typeof window !== 'undefined'
+      ? (pendingMode ?? localStorage.getItem(storageKey))
+      : null;
+
+    const unsubscribe = subscribeUserAccountProfile(
+      user.uid,
+      user.email,
+      (profile) => {
+        setUserAccountProfile(profile);
+        setUserViewMode((currentMode) => {
+          const requestedMode = initialRequestedMode ?? currentMode;
+          const nextMode = normalizeUserViewMode(profile.role, requestedMode);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem(storageKey, nextMode);
+            if (pendingMode) {
+              localStorage.removeItem(PENDING_VIEW_MODE_STORAGE_KEY);
+            }
+          }
+          initialRequestedMode = null;
+          pendingMode = null;
+          return nextMode;
+        });
+      },
+      (error) => {
+        console.warn('[App] user role subscription failed:', error);
+      },
+    );
+
+    return unsubscribe;
+  }, [user?.email, user?.uid]);
+
+  useEffect(() => {
+    if (currentSection === SectionType.TEACHER_DASHBOARD && !canManageUsers) {
+      setCurrentSection(SectionType.COURSES);
+    }
+  }, [canManageUsers, currentSection]);
 
   // Keep latestProgressRef in sync with the latest progress state
   useEffect(() => {
@@ -692,7 +762,8 @@ const App: React.FC = () => {
     console.log('[BOOT_DEBUG] Starting Firestore progress listener', {
       uid: user.uid,
       email: user.email,
-      isAdmin: user.email?.toLowerCase() === 'learnendo@gmail.com',
+      userRole,
+      userViewMode,
       savedLanguage: localStorage.getItem('learnendo_user_language'),
       savedCourseId: null, // read from Firestore snapshot
     });
@@ -1268,13 +1339,13 @@ const App: React.FC = () => {
   };
 
   const pushLiveSessionState = useCallback(async (patch: Partial<LiveClassSession>) => {
-    if (!activeOnlineClass?.id || !user?.uid || !isAdmin) return;
+    if (!activeOnlineClass?.id || !user?.uid || !canManageLiveClasses) return;
     try {
       await updateLiveSession(activeOnlineClass.id, patch, user.uid);
     } catch (error) {
       console.warn('[App] live session state update failed:', error);
     }
-  }, [activeOnlineClass?.id, isAdmin, user?.uid]);
+  }, [activeOnlineClass?.id, canManageLiveClasses, user?.uid]);
 
   const openLesson = (
     lessonId: string,
@@ -1349,7 +1420,7 @@ const App: React.FC = () => {
     const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
     const activeWorkbookNumber = currentWorkbookId || progress.currentWorkbook || 1;
 
-    if (syncToSession && activeOnlineClass?.id && isAdmin) {
+    if (syncToSession && activeOnlineClass?.id && canManageLiveClasses) {
       void pushLiveSessionState({
         sessionStatus: 'active',
         activeWorkbookId: activeWorkbookNumber,
@@ -1459,7 +1530,7 @@ const App: React.FC = () => {
       setCurrentSection(SectionType.WORKBOOK);
     }
 
-    if (targetLessonRef && user?.uid && isAdmin) {
+    if (targetLessonRef && user?.uid && canManageLiveClasses) {
       void updateLiveSession(liveClass.id, {
         sessionStatus: 'active',
         activeWorkbookId: targetWorkbookId,
@@ -1471,7 +1542,7 @@ const App: React.FC = () => {
     } else if (!targetLessonRef) {
       setPendingLiveLessonRef(null);
     }
-  }, [currentCourseId, currentWorkbook, currentWorkbookId, isAdmin, language, openLesson, user?.uid]);
+  }, [canManageLiveClasses, currentCourseId, currentWorkbook, currentWorkbookId, language, openLesson, user?.uid]);
 
   useEffect(() => {
     if (!activeOnlineClass || !activeOnlineSession) return;
@@ -1481,7 +1552,7 @@ const App: React.FC = () => {
     // selected language/course to match the class's courseId and forcing section
     // changes — causing the flag to appear broken and blank pages when the session
     // had a different course (e.g. Spanish) than the admin's current state (English).
-    if (isAdmin) {
+    if (canManageLiveClasses) {
       console.log('[ONLINE_DEBUG] Admin — skipping session-sync follow (admin controls session, not follows it)');
       return;
     }
@@ -1550,7 +1621,7 @@ const App: React.FC = () => {
     activeOnlineSession,
     currentCourseId,
     currentDay,
-    isAdmin,
+    canManageLiveClasses,
     currentLessonId,
     currentSection,
     currentWorkbook,
@@ -1628,13 +1699,30 @@ const App: React.FC = () => {
     alert('Sharing not supported on this device');
   };
 
-  const handleLogin = async (email: string, password: string) => {
+  const handleViewModeChange = (nextMode: UserViewMode) => {
+    if (!user?.uid) return;
+    const normalized = normalizeUserViewMode(userRole, nextMode);
+    setUserViewMode(normalized);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(getUserViewModeStorageKey(user.uid), normalized);
+    }
+  };
+
+  const rememberPendingViewMode = (nextMode: 'student' | 'teacher') => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(PENDING_VIEW_MODE_STORAGE_KEY, nextMode);
+    }
+  };
+
+  const handleLogin = async (email: string, password: string, nextMode: 'student' | 'teacher') => {
+    rememberPendingViewMode(nextMode);
     const user = await loginWithEmail(email, password);
     await createStudentProfile(user.uid, user.email || email, user.displayName || undefined);
     setMenuOpen(false);
   };
 
-  const handleRegister = async (email: string, password: string) => {
+  const handleRegister = async (email: string, password: string, nextMode: 'student' | 'teacher') => {
+    rememberPendingViewMode(nextMode);
     const fullName = email.split('@')[0];
     const user = await registerWithEmail(email, password, fullName);
     await createStudentProfile(user.uid, user.email || email, user.displayName || fullName);
@@ -1812,7 +1900,7 @@ const App: React.FC = () => {
 
       setCurrentLessonId(lessonId);
       setCurrentSection(SectionType.LESSON);
-      if (activeOnlineClass?.id && isAdmin) {
+      if (activeOnlineClass?.id && canManageLiveClasses) {
         void pushLiveSessionState({
           sessionStatus: 'active',
           activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
@@ -1864,7 +1952,7 @@ const App: React.FC = () => {
     // same pattern used for weekly tests. Firebase writes continue in the background.
     setCurrentDay(null);
     setCurrentSection(SectionType.LESSON);
-    if (activeOnlineClass?.id && isAdmin) {
+    if (activeOnlineClass?.id && canManageLiveClasses) {
       void pushLiveSessionState({
         sessionStatus: 'active',
         activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
@@ -2182,7 +2270,9 @@ const App: React.FC = () => {
         return (
           <LiveClassesPage
             user={user}
-            isTeacher={isAdmin}
+            userRole={liveClassViewerRole}
+            viewMode={userViewMode}
+            canManageClasses={canManageLiveClasses}
             currentCourseId={currentCourseId ?? DEFAULT_COURSE_ID}
             onOpenClassContent={openLiveClassContent}
             onRoomContextChange={setActiveOnlineClass}
@@ -2381,7 +2471,7 @@ const App: React.FC = () => {
               setCurrentDay(day);
               setActiveWeeklyTest(null);
               setCurrentSection(SectionType.PRACTICE);
-              if (activeOnlineClass?.id && isAdmin) {
+              if (activeOnlineClass?.id && canManageLiveClasses) {
                 void pushLiveSessionState({
                   sessionStatus: 'active',
                   activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
@@ -2393,7 +2483,7 @@ const App: React.FC = () => {
             onStartWeeklyTest={(day: Day) => {
               dayStartTimeRef.current = Date.now();
               startWeeklyTest(lesson.id, lessonNumber, day);
-              if (activeOnlineClass?.id && isAdmin) {
+              if (activeOnlineClass?.id && canManageLiveClasses) {
                 void pushLiveSessionState({
                   sessionStatus: 'active',
                   activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
@@ -2453,7 +2543,7 @@ const App: React.FC = () => {
               setCurrentDay(null);
               setActiveWeeklyTest(null);
               setCurrentSection(SectionType.LESSON);
-              if (activeOnlineClass?.id && isAdmin) {
+              if (activeOnlineClass?.id && canManageLiveClasses) {
                 void pushLiveSessionState({
                   sessionStatus: 'active',
                   activeWorkbookId: currentWorkbookId || progress.currentWorkbook || 1,
@@ -2473,8 +2563,8 @@ const App: React.FC = () => {
           uiLanguage={uiLanguage}
         />;
       case SectionType.TEACHER_DASHBOARD:
-        return user && isAdmin ? (
-          <TeacherDashboard user={user} />
+        return user && canManageUsers ? (
+          <TeacherDashboard user={user} canManageUsers={canManageUsers} />
         ) : (
           <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
             <p className="text-slate-300 font-semibold">Access denied. Teacher dashboard is for authorized users only.</p>
@@ -2594,12 +2684,34 @@ const App: React.FC = () => {
             className="bg-white rounded-3xl shadow-2xl p-6 w-11/12 max-w-sm mx-auto"
             onClick={(e) => e.stopPropagation()}
           >
+            <div className="mb-4 rounded-2xl bg-slate-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Access</p>
+              <p className="mt-1 text-sm font-bold text-slate-800">
+                Role: {userAccountProfile ? VIEW_MODE_LABELS[userAccountProfile.role] : 'Student'}
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {availableViewModes.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => handleViewModeChange(mode)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                      userViewMode === mode
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {VIEW_MODE_LABELS[mode]}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="space-y-2">
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.LIVE_CLASSES); setMenuOpen(false); }}>Live Classes</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
-              {isAdmin && (
+              {canManageUsers && (
                 <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>
               )}
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>

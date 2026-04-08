@@ -137,6 +137,8 @@ const TeacherStage: React.FC<{
             <div className="w-full h-full bg-white">
               <CollaborativeBoard
                 roomId={liveClass.id}
+                userId={teacherUid}
+                userName={teacherName}
                 isReadOnly={false} // Professor sempre tem acesso total
                 isLocked={isBoardLocked}
               />

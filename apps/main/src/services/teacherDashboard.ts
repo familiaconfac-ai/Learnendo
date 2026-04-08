@@ -1,6 +1,7 @@
 import { collection, query, getDocs, doc, getDoc, limit, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
 import type { User as FirebaseUser } from 'firebase/auth';
+import { getEffectiveUserRole } from './userRoles';
 
 // ===== FIRESTORE QUERIES FOR TEACHER DASHBOARD =====
 
@@ -53,14 +54,18 @@ export async function getAllStudents(): Promise<StudentBasicInfo[]> {
     );
     const snapshot = await getDocs(studentsQuery);
     
-    const students: StudentBasicInfo[] = snapshot.docs.map(doc => ({
-      uid: doc.id,
-      name: doc.data().name || 'Unknown',
-      email: doc.data().email || null,
-      isAnonymous: doc.data().isAnonymous || false,
-      createdAt: doc.data().createdAt,
-      lastActive: doc.data().lastActive,
-    }));
+    const students: StudentBasicInfo[] = snapshot.docs
+      .map(doc => ({
+        uid: doc.id,
+        name: doc.data().name || doc.data().displayName || 'Unknown',
+        email: doc.data().email || null,
+        isAnonymous: doc.data().isAnonymous || false,
+        createdAt: doc.data().createdAt,
+        lastActive: doc.data().lastActive,
+        role: getEffectiveUserRole(doc.data().email || null, doc.data().role || null),
+      }))
+      .filter((student) => student.role === 'student')
+      .map(({ role: _role, ...student }) => student);
 
     console.log('[TeacherDash] ✅ Fetched', students.length, 'students');
     return students;

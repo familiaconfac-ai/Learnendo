@@ -7,6 +7,7 @@ import {
   createLiveClassGroup,
   deleteLiveClass,
   ensureLiveClassSession,
+  filterLiveClassesForViewer,
   getLiveClassMeetLink,
   subscribeLiveClass,
   subscribeLiveClassGroups,
@@ -14,14 +15,18 @@ import {
   updateLiveClass,
   updateLiveClassGroup,
 } from '../../services/liveClassesService';
+import type { UserRole, UserViewMode } from '../../services/userRoles';
 import { LiveClassForm } from './LiveClassForm';
 import { LiveClassGroupForm } from './LiveClassGroupForm';
 import { LiveClassDetailsPage } from './LiveClassDetailsPage';
 import { LiveClassRoomPage } from './LiveClassRoomPage';
+import { learnendoLogoTransparent } from '../../assets/branding';
 
 interface LiveClassesPageProps {
   user: User;
-  isTeacher: boolean;
+  userRole: UserRole;
+  viewMode: UserViewMode;
+  canManageClasses: boolean;
   currentCourseId: string;
   onOpenClassContent: (liveClass: LiveClass) => void;
   onRoomContextChange: (liveClass: LiveClass | null) => void;
@@ -106,7 +111,16 @@ const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string, 
   isPrivate: true,
 });
 
-export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeacher, currentCourseId, onOpenClassContent, onRoomContextChange, onBack }) => {
+export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
+  user,
+  userRole,
+  viewMode,
+  canManageClasses,
+  currentCourseId,
+  onOpenClassContent,
+  onRoomContextChange,
+  onBack,
+}) => {
   const [classes, setClasses] = useState<LiveClass[]>([]);
   const [groups, setGroups] = useState<LiveClassGroup[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<string>('');
@@ -124,12 +138,19 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
   const [groupsError, setGroupsError] = useState('');
   const [roomClassId, setRoomClassId] = useState<string>(() => getRoomClassIdFromPath());
   const [accessError, setAccessError] = useState('');
-  const teacherDisplayName = user.displayName || user.email || '';
+  const teacherDisplayName = user.displayName || user.email || 'Professor';
+  const viewerRole = userRole === 'teacher' && !canManageClasses ? 'student' : userRole;
+  const viewer = useMemo(() => ({
+    uid: user.uid,
+    email: user.email,
+    name: user.displayName || user.email || '',
+    role: viewerRole,
+  }), [user.displayName, user.email, user.uid, viewerRole]);
 
   const enterRoom = (liveClass: LiveClass) => {
-    const allowed = canAccessLiveClass(liveClass, user.uid, isTeacher);
+    const allowed = canAccessLiveClass(liveClass, viewer);
     if (!allowed) {
-      setAccessError('You do not have access to this private classroom.');
+      setAccessError('This classroom is not assigned to this account.');
       return;
     }
     setAccessError('');
@@ -151,6 +172,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
 
   useEffect(() => {
     const unsub = subscribeLiveClasses(
+      viewer,
       (nextClasses) => {
         setClasses(nextClasses);
         setLoading(false);
@@ -163,10 +185,10 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
       },
     );
     return () => unsub();
-  }, []);
+  }, [viewer]);
 
   useEffect(() => {
-    if (!isTeacher) {
+    if (!canManageClasses) {
       setGroups([]);
       setGroupsLoading(false);
       setGroupsError('');
@@ -174,6 +196,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     }
 
     const unsub = subscribeLiveClassGroups(
+      viewer,
       (nextGroups) => {
         setGroups(nextGroups);
         setGroupsLoading(false);
@@ -187,7 +210,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     );
 
     return () => unsub();
-  }, [isTeacher]);
+  }, [canManageClasses, viewer]);
 
   useEffect(() => {
     if (!roomClassId || selectedClassId === roomClassId) return;
@@ -213,16 +236,30 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     return () => unsub();
   }, [selectedClassId]);
 
-  const sortedClasses = useMemo(() => classes, [classes]);
+  const visibleClasses = useMemo(
+    () => filterLiveClassesForViewer(classes, viewer),
+    [classes, viewer],
+  );
+
   const activeRoomClass = useMemo(() => {
     if (!roomClassId) return null;
     if (selectedClass?.id === roomClassId) return selectedClass;
-    return classes.find((item) => item.id === roomClassId) ?? null;
-  }, [classes, roomClassId, selectedClass]);
+    return visibleClasses.find((item) => item.id === roomClassId) ?? null;
+  }, [roomClassId, selectedClass, visibleClasses]);
 
   useEffect(() => {
     onRoomContextChange(activeRoomClass ?? null);
   }, [activeRoomClass, onRoomContextChange]);
+
+  useEffect(() => {
+    if (!selectedClass) return;
+    if (canAccessLiveClass(selectedClass, viewer)) return;
+    setSelectedClass(null);
+    setSelectedClassId('');
+    if (roomClassId === selectedClass.id) {
+      leaveRoom();
+    }
+  }, [roomClassId, selectedClass, viewer]);
 
   const openCreate = (draft?: Partial<LiveClassInput>) => {
     setEditingClass(null);
@@ -251,10 +288,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
   };
 
   const openEditFromRoom = (liveClass: LiveClass) => {
-    setRoomClassId('');
-    if (window.location.pathname.startsWith('/live-class/')) {
-      window.history.pushState({}, '', '/');
-    }
+    leaveRoom();
     openEdit(liveClass);
   };
 
@@ -332,7 +366,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
       <LiveClassRoomPage
         liveClass={activeRoomClass}
         user={user}
-        isTeacher={isTeacher}
+        isTeacher={canManageClasses}
         onOpenClassContent={onOpenClassContent}
         onEditClass={openEditFromRoom}
         onExit={leaveRoom}
@@ -341,12 +375,12 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
   }
 
   if (selectedClass && !showForm) {
-    const hasRoomAccess = canAccessLiveClass(selectedClass, user.uid, isTeacher);
+    const hasRoomAccess = canAccessLiveClass(selectedClass, viewer);
     return (
       <LiveClassDetailsPage
         liveClass={selectedClass}
         user={user}
-        isTeacher={isTeacher}
+        isTeacher={canManageClasses}
         hasRoomAccess={hasRoomAccess}
         onBack={() => {
           setSelectedClassId('');
@@ -360,6 +394,12 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
     );
   }
 
+  const emptyStateText = viewerRole === 'admin'
+    ? 'No online sessions yet. Teachers can create the first class.'
+    : canManageClasses
+      ? 'No classes registered for this teacher yet.'
+      : 'No classes are assigned to this account yet.';
+
   return (
     <div className="min-h-screen bg-slate-900 px-3 pb-28 pt-6 sm:px-4">
       <button onClick={onBack} className="mb-4 text-sm font-bold text-slate-200" type="button">&larr; Back</button>
@@ -368,10 +408,19 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
         <div>
           <h1 className="text-2xl font-black text-white">Online</h1>
           <p className="mt-1 text-sm text-slate-400">
-            Manage scheduled classes, open active rooms, and create new meetings.
+            {viewerRole === 'admin'
+              ? 'Admin can review every teacher and every live class.'
+              : canManageClasses
+                ? 'Teacher view shows only the classes owned by this account.'
+                : 'Student view shows only classes assigned to this email.'}
           </p>
+          {viewMode !== 'admin' ? (
+            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-blue-300">
+              Viewing as {viewMode}
+            </p>
+          ) : null}
         </div>
-        {isTeacher ? (
+        {canManageClasses ? (
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -412,7 +461,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
         </div>
       ) : null}
 
-      {showGroupForm && isTeacher ? (
+      {showGroupForm && canManageClasses ? (
         <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-900 p-3">
           <LiveClassGroupForm
             initialValue={editingGroup ?? undefined}
@@ -423,13 +472,13 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
         </div>
       ) : null}
 
-      {isTeacher ? (
+      {canManageClasses ? (
         <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-800 p-4">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-black text-white">Groups</h2>
               <p className="text-sm text-slate-400">
-                Reuse the same students for VIP classes, recurring sessions, and quick meetings.
+                Reuse the same students for recurring classes and quick meetings.
               </p>
             </div>
             <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-black uppercase tracking-wide text-slate-300">
@@ -447,7 +496,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
             </div>
           ) : groups.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-600 bg-slate-900/60 p-4 text-sm text-slate-300">
-              No groups yet. Create your first group to save a fixed set of students and reuse it in future sessions.
+              No groups yet. Create your first group to save a fixed roster.
             </div>
           ) : (
             <div className="space-y-3">
@@ -505,12 +554,12 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
           <div className="rounded-2xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
             {loadError}
           </div>
-        ) : sortedClasses.length === 0 ? (
-          <div className="rounded-2xl border border-slate-700 bg-slate-800 p-4 text-sm text-slate-300">
-            No online sessions yet. Teachers can create the first session.
+        ) : visibleClasses.length === 0 ? (
+          <div className="rounded-2xl border border-slate-700 bg-slate-800 p-6 text-sm text-slate-300">
+            {emptyStateText}
           </div>
         ) : (
-          sortedClasses.map((liveClass) => (
+          visibleClasses.map((liveClass) => (
             <article
               key={liveClass.id}
               onClick={() => {
@@ -544,17 +593,17 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({ user, isTeache
               ) : null}
 
               <div className="my-4 flex justify-center">
-                <img src="/logo.png" alt="Learnendo" className="w-24 opacity-70" />
+                <img src={learnendoLogoTransparent} alt="Learnendo" className="h-16 w-auto opacity-80" />
               </div>
 
               {liveClass.description ? (
-                <p className="mt-2 max-w-2xl text-lg leading-relaxed text-white">
+                <p className="mt-2 text-sm leading-relaxed text-white">
                   {liveClass.description}
                 </p>
               ) : null}
 
               <div className="mt-3 flex flex-wrap justify-end gap-2">
-                {isTeacher ? (
+                {canManageClasses ? (
                   <button
                     type="button"
                     onClick={(event) => {

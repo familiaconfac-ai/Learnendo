@@ -18,8 +18,8 @@ interface CollaborativeBoardProps {
  * Syncs the tldraw store to/from Firestore in real time via
  * liveClasses/{classId}/shared/tldrawBoard.
  *
- * Uses userId-based echo detection and merge-based loading so that
- * concurrent edits from teacher and student(s) are preserved.
+ * Uses client-based echo detection so a participant never reloads its own save,
+ * but every remote save is applied immediately to the board.
  */
 const DOCUMENT_RECORD_TYPES = new Set(['shape', 'page', 'binding', 'asset']);
 
@@ -28,7 +28,7 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
   const isRemoteUpdate = useRef(false);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isFirstLoad = useRef(true);
-  const pendingChanges = useRef<Set<string>>(new Set());
+  const clientId = useRef(`${userId}:${Math.random().toString(36).slice(2, 10)}`).current;
 
   // Strip the "class-" prefix to get the actual classId for Firestore path
   const classId = boardId.startsWith('class-') ? boardId.slice(6) : boardId;
@@ -48,28 +48,27 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
           snapshot: JSON.stringify(snapshot),
           updatedAt: Date.now(),
           updatedBy: userId,
+          updatedByUid: userId,
+          updatedByClientId: clientId,
         }, { merge: true });
-        // After successful save, nothing is pending anymore
-        pendingChanges.current.clear();
       } catch (err) {
         console.warn('[CollaborativeBoard] save error:', err);
       }
     }, 300);
-  }, [editor, classId, readOnly, userId]);
+  }, [clientId, editor, classId, readOnly, userId]);
 
   // ── Listen to local store changes and push to Firestore ──
   useEffect(() => {
-    const cleanup = editor.store.listen((entry) => {
-      // Track locally changed record IDs so merge preserves them
-      const { added, updated, removed } = entry.changes;
-      for (const id of Object.keys(added)) pendingChanges.current.add(id);
-      for (const id of Object.keys(updated)) pendingChanges.current.add(id);
-      for (const id of Object.keys(removed)) pendingChanges.current.add(id);
+    if (readOnly) {
+      return () => {};
+    }
+
+    const cleanup = editor.store.listen(() => {
       saveToFirestore();
     }, { scope: 'document', source: 'user' });
 
     return cleanup;
-  }, [editor, saveToFirestore]);
+  }, [editor, readOnly, saveToFirestore]);
 
   // ── Listen to Firestore changes and merge into store ──
   useEffect(() => {
@@ -85,40 +84,17 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
       const data = docSnap.data();
       if (!data?.snapshot) return;
 
-      // Skip our own writes (reliable echo detection by userId)
-      if (data.updatedBy === userId) return;
+      // Skip our own writes by client id so multiple tabs from the same account still sync.
+      if (data.updatedByClientId === clientId) return;
 
       try {
         const remoteSnapshot = JSON.parse(data.snapshot);
-
-        if (isFirstLoad.current) {
-          // First load: full replacement (no local edits to preserve yet)
-          isRemoteUpdate.current = true;
+        isRemoteUpdate.current = true;
+        editor.store.mergeRemoteChanges(() => {
           loadSnapshot(editor.store, remoteSnapshot);
-          isFirstLoad.current = false;
-          setTimeout(() => { isRemoteUpdate.current = false; }, 100);
-        } else {
-          // Subsequent updates: merge remote changes, preserve pending local edits
-          editor.store.mergeRemoteChanges(() => {
-            const allRemote = Object.values(remoteSnapshot.store) as any[];
-            const docRecords = allRemote.filter((r: any) => DOCUMENT_RECORD_TYPES.has(r.typeName));
-
-            // Apply only records that aren't locally pending
-            const toApply = docRecords.filter((r: any) => !pendingChanges.current.has(r.id));
-            if (toApply.length > 0) {
-              editor.store.put(toApply);
-            }
-
-            // Remove shapes deleted remotely (absent from snapshot, not locally pending)
-            const remoteDocIds = new Set(docRecords.map((r: any) => r.id));
-            const toRemove = editor.store.allRecords()
-              .filter(r => DOCUMENT_RECORD_TYPES.has(r.typeName) && !remoteDocIds.has(r.id) && !pendingChanges.current.has(r.id))
-              .map(r => r.id);
-            if (toRemove.length > 0) {
-              editor.store.remove(toRemove);
-            }
-          });
-        }
+        });
+        isFirstLoad.current = false;
+        setTimeout(() => { isRemoteUpdate.current = false; }, 100);
       } catch (err) {
         console.warn('[CollaborativeBoard] load error:', err);
         isRemoteUpdate.current = false;
@@ -129,7 +105,7 @@ const FirestoreSync: React.FC<{ boardId: string; userId: string; readOnly?: bool
       unsubscribe();
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
     };
-  }, [editor, classId, userId]);
+  }, [clientId, editor, classId, readOnly]);
 
   return null;
 };
@@ -231,10 +207,7 @@ export const CollaborativeBoard: React.FC<CollaborativeBoardProps> = ({ boardId,
         }
       `}</style>
       <BoardErrorBoundary>
-        <Tldraw
-          persistenceKey={boardId}
-          inferDarkMode={false}
-        >
+        <Tldraw inferDarkMode={false}>
           <FirestoreSync boardId={boardId} userId={userId} readOnly={readOnly} />
           {readOnly && <ReadOnlyEnforcer />}
         </Tldraw>

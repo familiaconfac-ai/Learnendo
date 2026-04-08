@@ -1,5 +1,6 @@
 import React from 'react';
 import { Course, LessonLanguageCode } from '../../types';
+import { learnendoLogoTransparent } from '../../assets/branding';
 
 interface CoursesViewProps {
   courses: Course[];
@@ -84,7 +85,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
               </div>
             ) : (
               <img
-                src="/learnendo-logo-transp.png"
+                src={learnendoLogoTransparent}
                 alt="Learnendo Logo"
                 className="mx-auto"
                 style={{ width: 'min(160px, 80vw)', marginBottom: '8px' }}

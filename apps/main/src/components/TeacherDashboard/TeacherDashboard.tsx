@@ -23,15 +23,17 @@ import { rankMedal, getTopRanked } from '../../engine/rankingService';
 import { AlertType } from '../../engine/alertService';
 import { generateStudentReport } from '../../services/reportService';
 import { generatePlacementReport } from '../../services/placementReportService';
+import { AdminUserAccessTab } from './AdminUserAccessTab';
 
 // ─────────────────────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────────────────────
 
-type Tab = 'students' | 'ranking';
+type Tab = 'students' | 'ranking' | 'access';
 
 interface TeacherDashboardProps {
   user: User;
+  canManageUsers?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -389,7 +391,7 @@ const SummaryCard: React.FC<{
 // Main export
 // ─────────────────────────────────────────────────────────────
 
-export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user }) => {
+export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canManageUsers = false }) => {
   const [tab, setTab]               = useState<Tab>('students');
   const [rows, setRows]             = useState<TeacherStudentRow[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -477,7 +479,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
 
         {/* ── Tabs ────────────────────────────────────── */}
         <div className="flex gap-1 mb-5 bg-white rounded-xl shadow-sm p-1 w-fit">
-          {(['students', 'ranking'] as Tab[]).map(t => (
+          {([
+            'students',
+            'ranking',
+            ...(canManageUsers ? ['access'] : []),
+          ] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -487,7 +493,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
                   : 'text-slate-600 hover:bg-slate-100'
               }`}
             >
-              {t === 'students' ? '👥 Students' : '🏆 Ranking'}
+              {t === 'students'
+                ? '👥 Students'
+                : t === 'ranking'
+                  ? '🏆 Ranking'
+                  : '🔐 Access'}
             </button>
           ))}
         </div>
@@ -495,9 +505,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user: _user 
         {/* ── Tab content ─────────────────────────────── */}
         {tab === 'students' ? (
           <StudentsTab rows={rows} />
-        ) : (
+        ) : tab === 'ranking' ? (
           <RankingTab rows={rows} />
-        )}
+        ) : canManageUsers ? (
+          <AdminUserAccessTab user={user} />
+        ) : null}
 
       </div>
     </div>

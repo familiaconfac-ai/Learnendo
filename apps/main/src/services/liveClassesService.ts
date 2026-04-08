@@ -16,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { LiveClass, LiveClassGroup, LiveClassGroupInput, LiveClassInput, LiveClassMessage, LiveClassRole } from '../types';
+import type { UserRole } from './userRoles';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_CLASS_GROUPS_COLLECTION = 'liveClassGroups';
@@ -137,48 +138,135 @@ export function getLiveClassMeetLink(liveClass: Pick<LiveClass, 'meetUrl' | 'mee
   return (liveClass.meetUrl ?? liveClass.meetingLink ?? '').trim();
 }
 
-export function canAccessLiveClass(
-  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'isPrivate' | 'assignedStudentIds'>,
+export interface LiveClassViewer {
+  uid: string;
+  email?: string | null;
+  name?: string | null;
+  role: UserRole;
+}
+
+export function isStudentAssignedToLiveClass(
+  liveClass: Pick<LiveClass, 'assignedStudentIds' | 'assignedStudentNames'>,
   userUid: string,
-  isTeacher: boolean,
+  userEmail?: string | null,
+  userName?: string | null,
 ): boolean {
-  if (!userUid) return false;
-  if (isTeacher) return true;
-  if (liveClass.createdBy === userUid || liveClass.teacherUid === userUid) return true;
-  if (!liveClass.isPrivate) return true;
+  if (!userUid && !userEmail && !userName) return false;
   const allowedIds = normalizeStudentIds(liveClass.assignedStudentIds ?? []);
-  return allowedIds.includes(userUid);
+  const allowedNames = normalizeStudentNames(liveClass.assignedStudentNames ?? []).map((item) => item.toLowerCase());
+  const normalizedEmail = (userEmail ?? '').trim().toLowerCase();
+  const normalizedName = (userName ?? '').trim().toLowerCase();
+  const emailLocalPart = normalizedEmail.includes('@') ? normalizedEmail.split('@')[0] : normalizedEmail;
+  return allowedIds.some((entry) => {
+    const normalizedEntry = entry.trim().toLowerCase();
+    return normalizedEntry === userUid || (normalizedEmail ? normalizedEntry === normalizedEmail : false);
+  }) || (
+    normalizedName
+      ? allowedNames.includes(normalizedName) || allowedNames.includes(emailLocalPart)
+      : false
+  );
+}
+
+export function canManageLiveClass(
+  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid'>,
+  viewer: Pick<LiveClassViewer, 'uid' | 'role'>,
+): boolean {
+  if (!viewer.uid) return false;
+  if (viewer.role === 'admin') return true;
+  if (viewer.role !== 'teacher') return false;
+  return liveClass.createdBy === viewer.uid || liveClass.teacherUid === viewer.uid;
+}
+
+export function canViewLiveClass(
+  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'assignedStudentIds' | 'assignedStudentNames'>,
+  viewer: LiveClassViewer,
+): boolean {
+  if (!viewer.uid) return false;
+  if (canManageLiveClass(liveClass, viewer)) return true;
+  return isStudentAssignedToLiveClass(liveClass, viewer.uid, viewer.email, viewer.name);
+}
+
+export function filterLiveClassesForViewer(
+  classes: LiveClass[],
+  viewer: LiveClassViewer,
+): LiveClass[] {
+  return classes.filter((item) => canViewLiveClass(item, viewer));
+}
+
+export function canAccessLiveClass(
+  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'assignedStudentIds' | 'assignedStudentNames'>,
+  viewer: LiveClassViewer,
+): boolean {
+  return canViewLiveClass(liveClass, viewer);
+}
+
+function mergeLiveClassSnapshots(chunks: LiveClass[][]): LiveClass[] {
+  const byId = new Map<string, LiveClass>();
+  chunks.flat().forEach((liveClass) => {
+    byId.set(liveClass.id, liveClass);
+  });
+  return sortLiveClasses(Array.from(byId.values()));
+}
+
+function buildViewerStudentKeys(viewer: LiveClassViewer): string[] {
+  const normalizedEmail = (viewer.email ?? '').trim();
+  const normalizedEmailLower = normalizedEmail.toLowerCase();
+  return Array.from(
+    new Set(
+      [viewer.uid, normalizedEmail, normalizedEmailLower]
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 export function subscribeLiveClasses(
+  viewer: LiveClassViewer,
   onData: (classes: LiveClass[]) => void,
   onError?: (error: unknown) => void,
 ): () => void {
-  if (!db) {
+  if (!db || !viewer.uid) {
     onData([]);
     return () => {};
   }
 
   const classesRef = collection(db, LIVE_CLASSES_COLLECTION);
+  const queries = viewer.role === 'admin'
+    ? [classesRef]
+    : viewer.role === 'teacher'
+      ? [
+        query(classesRef, where('teacherUid', '==', viewer.uid)),
+        query(classesRef, where('createdBy', '==', viewer.uid)),
+      ]
+      : [classesRef];
 
-  return onSnapshot(
-    classesRef,
+  const snapshots = new Map<number, LiveClass[]>();
+  const unsubscribes = queries.map((source, index) => onSnapshot(
+    source,
     (snapshot) => {
-      const classes = sortLiveClasses(
-        snapshot.docs.map((d) => mapLiveClass(d.id, d.data() as Record<string, any>)),
-      );
+      const mapped = snapshot.docs.map((d) => mapLiveClass(d.id, d.data() as Record<string, any>));
+      snapshots.set(index, mapped);
+      const classes = mergeLiveClassSnapshots(Array.from(snapshots.values()));
+      const visibleClasses = viewer.role === 'student'
+        ? filterLiveClassesForViewer(classes, viewer)
+        : classes;
       console.log('[LiveClassesService] subscribeLiveClasses snapshot', {
         collection: LIVE_CLASSES_COLLECTION,
-        fetchedCount: snapshot.docs.length,
-        visibleCount: classes.length,
+        viewerRole: viewer.role,
+        fetchedCount: classes.length,
+        visibleCount: visibleClasses.length,
       });
-      onData(classes);
+      onData(visibleClasses);
     },
     (error) => {
       console.warn('[LiveClassesService] subscribeLiveClasses failed', error);
       if (onError) onError(error);
     },
-  );
+  ));
+
+  return () => {
+    unsubscribes.forEach((unsubscribe) => unsubscribe());
+  };
 }
 
 export function subscribeLiveClass(
@@ -307,17 +395,22 @@ const mapLiveClassGroup = (id: string, data: Record<string, any>): LiveClassGrou
 });
 
 export function subscribeLiveClassGroups(
+  viewer: Pick<LiveClassViewer, 'uid' | 'role'>,
   onData: (groups: LiveClassGroup[]) => void,
   onError?: (error: unknown) => void,
 ): () => void {
-  if (!db) {
+  if (!db || !viewer.uid) {
     onData([]);
     return () => {};
   }
 
   const groupsRef = collection(db, LIVE_CLASS_GROUPS_COLLECTION);
+  const groupsQuery = viewer.role === 'admin'
+    ? groupsRef
+    : query(groupsRef, where('createdBy', '==', viewer.uid));
+
   return onSnapshot(
-    groupsRef,
+    groupsQuery,
     (snapshot) => {
       const groups = snapshot.docs
         .map((d) => mapLiveClassGroup(d.id, d.data() as Record<string, any>))

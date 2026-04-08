@@ -2,21 +2,13 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
 import {
-  getLiveClassMeetLink,
-  getLiveClassPresentationLink,
-} from '../../services/liveClassesService';
-import {
   markLivePresenceOffline,
   subscribeLivePresence,
   subscribeLiveSession,
   updateLiveSession,
   upsertLivePresence,
 } from '../../services/liveSessionService';
-import { ExerciseSessionPanel } from './ExerciseSessionPanel';
-import { LiveClassChat } from './LiveClassChat';
-import { LiveMicPanel } from './LiveMicPanel';
-import { resolvePresentationMedia } from './presentationMedia';
-import { VirtualWhiteboard } from './VirtualWhiteboard';
+import { learnendoLogo } from '../../assets/branding';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
 
@@ -29,40 +21,19 @@ interface LiveClassRoomPageProps {
   onExit: () => void;
 }
 
-const openExternalLink = (rawUrl: string) => {
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return;
-  const target = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  window.open(target, '_blank', 'noopener,noreferrer');
-};
-
-const buildRoomShareLink = (classId: string) => {
-  if (typeof window === 'undefined') return '';
-  return `${window.location.origin}/live-class/${encodeURIComponent(classId)}`;
-};
-
-const buildWhatsappShareUrl = (liveClass: LiveClass) => {
-  const roomLink = buildRoomShareLink(liveClass.id);
-  const message = `Join "${liveClass.title}" on Learnendo: ${roomLink}`;
-  return `https://wa.me/?text=${encodeURIComponent(message)}`;
-};
-
 export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   liveClass,
   user,
   isTeacher,
-  onOpenClassContent,
-  onEditClass,
-  onExit,
 }) => {
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [showExerciseSession, setShowExerciseSession] = useState(false);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
-    activeWorkbookId: null,
-    activeLessonId: null,
-    activeExerciseId: null,
+    activeWorkbookId: liveClass.workbookId ?? null,
+    activeLessonId: liveClass.lessonId ?? null,
     liveAudioTransport: 'not-configured',
     teacherLiveMicEnabled: false,
     teacherCameraEnabled: false,
@@ -70,15 +41,15 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     studentCameraMode: 'off',
     allowStudentWhiteboardEdit: false,
     audioNotesEnabled: true,
+    mainStageMode: 'camera',
   });
-  const role = isTeacher || liveClass.createdBy === user.uid ? 'teacher' : 'student';
+
+  const role = isTeacher ? 'teacher' : 'student';
 
   useEffect(() => {
-    const displayName = user.displayName || user.email || 'Student';
-
+    const displayName = user.displayName || user.email || 'Usuario';
     const syncPresence = () => upsertLivePresence(liveClass.id, user.uid, displayName, role);
     void syncPresence();
-
     const heartbeat = window.setInterval(() => {
       void syncPresence();
     }, 30000);
@@ -93,7 +64,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     const unsubscribe = subscribeLivePresence(
       liveClass.id,
       (next) => setPresence(next),
-      (error) => console.warn('[LiveClassRoomPage] presence subscription failed:', error),
+      (error) => console.warn('[LiveClass] Presence error:', error),
     );
     return unsubscribe;
   }, [liveClass.id]);
@@ -101,41 +72,27 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   useEffect(() => {
     const unsubscribe = subscribeLiveSession(
       liveClass.id,
-      (next) => setSession(next),
-      (error) => console.warn('[LiveClassRoomPage] session subscription failed:', error),
+      (next) => {
+        setSession({
+          ...next,
+          activeWorkbookId: next.activeWorkbookId ?? liveClass.workbookId ?? null,
+        });
+        setSessionLoaded(true);
+      },
+      (error) => console.warn('[LiveClass] Session error:', error),
     );
     return unsubscribe;
-  }, [liveClass.id]);
-
-  useEffect(() => {
-    if (!showExerciseSession) return () => {};
-
-    const previousBodyOverflow = document.body.style.overflow;
-    const previousHtmlOverflow = document.documentElement.style.overflow;
-
-    // Keep scrolling inside the exercise panel instead of leaving the page in a locked state.
-    document.body.style.overflow = '';
-    document.documentElement.style.overflow = '';
-
-    return () => {
-      document.body.style.overflow = previousBodyOverflow;
-      document.documentElement.style.overflow = previousHtmlOverflow;
-    };
-  }, [showExerciseSession]);
+  }, [liveClass.id, liveClass.workbookId]);
 
   const handleUpdateSession = useCallback(async (patch: Partial<LiveClassSession>) => {
     await updateLiveSession(liveClass.id, patch, user.uid);
   }, [liveClass.id, user.uid]);
 
   const onlinePresence = useMemo(
-    () => presence
-      .filter((item) => item.isOnline)
-      .sort((a, b) => {
-        if (a.role === b.role) return a.name.localeCompare(b.name);
-        return a.role === 'teacher' ? -1 : 1;
-      }),
+    () => presence.filter((item) => item.isOnline),
     [presence],
   );
+
   const assignedRoster = useMemo(() => {
     const ids = liveClass.assignedStudentIds ?? [];
     const names = liveClass.assignedStudentNames ?? [];
@@ -146,16 +103,15 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     }));
   }, [liveClass.assignedStudentIds, liveClass.assignedStudentNames, onlinePresence]);
 
-  const meetLink = getLiveClassMeetLink(liveClass);
-  const presentationLink = getLiveClassPresentationLink(liveClass);
-  const presentationMedia = useMemo(
-    () => resolvePresentationMedia(presentationLink),
-    [presentationLink],
-  );
-  const hasPresentationLink = presentationMedia.kind !== 'none';
-  const whatsappShareLink = useMemo(() => buildWhatsappShareUrl(liveClass), [liveClass]);
+  if (!sessionLoaded) {
+    return (
+      <div className="h-screen w-screen bg-slate-950 flex flex-col items-center justify-center">
+        <img src={learnendoLogo} alt="Learnendo" className="w-48 h-auto mb-4 animate-pulse" />
+        <div className="text-blue-500 text-sm tracking-widest uppercase">Carregando Sala...</div>
+      </div>
+    );
+  }
 
-  // Render by role
   if (role === 'teacher') {
     return (
       <TeacherRoomView
@@ -172,6 +128,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       />
     );
   }
+
   return (
     <StudentRoomView
       liveClass={liveClass}

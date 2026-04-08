@@ -1,24 +1,28 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { CollaborativeBoard as SharedBoard } from '../Board/CollaborativeBoard';
 
 interface TeacherBoardProps {
   roomId: string;
+  userId: string;
+  userName: string;
   isReadOnly?: boolean;
   isLocked?: boolean;
 }
 
-/**
- * Thin wrapper so TeacherRoomView can import from './CollaborativeBoard'.
- * Delegates to the shared Board/CollaborativeBoard which has Firestore sync.
- */
-const CollaborativeBoard: React.FC<TeacherBoardProps> = ({ roomId, isReadOnly }) => {
-  return (
+const CollaborativeBoard: React.FC<TeacherBoardProps> = ({ roomId, userId, userName, isReadOnly }) => {
+  const memoizedBoard = useMemo(() => (
     <SharedBoard
       boardId={`class-${roomId}`}
-      userId="teacher"
-      userName="Professor"
+      userId={userId}
+      userName={userName}
       readOnly={isReadOnly}
     />
+  ), [roomId, userId, userName, isReadOnly]);
+
+  return (
+    <div className="w-full h-full">
+      {memoizedBoard}
+    </div>
   );
 };
 

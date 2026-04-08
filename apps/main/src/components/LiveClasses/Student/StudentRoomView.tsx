@@ -40,7 +40,6 @@ const StudentStage: React.FC<{
 }> = ({ liveClass, user, session }) => {
   const mainStageMode = session.mainStageMode || 'board';
   const [chatOpen, setChatOpen] = useState(false);
-  const [showDebug, setShowDebug] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
 
   // ── Battle subscription ────────────────────────────────────────────────────
@@ -63,7 +62,8 @@ const StudentStage: React.FC<{
 
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
 
-  // Find teacher's video track by metadata role
+  // Prefer the teacher track when role metadata is present; otherwise fall back
+  // to the first remote camera track so the student still sees the host video.
   const teacherTrack = tracks.find((t) => {
     if (!t.participant || t.participant.isLocal) return false;
     try {
@@ -72,7 +72,7 @@ const StudentStage: React.FC<{
     } catch {
       return false;
     }
-  });
+  }) ?? tracks.find((t) => t.participant && !t.participant.isLocal);
 
   // ── Local camera preview via ref (direct MediaStream — bypasses useTracks) ──
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -421,16 +421,6 @@ const StudentStage: React.FC<{
           </svg>
         </button>
 
-        {/* Debug toggle — dev only */}
-        {import.meta.env.DEV && (
-          <button
-            onClick={() => setShowDebug(!showDebug)}
-            className="w-10 h-10 rounded-full flex items-center justify-center text-xs shadow transition bg-slate-800 hover:bg-slate-700 text-slate-400"
-            title="Debug"
-          >
-            🐛
-          </button>
-        )}
       </div>
 
       {/* Chat */}
@@ -459,20 +449,6 @@ const StudentStage: React.FC<{
           />
         </div>
       </div>
-
-      {/* Debug panel — dev only */}
-      {import.meta.env.DEV && showDebug && (
-        <div className="fixed top-2 left-2 z-[200] bg-black/90 text-[10px] text-green-400 font-mono p-2 rounded-lg border border-green-800 max-w-[220px] leading-relaxed">
-          <div>room: {room.state}</div>
-          <div>mic: {isMicrophoneEnabled ? '🟢 on' : '🔴 off'}</div>
-          <div>cam: {isCameraEnabled ? '🟢 on' : '🔴 off'}</div>
-          <div>audio playback: {audioPlaybackOk ? '🟢 ok' : '🔴 blocked'}</div>
-          <div>remote audio tracks: {remoteAudioCount}</div>
-          <div>remote participants: {room.remoteParticipants.size}</div>
-          <div>board mode: {mainStageMode}</div>
-          <div>student can edit: {session.allowStudentWhiteboardEdit ? 'yes' : 'no'}</div>
-        </div>
-      )}
 
       {/* ── Battle overlay ─────────────────────────────────────────────────── */}
       {battleSession && (
