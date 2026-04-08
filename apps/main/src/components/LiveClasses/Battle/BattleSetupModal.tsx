@@ -9,25 +9,39 @@
 // Excluded question IDs are persisted in localStorage so the teacher's
 // preference survives page refreshes and future sessions.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { BattleConfig, BattleDifficulty, BattleScope, BattleQuestion } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
-const EXCLUDED_KEY = 'learnendo_battle_excluded_ids';
+function buildExcludedKey(params: {
+  courseId?: string;
+  workbookId?: number;
+  lessonId?: string;
+  scope: BattleScope;
+}) {
+  const {
+    courseId = 'no-course',
+    workbookId = 'no-workbook',
+    lessonId = 'no-lesson',
+    scope,
+  } = params;
 
-function loadExcluded(): Set<string> {
+  return `learnendo_battle_excluded_ids:${courseId}:${workbookId}:${lessonId}:${scope}`;
+}
+
+function loadExcluded(storageKey: string): Set<string> {
   try {
-    const raw = localStorage.getItem(EXCLUDED_KEY);
+    const raw = localStorage.getItem(storageKey);
     return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
   } catch {
     return new Set();
   }
 }
 
-function persistExcluded(ids: Set<string>) {
+function persistExcluded(storageKey: string, ids: Set<string>) {
   try {
-    localStorage.setItem(EXCLUDED_KEY, JSON.stringify([...ids]));
+    localStorage.setItem(storageKey, JSON.stringify([...ids]));
   } catch { /* storage quota — ignore */ }
 }
 
@@ -81,16 +95,25 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [excludedIds,  setExcludedIds]  = useState<Set<string>>(new Set());
   const [editingIdx,   setEditingIdx]   = useState<number | null>(null);
   const [editDraft,    setEditDraft]    = useState<EditDraft | null>(null);
+  const exclusionStorageKey = useMemo(
+    () => buildExcludedKey({
+      courseId: defaultCourseId,
+      workbookId: defaultWorkbookId,
+      lessonId: defaultLessonId,
+      scope,
+    }),
+    [defaultCourseId, defaultWorkbookId, defaultLessonId, scope]
+  );
 
-  // Load persisted exclusions on first render
+  // Load persisted exclusions for the current battle context
   useEffect(() => {
-    setExcludedIds(loadExcluded());
-  }, []);
+    setExcludedIds(loadExcluded(exclusionStorageKey));
+  }, [exclusionStorageKey]);
 
   // Persist whenever exclusions change
   useEffect(() => {
-    persistExcluded(excludedIds);
-  }, [excludedIds]);
+    persistExcluded(exclusionStorageKey, excludedIds);
+  }, [excludedIds, exclusionStorageKey]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function generateQuestions(): BattleQuestion[] {
@@ -112,6 +135,20 @@ export const BattleSetupModal: React.FC<Props> = ({
       workbookId:  defaultWorkbookId,
       lessonId:    defaultLessonId,
     };
+  }
+
+  function getEffectiveQuestions(): BattleQuestion[] {
+    if (editingIdx === null || !editDraft) return questions;
+
+    return questions.map((q, i) =>
+      i !== editingIdx ? q : {
+        ...q,
+        text: editDraft.text,
+        options: editDraft.options,
+        correctIndex: editDraft.correctIndex,
+        imageUrl: editDraft.imageUrl || undefined,
+      }
+    );
   }
 
   // ── Actions ─────────────────────────────────────────────────────────────
@@ -163,15 +200,7 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   function saveEdit() {
     if (editingIdx === null || !editDraft) return;
-    setQuestions(prev => prev.map((q, i) =>
-      i !== editingIdx ? q : {
-        ...q,
-        text: editDraft.text,
-        options: editDraft.options,
-        correctIndex: editDraft.correctIndex,
-        imageUrl: editDraft.imageUrl || undefined,
-      }
-    ));
+    setQuestions(getEffectiveQuestions());
     setEditingIdx(null);
     setEditDraft(null);
   }
@@ -191,12 +220,12 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   /** ✅ Confirmar Lista Final — launch with curated questions */
   function handleConfirm() {
-    const finalQs = questions.filter(q => !excludedIds.has(q.id));
+    const finalQs = getEffectiveQuestions().filter(q => !excludedIds.has(q.id));
     if (finalQs.length === 0) return;
     onStart(buildConfig(finalQs.length), finalQs);
   }
 
-  const selectedCount = questions.filter(q => !excludedIds.has(q.id)).length;
+  const selectedCount = getEffectiveQuestions().filter(q => !excludedIds.has(q.id)).length;
 
   // ────────────────────────────────────────────────────────────────────────
   // STEP 1 — CONFIG

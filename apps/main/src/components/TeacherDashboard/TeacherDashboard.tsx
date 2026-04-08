@@ -19,7 +19,7 @@ import {
   SortColumn,
   formatAccuracy,
 } from '../../engine/teacherService';
-import { rankMedal, getTopRanked } from '../../engine/rankingService';
+import { rankMedal } from '../../engine/rankingService';
 import { AlertType } from '../../engine/alertService';
 import { generateStudentReport } from '../../services/reportService';
 import { generatePlacementReport } from '../../services/placementReportService';
@@ -281,7 +281,13 @@ const RankingTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
     [filteredRows],
   );
 
-  const top10 = useMemo(() => getTopRanked(rankingRows, 10), [rankingRows]);
+  const top10 = useMemo(
+    () => [...rankingRows]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map((student, index) => ({ ...student, rank: index + 1 })),
+    [rankingRows]
+  );
 
   const podiumColour = (rank: number) => {
     if (rank === 1) return 'bg-yellow-50 border-yellow-300';

@@ -1,5 +1,5 @@
 // ── Learnendo Battle — question picker ────────────────────────────────────────
-import { PRACTICE_ITEMS } from '../../../constants';
+import { PRACTICE_ITEMS, WORKBOOK_NUMBER } from '../../../constants';
 import type { BattleConfig, BattleQuestion } from './battleTypes';
 
 function shuffle<T>(arr: T[]): T[] {
@@ -52,12 +52,15 @@ export function getBattleQuestions(
       pool = filtered;
       console.log(`[Battle] Filtrado por lição ${lessonNum}: ${pool.length} itens encontrados.`);
     }
-  } else if (scope === 'current-book' && workbookId != null) {
-    // Filtro por Workbook (ajuste os IDs conforme sua lógica de curso)
-    const filtered = pool.filter(p => p.workbookId === workbookId || Number(p.lessonId) <= 10);
+  } else if (scope === 'current-book') {
+    // O banco atual exposto em constants.tsx representa apenas o workbook ativo.
+    // Mantemos o filtro compatível com o dado tipado até a origem passar a carregar
+    // múltiplos workbooks explicitamente.
+    const normalizedWorkbookId = workbookId ?? WORKBOOK_NUMBER;
+    const filtered = normalizedWorkbookId === WORKBOOK_NUMBER ? pool : [];
     if (filtered.length > 0) {
       pool = filtered;
-      console.log(`[Battle] Filtrado por Workbook ${workbookId}: ${pool.length} itens encontrados.`);
+      console.log(`[Battle] Filtrado por Workbook ${normalizedWorkbookId}: ${pool.length} itens encontrados.`);
     }
   }
 

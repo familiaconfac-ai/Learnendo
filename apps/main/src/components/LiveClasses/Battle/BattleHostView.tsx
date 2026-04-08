@@ -3,7 +3,6 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { BattleSession } from './battleTypes';
 import {
   startBattle, advanceBattleQuestion, showBattleAnswer, endBattle,
-  autoRevealIfAllAnswered,
 } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 
@@ -59,6 +58,12 @@ export const BattleHostView: React.FC<Props> = ({
   );
   const answerCount = Object.keys(session.currentAnswers).length;
   const timeRatio = timeLeft / session.config.timePerQuestion;
+  const visibleScores = useMemo(
+    () => Object.fromEntries(
+      Object.entries(session.scores).filter(([uid]) => uid !== teacherUid)
+    ),
+    [session.scores, teacherUid]
+  );
 
   // ── Round summary (computed when showing-answer) ──────────────────────────
   const roundSummary = useMemo(() => {
@@ -131,8 +136,8 @@ export const BattleHostView: React.FC<Props> = ({
 
   // Sorted leaderboard
   const leaderboard = useMemo(
-    () => Object.values(session.scores).sort((a, b) => b.score - a.score).slice(0, 5),
-    [session.scores]
+    () => Object.values(visibleScores).sort((a, b) => b.score - a.score).slice(0, 5),
+    [visibleScores]
   );
 
   async function handleStart() {
@@ -155,11 +160,12 @@ export const BattleHostView: React.FC<Props> = ({
   if (showResults) {
     return (
       <BattleResultsScreen
-        scores={session.scores}
+        scores={visibleScores}
         myUid={teacherUid}
         onNewBattle={onNewBattle}
         onClose={onClose}
         isTeacher
+        hiddenUids={[teacherUid]}
       />
     );
   }

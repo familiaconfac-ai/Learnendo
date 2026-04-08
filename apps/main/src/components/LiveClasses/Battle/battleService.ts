@@ -7,7 +7,7 @@
 //             once the updated firestore.rules are deployed.
 
 import {
-  doc, setDoc, updateDoc, onSnapshot, Unsubscribe
+  doc, setDoc, updateDoc, onSnapshot, Unsubscribe, deleteDoc
 } from 'firebase/firestore';
 import { db } from '../../../services/firebase';
 import type {
@@ -98,7 +98,7 @@ export async function endBattle(classId: string): Promise<void> {
 }
 
 export async function deleteBattleSession(classId: string): Promise<void> {
-  await setDoc(battleDocRef(classId), { status: 'idle', updatedAt: Date.now() }, { merge: true });
+  await deleteDoc(battleDocRef(classId));
 }
 
 // ─── Student operations ────────────────────────────────────────────────────────

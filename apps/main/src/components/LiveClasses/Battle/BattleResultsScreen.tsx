@@ -8,16 +8,19 @@ interface Props {
   onNewBattle?: () => void; // teacher-only
   onClose: () => void;
   isTeacher: boolean;
+  hiddenUids?: string[];
 }
 
 const MEDALS = ['🥇', '🥈', '🥉'];
 
 export const BattleResultsScreen: React.FC<Props> = ({
-  scores, myUid, onNewBattle, onClose, isTeacher
+  scores, myUid, onNewBattle, onClose, isTeacher, hiddenUids = []
 }) => {
   const sorted = useMemo(
-    () => Object.values(scores).sort((a, b) => b.score - a.score),
-    [scores]
+    () => Object.values(scores)
+      .filter((participant) => !hiddenUids.includes(participant.uid))
+      .sort((a, b) => b.score - a.score),
+    [scores, hiddenUids]
   );
 
   const myRank = sorted.findIndex(p => p.uid === myUid) + 1;

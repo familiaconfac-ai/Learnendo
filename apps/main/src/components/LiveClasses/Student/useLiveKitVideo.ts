@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { Room, Track } from 'livekit-client';
+import type { Room } from 'livekit-client';
+import { Track } from 'livekit-client';
 
 export interface LiveKitVideoTracks {
   localCameraTrack: MediaStreamTrack | null;

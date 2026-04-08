@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { speak as ttsSpeakImpl, appLangToTts, exerciseVoices, getVoiceCount, onVoicesReady } from '../services/ttsService';
 import { WORKBOOK_NUMBER } from '../constants';
-import { PracticeItem, AnswerLog, UserProgress, PracticeModuleType } from '../types';
+import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
 import speakerIcon from '../assets/icons/speaker.svg';
 import turtleIcon from '../assets/icons/turtle.svg';
@@ -206,7 +206,7 @@ const shuffle = <T,>(array: T[]): T[] => {
   return result;
 };
 
-export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({ lessonId, progress }) => {
+export const Header: React.FC<{ lessonId: number, progress: OldUserProgress }> = ({ lessonId, progress }) => {
   const currentDiamond = progress?.lessonData?.[lessonId]?.diamond || 0;
 
   return (
@@ -241,7 +241,7 @@ export const Header: React.FC<{ lessonId: number, progress: UserProgress }> = ({
 };
 
 export const LearningPathView: React.FC<{
-  progress: UserProgress;
+  progress: OldUserProgress;
   onSelectModule: (type: PracticeModuleType) => void;
   moduleNames: Record<string, string>;
   isLessonLocked: (id: number) => boolean;
