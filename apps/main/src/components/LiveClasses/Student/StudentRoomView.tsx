@@ -18,6 +18,7 @@ import { LiveClassChat } from '../LiveClassChat';
 import { BattlePlayerView } from '../Battle/BattlePlayerView';
 import { BattleSession } from '../Battle/battleTypes';
 import { subscribeBattleSession } from '../Battle/battleService';
+import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode } from '../../../services/liveClassStage';
 
 interface StudentRoomViewProps {
   liveClass: LiveClass;
@@ -38,9 +39,11 @@ const StudentStage: React.FC<{
   user: User;
   session: LiveClassSession;
 }> = ({ liveClass, user, session }) => {
-  const mainStageMode = session.mainStageMode || 'board';
+  const [mainStageMode, setMainStageMode] = useState<MainStageMode>(getDefaultMainStageMode());
   const [chatOpen, setChatOpen] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
+  const hasAppliedInitialStageRef = useRef(false);
+  const battleWasActivatedRef = useRef(false);
 
   // ── Battle subscription ────────────────────────────────────────────────────
   const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
@@ -48,14 +51,38 @@ const StudentStage: React.FC<{
     console.log('[Battle:Student] subscribing, classId:', liveClass.id);
     const unsub = subscribeBattleSession(liveClass.id, (s) => {
       console.log('[Battle:Student] snapshot — status:', s?.status ?? 'null (no doc)');
-      if (s && s.status !== 'idle') {
-        setBattleSession(s);
-      } else {
+      if (!s) {
+        battleWasActivatedRef.current = false;
         setBattleSession(null);
+        return;
       }
+
+      if (isActiveBattleStatus(s.status)) {
+        battleWasActivatedRef.current = true;
+        setBattleSession(s);
+        return;
+      }
+
+      if (s.status === 'finished' && battleWasActivatedRef.current) {
+        setBattleSession(s);
+        return;
+      }
+
+      battleWasActivatedRef.current = false;
+      setBattleSession(null);
     });
     return unsub;
   }, [liveClass.id]);
+
+  useEffect(() => {
+    if (!hasAppliedInitialStageRef.current) {
+      hasAppliedInitialStageRef.current = true;
+      setMainStageMode(getDefaultMainStageMode());
+      return;
+    }
+
+    setMainStageMode(sanitizeMainStageMode(session.mainStageMode));
+  }, [session.mainStageMode]);
 
   const room = useRoomContext();
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();

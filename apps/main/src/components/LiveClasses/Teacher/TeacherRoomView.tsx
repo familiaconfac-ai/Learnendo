@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import CollaborativeBoard from './CollaborativeBoard';
 import {
   LiveKitRoom,
@@ -20,6 +20,7 @@ import { BattleSession, BattleConfig, BattleQuestion } from '../Battle/battleTyp
 import { subscribeBattleSession, createBattleSession, deleteBattleSession } from '../Battle/battleService';
 import { buildInitialBattleScores, buildSavedBattleTemplate, sanitizeBattleQuestions } from '../Battle/battleUtils';
 import { appendLiveClassBattleTemplate } from '../../../services/liveClassesService';
+import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode } from '../../../services/liveClassStage';
 
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
@@ -42,8 +43,10 @@ const TeacherStage: React.FC<{
   teacherName: string;
 }> = ({ liveClass, session, handleUpdateSession, teacherUid, teacherName }) => {
 
-  const [viewMode, setViewMode] = useState<'camera' | 'board'>(session.mainStageMode || 'camera');
+  const [viewMode, setViewMode] = useState<MainStageMode>(getDefaultMainStageMode());
   const room = useRoomContext();
+  const hasAppliedInitialStageRef = useRef(false);
+  const battleWasActivatedRef = useRef(false);
 
   /** * LOGICA DA LOUSA CORRIGIDA:
    * A trava agora é reativa. Se 'allowStudentWhiteboardEdit' for false, 
@@ -56,7 +59,27 @@ const TeacherStage: React.FC<{
   const [showBattleSetup, setShowBattleSetup] = useState(false);
 
   useEffect(() => {
-    const unsub = subscribeBattleSession(liveClass.id, setBattleSession);
+    const unsub = subscribeBattleSession(liveClass.id, (nextSession) => {
+      if (!nextSession) {
+        battleWasActivatedRef.current = false;
+        setBattleSession(null);
+        return;
+      }
+
+      if (isActiveBattleStatus(nextSession.status)) {
+        battleWasActivatedRef.current = true;
+        setBattleSession(nextSession);
+        return;
+      }
+
+      if (nextSession.status === 'finished' && battleWasActivatedRef.current) {
+        setBattleSession(nextSession);
+        return;
+      }
+
+      battleWasActivatedRef.current = false;
+      setBattleSession(null);
+    });
     return unsub;
   }, [liveClass.id]);
 
@@ -81,10 +104,12 @@ const TeacherStage: React.FC<{
       createdAt: now,
       updatedAt: now,
     };
+    battleWasActivatedRef.current = true;
     setBattleSession(optimisticSession);
 
     createBattleSession(liveClass.id, config, teacherUid, teacherName, sanitizedQuestions).catch((err) => {
       console.error('[Battle] Firestore sync failed:', err);
+      battleWasActivatedRef.current = false;
       setBattleSession(null);
       setShowBattleSetup(true);
       window.alert('Nao foi possivel iniciar o Battle. Revise a pergunta editada e tente novamente.');
@@ -102,11 +127,18 @@ const TeacherStage: React.FC<{
 
   async function handleCloseBattle() {
     await deleteBattleSession(liveClass.id);
+    battleWasActivatedRef.current = false;
     setBattleSession(null);
   }
 
   useEffect(() => {
-    if (session.mainStageMode) setViewMode(session.mainStageMode);
+    if (!hasAppliedInitialStageRef.current) {
+      hasAppliedInitialStageRef.current = true;
+      setViewMode(getDefaultMainStageMode());
+      return;
+    }
+
+    setViewMode(sanitizeMainStageMode(session.mainStageMode));
   }, [session.mainStageMode]);
 
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
@@ -115,7 +147,7 @@ const TeacherStage: React.FC<{
   const remoteParticipants = participants.filter((p) => !p.isLocal);
   const allTracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
 
-  const handleModeChange = (newMode: 'camera' | 'board') => {
+  const handleModeChange = (newMode: MainStageMode) => {
     setViewMode(newMode);
     handleUpdateSession({ mainStageMode: newMode });
   };
@@ -249,7 +281,7 @@ const TeacherStage: React.FC<{
           defaultCourseId={liveClass.courseId}
         />
       )}
-      {battleSession && battleSession.status !== 'idle' && (
+      {battleSession && (
         <BattleHostView
           session={battleSession}
           classId={liveClass.id}

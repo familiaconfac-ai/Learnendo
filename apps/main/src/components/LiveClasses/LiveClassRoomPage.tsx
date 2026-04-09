@@ -8,6 +8,7 @@ import {
   updateLiveSession,
   upsertLivePresence,
 } from '../../services/liveSessionService';
+import { getDefaultMainStageMode } from '../../services/liveClassStage';
 import { learnendoLogo } from '../../assets/branding';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
@@ -41,7 +42,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     studentCameraMode: 'off',
     allowStudentWhiteboardEdit: false,
     audioNotesEnabled: true,
-    mainStageMode: 'camera',
+    mainStageMode: getDefaultMainStageMode(),
   });
 
   const role = isTeacher ? 'teacher' : 'student';

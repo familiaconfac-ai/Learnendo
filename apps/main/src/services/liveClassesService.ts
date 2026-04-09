@@ -15,6 +15,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { getDefaultMainStageMode } from './liveClassStage';
 import { LiveClass, LiveClassGroup, LiveClassGroupInput, LiveClassInput, LiveClassMessage, LiveClassRole } from '../types';
 import type { SavedBattleTemplate } from '../components/LiveClasses/Battle/battleTypes';
 import type { UserRole } from './userRoles';
@@ -491,6 +492,7 @@ export async function ensureLiveClassSession(classId: string): Promise<void> {
       studentCameraMode: 'off',
       allowStudentWhiteboardEdit: false,
       audioNotesEnabled: true,
+      mainStageMode: getDefaultMainStageMode(),
       updatedAt: serverTimestamp(),
     },
     { merge: true },
