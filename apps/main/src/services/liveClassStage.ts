@@ -18,7 +18,9 @@ export function getDefaultMainStageMode(): MainStageMode {
 }
 
 export function sanitizeMainStageMode(mode: unknown): MainStageMode {
-  return mode === 'camera' ? 'camera' : 'board';
+  if (mode === 'camera') return 'camera';
+  if (mode === 'editor') return 'editor';
+  return 'board';
 }
 
 export function isActiveBattleStatus(status: BattleStatus | null | undefined): boolean {

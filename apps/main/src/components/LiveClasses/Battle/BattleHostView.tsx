@@ -55,6 +55,7 @@ export const BattleHostView: React.FC<Props> = ({
   // This is NOT visual-only: same evaluation math as battleService.ts.
   // Works identically for solo and multiplayer — no special-casing required.
   const [localCurrentAnswers, setLocalCurrentAnswers] = useState<Record<string, BattleAnswer>>({});
+  const [showRankingOverlay, setShowRankingOverlay] = useState(false);
   // Snapshot of cumulative scores at the MOMENT a question becomes active.
   // Used in revealRows to compute totalScore = preRoundScore + answer.roundPoints,
   // which is race-free: we don’t need session.scores to update before the reveal.
@@ -230,6 +231,7 @@ export const BattleHostView: React.FC<Props> = ({
     setTeacherSubmitting(false);
     setTimeLeft(session.config.timePerQuestion);
     setLocalCurrentAnswers({}); // clear local answers when question changes
+    setShowRankingOverlay(false); // close overlay between rounds
     // Capture pre-round scores for every participant so revealRows can show
     // correct totals without waiting for Firestore score updates to arrive.
     // session.scores is stable at question start (before any writes this round).
@@ -282,14 +284,16 @@ export const BattleHostView: React.FC<Props> = ({
   useEffect(() => {
     if (session.status !== 'active') return;
     if (expectedParticipantIds.length === 0) return;
-
-    const allAnswered = expectedParticipantIds.every((uid) => uid in session.currentAnswers);
+    // Use mergedCurrentAnswers so teacher's optimistic local answer also counts.
+    // Without this, the round won't auto-close if teacher answered but Firestore
+    // hasn't echoed back yet when the last student submits.
+    const allAnswered = expectedParticipantIds.every((uid) => uid in mergedCurrentAnswers);
     if (!allAnswered) return;
 
     showBattleAnswer(classId).catch((error) => {
       console.error('[Battle] auto-reveal failed:', error);
     });
-  }, [session.status, expectedParticipantIds, session.currentAnswers, classId]);
+  }, [session.status, expectedParticipantIds, mergedCurrentAnswers, classId]);
 
   useEffect(() => {
     if (session.status !== 'active' || timeLeft > 0) return;
@@ -530,8 +534,10 @@ export const BattleHostView: React.FC<Props> = ({
 
   return (
     <div className="fixed inset-0 z-[9000] flex bg-slate-950 select-none">
-      <div className="flex-1 flex flex-col">
-        <div className="flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-800">
+      {/* h-full + overflow-hidden bounds the column to the screen height so
+          the bottom button bar never gets pushed out of the viewport */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
+        <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-800">
           <div className="flex items-center gap-3">
             <span className="text-lg">⚔️</span>
             <span className="text-white font-bold text-sm">Learnendo Battle</span>
@@ -556,7 +562,7 @@ export const BattleHostView: React.FC<Props> = ({
           </div>
         </div>
 
-        <div className="h-1.5 bg-slate-800">
+        <div className="flex-shrink-0 h-1.5 bg-slate-800">
           <div
             className="h-full transition-all duration-200"
             style={{
@@ -566,7 +572,9 @@ export const BattleHostView: React.FC<Props> = ({
           />
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center px-6 gap-6">
+        {/* min-h-0 lets this shrink below its content height; overflow-y-auto
+            makes it scroll rather than pushing the footer down */}
+        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-start py-4 px-6 gap-5">
           {session.status === 'lobby' ? (
             <div className="text-center space-y-4">
               <div className="text-5xl">⚔️</div>
@@ -694,53 +702,14 @@ export const BattleHostView: React.FC<Props> = ({
 
               {effectiveStatus === 'showing-answer' && (
                 <>
-                  <p className="text-sm text-green-300 font-semibold">
+                  <p className="text-sm text-green-300 font-semibold text-center">
                     Resposta correta: <span className="font-bold text-green-200">{answerLabel || '—'}</span>
                   </p>
 
-                  {/* Per-player results — sorted: correct (fastest first) → wrong → no answer */}
-                  <div className="w-full max-w-md space-y-1.5">
-                    {revealRows.map((row) => (
-                      <div
-                        key={row.pid}
-                        className={`flex items-center gap-3 px-4 py-2 rounded-xl border text-sm ${
-                          row.isCorrect === true
-                            ? 'bg-green-500/10 border-green-500/25'
-                            : row.isCorrect === false
-                            ? 'bg-red-500/10 border-red-500/25'
-                            : 'bg-slate-800/60 border-slate-700/40'
-                        }`}
-                      >
-                        <span className="text-base w-5 text-center">
-                          {row.isCorrect === true ? '✅' : row.isCorrect === false ? '❌' : '⏰'}
-                        </span>
-                        <span className="flex-1 text-white truncate">
-                          {row.name}
-                          {row.pid === teacherUid && (
-                            <span className="ml-1 text-[10px] text-slate-500">(Prof)</span>
-                          )}
-                        </span>
-                        {row.elapsedMs != null && (
-                          <span className="text-xs text-slate-400">
-                            {(row.elapsedMs / 1000).toFixed(1)}s
-                          </span>
-                        )}
-                        {row.roundPoints > 0 ? (
-                          <span className="text-xs font-bold text-orange-400">+{row.roundPoints}</span>
-                        ) : (
-                          <span className="text-xs text-slate-600">+0</span>
-                        )}
-                        <span className="text-xs text-slate-500 w-14 text-right">
-                          {row.totalScore.toLocaleString()}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Summary counts */}
-                  <div className="flex gap-3 text-xs">
+                  {/* Compact summary chips — full per-player list lives in the ranking overlay */}
+                  <div className="flex flex-wrap justify-center gap-2 text-xs">
                     <span className="px-3 py-1 rounded-full bg-green-500/15 text-green-400 font-semibold">
-                      ✅ {correctCount} correto{correctCount !== 1 ? 's' : ''}
+                      ✅ {correctCount} certo{correctCount !== 1 ? 's' : ''}
                     </span>
                     <span className="px-3 py-1 rounded-full bg-red-500/15 text-red-400 font-semibold">
                       ❌ {wrongCount} errado{wrongCount !== 1 ? 's' : ''}
@@ -751,13 +720,83 @@ export const BattleHostView: React.FC<Props> = ({
                       </span>
                     )}
                   </div>
+
+                  <button
+                    onClick={() => setShowRankingOverlay(true)}
+                    className="text-xs text-slate-400 hover:text-white underline underline-offset-2 transition"
+                  >
+                    📊 Ver resultados ({revealRows.length})
+                  </button>
                 </>
               )}
             </>
           ) : null}
         </div>
 
-        <div className="flex justify-center gap-3 px-5 pb-5">
+        {/* ── Ranking overlay — absolute inside the bounded column ──────────────────────── */}
+        {showRankingOverlay && effectiveStatus === 'showing-answer' && (
+          <div className="absolute inset-0 z-20 bg-slate-950/98 flex flex-col">
+            <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <span className="text-white font-bold text-sm">Resultados da Rodada</span>
+                {answerLabel && (
+                  <span className="text-xs text-green-400 font-semibold">• ✅ {answerLabel}</span>
+                )}
+              </div>
+              <button
+                onClick={() => setShowRankingOverlay(false)}
+                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-white text-sm flex items-center justify-center transition"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1.5">
+              {revealRows.map((row) => (
+                <div
+                  key={row.pid}
+                  className={`flex items-center gap-3 px-4 py-2 rounded-xl border text-sm ${
+                    row.isCorrect === true
+                      ? 'bg-green-500/10 border-green-500/25'
+                      : row.isCorrect === false
+                      ? 'bg-red-500/10 border-red-500/25'
+                      : 'bg-slate-800/60 border-slate-700/40'
+                  }`}
+                >
+                  <span className="text-base w-5 text-center">
+                    {row.isCorrect === true ? '✅' : row.isCorrect === false ? '❌' : '⏰'}
+                  </span>
+                  <span className="flex-1 text-white truncate">
+                    {row.name}
+                    {row.pid === teacherUid && (
+                      <span className="ml-1 text-[10px] text-slate-500">(Prof)</span>
+                    )}
+                  </span>
+                  {row.elapsedMs != null && (
+                    <span className="text-xs text-slate-400">{(row.elapsedMs / 1000).toFixed(1)}s</span>
+                  )}
+                  {row.roundPoints > 0 ? (
+                    <span className="text-xs font-bold text-orange-400">+{row.roundPoints}</span>
+                  ) : (
+                    <span className="text-xs text-slate-600">+0</span>
+                  )}
+                  <span className="text-xs text-slate-500 w-14 text-right">{row.totalScore.toLocaleString()}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex-shrink-0 flex justify-center px-5 py-3 border-t border-slate-800">
+              <button
+                onClick={() => { setShowRankingOverlay(false); void handleNext(); }}
+                disabled={busy}
+                className="px-10 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-black text-base hover:opacity-90 transition disabled:opacity-50 shadow-lg shadow-orange-900/40"
+              >
+                {questionIdx + 1 >= totalQ ? '🏆 Finalizar Batalha' : '▶ Próxima Pergunta'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── Fixed footer — flex-shrink-0 ensures it never gets pushed out of view ── */}
+        <div className="flex-shrink-0 flex justify-center gap-3 px-5 py-3 border-t border-slate-800/50">
           {session.status === 'active' && !allAnsweredLocally && (
             <button
               onClick={handleShowAnswer}
@@ -780,7 +819,7 @@ export const BattleHostView: React.FC<Props> = ({
 
         {/* Compact leaderboard strip — mobile only (md+ uses the side panel) */}
         {leaderboard.length > 0 && (
-          <div className="md:hidden flex overflow-x-auto items-center gap-2 px-4 pb-2 border-t border-slate-800 pt-2">
+          <div className="flex-shrink-0 md:hidden flex overflow-x-auto items-center gap-2 px-4 pb-2 border-t border-slate-800 pt-2">
             <span className="text-[10px] text-slate-500 uppercase tracking-wider flex-shrink-0">Placar</span>
             {leaderboard.slice(0, 3).map((player, index) => (
               <div key={player.uid} className="flex items-center gap-1 bg-slate-800 rounded-full px-2 py-0.5 flex-shrink-0">

@@ -215,7 +215,7 @@ export interface LiveClassSession {
   studentCameraMode?: 'off' | 'follow-mic' | 'required';
   allowStudentWhiteboardEdit?: boolean;
   audioNotesEnabled?: boolean;
-  mainStageMode?: 'board' | 'camera'; // 'board' = lousa principal, 'camera' = câmera do professor principal
+  mainStageMode?: 'board' | 'camera' | 'editor'; // 'board' = lousa principal, 'camera' = câmera principal, 'editor' = editor colaborativo
   isBoardLocked?: boolean; // professor pode travar a lousa para alunos
   lastUpdatedBy?: string;
   updatedAt?: string;

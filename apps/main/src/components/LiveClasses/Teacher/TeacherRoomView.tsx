@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import CollaborativeBoard from './CollaborativeBoard';
+import { SharedEditor } from '../Editor/SharedEditor';
 import {
   LiveKitRoom,
   VideoTrack,
@@ -199,7 +200,7 @@ const TeacherStage: React.FC<{
         setIsScreenSharing(false);
       } else {
         await localParticipant.setScreenShareEnabled(true, {
-          audio: false,
+          audio: true,
           selfBrowserSurface: 'include',
         });
         setIsScreenSharing(true);
@@ -280,6 +281,18 @@ const TeacherStage: React.FC<{
             </div>
           )}
 
+          {/* EDITOR */}
+          {viewMode === 'editor' && (
+            <div className="absolute inset-0 z-10 bg-white overflow-hidden">
+              <SharedEditor
+                classId={liveClass.id}
+                userId={teacherUid}
+                userName={teacherName}
+                readOnly={false}
+              />
+            </div>
+          )}
+
           {/* SCREEN SHARE — local preview for teacher */}
           {isScreenSharing && (
             <div className="absolute inset-0 z-10 bg-black flex items-center justify-center">
@@ -341,6 +354,14 @@ const TeacherStage: React.FC<{
               }`}
             >
               📺
+            </button>
+
+            <button
+              onClick={() => handleModeChange('editor')}
+              title="Editor colaborativo"
+              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'editor' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
+            >
+              📝
             </button>
           </div>
         </div>

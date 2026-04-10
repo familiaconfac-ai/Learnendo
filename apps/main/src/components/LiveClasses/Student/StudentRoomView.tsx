@@ -11,6 +11,7 @@ import '@livekit/components-styles';
 import { Track, RoomEvent } from 'livekit-client';
 import { isTrackReference } from '@livekit/components-core';
 import { CollaborativeBoard } from '../Board/CollaborativeBoard';
+import { SharedEditor } from '../Editor/SharedEditor';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassSession, LiveClassPresence } from '../../../types';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
@@ -342,6 +343,22 @@ const StudentStage: React.FC<{
                 />
               </div>
             </div>
+          </div>
+
+          {/* EDITOR — always mounted, shown when teacher activates editor mode */}
+          <div
+            className={`absolute inset-0 transition-opacity ${
+              mainStageMode === 'editor'
+                ? 'opacity-100 pointer-events-auto z-20'
+                : 'opacity-0 pointer-events-none z-0'
+            }`}
+          >
+            <SharedEditor
+              classId={liveClass.id}
+              userId={user.uid}
+              userName={user.displayName || user.email || 'Aluno'}
+              readOnly={false}
+            />
           </div>
 
           {/* Preview local do aluno */}
