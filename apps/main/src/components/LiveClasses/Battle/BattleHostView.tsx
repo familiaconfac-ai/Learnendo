@@ -74,6 +74,55 @@ export const BattleHostView: React.FC<Props> = ({
     [visibleScores]
   );
 
+  // Per-player round results used in the 'showing-answer' reveal panel.
+  // Correct answers are sorted by answer speed; wrong answers follow; unanswered last.
+  const revealRows = useMemo(() => {
+    if (session.status !== 'showing-answer') return [];
+
+    type RevealRow = {
+      pid: string;
+      name: string;
+      isCorrect: boolean | null;
+      elapsedMs: number | null;
+      roundPoints: number;
+      totalScore: number;
+    };
+
+    const answered: RevealRow[] = [];
+    const unanswered: RevealRow[] = [];
+
+    for (const pid of expectedParticipantIds) {
+      const participant = session.scores[pid];
+      const displayName = participant?.name ?? pid;
+      const totalScore = participant?.score ?? 0;
+      const answer = session.currentAnswers[pid];
+
+      if (!answer) {
+        unanswered.push({ pid, name: displayName, isCorrect: null, elapsedMs: null, roundPoints: 0, totalScore });
+      } else {
+        const elapsedMs =
+          answer.elapsedMs != null
+            ? answer.elapsedMs
+            : session.questionStartedAt > 0
+            ? answer.answeredAt - session.questionStartedAt
+            : null;
+        answered.push({
+          pid,
+          name: displayName,
+          isCorrect: answer.isCorrect,
+          elapsedMs,
+          roundPoints: answer.roundPoints ?? 0,
+          totalScore,
+        });
+      }
+    }
+
+    const correct = answered.filter((r) => r.isCorrect).sort((a, b) => (a.elapsedMs ?? 999999) - (b.elapsedMs ?? 999999));
+    const wrong = answered.filter((r) => !r.isCorrect).sort((a, b) => (a.elapsedMs ?? 999999) - (b.elapsedMs ?? 999999));
+
+    return [...correct, ...wrong, ...unanswered];
+  }, [session.status, session.currentAnswers, session.scores, session.questionStartedAt, expectedParticipantIds]);
+
   useEffect(() => {
     const audio = new Audio('/sounds/battle_theme.mp3');
     audio.loop = true;
@@ -451,32 +500,61 @@ export const BattleHostView: React.FC<Props> = ({
 
               {session.status === 'showing-answer' && (
                 <>
-                  <p className="text-sm text-green-300">
-                    Resposta correta: <span className="font-bold">{answerLabel || '—'}</span>
+                  <p className="text-sm text-green-300 font-semibold">
+                    Resposta correta: <span className="font-bold text-green-200">{answerLabel || '—'}</span>
                   </p>
-                  <div className="flex gap-4">
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-500/15 border border-green-500/30">
-                      <span className="text-green-400 text-lg">✅</span>
-                      <div className="text-center">
-                        <div className="text-2xl font-black text-green-400">{correctCount}</div>
-                        <div className="text-[10px] text-slate-400 uppercase tracking-wide">Correto</div>
+
+                  {/* Per-player results — sorted: correct (fastest first) → wrong → no answer */}
+                  <div className="w-full max-w-md space-y-1.5">
+                    {revealRows.map((row) => (
+                      <div
+                        key={row.pid}
+                        className={`flex items-center gap-3 px-4 py-2 rounded-xl border text-sm ${
+                          row.isCorrect === true
+                            ? 'bg-green-500/10 border-green-500/25'
+                            : row.isCorrect === false
+                            ? 'bg-red-500/10 border-red-500/25'
+                            : 'bg-slate-800/60 border-slate-700/40'
+                        }`}
+                      >
+                        <span className="text-base w-5 text-center">
+                          {row.isCorrect === true ? '✅' : row.isCorrect === false ? '❌' : '⏰'}
+                        </span>
+                        <span className="flex-1 text-white truncate">
+                          {row.name}
+                          {row.pid === teacherUid && (
+                            <span className="ml-1 text-[10px] text-slate-500">(Prof)</span>
+                          )}
+                        </span>
+                        {row.elapsedMs != null && (
+                          <span className="text-xs text-slate-400">
+                            {(row.elapsedMs / 1000).toFixed(1)}s
+                          </span>
+                        )}
+                        {row.roundPoints > 0 ? (
+                          <span className="text-xs font-bold text-orange-400">+{row.roundPoints}</span>
+                        ) : (
+                          <span className="text-xs text-slate-600">+0</span>
+                        )}
+                        <span className="text-xs text-slate-500 w-14 text-right">
+                          {row.totalScore.toLocaleString()}
+                        </span>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-red-500/15 border border-red-500/30">
-                      <span className="text-red-400 text-lg">❌</span>
-                      <div className="text-center">
-                        <div className="text-2xl font-black text-red-400">{wrongCount}</div>
-                        <div className="text-[10px] text-slate-400 uppercase tracking-wide">Errado</div>
-                      </div>
-                    </div>
+                    ))}
+                  </div>
+
+                  {/* Summary counts */}
+                  <div className="flex gap-3 text-xs">
+                    <span className="px-3 py-1 rounded-full bg-green-500/15 text-green-400 font-semibold">
+                      ✅ {correctCount} correto{correctCount !== 1 ? 's' : ''}
+                    </span>
+                    <span className="px-3 py-1 rounded-full bg-red-500/15 text-red-400 font-semibold">
+                      ❌ {wrongCount} errado{wrongCount !== 1 ? 's' : ''}
+                    </span>
                     {unansweredCount > 0 && (
-                      <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-700/40 border border-slate-600/30">
-                        <span className="text-slate-400 text-lg">⏰</span>
-                        <div className="text-center">
-                          <div className="text-2xl font-black text-slate-400">{unansweredCount}</div>
-                          <div className="text-[10px] text-slate-400 uppercase tracking-wide">Sem resposta</div>
-                        </div>
-                      </div>
+                      <span className="px-3 py-1 rounded-full bg-slate-700/40 text-slate-400 font-semibold">
+                        ⏰ {unansweredCount} sem resposta
+                      </span>
                     )}
                   </div>
                 </>

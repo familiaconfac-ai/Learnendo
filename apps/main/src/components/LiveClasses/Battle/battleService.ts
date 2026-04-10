@@ -173,7 +173,8 @@ export async function submitBattleAnswer(
   const newStreak = isCorrect ? prev.streak + 1 : 0;
   // +50 per consecutive correct answer, capped at +200
   const streakBonus = isCorrect ? Math.min(200, newStreak * 50) : 0;
-  const newScore = prev.score + baseScore + speedBonus + streakBonus;
+  const roundPoints = baseScore + speedBonus + streakBonus;
+  const newScore = prev.score + roundPoints;
 
   const answer: BattleAnswer = {
     uid,
@@ -183,6 +184,9 @@ export async function submitBattleAnswer(
     responseText: payload.responseText,
     isCorrect,
     answeredAt,
+    // Store elapsed time (ms) and round points for the reveal panel
+    elapsedMs: startedAt > 0 ? answeredAt - startedAt : 0,
+    roundPoints,
   };
   const updatedParticipant: BattleParticipant = {
     uid, name, score: newScore, streak: newStreak, lastAnswerCorrect: isCorrect,

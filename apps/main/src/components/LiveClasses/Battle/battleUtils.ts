@@ -164,12 +164,13 @@ export function getExpectedBattleParticipantIds(
   session: BattleSession,
   teacherUid: string
 ): string[] {
-  const allParticipantIds = Object.keys(session.scores ?? {});
-  if (session.config.includeTeacher) return allParticipantIds;
-
-  const studentIds = allParticipantIds.filter((uid) => uid !== teacherUid);
-  if (studentIds.length > 0) return studentIds;
-  return [teacherUid];
+  // Teacher is always a participant (always seeded in scores at session creation).
+  // Students appear in scores after calling joinBattle().
+  // Using a Set ensures no duplicates and handles legacy documents where
+  // scores may be empty — teacher is still included via explicit add.
+  const ids = new Set(Object.keys(session.scores ?? {}));
+  ids.add(teacherUid);
+  return Array.from(ids);
 }
 
 export function buildInitialBattleScores(
@@ -177,8 +178,11 @@ export function buildInitialBattleScores(
   teacherUid: string,
   teacherName: string
 ) {
-  if (!config.includeTeacher) return {};
-
+  // Teacher is ALWAYS seeded into initial scores so that:
+  // 1. getExpectedBattleParticipantIds always includes them
+  // 2. solo-teacher mode works without any special-casing
+  // 3. teacher name/score appears in the leaderboard from round 1
+  // config.includeTeacher is kept in the type for UI labelling purposes only.
   return {
     [teacherUid]: {
       uid: teacherUid,

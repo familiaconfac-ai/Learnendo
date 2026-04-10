@@ -54,7 +54,9 @@ export interface BattleAnswer {
   optionIndexes?: number[];
   responseText?: string;
   isCorrect: boolean;
-  answeredAt: number; // Date.now() ms
+  answeredAt: number;  // Date.now() ms
+  elapsedMs?: number;  // ms from questionStartedAt → answeredAt (for speed ranking)
+  roundPoints?: number; // points earned in this round only
 }
 
 export interface BattleSession {
