@@ -169,17 +169,43 @@ const TeacherStage: React.FC<{
     setViewMode(sanitizeMainStageMode(session.mainStageMode));
   }, [session.mainStageMode]);
 
-  const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
-  const localTrack = tracks.find((t) => t.participant?.isLocal);
   const participants = useParticipants();
   const remoteParticipants = participants.filter((p) => !p.isLocal);
   const allTracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
-  const { localParticipant } = useLocalParticipant();
-  // A real (published) camera track has a non-null track on the publication.
-  // withPlaceholder:true returns a placeholder ref even before cam is started — we must
-  // distinguish "actually streaming" from "placeholder / camera off".
-  const localCamPublished = !!localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+  const { localParticipant, isCameraEnabled } = useLocalParticipant();
   const [camError, setCamError] = useState<string | null>(null);
+
+  // ── Local camera preview via direct MediaStream ───────────────────────────
+  // VideoTrack + withPlaceholder:true can render a blank element before the
+  // track is actually published. Direct MediaStream attachment (same as
+  // StudentRoomView) is the reliable fallback.
+  const camVideoRef = useRef<HTMLVideoElement>(null);
+  const pipVideoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const attach = (el: HTMLVideoElement | null): boolean => {
+      if (!el) return true; // not in DOM — skip
+      if (!isCameraEnabled) { el.srcObject = null; return true; }
+      for (const pub of localParticipant.trackPublications.values()) {
+        if (pub.source === Track.Source.Camera && (pub as any).track?.mediaStreamTrack) {
+          el.srcObject = new MediaStream([(pub as any).track.mediaStreamTrack]);
+          el.play().catch(() => {});
+          return true;
+        }
+      }
+      return false; // track not yet available — caller should retry
+    };
+
+    const done = attach(camVideoRef.current) && attach(pipVideoRef.current);
+    if (done || !isCameraEnabled) return;
+
+    // Track not yet published — poll every 250 ms (up to 5 s)
+    const t = setInterval(() => {
+      if (attach(camVideoRef.current) && attach(pipVideoRef.current)) clearInterval(t);
+    }, 250);
+    const stop = setTimeout(() => clearInterval(t), 5000);
+    return () => { clearInterval(t); clearTimeout(stop); };
+  }, [localParticipant, isCameraEnabled, viewMode, camVisible]);
 
   // ── Screen sharing ────────────────────────────────────────────────────────
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -195,22 +221,17 @@ const TeacherStage: React.FC<{
 
   // ── Camera toggle with error handling ─────────────────────────────────────
   async function toggleCamera() {
-    if (localCamPublished) {
-      await localParticipant.setCameraEnabled(false);
+    try {
       setCamError(null);
-    } else {
-      try {
-        setCamError(null);
-        await localParticipant.setCameraEnabled(true);
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('Permission denied') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
-          setCamError('Permissão de câmera negada ou câmera não encontrada.');
-        } else {
-          setCamError('Câmera indisponível. Verifique as permissões do navegador.');
-        }
-        console.warn('[TeacherCamera] toggle error:', err);
+      await localParticipant.setCameraEnabled(!isCameraEnabled);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Permission denied') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
+        setCamError('Permissão de câmera negada ou câmera não encontrada.');
+      } else {
+        setCamError('Câmera indisponível. Verifique as permissões do navegador.');
       }
+      console.warn('[TeacherCamera] toggle error:', err);
     }
   }
 
@@ -267,8 +288,8 @@ const TeacherStage: React.FC<{
           {/* CAMERA */}
           {viewMode === 'camera' && (
             <div className="w-full h-full flex items-center justify-center bg-black">
-              {localCamPublished && localTrack && isTrackReference(localTrack) ? (
-                <VideoTrack trackRef={localTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              {isCameraEnabled ? (
+                <video ref={camVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
               ) : camError ? (
                 <div className="flex flex-col items-center justify-center text-center gap-3 px-6">
                   <span className="text-4xl">🚫</span>
@@ -307,8 +328,8 @@ const TeacherStage: React.FC<{
               {/* Camera PIP — teacher's own camera shown in corner while using workspace */}
               {camVisible && (
                 <div className="absolute bottom-14 sm:bottom-16 right-2 sm:right-3 w-28 sm:w-36 aspect-video rounded-xl overflow-hidden border-2 border-blue-500/60 shadow-xl z-20 bg-black flex items-center justify-center pointer-events-none">
-                  {localCamPublished && localTrack && isTrackReference(localTrack) ? (
-                    <VideoTrack trackRef={localTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  {isCameraEnabled ? (
+                    <video ref={pipVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                   ) : (
                     <span className="text-slate-500 text-[10px]">{camError ? '🚫 Câm.' : '🎥 Off'}</span>
                   )}
@@ -346,7 +367,7 @@ const TeacherStage: React.FC<{
               onClick={() => {
                 handleModeChange('camera');
                 // If cam mode is entered and camera not yet started, try to start it
-                if (!localCamPublished) void toggleCamera();
+                if (!isCameraEnabled) void toggleCamera();
               }}
               className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'camera' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
               title="Modo câmera"
