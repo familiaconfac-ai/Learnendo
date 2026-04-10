@@ -44,11 +44,13 @@ export const BattleHostView: React.FC<Props> = ({
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [teacherSubmitting, setTeacherSubmitting] = useState(false);
-  // ── Solo-mode optimistic reveal ─────────────────────────────────────────────
-  // When the teacher is the only active participant and submits an answer, we
-  // immediately update local state so the reveal panel and "Próxima Pergunta"
-  // button appear without waiting for the Firestore snapshot round-trip.
-  const [soloRevealAnswer, setSoloRevealAnswer] = useState<BattleAnswer | null>(null);
+  // ── Local answer registry ────────────────────────────────────────────────────
+  // localCurrentAnswers stores BattleAnswer objects that this host has submitted
+  // but that haven't yet returned from Firestore. It is merged with
+  // session.currentAnswers for ALL display (answerCount, revealRows, effectiveStatus).
+  // This is NOT visual-only: same evaluation math as battleService.ts.
+  // Works identically for solo and multiplayer — no special-casing required.
+  const [localCurrentAnswers, setLocalCurrentAnswers] = useState<Record<string, BattleAnswer>>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -64,28 +66,28 @@ export const BattleHostView: React.FC<Props> = ({
     [session, teacherUid]
   );
   const teacherCanPlay = expectedParticipantIds.includes(teacherUid);
-  const timeRatio = timeLeft / session.config.timePerQuestion;
-  const myAnswer = getMyBattleAnswer(session, teacherUid);
-  const teacherHasAnswered = !!myAnswer || teacherSubmitting;
 
-  // ── Solo-mode fast-path derived flags ──────────────────────────────────────
-  // isSolo: teacher is the only registered participant right now.
-  const isSolo = expectedParticipantIds.length === 1 && expectedParticipantIds.includes(teacherUid);
-  // soloRevealed: teacher just answered solo — local reveal is active.
-  const soloRevealed = isSolo && soloRevealAnswer !== null;
-  // effectiveStatus: treat round as 'showing-answer' locally the moment solo reveal fires,
-  // before the Firestore snapshot with the updated status arrives.
-  const effectiveStatus = soloRevealed ? ('showing-answer' as const) : session.status;
-  // effectiveCurrentAnswers: merge the optimistic solo answer so reveal rows populate
-  // immediately without waiting for Firestore to echo back the written answer.
-  const effectiveCurrentAnswers = useMemo(
-    () =>
-      soloRevealed && soloRevealAnswer
-        ? { ...session.currentAnswers, [teacherUid]: soloRevealAnswer }
-        : session.currentAnswers,
-    [soloRevealed, soloRevealAnswer, session.currentAnswers, teacherUid]
+  // ── Merged answer state (local + Firestore) ───────────────────────────────
+  // localCurrentAnswers entries take precedence: they are newer (just submitted).
+  const mergedCurrentAnswers = useMemo(
+    () => ({ ...session.currentAnswers, ...localCurrentAnswers }),
+    [session.currentAnswers, localCurrentAnswers]
   );
-  const answerCount = Object.keys(effectiveCurrentAnswers).length;
+  // answerCount and effectiveStatus are both driven by the merged view.
+  const answerCount = Object.keys(mergedCurrentAnswers).length;
+  // Reveal the round as soon as all participants have an entry in the merged map,
+  // without waiting for Firestore to deliver the 'showing-answer' status update.
+  const allAnsweredLocally =
+    expectedParticipantIds.length > 0 &&
+    expectedParticipantIds.every((pid) => pid in mergedCurrentAnswers);
+  const effectiveStatus =
+    session.status === 'showing-answer' || (session.status === 'active' && allAnsweredLocally)
+      ? ('showing-answer' as const)
+      : session.status;
+
+  const timeRatio = timeLeft / session.config.timePerQuestion;
+  const myAnswer = mergedCurrentAnswers[teacherUid] ?? getMyBattleAnswer(session, teacherUid);
+  const teacherHasAnswered = !!myAnswer || teacherSubmitting;
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const showTeacherInScores = includeTeacher || teacherCanPlay;
   const visibleScores = useMemo(
@@ -101,7 +103,7 @@ export const BattleHostView: React.FC<Props> = ({
 
   // Per-player round results used in the 'showing-answer' reveal panel.
   // Correct answers are sorted by answer speed; wrong answers follow; unanswered last.
-  // Uses effectiveStatus / effectiveCurrentAnswers so it populates immediately in solo mode.
+  // Uses mergedCurrentAnswers so it populates immediately when local answer is registered.
   const revealRows = useMemo(() => {
     if (effectiveStatus !== 'showing-answer') return [];
 
@@ -120,15 +122,13 @@ export const BattleHostView: React.FC<Props> = ({
     for (const pid of expectedParticipantIds) {
       const participant = session.scores[pid];
       const displayName = participant?.name ?? pid;
-      // In solo mode the score update (roundPoints added) hasn't returned from Firestore
-      // yet, so show the optimistic answer's roundPoints in totalScore for the teacher.
       const baseScore = participant?.score ?? 0;
-      const optimisticRoundPoints =
-        soloRevealed && soloRevealAnswer && pid === teacherUid
-          ? soloRevealAnswer.roundPoints ?? 0
-          : 0;
-      const totalScore = baseScore + optimisticRoundPoints;
-      const answer = effectiveCurrentAnswers[pid];
+      // If localCurrentAnswers has an entry for this pid, the Firestore score update
+      // hasn't come back yet. Add the roundPoints optimistically so totals are correct.
+      const localEntry = localCurrentAnswers[pid];
+      const optimisticExtra = localEntry ? (localEntry.roundPoints ?? 0) : 0;
+      const totalScore = baseScore + optimisticExtra;
+      const answer = mergedCurrentAnswers[pid];
 
       if (!answer) {
         unanswered.push({ pid, name: displayName, isCorrect: null, elapsedMs: null, roundPoints: 0, totalScore });
@@ -154,7 +154,7 @@ export const BattleHostView: React.FC<Props> = ({
     const wrong = answered.filter((r) => !r.isCorrect).sort((a, b) => (a.elapsedMs ?? 999999) - (b.elapsedMs ?? 999999));
 
     return [...correct, ...wrong, ...unanswered];
-  }, [effectiveStatus, effectiveCurrentAnswers, soloRevealed, soloRevealAnswer, session.scores, session.questionStartedAt, expectedParticipantIds, teacherUid]);
+  }, [effectiveStatus, mergedCurrentAnswers, localCurrentAnswers, session.scores, session.questionStartedAt, expectedParticipantIds]);
 
   useEffect(() => {
     const audio = new Audio('/sounds/battle_theme.mp3');
@@ -183,7 +183,7 @@ export const BattleHostView: React.FC<Props> = ({
     setTypedAnswer('');
     setTeacherSubmitting(false);
     setTimeLeft(session.config.timePerQuestion);
-    setSoloRevealAnswer(null); // clear optimistic state when question changes
+    setLocalCurrentAnswers({}); // clear local answers when question changes
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
       recognitionRef.current = null;
@@ -269,49 +269,64 @@ export const BattleHostView: React.FC<Props> = ({
   }
 
   function shouldRevealAfterTeacherAnswer() {
-    return expectedParticipantIds.every((uid) => uid === teacherUid || uid in session.currentAnswers);
+    // Use mergedCurrentAnswers so previously-submitted local answers count.
+    return expectedParticipantIds.every((pid) => pid in mergedCurrentAnswers);
   }
 
   async function submitTeacherChoice(optionIndexes: number[]) {
     if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
-    setTeacherSubmitting(true);
+    
     const answeredAt = Date.now();
     const payload = { optionIndex: optionIndexes[0], optionIndexes };
+    const teacherName = session.scores[teacherUid]?.name || 'Professor';
+    
+    // ── 1. Evaluate and register the answer locally ───────────────────────────
+    // This runs BEFORE any await so the local state update is queued in the same
+    // React flush. mergedCurrentAnswers, answerCount, effectiveStatus, and revealRows
+    // all update on the very next render without waiting for Firestore.
+    const isCorrect = evaluateBattleAnswer(question, payload);
+    const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
+    const speedRatio = session.questionStartedAt > 0
+      ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
+      : 0;
+    const prevParticipant = session.scores[teacherUid] ?? { score: 0, streak: 0 };
+    const newStreak = isCorrect ? prevParticipant.streak + 1 : 0;
+    const roundPoints = isCorrect
+      ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
+      : 0;
+    const localAnswer: BattleAnswer = {
+      uid: teacherUid,
+      name: teacherName,
+      optionIndex: payload.optionIndex,
+      optionIndexes: payload.optionIndexes,
+      isCorrect,
+      answeredAt,
+      elapsedMs,
+      roundPoints,
+    };
+    
+    setLocalCurrentAnswers((prev) => ({ ...prev, [teacherUid]: localAnswer }));
+    setTimeLeft(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTeacherSubmitting(true);
+    
+    // ── 2. Compute whether all participants have now answered ────────────────
+    // Do this in the current closure (before stale state from a potential re-render).
+    const updatedMerged = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
+    const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMerged);
+    
     try {
-      await submitBattleAnswer(classId, session, teacherUid, session.scores[teacherUid]?.name || 'Professor', payload);
-
-      // Stop the countdown UI immediately regardless of mode
-      setTimeLeft(0);
-      if (timerRef.current) clearInterval(timerRef.current);
-
-      if (isSolo) {
-        // ── Solo fast-path ─────────────────────────────────────────────────────
-        // Show reveal UI *immediately* without waiting for Firestore snapshot.
-        const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
-        const isCorrect = evaluateBattleAnswer(question, payload);
-        const speedRatio = session.questionStartedAt > 0
-          ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
-          : 0;
-        const prev = session.scores[teacherUid] ?? { score: 0, streak: 0 };
-        const newStreak = isCorrect ? prev.streak + 1 : 0;
-        const roundPoints = isCorrect
-          ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
-          : 0;
-        setSoloRevealAnswer({
-          uid: teacherUid,
-          name: session.scores[teacherUid]?.name || 'Professor',
-          optionIndex: payload.optionIndex,
-          optionIndexes: payload.optionIndexes,
-          isCorrect,
-          answeredAt,
-          elapsedMs,
-          roundPoints,
-        });
-        // Sync Firestore in the background — UI is already updated locally
-        showBattleAnswer(classId).catch(console.error);
-      } else if (shouldRevealAfterTeacherAnswer()) {
+      // ── 3. Persist to Firestore (scoring is also computed server-side here) ──
+      await submitBattleAnswer(classId, session, teacherUid, teacherName, payload);
+      // ── 4. If all answered, transition to reveal ─────────────────────────
+      // The auto-reveal useEffect also handles this, but calling explicitly here
+      // ensures the round closes even if session.currentAnswers is briefly stale.
+      if (everyoneAnswered) {
         await showBattleAnswer(classId);
       }
+    } catch (err) {
+      console.error('[Battle:Host] teacher choice submit failed:', err);
+      // Local state remains correct. Firestore will reconcile on next snapshot.
     } finally {
       setTeacherSubmitting(false);
     }
@@ -338,45 +353,47 @@ export const BattleHostView: React.FC<Props> = ({
 
   async function handleTeacherOpenAnswer() {
     if (!teacherCanPlay || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
-    setTeacherSubmitting(true);
+    
     const answeredAt = Date.now();
     const payload = { responseText: typedAnswer.trim() };
+    const teacherName = session.scores[teacherUid]?.name || 'Professor';
+    
+    // ── 1. Evaluate and register locally before any await ─────────────────────
+    const isCorrect = evaluateBattleAnswer(question, payload);
+    const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
+    const speedRatio = session.questionStartedAt > 0
+      ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
+      : 0;
+    const prevParticipant = session.scores[teacherUid] ?? { score: 0, streak: 0 };
+    const newStreak = isCorrect ? prevParticipant.streak + 1 : 0;
+    const roundPoints = isCorrect
+      ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
+      : 0;
+    const localAnswer: BattleAnswer = {
+      uid: teacherUid,
+      name: teacherName,
+      responseText: payload.responseText,
+      isCorrect,
+      answeredAt,
+      elapsedMs,
+      roundPoints,
+    };
+    
+    setLocalCurrentAnswers((prev) => ({ ...prev, [teacherUid]: localAnswer }));
+    setTimeLeft(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTeacherSubmitting(true);
+    
+    const updatedMerged = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
+    const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMerged);
+    
     try {
-      await submitBattleAnswer(
-        classId,
-        session,
-        teacherUid,
-        session.scores[teacherUid]?.name || 'Professor',
-        payload
-      );
-
-      setTimeLeft(0);
-      if (timerRef.current) clearInterval(timerRef.current);
-
-      if (isSolo) {
-        const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
-        const isCorrect = evaluateBattleAnswer(question, payload);
-        const speedRatio = session.questionStartedAt > 0
-          ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
-          : 0;
-        const prev = session.scores[teacherUid] ?? { score: 0, streak: 0 };
-        const newStreak = isCorrect ? prev.streak + 1 : 0;
-        const roundPoints = isCorrect
-          ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
-          : 0;
-        setSoloRevealAnswer({
-          uid: teacherUid,
-          name: session.scores[teacherUid]?.name || 'Professor',
-          responseText: payload.responseText,
-          isCorrect,
-          answeredAt,
-          elapsedMs,
-          roundPoints,
-        });
-        showBattleAnswer(classId).catch(console.error);
-      } else if (shouldRevealAfterTeacherAnswer()) {
+      await submitBattleAnswer(classId, session, teacherUid, teacherName, payload);
+      if (everyoneAnswered) {
         await showBattleAnswer(classId);
       }
+    } catch (err) {
+      console.error('[Battle:Host] teacher open answer submit failed:', err);
     } finally {
       setTeacherSubmitting(false);
     }
@@ -416,9 +433,9 @@ export const BattleHostView: React.FC<Props> = ({
   }
 
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
-  const correctCount = Object.values(effectiveCurrentAnswers).filter((answer) => answer.isCorrect).length;
-  const wrongCount = Object.values(effectiveCurrentAnswers).filter((answer) => !answer.isCorrect).length;
-  const unansweredCount = Math.max(0, expectedParticipantIds.length - Object.keys(effectiveCurrentAnswers).length);
+  const correctCount = Object.values(mergedCurrentAnswers).filter((a) => a.isCorrect).length;
+  const wrongCount = Object.values(mergedCurrentAnswers).filter((a) => !a.isCorrect).length;
+  const unansweredCount = Math.max(0, expectedParticipantIds.length - Object.keys(mergedCurrentAnswers).length);
 
   return (
     <div className="fixed inset-0 z-[9000] flex bg-slate-950 select-none">
@@ -650,7 +667,7 @@ export const BattleHostView: React.FC<Props> = ({
         </div>
 
         <div className="flex justify-center gap-3 px-5 pb-5">
-          {session.status === 'active' && !soloRevealed && (
+          {session.status === 'active' && !allAnsweredLocally && (
             <button
               onClick={handleShowAnswer}
               disabled={busy}
