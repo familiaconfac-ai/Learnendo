@@ -185,10 +185,24 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // the user stays focused but stops typing.
   const lastDocInputRef = useRef<number>(0);
   const TYPING_GUARD_MS = 1500;
+  // Mirror of lastDocInputRef but for floating items (drag, delete, add, text-in-box).
+  // Also checked against dragRef.current so a snapshot never fires mid-drag.
+  const lastItemEditRef = useRef<number>(0);
+  const ITEM_GUARD_MS = 1500;
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
-      setItems(data?.items ?? []);
+      // Only apply remote items when:
+      //   • no drag is in progress, AND
+      //   • no local item edit happened in the last ITEM_GUARD_MS.
+      // This mirrors the doc-content guard and prevents snapshots from wiping
+      // in-progress drags or cancelling a debounced item save.
+      const isLocallyEditingItems =
+        dragRef.current !== null ||
+        Date.now() - lastItemEditRef.current < ITEM_GUARD_MS;
+      if (!isLocallyEditingItems) {
+        setItems(data?.items ?? []);
+      }
       const nextDoc = data?.docContent ?? '';
       const isLocallyTyping = Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
       if (!isLocallyTyping) {
@@ -209,6 +223,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const scheduleItemsSave = useCallback(
     (nextItems: WorkspaceItem[]) => {
       if (readOnly) return;
+      // Stamp the edit time so the snapshot guard stays active through the debounce.
+      lastItemEditRef.current = Date.now();
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       saveItemsDebounce.current = setTimeout(() => {
         saveWorkspace(classId, nextItems, userId, userName).catch(console.error);
@@ -340,6 +356,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (readOnly) return;
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
+    // Mark item editing immediately so the snapshot guard fires during the drag
+    // (before scheduleItemsSave is called in onPointerUp).
+    lastItemEditRef.current = Date.now();
     dragRef.current = {
       itemId, mode, startPx: e.clientX, startPy: e.clientY,
       origX: items.find((i) => i.id === itemId)?.x ?? 0,
