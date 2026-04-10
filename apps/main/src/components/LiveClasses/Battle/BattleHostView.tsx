@@ -10,6 +10,7 @@ import {
 } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
+  evaluateBattleAnswer,
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
   getBattleLanguage,
@@ -18,6 +19,7 @@ import {
   getMyBattleAnswer,
   isChoiceQuestion,
 } from './battleUtils';
+import type { BattleAnswer } from './battleTypes';
 
 interface Props {
   session: BattleSession;
@@ -42,6 +44,11 @@ export const BattleHostView: React.FC<Props> = ({
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [teacherSubmitting, setTeacherSubmitting] = useState(false);
+  // ── Solo-mode optimistic reveal ─────────────────────────────────────────────
+  // When the teacher is the only active participant and submits an answer, we
+  // immediately update local state so the reveal panel and "Próxima Pergunta"
+  // button appear without waiting for the Firestore snapshot round-trip.
+  const [soloRevealAnswer, setSoloRevealAnswer] = useState<BattleAnswer | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -57,10 +64,28 @@ export const BattleHostView: React.FC<Props> = ({
     [session, teacherUid]
   );
   const teacherCanPlay = expectedParticipantIds.includes(teacherUid);
-  const answerCount = Object.keys(session.currentAnswers).length;
   const timeRatio = timeLeft / session.config.timePerQuestion;
   const myAnswer = getMyBattleAnswer(session, teacherUid);
   const teacherHasAnswered = !!myAnswer || teacherSubmitting;
+
+  // ── Solo-mode fast-path derived flags ──────────────────────────────────────
+  // isSolo: teacher is the only registered participant right now.
+  const isSolo = expectedParticipantIds.length === 1 && expectedParticipantIds.includes(teacherUid);
+  // soloRevealed: teacher just answered solo — local reveal is active.
+  const soloRevealed = isSolo && soloRevealAnswer !== null;
+  // effectiveStatus: treat round as 'showing-answer' locally the moment solo reveal fires,
+  // before the Firestore snapshot with the updated status arrives.
+  const effectiveStatus = soloRevealed ? ('showing-answer' as const) : session.status;
+  // effectiveCurrentAnswers: merge the optimistic solo answer so reveal rows populate
+  // immediately without waiting for Firestore to echo back the written answer.
+  const effectiveCurrentAnswers = useMemo(
+    () =>
+      soloRevealed && soloRevealAnswer
+        ? { ...session.currentAnswers, [teacherUid]: soloRevealAnswer }
+        : session.currentAnswers,
+    [soloRevealed, soloRevealAnswer, session.currentAnswers, teacherUid]
+  );
+  const answerCount = Object.keys(effectiveCurrentAnswers).length;
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const showTeacherInScores = includeTeacher || teacherCanPlay;
   const visibleScores = useMemo(
@@ -76,8 +101,9 @@ export const BattleHostView: React.FC<Props> = ({
 
   // Per-player round results used in the 'showing-answer' reveal panel.
   // Correct answers are sorted by answer speed; wrong answers follow; unanswered last.
+  // Uses effectiveStatus / effectiveCurrentAnswers so it populates immediately in solo mode.
   const revealRows = useMemo(() => {
-    if (session.status !== 'showing-answer') return [];
+    if (effectiveStatus !== 'showing-answer') return [];
 
     type RevealRow = {
       pid: string;
@@ -94,8 +120,15 @@ export const BattleHostView: React.FC<Props> = ({
     for (const pid of expectedParticipantIds) {
       const participant = session.scores[pid];
       const displayName = participant?.name ?? pid;
-      const totalScore = participant?.score ?? 0;
-      const answer = session.currentAnswers[pid];
+      // In solo mode the score update (roundPoints added) hasn't returned from Firestore
+      // yet, so show the optimistic answer's roundPoints in totalScore for the teacher.
+      const baseScore = participant?.score ?? 0;
+      const optimisticRoundPoints =
+        soloRevealed && soloRevealAnswer && pid === teacherUid
+          ? soloRevealAnswer.roundPoints ?? 0
+          : 0;
+      const totalScore = baseScore + optimisticRoundPoints;
+      const answer = effectiveCurrentAnswers[pid];
 
       if (!answer) {
         unanswered.push({ pid, name: displayName, isCorrect: null, elapsedMs: null, roundPoints: 0, totalScore });
@@ -121,7 +154,7 @@ export const BattleHostView: React.FC<Props> = ({
     const wrong = answered.filter((r) => !r.isCorrect).sort((a, b) => (a.elapsedMs ?? 999999) - (b.elapsedMs ?? 999999));
 
     return [...correct, ...wrong, ...unanswered];
-  }, [session.status, session.currentAnswers, session.scores, session.questionStartedAt, expectedParticipantIds]);
+  }, [effectiveStatus, effectiveCurrentAnswers, soloRevealed, soloRevealAnswer, session.scores, session.questionStartedAt, expectedParticipantIds, teacherUid]);
 
   useEffect(() => {
     const audio = new Audio('/sounds/battle_theme.mp3');
@@ -150,6 +183,7 @@ export const BattleHostView: React.FC<Props> = ({
     setTypedAnswer('');
     setTeacherSubmitting(false);
     setTimeLeft(session.config.timePerQuestion);
+    setSoloRevealAnswer(null); // clear optimistic state when question changes
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
       recognitionRef.current = null;
@@ -241,14 +275,41 @@ export const BattleHostView: React.FC<Props> = ({
   async function submitTeacherChoice(optionIndexes: number[]) {
     if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
     setTeacherSubmitting(true);
+    const answeredAt = Date.now();
+    const payload = { optionIndex: optionIndexes[0], optionIndexes };
     try {
-      await submitBattleAnswer(classId, session, teacherUid, session.scores[teacherUid]?.name || 'Professor', {
-        optionIndex: optionIndexes[0],
-        optionIndexes,
-      });
+      await submitBattleAnswer(classId, session, teacherUid, session.scores[teacherUid]?.name || 'Professor', payload);
+
+      // Stop the countdown UI immediately regardless of mode
       setTimeLeft(0);
-      if (shouldRevealAfterTeacherAnswer()) {
-        if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+
+      if (isSolo) {
+        // ── Solo fast-path ─────────────────────────────────────────────────────
+        // Show reveal UI *immediately* without waiting for Firestore snapshot.
+        const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
+        const isCorrect = evaluateBattleAnswer(question, payload);
+        const speedRatio = session.questionStartedAt > 0
+          ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
+          : 0;
+        const prev = session.scores[teacherUid] ?? { score: 0, streak: 0 };
+        const newStreak = isCorrect ? prev.streak + 1 : 0;
+        const roundPoints = isCorrect
+          ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
+          : 0;
+        setSoloRevealAnswer({
+          uid: teacherUid,
+          name: session.scores[teacherUid]?.name || 'Professor',
+          optionIndex: payload.optionIndex,
+          optionIndexes: payload.optionIndexes,
+          isCorrect,
+          answeredAt,
+          elapsedMs,
+          roundPoints,
+        });
+        // Sync Firestore in the background — UI is already updated locally
+        showBattleAnswer(classId).catch(console.error);
+      } else if (shouldRevealAfterTeacherAnswer()) {
         await showBattleAnswer(classId);
       }
     } finally {
@@ -278,17 +339,42 @@ export const BattleHostView: React.FC<Props> = ({
   async function handleTeacherOpenAnswer() {
     if (!teacherCanPlay || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
     setTeacherSubmitting(true);
+    const answeredAt = Date.now();
+    const payload = { responseText: typedAnswer.trim() };
     try {
       await submitBattleAnswer(
         classId,
         session,
         teacherUid,
         session.scores[teacherUid]?.name || 'Professor',
-        { responseText: typedAnswer.trim() }
+        payload
       );
+
       setTimeLeft(0);
-      if (shouldRevealAfterTeacherAnswer()) {
-        if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
+
+      if (isSolo) {
+        const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
+        const isCorrect = evaluateBattleAnswer(question, payload);
+        const speedRatio = session.questionStartedAt > 0
+          ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
+          : 0;
+        const prev = session.scores[teacherUid] ?? { score: 0, streak: 0 };
+        const newStreak = isCorrect ? prev.streak + 1 : 0;
+        const roundPoints = isCorrect
+          ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
+          : 0;
+        setSoloRevealAnswer({
+          uid: teacherUid,
+          name: session.scores[teacherUid]?.name || 'Professor',
+          responseText: payload.responseText,
+          isCorrect,
+          answeredAt,
+          elapsedMs,
+          roundPoints,
+        });
+        showBattleAnswer(classId).catch(console.error);
+      } else if (shouldRevealAfterTeacherAnswer()) {
         await showBattleAnswer(classId);
       }
     } finally {
@@ -330,9 +416,9 @@ export const BattleHostView: React.FC<Props> = ({
   }
 
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
-  const correctCount = Object.values(session.currentAnswers).filter((answer) => answer.isCorrect).length;
-  const wrongCount = Object.values(session.currentAnswers).filter((answer) => !answer.isCorrect).length;
-  const unansweredCount = Math.max(0, expectedParticipantIds.length - Object.keys(session.currentAnswers).length);
+  const correctCount = Object.values(effectiveCurrentAnswers).filter((answer) => answer.isCorrect).length;
+  const wrongCount = Object.values(effectiveCurrentAnswers).filter((answer) => !answer.isCorrect).length;
+  const unansweredCount = Math.max(0, expectedParticipantIds.length - Object.keys(effectiveCurrentAnswers).length);
 
   return (
     <div className="fixed inset-0 z-[9000] flex bg-slate-950 select-none">
@@ -427,14 +513,14 @@ export const BattleHostView: React.FC<Props> = ({
                 <>
                   <div className="w-full max-w-lg grid grid-cols-2 gap-3">
                     {(question.options ?? []).map((opt, index) => {
-                      const showCorrect = session.status === 'showing-answer';
+                      const showCorrect = effectiveStatus === 'showing-answer';
                       const isCorrect = (question.correctIndexes ?? [question.correctIndex ?? 0]).includes(index);
                       const isTeacherSelection = selectedOptions.includes(index);
                       return (
                         <button
                           key={index}
                           onClick={() => toggleTeacherChoice(index)}
-                          disabled={session.status !== 'active' || (!teacherCanPlay ? true : teacherHasAnswered)}
+                          disabled={effectiveStatus !== 'active' || (!teacherCanPlay ? true : teacherHasAnswered)}
                           className={`py-4 px-3 rounded-xl border-2 text-center text-sm font-bold transition-all ${
                             showCorrect && isCorrect
                               ? 'border-green-500 bg-green-500/20 text-green-300'
@@ -453,7 +539,7 @@ export const BattleHostView: React.FC<Props> = ({
                   {teacherCanPlay && requiresChoiceConfirmation && (
                     <button
                       onClick={confirmTeacherChoice}
-                      disabled={teacherHasAnswered || selectedOptions.length === 0 || session.status !== 'active'}
+                      disabled={teacherHasAnswered || selectedOptions.length === 0 || effectiveStatus !== 'active'}
                       className="w-full max-w-lg rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                     >
                       Confirmar resposta do professor
@@ -465,7 +551,7 @@ export const BattleHostView: React.FC<Props> = ({
                   <textarea
                     value={typedAnswer}
                     onChange={(event) => setTypedAnswer(event.target.value)}
-                    disabled={!teacherCanPlay || teacherHasAnswered || session.status !== 'active'}
+                    disabled={!teacherCanPlay || teacherHasAnswered || effectiveStatus !== 'active'}
                     placeholder={question.kind === 'speaking' ? 'Resposta do professor...' : 'Digite a resposta do professor...'}
                     className="w-full min-h-28 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
                   />
@@ -474,7 +560,7 @@ export const BattleHostView: React.FC<Props> = ({
                       {question.kind === 'speaking' && (
                         <button
                           onClick={startSpeechRecognition}
-                          disabled={teacherHasAnswered || isListening || session.status !== 'active'}
+                          disabled={teacherHasAnswered || isListening || effectiveStatus !== 'active'}
                           className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
                         >
                           {isListening ? 'Ouvindo...' : '🎤 Professor responde'}
@@ -482,7 +568,7 @@ export const BattleHostView: React.FC<Props> = ({
                       )}
                       <button
                         onClick={handleTeacherOpenAnswer}
-                        disabled={!typedAnswer.trim() || teacherHasAnswered || session.status !== 'active'}
+                        disabled={!typedAnswer.trim() || teacherHasAnswered || effectiveStatus !== 'active'}
                         className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                       >
                         Confirmar resposta do professor
@@ -498,7 +584,7 @@ export const BattleHostView: React.FC<Props> = ({
                 <span>{answerCount} / {expectedParticipantIds.length} responderam</span>
               </div>
 
-              {session.status === 'showing-answer' && (
+              {effectiveStatus === 'showing-answer' && (
                 <>
                   <p className="text-sm text-green-300 font-semibold">
                     Resposta correta: <span className="font-bold text-green-200">{answerLabel || '—'}</span>
@@ -564,7 +650,7 @@ export const BattleHostView: React.FC<Props> = ({
         </div>
 
         <div className="flex justify-center gap-3 px-5 pb-5">
-          {session.status === 'active' && (
+          {session.status === 'active' && !soloRevealed && (
             <button
               onClick={handleShowAnswer}
               disabled={busy}
@@ -573,7 +659,7 @@ export const BattleHostView: React.FC<Props> = ({
               👁 Revelar Resposta
             </button>
           )}
-          {session.status === 'showing-answer' && (
+          {effectiveStatus === 'showing-answer' && (
             <button
               onClick={handleNext}
               disabled={busy}
