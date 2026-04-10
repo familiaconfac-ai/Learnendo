@@ -505,9 +505,24 @@ export const BattleHostView: React.FC<Props> = ({
             </button>
           )}
         </div>
+
+        {/* Compact leaderboard strip — mobile only (md+ uses the side panel) */}
+        {leaderboard.length > 0 && (
+          <div className="md:hidden flex overflow-x-auto items-center gap-2 px-4 pb-2 border-t border-slate-800 pt-2">
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider flex-shrink-0">Placar</span>
+            {leaderboard.slice(0, 3).map((player, index) => (
+              <div key={player.uid} className="flex items-center gap-1 bg-slate-800 rounded-full px-2 py-0.5 flex-shrink-0">
+                <span className="text-xs">{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</span>
+                <span className="text-[11px] text-white truncate max-w-[64px]">{player.name}</span>
+                <span className="text-[11px] font-bold text-orange-400 ml-1">{player.score.toLocaleString()}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
       </div>
 
-      <div className="w-52 bg-slate-900 border-l border-slate-800 flex flex-col">
+      <div className="hidden md:flex md:flex-col w-52 bg-slate-900 border-l border-slate-800">
         <div className="px-4 py-3 border-b border-slate-800">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Placar</p>
         </div>

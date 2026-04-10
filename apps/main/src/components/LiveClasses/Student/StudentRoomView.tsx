@@ -18,7 +18,7 @@ import { LiveClassChat } from '../LiveClassChat';
 import { BattlePlayerView } from '../Battle/BattlePlayerView';
 import { BattleSession } from '../Battle/battleTypes';
 import { subscribeBattleSession } from '../Battle/battleService';
-import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode } from '../../../services/liveClassStage';
+import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode, BATTLE_STALE_THRESHOLD_MS } from '../../../services/liveClassStage';
 
 interface StudentRoomViewProps {
   liveClass: LiveClass;
@@ -44,6 +44,11 @@ const StudentStage: React.FC<{
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
   const hasAppliedInitialStageRef = useRef(false);
   const battleWasActivatedRef = useRef(false);
+  const mountedAtRef = useRef(Date.now());
+  // NOTE: do NOT use a boolean one-shot flag here — Firestore onSnapshot fires
+  // TWICE on subscribe (cache then server). A 1 s time-window ensures BOTH
+  // callbacks are treated as "initial state" so a stale lobby session can't
+  // auto-open the battle overlay.
 
   // ── Battle subscription ────────────────────────────────────────────────────
   const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
@@ -51,6 +56,28 @@ const StudentStage: React.FC<{
     console.log('[Battle:Student] subscribing, classId:', liveClass.id);
     const unsub = subscribeBattleSession(liveClass.id, (s) => {
       console.log('[Battle:Student] snapshot — status:', s?.status ?? 'null (no doc)');
+
+      // ── Initial window after entering the room ─────────────────────────────
+      // Firestore fires a cache snapshot AND a server confirmation within ~200 ms.
+      // Using a 1 s window instead of a one-shot boolean ensures BOTH are treated
+      // as "current state" rather than "a new battle just started".
+      const isInInitialWindow = Date.now() - mountedAtRef.current < 1000;
+      if (isInInitialWindow) {
+        if (
+          s &&
+          isActiveBattleStatus(s.status) &&
+          s.status !== 'lobby' &&
+          (s.updatedAt || 0) > mountedAtRef.current - BATTLE_STALE_THRESHOLD_MS
+        ) {
+          console.log('[Battle:Student] initial window — recovering live battle');
+          battleWasActivatedRef.current = true;
+          setBattleSession(s);
+        } else {
+          console.log('[Battle:Student] initial window — stale/lobby, ignored');
+        }
+        return;
+      }
+
       if (!s) {
         battleWasActivatedRef.current = false;
         setBattleSession(null);

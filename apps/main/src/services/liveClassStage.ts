@@ -5,6 +5,14 @@ export type MainStageMode = NonNullable<LiveClassSession['mainStageMode']>;
 
 const ACTIVE_BATTLE_STATUSES: readonly BattleStatus[] = ['lobby', 'active', 'showing-answer'];
 
+/**
+ * How old (in ms) a battle session can be before it is considered stale and
+ * should NOT be auto-recovered when a user enters the room.
+ * 5 minutes covers a student who re-enters mid-battle; anything older is
+ * treated as leftover state from a previous class session.
+ */
+export const BATTLE_STALE_THRESHOLD_MS = 5 * 60 * 1000;
+
 export function getDefaultMainStageMode(): MainStageMode {
   return 'board';
 }

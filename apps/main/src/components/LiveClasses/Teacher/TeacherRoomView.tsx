@@ -20,7 +20,7 @@ import { BattleSession, BattleConfig, BattleQuestion } from '../Battle/battleTyp
 import { subscribeBattleSession, createBattleSession, deleteBattleSession } from '../Battle/battleService';
 import { buildInitialBattleScores, buildSavedBattleTemplate, sanitizeBattleQuestions } from '../Battle/battleUtils';
 import { appendLiveClassBattleTemplate } from '../../../services/liveClassesService';
-import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode } from '../../../services/liveClassStage';
+import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode, BATTLE_STALE_THRESHOLD_MS } from '../../../services/liveClassStage';
 
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
@@ -47,6 +47,14 @@ const TeacherStage: React.FC<{
   const room = useRoomContext();
   const hasAppliedInitialStageRef = useRef(false);
   const battleWasActivatedRef = useRef(false);
+  // Track the component mount time and whether we already processed the first
+  // Firestore snapshot. Used to discard stale battle sessions from previous
+  // class meetings without blocking recovery when re-entering a live battle.
+  const mountedAtRef = useRef(Date.now());
+  // NOTE: do NOT use a boolean one-shot flag here — Firestore onSnapshot fires
+  // TWICE on subscribe (cache then server). A 1 s time-window ensures BOTH
+  // callbacks are treated as "initial state" so a stale lobby session can't
+  // auto-open the battle overlay.
 
   /** * LOGICA DA LOUSA CORRIGIDA:
    * A trava agora é reativa. Se 'allowStudentWhiteboardEdit' for false, 
@@ -60,6 +68,26 @@ const TeacherStage: React.FC<{
 
   useEffect(() => {
     const unsub = subscribeBattleSession(liveClass.id, (nextSession) => {
+      // ── Initial window after entering the room ─────────────────────────────
+      // Firestore fires a cache snapshot AND a server confirmation within ~200 ms.
+      // Using a 1 s window instead of a one-shot boolean ensures BOTH are treated
+      // as "current state" rather than "a new battle just started".
+      const isInInitialWindow = Date.now() - mountedAtRef.current < 1000;
+      if (isInInitialWindow) {
+        if (
+          nextSession &&
+          isActiveBattleStatus(nextSession.status) &&
+          nextSession.status !== 'lobby' &&
+          (nextSession.updatedAt || 0) > mountedAtRef.current - BATTLE_STALE_THRESHOLD_MS
+        ) {
+          battleWasActivatedRef.current = true;
+          setBattleSession(nextSession);
+        }
+        // Otherwise: stale / lobby session — ignore, leave whiteboard visible
+        return;
+      }
+
+      // ── Subsequent real-time updates ───────────────────────────────────────
       if (!nextSession) {
         battleWasActivatedRef.current = false;
         setBattleSession(null);
@@ -182,7 +210,7 @@ const TeacherStage: React.FC<{
         .teacher-stage-sidebar .student-tile { width: 3rem !important; height: 2.25rem !important; }
       }
     `}</style>
-    <div className="teacher-stage-root relative w-screen h-screen bg-black overflow-hidden flex flex-col sm:flex-row">
+    <div className="teacher-stage-root relative w-full h-screen bg-black overflow-hidden flex flex-col sm:flex-row">
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 min-h-0">
         <div className="relative w-full flex-1 sm:flex-none sm:max-w-3xl sm:aspect-[16/9] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900/80 shadow-xl">
           
