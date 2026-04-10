@@ -14,7 +14,7 @@ const ACTIVE_BATTLE_STATUSES: readonly BattleStatus[] = ['lobby', 'active', 'sho
 export const BATTLE_STALE_THRESHOLD_MS = 5 * 60 * 1000;
 
 export function getDefaultMainStageMode(): MainStageMode {
-  return 'workspace';
+  return 'camera';
 }
 
 export function sanitizeMainStageMode(mode: unknown): MainStageMode {

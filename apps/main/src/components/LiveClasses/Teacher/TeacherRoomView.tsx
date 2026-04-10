@@ -46,6 +46,8 @@ const TeacherStage: React.FC<{
 }> = ({ liveClass, session, presence, handleUpdateSession, teacherUid, teacherName }) => {
 
   const [viewMode, setViewMode] = useState<MainStageMode>(getDefaultMainStageMode());
+  // Whether the teacher's own camera PIP is shown while in workspace mode
+  const [camVisible, setCamVisible] = useState(true);
   const room = useRoomContext();
   const hasAppliedInitialStageRef = useRef(false);
   const battleWasActivatedRef = useRef(false);
@@ -258,6 +260,19 @@ const TeacherStage: React.FC<{
                 userName={teacherName}
                 readOnly={false}
               />
+              {/* Camera PIP — teacher's own camera shown in corner while using workspace */}
+              {camVisible && (
+                <div className="absolute bottom-14 sm:bottom-16 right-2 sm:right-3 w-28 sm:w-36 aspect-video rounded-xl overflow-hidden border-2 border-blue-500/60 shadow-xl z-20 bg-black flex items-center justify-center pointer-events-none">
+                  {localTrack && isTrackReference(localTrack) ? (
+                    <VideoTrack trackRef={localTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <span className="text-slate-400 text-[10px]">Câm. off</span>
+                  )}
+                  <div className="absolute bottom-0.5 left-0.5 text-[8px] text-white/80 bg-black/50 px-1 rounded leading-tight">
+                    Você
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -296,6 +311,19 @@ const TeacherStage: React.FC<{
             >
               ✏️
             </button>
+
+            {/* Camera PIP toggle — only visible in workspace mode */}
+            {viewMode === 'workspace' && (
+              <button
+                onClick={() => setCamVisible(!camVisible)}
+                title={camVisible ? 'Ocultar câmera' : 'Mostrar câmera'}
+                className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${
+                  camVisible ? 'bg-blue-600/70 ring-1 ring-blue-400' : 'bg-slate-700 hover:bg-slate-600'
+                }`}
+              >
+                🎥
+              </button>
+            )}
 
             <button
               onClick={() => setShowBattleSetup(true)}

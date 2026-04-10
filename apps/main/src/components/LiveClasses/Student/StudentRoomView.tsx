@@ -252,9 +252,20 @@ const StudentStage: React.FC<{
     {/* ── Mobile landscape: board fills most of screen ───────────────────── */}
     <style>{`
       @media (orientation: landscape) and (max-width: 767px) {
-        .student-stage-root { padding-top: 0.25rem !important; padding-bottom: 3.5rem !important; }
+        .student-stage-root {
+          padding-top: 0 !important;
+          padding-bottom: 3.5rem !important;
+          flex-direction: row !important;
+          align-items: stretch !important;
+        }
         .student-title-bar { display: none !important; }
-        .student-main-stage { min-height: 75vh !important; aspect-ratio: unset !important; }
+        .student-main-stage {
+          min-height: unset !important;
+          height: 100% !important;
+          aspect-ratio: unset !important;
+          flex: 1 !important;
+          margin-bottom: 0 !important;
+        }
         .student-local-preview { width: 4.5rem !important; }
       }
     `}</style>
@@ -274,7 +285,7 @@ const StudentStage: React.FC<{
       </div>
 
       {/* PALCO PRINCIPAL */}
-      <div className="relative w-full max-w-3xl flex flex-col items-center">
+      <div className="relative w-full max-w-3xl flex flex-col items-center flex-1 min-h-0">
         {/* Audio blocked banner */}
         {!audioPlaybackOk && (
           <button
@@ -285,7 +296,9 @@ const StudentStage: React.FC<{
           </button>
         )}
 
-        <div className="student-main-stage relative w-full min-h-[55vw] sm:aspect-[16/9] sm:min-h-0 rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 mb-3 overflow-hidden transition-all">
+        <div className={`student-main-stage relative w-full rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 mb-3 overflow-hidden transition-all ${
+          mainStageMode === 'workspace' ? 'min-h-[72vw] sm:aspect-[16/9] sm:min-h-0' : 'min-h-[55vw] sm:aspect-[16/9] sm:min-h-0'
+        }`}>
           {/* CAMERA DO PROFESSOR — sempre montada, só escondida */}
           <div
             className={`absolute inset-0 bg-black flex items-center justify-center transition-opacity ${
@@ -337,6 +350,18 @@ const StudentStage: React.FC<{
               userName={user.displayName || user.email || 'Aluno'}
               readOnly={false}
             />
+            {/* Teacher camera PIP while workspace is active */}
+            {mainStageMode === 'workspace' && teacherTrack && isTrackReference(teacherTrack) && (
+              <div className="absolute top-2 left-2 w-24 sm:w-32 aspect-video rounded-xl overflow-hidden border-2 border-blue-500/40 shadow-lg z-10 bg-black pointer-events-none">
+                <VideoTrack
+                  trackRef={teacherTrack}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+                <div className="absolute bottom-0.5 right-0.5 text-[8px] text-white/80 bg-black/50 px-1 rounded leading-tight">
+                  Prof.
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Preview local do aluno */}
@@ -576,7 +601,7 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
   }
 
   return (
-    <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={false} audio={false}>
+    <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={true} audio={true}>
       <RoomAudioRenderer />
       <StudentStage liveClass={liveClass} user={user} session={session} />
     </LiveKitRoom>
