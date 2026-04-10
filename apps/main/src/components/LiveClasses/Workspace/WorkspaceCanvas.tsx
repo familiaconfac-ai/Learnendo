@@ -179,13 +179,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const saveItemsDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveDocDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isEditingDocRef = useRef(false);
+  // Time of last local keypress in the main doc. Remote updates are held off
+  // for TYPING_GUARD_MS after the last input so we don't clobber mid-typing.
+  // Using a timestamp instead of a focus flag prevents permanent blocking when
+  // the user stays focused but stops typing.
+  const lastDocInputRef = useRef<number>(0);
+  const TYPING_GUARD_MS = 1500;
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
       setItems(data?.items ?? []);
       const nextDoc = data?.docContent ?? '';
-      if (!isEditingDocRef.current) {
+      const isLocallyTyping = Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
+      if (!isLocallyTyping) {
         setDocHtml(nextDoc);
         if (docRef.current && docRef.current.innerHTML !== nextDoc) {
           docRef.current.innerHTML = nextDoc;
@@ -224,13 +230,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const onDocInput = () => {
     if (!docRef.current) return;
+    lastDocInputRef.current = Date.now();
     const html = docRef.current.innerHTML;
     setDocHtml(html);
     scheduleDocSave(html);
   };
-  const onDocFocus = () => { isEditingDocRef.current = true; };
   const onDocBlur = () => {
-    isEditingDocRef.current = false;
+    // On blur, flush any pending doc content immediately
     if (!docRef.current) return;
     const html = docRef.current.innerHTML;
     setDocHtml(html);
@@ -528,7 +534,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               contentEditable={!readOnly}
               suppressContentEditableWarning
               spellCheck
-              onFocus={onDocFocus}
               onBlur={onDocBlur}
               onInput={onDocInput}
               className="w-full min-h-[60vh] p-6 focus:outline-none leading-relaxed"
@@ -578,12 +583,17 @@ const FloatingBlock: React.FC<FloatingBlockProps> = ({
   onSelect, onPointerDownMove, onPointerDownResize, onContentChange,
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
-  const isEditingRef = useRef(false);
+  // Timestamp of last keypress in this text box; remote DOM updates are
+  // suppressed for FLOATING_GUARD_MS after the last input.
+  const lastTypedAtRef = useRef<number>(0);
+  const FLOATING_GUARD_MS = 1500;
   const [blockStyle, setBlockStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
     const el = contentRef.current;
-    if (!el || isEditingRef.current || item.type !== 'text') return;
+    if (!el || item.type !== 'text') return;
+    const isTyping = Date.now() - lastTypedAtRef.current < FLOATING_GUARD_MS;
+    if (isTyping) return;
     if (el.innerHTML !== (item.content ?? '')) el.innerHTML = item.content ?? '';
   }, [item.content, item.type]);
 
@@ -640,9 +650,8 @@ const FloatingBlock: React.FC<FloatingBlockProps> = ({
         contentEditable={!readOnly}
         suppressContentEditableWarning
         spellCheck
-        onFocus={() => { isEditingRef.current = true; }}
-        onBlur={(e) => { isEditingRef.current = false; onContentChange((e.target as HTMLDivElement).innerHTML); }}
-        onInput={(e) => onContentChange((e.target as HTMLDivElement).innerHTML)}
+        onBlur={(e) => { onContentChange((e.target as HTMLDivElement).innerHTML); }}
+        onInput={(e) => { lastTypedAtRef.current = Date.now(); onContentChange((e.target as HTMLDivElement).innerHTML); }}
         className="w-full h-full overflow-auto focus:outline-none p-2 leading-snug"
         style={{
           fontFamily: 'Arial, sans-serif',
