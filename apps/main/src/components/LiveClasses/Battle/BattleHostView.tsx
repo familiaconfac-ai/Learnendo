@@ -306,14 +306,18 @@ export const BattleHostView: React.FC<Props> = ({
     };
     
     setLocalCurrentAnswers((prev) => ({ ...prev, [teacherUid]: localAnswer }));
-    setTimeLeft(0);
-    if (timerRef.current) clearInterval(timerRef.current);
+    // ⚠️ Only stop the timer when the last active participant has answered.
+    // In multiplayer, teacher may answer first while students still need time.
+    const updatedMerged = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
+    const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMerged);
+    if (everyoneAnswered) {
+      setTimeLeft(0);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
     setTeacherSubmitting(true);
     
     // ── 2. Compute whether all participants have now answered ────────────────
-    // Do this in the current closure (before stale state from a potential re-render).
-    const updatedMerged = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
-    const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMerged);
+    // Already computed above before the async boundary.
     
     try {
       // ── 3. Persist to Firestore (scoring is also computed server-side here) ──
@@ -380,13 +384,15 @@ export const BattleHostView: React.FC<Props> = ({
     };
     
     setLocalCurrentAnswers((prev) => ({ ...prev, [teacherUid]: localAnswer }));
-    setTimeLeft(0);
-    if (timerRef.current) clearInterval(timerRef.current);
+    const updatedMergedOpen = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
+    const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMergedOpen);
+    // ⚠️ Only stop timer when the last active participant answered
+    if (everyoneAnswered) {
+      setTimeLeft(0);
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
     setTeacherSubmitting(true);
-    
-    const updatedMerged = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
-    const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMerged);
-    
+
     try {
       await submitBattleAnswer(classId, session, teacherUid, teacherName, payload);
       if (everyoneAnswered) {

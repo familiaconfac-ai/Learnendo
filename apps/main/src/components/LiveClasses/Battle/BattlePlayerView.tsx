@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { appLangToTts, speak } from '../../../services/ttsService';
-import type { BattleSession } from './battleTypes';
+import type { BattleAnswer, BattleSession } from './battleTypes';
 import { joinBattle, submitBattleAnswer } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
+  evaluateBattleAnswer,
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
   getBattleLanguage,
@@ -44,6 +45,9 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  // Local answer registered immediately on submit — same pattern as BattleHostView.
+  // Ensures reveal shows correct/incorrect and roundPoints without waiting for Firestore.
+  const [localMyAnswer, setLocalMyAnswer] = useState<BattleAnswer | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
   const [showResults, setShowResults] = useState(false);
   const [musicMuted, setMusicMuted] = useState(true);
@@ -58,8 +62,12 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   const question = session.questions[questionIdx];
   const totalQ = session.questions.length;
   const myScore = session.scores[uid]?.score ?? 0;
+  // Show optimistic total including this round's points before Firestore score update arrives
+  const myTotalScore = myScore + (localMyAnswer?.roundPoints ?? 0);
   const myStreak = session.scores[uid]?.streak ?? 0;
-  const myAnswer = getMyBattleAnswer(session, uid);
+  // Use localMyAnswer as fallback so reveal shows correct/incorrect immediately
+  // before Firestore echoes back the written answer.
+  const myAnswer = localMyAnswer ?? getMyBattleAnswer(session, uid);
   const hasAnswered = submitted || !!myAnswer;
   const battleLanguage = getBattleLanguage(session.config.courseId);
   const timeRatio = timeLeft / session.config.timePerQuestion;
@@ -95,6 +103,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     setSelectedOptions([]);
     setTypedAnswer('');
     setSubmitted(false);
+    setLocalMyAnswer(null); // clear local answer when question changes
     setTimeLeft(session.config.timePerQuestion);
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
@@ -162,15 +171,30 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
 
   async function submitChoiceAnswer(optionIndexes: number[]) {
     if (!question || !isChoiceQuestion(question) || hasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
+    
+    const answeredAt = Date.now();
+    const payload = { optionIndex: optionIndexes[0], optionIndexes };
+    
+    // Register locally before any await so reveal renders correct state immediately
+    const isCorrect = evaluateBattleAnswer(question, payload);
+    const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
+    const speedRatio = session.questionStartedAt > 0
+      ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
+      : 0;
+    const prevParticipant = session.scores[uid] ?? { score: 0, streak: 0 };
+    const newStreak = isCorrect ? prevParticipant.streak + 1 : 0;
+    const roundPoints = isCorrect
+      ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
+      : 0;
+    setLocalMyAnswer({ uid, name, optionIndex: payload.optionIndex, optionIndexes: payload.optionIndexes, isCorrect, answeredAt, elapsedMs, roundPoints });
     setSubmitted(true);
+    
     try {
-      await submitBattleAnswer(classId, session, uid, name, {
-        optionIndex: optionIndexes[0],
-        optionIndexes,
-      });
+      await submitBattleAnswer(classId, session, uid, name, payload);
     } catch (error) {
       console.error('[Battle] submit answer failed', error);
       setSubmitted(false);
+      setLocalMyAnswer(null);
     }
   }
 
@@ -195,12 +219,29 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
 
   async function submitOpenAnswer() {
     if (!question || !isOpenQuestion || hasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
+    
+    const answeredAt = Date.now();
+    const payload = { responseText: typedAnswer.trim() };
+    
+    const isCorrect = evaluateBattleAnswer(question, payload);
+    const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
+    const speedRatio = session.questionStartedAt > 0
+      ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
+      : 0;
+    const prevParticipant = session.scores[uid] ?? { score: 0, streak: 0 };
+    const newStreak = isCorrect ? prevParticipant.streak + 1 : 0;
+    const roundPoints = isCorrect
+      ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
+      : 0;
+    setLocalMyAnswer({ uid, name, responseText: payload.responseText, isCorrect, answeredAt, elapsedMs, roundPoints });
     setSubmitted(true);
+    
     try {
-      await submitBattleAnswer(classId, session, uid, name, { responseText: typedAnswer.trim() });
+      await submitBattleAnswer(classId, session, uid, name, payload);
     } catch (error) {
       console.error('[Battle] submit answer failed', error);
       setSubmitted(false);
+      setLocalMyAnswer(null);
     }
   }
 
@@ -258,7 +299,10 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
           )}
           <div className="bg-slate-800/60 rounded-xl px-6 py-3 inline-block">
             <p className="text-xs text-slate-400">Total score</p>
-            <p className="text-3xl font-black text-orange-400">{myScore.toLocaleString()}</p>
+            <p className="text-3xl font-black text-orange-400">{myTotalScore.toLocaleString()}</p>
+            {localMyAnswer && localMyAnswer.roundPoints > 0 && (
+              <p className="text-xs text-green-400">+{localMyAnswer.roundPoints} nesta rodada</p>
+            )}
             {myStreak >= 3 && <p className="text-xs text-orange-300">🔥 {myStreak} streak!</p>}
           </div>
           <div className="flex justify-center gap-3 text-sm">
