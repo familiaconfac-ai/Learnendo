@@ -192,25 +192,35 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
-      // Only apply remote items when:
-      //   • no drag is in progress, AND
-      //   • no local item edit happened in the last ITEM_GUARD_MS.
-      // This mirrors the doc-content guard and prevents snapshots from wiping
-      // in-progress drags or cancelling a debounced item save.
+      // Only suppress snapshots triggered by OUR OWN write (self-echo).
+      // Changes from any other user must always be applied immediately so that
+      // bidirectional sync works.  The timing guards exist only to avoid the
+      // cursor jumping back mid-keystroke when our own debounced save echoes back.
+      const isSelfEcho = !!data && data.updatedBy === userId;
+
+      console.log(
+        `[WS] snap from "${data?.updatedByName ?? '?'}" self=${isSelfEcho}`,
+      );
+
+      // Items: block during active drag, or during self-echo window.
       const isLocallyEditingItems =
         dragRef.current !== null ||
-        Date.now() - lastItemEditRef.current < ITEM_GUARD_MS;
+        (isSelfEcho && Date.now() - lastItemEditRef.current < ITEM_GUARD_MS);
       if (!isLocallyEditingItems) {
         setItems(data?.items ?? []);
       }
+
+      // Doc: only suppress our own echo while actively typing.
       const nextDoc = data?.docContent ?? '';
-      const isLocallyTyping = Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
+      const isLocallyTyping =
+        isSelfEcho && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
       if (!isLocallyTyping) {
         setDocHtml(nextDoc);
         if (docRef.current && docRef.current.innerHTML !== nextDoc) {
           docRef.current.innerHTML = nextDoc;
         }
       }
+
       if (readOnly && data?.scrollRatio != null && overflowRef.current) {
         const el = overflowRef.current;
         const max = el.scrollHeight - el.clientHeight;
@@ -218,7 +228,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
     });
     return unsub;
-  }, [classId, readOnly]);
+  }, [classId, readOnly, userId]);
 
   const scheduleItemsSave = useCallback(
     (nextItems: WorkspaceItem[]) => {

@@ -51,6 +51,7 @@ export async function saveDocContent(
   name: string,
 ): Promise<void> {
   if (!db) return;
+  console.log(`[WS] saveDocContent by ${name} (${uid.slice(0, 6)})`);
   const { updateDoc, setDoc } = await import('firebase/firestore');
   try {
     await updateDoc(workspaceRef(classId), {
@@ -59,13 +60,15 @@ export async function saveDocContent(
       updatedBy: uid,
       updatedByName: name,
     });
-  } catch {
-    // Doc doesn't exist yet — create it with merge so we don't wipe items.
+    console.log('[WS] saveDocContent ✅');
+  } catch (err) {
+    console.warn('[WS] saveDocContent updateDoc failed — falling back to setDoc:', err);
     await setDoc(
       workspaceRef(classId),
       { docContent, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
       { merge: true },
     );
+    console.log('[WS] saveDocContent setDoc ✅');
   }
 }
 
@@ -114,8 +117,8 @@ export async function saveWorkspace(
   name: string,
 ): Promise<void> {
   if (!db) return;
+  console.log(`[WS] saveWorkspace by ${name} (${uid.slice(0, 6)}) — ${items.length} items`);
   const { updateDoc, setDoc } = await import('firebase/firestore');
-  // Use updateDoc to preserve docContent/scrollRatio; fall back to setDoc on first write
   try {
     await updateDoc(workspaceRef(classId), {
       items,
@@ -123,12 +126,15 @@ export async function saveWorkspace(
       updatedBy: uid,
       updatedByName: name,
     });
-  } catch {
+    console.log('[WS] saveWorkspace ✅');
+  } catch (err) {
+    console.warn('[WS] saveWorkspace updateDoc failed — falling back to setDoc:', err);
     // Doc doesn't exist yet — use merge so we don't wipe docContent/scrollRatio.
     await setDoc(
       workspaceRef(classId),
       { items, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
       { merge: true },
     );
+    console.log('[WS] saveWorkspace setDoc ✅');
   }
 }
