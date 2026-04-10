@@ -51,13 +51,22 @@ export async function saveDocContent(
   name: string,
 ): Promise<void> {
   if (!db) return;
-  const { updateDoc } = await import('firebase/firestore');
-  await updateDoc(workspaceRef(classId), {
-    docContent,
-    updatedAt: Date.now(),
-    updatedBy: uid,
-    updatedByName: name,
-  });
+  const { updateDoc, setDoc } = await import('firebase/firestore');
+  try {
+    await updateDoc(workspaceRef(classId), {
+      docContent,
+      updatedAt: Date.now(),
+      updatedBy: uid,
+      updatedByName: name,
+    });
+  } catch {
+    // Doc doesn't exist yet — create it with merge so we don't wipe items.
+    await setDoc(
+      workspaceRef(classId),
+      { docContent, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
+      { merge: true },
+    );
+  }
 }
 
 /** Persist scroll ratio so students can follow (0-1). */
@@ -115,11 +124,11 @@ export async function saveWorkspace(
       updatedByName: name,
     });
   } catch {
-    await setDoc(workspaceRef(classId), {
-      items,
-      updatedAt: Date.now(),
-      updatedBy: uid,
-      updatedByName: name,
-    });
+    // Doc doesn't exist yet — use merge so we don't wipe docContent/scrollRatio.
+    await setDoc(
+      workspaceRef(classId),
+      { items, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
+      { merge: true },
+    );
   }
 }
