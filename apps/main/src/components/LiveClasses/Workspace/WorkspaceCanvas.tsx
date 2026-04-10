@@ -192,20 +192,28 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
-      // Only suppress snapshots triggered by OUR OWN write (self-echo).
-      // Changes from any other user must always be applied immediately so that
-      // bidirectional sync works.  The timing guards exist only to avoid the
-      // cursor jumping back mid-keystroke when our own debounced save echoes back.
-      const isSelfEcho = !!data && data.updatedBy === userId;
+      // Use SECTION-SPECIFIC authorship instead of a single updatedBy field.
+      // Problem: updatedBy is a single field for the whole document.  If the
+      // teacher updates items (setting updatedBy = teacherUid) while the student
+      // is mid-typing, the next snapshot arrives with updatedBy = teacherUid on
+      // the student's side.  isSelfEcho becomes false → no typing guard →
+      // snapshot overwrites the student's unsaved text before the 600ms debounce
+      // fires.  Using per-section fields (docUpdatedBy / itemsUpdatedBy) ensures
+      // each section's echo is identified correctly regardless of who touched
+      // the sibling section.
+      const isDocSelfEcho = !!data &&
+        (data.docUpdatedBy ?? data.updatedBy) === userId;
+      const isItemsSelfEcho = !!data &&
+        (data.itemsUpdatedBy ?? data.updatedBy) === userId;
 
       console.log(
-        `[WS] snap from "${data?.updatedByName ?? '?'}" self=${isSelfEcho}`,
+        `[WS] snap from "${data?.updatedByName ?? '?'}" docBy=${data?.docUpdatedBy?.slice(0,6) ?? '?'} itemsBy=${data?.itemsUpdatedBy?.slice(0,6) ?? '?'} docSelf=${isDocSelfEcho} itemsSelf=${isItemsSelfEcho}`,
       );
 
       // Items: block during active drag, or during self-echo window.
       const isLocallyEditingItems =
         dragRef.current !== null ||
-        (isSelfEcho && Date.now() - lastItemEditRef.current < ITEM_GUARD_MS);
+        (isItemsSelfEcho && Date.now() - lastItemEditRef.current < ITEM_GUARD_MS);
       if (!isLocallyEditingItems) {
         setItems(data?.items ?? []);
       }
@@ -213,7 +221,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // Doc: only suppress our own echo while actively typing.
       const nextDoc = data?.docContent ?? '';
       const isLocallyTyping =
-        isSelfEcho && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
+        isDocSelfEcho && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
       if (!isLocallyTyping) {
         setDocHtml(nextDoc);
         if (docRef.current && docRef.current.innerHTML !== nextDoc) {

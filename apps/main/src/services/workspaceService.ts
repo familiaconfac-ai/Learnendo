@@ -34,8 +34,12 @@ export interface WorkspaceItem {
 
 export interface WorkspaceDoc {
   items: WorkspaceItem[];
+  /** Author of the last items write (used for self-echo suppression per section) */
+  itemsUpdatedBy?: string;
   /** Main shared document HTML content */
   docContent?: string;
+  /** Author of the last docContent write (used for self-echo suppression per section) */
+  docUpdatedBy?: string;
   /** Scroll position (0-1) for scroll-sync */
   scrollRatio?: number;
   updatedAt: number;
@@ -56,6 +60,7 @@ export async function saveDocContent(
   try {
     await updateDoc(workspaceRef(classId), {
       docContent,
+      docUpdatedBy: uid,
       updatedAt: Date.now(),
       updatedBy: uid,
       updatedByName: name,
@@ -65,7 +70,7 @@ export async function saveDocContent(
     console.warn('[WS] saveDocContent updateDoc failed — falling back to setDoc:', err);
     await setDoc(
       workspaceRef(classId),
-      { docContent, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
+      { docContent, docUpdatedBy: uid, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
       { merge: true },
     );
     console.log('[WS] saveDocContent setDoc ✅');
@@ -122,6 +127,7 @@ export async function saveWorkspace(
   try {
     await updateDoc(workspaceRef(classId), {
       items,
+      itemsUpdatedBy: uid,
       updatedAt: Date.now(),
       updatedBy: uid,
       updatedByName: name,
@@ -132,7 +138,7 @@ export async function saveWorkspace(
     // Doc doesn't exist yet — use merge so we don't wipe docContent/scrollRatio.
     await setDoc(
       workspaceRef(classId),
-      { items, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
+      { items, itemsUpdatedBy: uid, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
       { merge: true },
     );
     console.log('[WS] saveWorkspace setDoc ✅');
