@@ -17,7 +17,6 @@ import { getBattleQuestions } from './battleQuestions';
 import {
   buildInitialBattleParticipants,
   buildInitialBattleScores,
-  canBattleParticipantAnswerCurrentQuestion,
   evaluateBattleAnswer,
   getExpectedBattleParticipantIds,
   sanitizeBattleQuestions,
@@ -170,11 +169,28 @@ export async function submitBattleAnswer(
   }
 ): Promise<void> {
   // Guard: already answered this question in the current snapshot
-  if (uid in (session.currentAnswers ?? {})) return;
-  // Guard: question must be active
-  if (session.status !== 'active') return;
-  // Guard: late joiners outside the frozen round snapshot wait for the next question
-  if (!canBattleParticipantAnswerCurrentQuestion(session, uid)) return;
+  if (uid in (session.currentAnswers ?? {})) {
+    console.log('[Battle:submitBattleAnswer] BLOCKED — already answered', { uid, currentAnswers: Object.keys(session.currentAnswers ?? {}) });
+    return;
+  }
+  // Guard: question must be active (not showing-answer or finished)
+  if (session.status !== 'active') {
+    console.log('[Battle:submitBattleAnswer] BLOCKED — status is not active', { uid, status: session.status });
+    return;
+  }
+  // NOTE: roundParticipantIds eligibility is NOT checked here — the UI layer
+  // (BattleHostView / BattlePlayerView) already enforces participation rules.
+  // Removing this guard prevents false rejections when roundParticipantIds
+  // is stale or not yet populated in the Firestore snapshot.
+
+  console.log('[Battle:submitBattleAnswer] ACCEPTING answer', {
+    uid,
+    status: session.status,
+    roundParticipantIds: session.roundParticipantIds,
+    scoresKeys: Object.keys(session.scores ?? {}),
+    currentAnswersKeys: Object.keys(session.currentAnswers ?? {}),
+    payload,
+  });
 
   const answeredAt = Date.now();
   const qIdx = session.currentQuestionIndex;

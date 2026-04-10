@@ -114,6 +114,7 @@ const StudentStage: React.FC<{
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
 
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+  const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);
 
   // Prefer the teacher track when role metadata is present; otherwise fall back
   // to the first remote camera track so the student still sees the host video.
@@ -126,6 +127,13 @@ const StudentStage: React.FC<{
       return false;
     }
   }) ?? tracks.find((t) => t.participant && !t.participant.isLocal);
+
+  // Teacher screen share track — any remote ScreenShare track (teacher is expected
+  // to be the only publisher; if multiple exist, first wins)
+  const teacherScreenTrack = screenShareTracks.find(
+    (t) => t.participant && !t.participant.isLocal
+  );
+  const isTeacherSharing = !!teacherScreenTrack && isTrackReference(teacherScreenTrack);
 
   // ── Local camera preview via ref (direct MediaStream — bypasses useTracks) ──
   const localVideoRef = useRef<HTMLVideoElement>(null);
@@ -346,6 +354,19 @@ const StudentStage: React.FC<{
                 muted
                 className="w-full h-full object-cover"
               />
+            </div>
+          )}
+
+          {/* SCREEN SHARE — overlaid above everything when teacher is sharing */}
+          {isTeacherSharing && teacherScreenTrack && (
+            <div className="absolute inset-0 z-40 bg-black flex items-center justify-center">
+              <VideoTrack
+                trackRef={teacherScreenTrack}
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-orange-600/90 text-white text-[11px] font-bold px-3 py-0.5 rounded-full pointer-events-none">
+                📺 Tela do professor
+              </div>
             </div>
           )}
         </div>

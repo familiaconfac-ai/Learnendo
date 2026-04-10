@@ -5,6 +5,7 @@ import {
   VideoTrack,
   useTracks,
   useParticipants,
+  useLocalParticipant,
   RoomAudioRenderer,
   useRoomContext,
 } from '@livekit/components-react';
@@ -177,6 +178,42 @@ const TeacherStage: React.FC<{
   const participants = useParticipants();
   const remoteParticipants = participants.filter((p) => !p.isLocal);
   const allTracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+  const { localParticipant } = useLocalParticipant();
+
+  // ── Screen sharing ────────────────────────────────────────────────────────
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);
+  const localScreenTrack = screenShareTracks.find((t) => t.participant?.isLocal);
+
+  // Sync state if the browser-native stop button ends the share
+  useEffect(() => {
+    const sharing = !!localParticipant.getTrackPublication(Track.Source.ScreenShare);
+    setIsScreenSharing(sharing);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localScreenTrack]);
+
+  async function toggleScreenShare() {
+    try {
+      if (isScreenSharing) {
+        await localParticipant.setScreenShareEnabled(false);
+        setIsScreenSharing(false);
+      } else {
+        await localParticipant.setScreenShareEnabled(true, {
+          audio: false,
+          selfBrowserSurface: 'include',
+        });
+        setIsScreenSharing(true);
+      }
+    } catch (err: unknown) {
+      // User cancelled the picker or permission was denied — fail gracefully
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('Permission denied') && !msg.includes('NotAllowed') && !msg.includes('cancelled')) {
+        console.warn('[ScreenShare] toggleScreenShare error:', err);
+      }
+      // Resync with actual track state
+      setIsScreenSharing(!!localParticipant.getTrackPublication(Track.Source.ScreenShare));
+    }
+  }
 
   const handleModeChange = (newMode: MainStageMode) => {
     setViewMode(newMode);
@@ -243,6 +280,26 @@ const TeacherStage: React.FC<{
             </div>
           )}
 
+          {/* SCREEN SHARE — local preview for teacher */}
+          {isScreenSharing && (
+            <div className="absolute inset-0 z-10 bg-black flex items-center justify-center">
+              {localScreenTrack && isTrackReference(localScreenTrack) ? (
+                <VideoTrack
+                  trackRef={localScreenTrack}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-slate-300 gap-2">
+                  <span className="text-4xl">🖥️</span>
+                  <span className="text-sm">Preparando compartilhamento…</span>
+                </div>
+              )}
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-orange-600/90 text-white text-xs font-bold px-3 py-1 rounded-full z-20 pointer-events-none">
+                📺 Compartilhando tela
+              </div>
+            </div>
+          )}
+
           {/* BARRA DE FERRAMENTAS */}
           <div className="absolute bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 sm:gap-3 bg-black/90 px-2.5 sm:px-4 py-1 sm:py-2 rounded-full border border-slate-700 z-[100]">
             <button
@@ -274,6 +331,16 @@ const TeacherStage: React.FC<{
               className="w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center bg-orange-600 hover:bg-orange-500 transition-colors"
             >
               ⚔️
+            </button>
+
+            <button
+              onClick={() => void toggleScreenShare()}
+              title={isScreenSharing ? 'Parar compartilhamento de tela' : 'Compartilhar tela'}
+              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-colors ${
+                isScreenSharing ? 'bg-green-500 hover:bg-green-400 ring-2 ring-green-300' : 'bg-slate-700 hover:bg-slate-600'
+              }`}
+            >
+              📺
             </button>
           </div>
         </div>
@@ -331,7 +398,7 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, session, handleUpdateSession } = props;
+  const { liveClass, user, session, presence, handleUpdateSession } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
 

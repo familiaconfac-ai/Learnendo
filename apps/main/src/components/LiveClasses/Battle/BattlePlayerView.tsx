@@ -187,7 +187,21 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }
 
   async function submitChoiceAnswer(optionIndexes: number[]) {
-    if (!question || !isChoiceQuestion(question) || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
+    console.log('[Battle:Player] submitChoiceAnswer called', {
+      uid,
+      hasQuestion: !!question,
+      isChoice: question ? isChoiceQuestion(question) : false,
+      canAnswerCurrentQuestion,
+      hasAnswered,
+      sessionStatus: session.status,
+      optionIndexes,
+      roundParticipantIds: session.roundParticipantIds,
+      scoresKeys: Object.keys(session.scores ?? {}),
+    });
+    if (!question || !isChoiceQuestion(question) || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active' || optionIndexes.length === 0) {
+      console.log('[Battle:Player] submitChoiceAnswer BLOCKED by guard', { canAnswerCurrentQuestion, hasAnswered, sessionStatus: session.status });
+      return;
+    }
     
     const answeredAt = Date.now();
     const payload = { optionIndex: optionIndexes[0], optionIndexes };
@@ -235,7 +249,17 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }
 
   async function submitOpenAnswer() {
-    if (!question || !isOpenQuestion || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
+    console.log('[Battle:Player] submitOpenAnswer called', {
+      uid,
+      canAnswerCurrentQuestion,
+      hasAnswered,
+      sessionStatus: session.status,
+      typedAnswer: typedAnswer.trim(),
+    });
+    if (!question || !isOpenQuestion || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active' || !typedAnswer.trim()) {
+      console.log('[Battle:Player] submitOpenAnswer BLOCKED by guard', { canAnswerCurrentQuestion, hasAnswered, sessionStatus: session.status });
+      return;
+    }
     
     const answeredAt = Date.now();
     const payload = { responseText: typedAnswer.trim() };

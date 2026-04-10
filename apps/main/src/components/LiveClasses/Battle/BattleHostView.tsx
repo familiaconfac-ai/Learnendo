@@ -331,7 +331,22 @@ export const BattleHostView: React.FC<Props> = ({
   }
 
   async function submitTeacherChoice(optionIndexes: number[]) {
-    if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
+    console.log('[Battle:Host] submitTeacherChoice called', {
+      teacherCanPlay,
+      hasQuestion: !!question,
+      isChoice: question ? isChoiceQuestion(question) : false,
+      teacherHasAnswered,
+      sessionStatus: session.status,
+      optionIndexes,
+      teacherUid,
+      expectedParticipantIds,
+      roundParticipantIds: session.roundParticipantIds,
+      scoresKeys: Object.keys(session.scores ?? {}),
+    });
+    if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || optionIndexes.length === 0) {
+      console.log('[Battle:Host] submitTeacherChoice BLOCKED by guard', { teacherCanPlay, teacherHasAnswered, sessionStatus: session.status });
+      return;
+    }
     
     const answeredAt = Date.now();
     const payload = { optionIndex: optionIndexes[0], optionIndexes };
@@ -413,7 +428,20 @@ export const BattleHostView: React.FC<Props> = ({
   }
 
   async function handleTeacherOpenAnswer() {
-    if (!teacherCanPlay || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
+    console.log('[Battle:Host] handleTeacherOpenAnswer called', {
+      teacherCanPlay,
+      hasQuestion: !!question,
+      isChoice: question ? isChoiceQuestion(question) : false,
+      teacherHasAnswered,
+      sessionStatus: session.status,
+      typedAnswer: typedAnswer.trim(),
+      teacherUid,
+      expectedParticipantIds,
+    });
+    if (!teacherCanPlay || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) {
+      console.log('[Battle:Host] handleTeacherOpenAnswer BLOCKED by guard', { teacherCanPlay, teacherHasAnswered, sessionStatus: session.status });
+      return;
+    }
     
     const answeredAt = Date.now();
     const payload = { responseText: typedAnswer.trim() };
