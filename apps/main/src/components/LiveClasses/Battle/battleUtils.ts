@@ -1,4 +1,11 @@
-import type { BattleAnswer, BattleConfig, BattleQuestion, BattleSession, SavedBattleTemplate } from './battleTypes';
+import type {
+  BattleAnswer,
+  BattleConfig,
+  BattleQuestion,
+  BattleRosterParticipant,
+  BattleSession,
+  SavedBattleTemplate,
+} from './battleTypes';
 
 export function getBattleLanguage(courseId?: string): string {
   if (courseId === 'portuguese_foreigners') return 'pt';
@@ -160,15 +167,45 @@ export function evaluateBattleAnswer(
   return accepted.includes(response);
 }
 
+export function buildBattleRosterParticipant(
+  uid: string,
+  name: string,
+  joinedAt = Date.now()
+): BattleRosterParticipant {
+  return { uid, name, joinedAt };
+}
+
+export function buildInitialBattleParticipants(
+  teacherUid: string,
+  teacherName: string
+) {
+  return {
+    [teacherUid]: buildBattleRosterParticipant(teacherUid, teacherName),
+  };
+}
+
+export function getBattleRegisteredParticipantIds(session: BattleSession): string[] {
+  const ids = new Set([
+    ...Object.keys(session.participants ?? {}),
+    ...Object.keys(session.scores ?? {}),
+  ]);
+  return Array.from(ids);
+}
+
 export function getExpectedBattleParticipantIds(
   session: BattleSession,
   teacherUid: string
 ): string[] {
+  const snapshotIds = (session.roundParticipantIds ?? []).filter(Boolean);
+  if (snapshotIds.length > 0) {
+    return Array.from(new Set(snapshotIds));
+  }
+
   // Teacher is always a participant (always seeded in scores at session creation).
   // Students appear in scores after calling joinBattle().
   // Using a Set ensures no duplicates and handles legacy documents where
   // scores may be empty — teacher is still included via explicit add.
-  const ids = new Set(Object.keys(session.scores ?? {}));
+  const ids = new Set(getBattleRegisteredParticipantIds(session));
   ids.add(teacherUid);
   return Array.from(ids);
 }
@@ -192,6 +229,25 @@ export function buildInitialBattleScores(
       lastAnswerCorrect: null,
     },
   };
+}
+
+export function canBattleParticipantAnswerCurrentQuestion(
+  session: BattleSession,
+  uid: string
+): boolean {
+  const snapshotIds = (session.roundParticipantIds ?? []).filter(Boolean);
+  if (snapshotIds.length > 0) {
+    return snapshotIds.includes(uid);
+  }
+
+  return getBattleRegisteredParticipantIds(session).includes(uid) || uid in (session.scores ?? {});
+}
+
+export function getBattleParticipantName(
+  session: BattleSession,
+  uid: string
+): string {
+  return session.participants?.[uid]?.name ?? session.scores?.[uid]?.name ?? uid;
 }
 
 export function getMyBattleAnswer(

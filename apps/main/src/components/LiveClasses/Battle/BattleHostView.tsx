@@ -10,7 +10,9 @@ import {
 } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
+  buildBattleRosterParticipant,
   evaluateBattleAnswer,
+  getBattleParticipantName,
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
   getBattleLanguage,
@@ -25,6 +27,7 @@ interface Props {
   session: BattleSession;
   classId: string;
   teacherUid: string;
+  activeParticipants: Array<{ uid: string; name: string }>;
   onClose: () => void;
   onNewBattle: () => void;
 }
@@ -33,6 +36,7 @@ export const BattleHostView: React.FC<Props> = ({
   session,
   classId,
   teacherUid,
+  activeParticipants,
   onClose,
   onNewBattle,
 }) => {
@@ -67,9 +71,38 @@ export const BattleHostView: React.FC<Props> = ({
   const battleLanguage = getBattleLanguage(session.config.courseId);
   const expectedParticipantIds = useMemo(
     () => getExpectedBattleParticipantIds(session, teacherUid),
-    [session, teacherUid]
+    [session.roundParticipantIds, session.participants, session.scores, teacherUid]
   );
   const teacherCanPlay = expectedParticipantIds.includes(teacherUid);
+
+  function buildRoundParticipantsSnapshot() {
+    const participantMap = new Map<string, ReturnType<typeof buildBattleRosterParticipant>>();
+
+    for (const participant of activeParticipants) {
+      participantMap.set(
+        participant.uid,
+        buildBattleRosterParticipant(
+          participant.uid,
+          participant.name,
+          session.participants?.[participant.uid]?.joinedAt ?? session.createdAt
+        )
+      );
+    }
+
+    for (const pid of expectedParticipantIds) {
+      if (participantMap.has(pid)) continue;
+      participantMap.set(
+        pid,
+        buildBattleRosterParticipant(
+          pid,
+          getBattleParticipantName(session, pid),
+          session.participants?.[pid]?.joinedAt ?? session.createdAt
+        )
+      );
+    }
+
+    return Array.from(participantMap.values());
+  }
 
   // ── Merged answer state (local + Firestore) ───────────────────────────────
   // localCurrentAnswers entries take precedence: they are newer (just submitted).
@@ -78,7 +111,7 @@ export const BattleHostView: React.FC<Props> = ({
     [session.currentAnswers, localCurrentAnswers]
   );
   // answerCount and effectiveStatus are both driven by the merged view.
-  const answerCount = Object.keys(mergedCurrentAnswers).length;
+  const answerCount = expectedParticipantIds.filter((pid) => pid in mergedCurrentAnswers).length;
   // Reveal the round as soon as all participants have an entry in the merged map,
   // without waiting for Firestore to deliver the 'showing-answer' status update.
   const allAnsweredLocally =
@@ -134,7 +167,7 @@ export const BattleHostView: React.FC<Props> = ({
 
     for (const pid of allPids) {
       const participant = session.scores[pid];
-      const displayName = participant?.name ?? mergedCurrentAnswers[pid]?.name ?? pid;
+      const displayName = mergedCurrentAnswers[pid]?.name ?? participant?.name ?? getBattleParticipantName(session, pid);
       // Pre-round score captured when the question became active.
       // Falls back to session.scores[pid].score in case the ref wasn’t populated
       // (e.g., participant joined mid-round).
@@ -431,7 +464,7 @@ export const BattleHostView: React.FC<Props> = ({
 
   async function handleStart() {
     setBusy(true);
-    try { await startBattle(classId); } finally { setBusy(false); }
+    try { await startBattle(classId, buildRoundParticipantsSnapshot()); } finally { setBusy(false); }
   }
 
   async function handleShowAnswer() {
@@ -441,7 +474,7 @@ export const BattleHostView: React.FC<Props> = ({
 
   async function handleNext() {
     setBusy(true);
-    try { await advanceBattleQuestion(classId, questionIdx + 1, totalQ); } finally { setBusy(false); }
+    try { await advanceBattleQuestion(classId, questionIdx + 1, totalQ, buildRoundParticipantsSnapshot()); } finally { setBusy(false); }
   }
 
   async function handleEnd() {
@@ -465,7 +498,7 @@ export const BattleHostView: React.FC<Props> = ({
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
   const correctCount = Object.values(mergedCurrentAnswers).filter((a) => a.isCorrect).length;
   const wrongCount = Object.values(mergedCurrentAnswers).filter((a) => !a.isCorrect).length;
-  const unansweredCount = Math.max(0, expectedParticipantIds.length - Object.keys(mergedCurrentAnswers).length);
+  const unansweredCount = Math.max(0, expectedParticipantIds.length - answerCount);
 
   return (
     <div className="fixed inset-0 z-[9000] flex bg-slate-950 select-none">
@@ -511,8 +544,8 @@ export const BattleHostView: React.FC<Props> = ({
               <div className="text-5xl">⚔️</div>
               <h2 className="text-2xl font-black text-white">Sala de Batalha Aberta!</h2>
               <p className="text-slate-400 text-sm">
-                {expectedParticipantIds.length > 0
-                  ? `${expectedParticipantIds.length} participante${expectedParticipantIds.length !== 1 ? 's' : ''} pronto${expectedParticipantIds.length !== 1 ? 's' : ''}`
+                {activeParticipants.length > 0
+                  ? `${activeParticipants.length} participante${activeParticipants.length !== 1 ? 's' : ''} pronto${activeParticipants.length !== 1 ? 's' : ''}`
                   : 'Aguardando alunos entrarem...'}
               </p>
               <p className="text-slate-500 text-xs">

@@ -4,11 +4,13 @@ import type { BattleAnswer, BattleSession } from './battleTypes';
 import { joinBattle, submitBattleAnswer } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
+  canBattleParticipantAnswerCurrentQuestion,
   evaluateBattleAnswer,
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
   getBattleLanguage,
   getBattlePromptAudioText,
+  getBattleRegisteredParticipantIds,
   getMyBattleAnswer,
   isChoiceQuestion,
 } from './battleUtils';
@@ -61,6 +63,14 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   const questionIdx = session.currentQuestionIndex;
   const question = session.questions[questionIdx];
   const totalQ = session.questions.length;
+  const registeredParticipantIds = useMemo(
+    () => getBattleRegisteredParticipantIds(session),
+    [session.participants, session.scores]
+  );
+  const canAnswerCurrentQuestion = useMemo(
+    () => canBattleParticipantAnswerCurrentQuestion(session, uid),
+    [session.roundParticipantIds, session.participants, session.scores, uid]
+  );
   const myScore = session.scores[uid]?.score ?? 0;
   // Show optimistic total including this round's points before Firestore score update arrives
   const myTotalScore = myScore + (localMyAnswer?.roundPoints ?? 0);
@@ -74,6 +84,10 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
   const showMicButton = question?.kind === 'speaking';
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
+  const roundAnswerCount = useMemo(
+    () => (session.roundParticipantIds ?? []).filter((participantId) => participantId in session.currentAnswers).length,
+    [session.roundParticipantIds, session.currentAnswers]
+  );
 
   useEffect(() => {
     musicRef.current = createBattleAudio();
@@ -95,7 +109,10 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   useEffect(() => {
     if (!hasJoinedRef.current && !session.scores[uid]) {
       hasJoinedRef.current = true;
-      joinBattle(classId, uid, name).catch(console.warn);
+      joinBattle(classId, uid, name, session.scores[uid] ?? null).catch((error) => {
+        hasJoinedRef.current = false;
+        console.warn(error);
+      });
     }
   }, [classId, uid, name, session.scores]);
 
@@ -170,7 +187,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }
 
   async function submitChoiceAnswer(optionIndexes: number[]) {
-    if (!question || !isChoiceQuestion(question) || hasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
+    if (!question || !isChoiceQuestion(question) || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active' || optionIndexes.length === 0) return;
     
     const answeredAt = Date.now();
     const payload = { optionIndex: optionIndexes[0], optionIndexes };
@@ -199,7 +216,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }
 
   function toggleChoiceSelection(optionIndex: number) {
-    if (!question || !isChoiceQuestion(question) || hasAnswered || session.status !== 'active') return;
+    if (!question || !isChoiceQuestion(question) || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active') return;
     if (!requiresChoiceConfirmation) {
       setSelectedOptions([optionIndex]);
       void submitChoiceAnswer([optionIndex]);
@@ -218,7 +235,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }
 
   async function submitOpenAnswer() {
-    if (!question || !isOpenQuestion || hasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
+    if (!question || !isOpenQuestion || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active' || !typedAnswer.trim()) return;
     
     const answeredAt = Date.now();
     const payload = { responseText: typedAnswer.trim() };
@@ -314,6 +331,33 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
             </span>
           </div>
           <p className="text-xs text-slate-500">Waiting for next question...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (session.status === 'active' && !canAnswerCurrentQuestion) {
+    return (
+      <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
+        <div className="w-full max-w-sm mx-4 text-center space-y-4">
+          <div className="text-5xl">⏳</div>
+          <h2 className="text-xl font-bold text-white">Current round locked</h2>
+          <p className="text-sm text-slate-300">
+            You joined after this question started, so you&apos;ll enter on the next round.
+          </p>
+          <div className="bg-slate-800/60 rounded-xl px-6 py-3 inline-block">
+            <p className="text-xs text-slate-400">Participants in battle</p>
+            <p className="text-3xl font-black text-orange-400">{registeredParticipantIds.length}</p>
+          </div>
+          <div className="flex justify-center gap-3 text-sm">
+            <span className="px-3 py-1 rounded-full bg-orange-500/20 text-orange-300 font-semibold">
+              Q {questionIdx + 1} / {totalQ}
+            </span>
+            <span className="px-3 py-1 rounded-full bg-slate-700/40 text-slate-300 font-semibold">
+              {roundAnswerCount} answered
+            </span>
+          </div>
+          <p className="text-xs text-slate-500">You are already in the battle and will play the next question automatically.</p>
         </div>
       </div>
     );
@@ -454,7 +498,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
         <div className="flex justify-center gap-4 text-xs text-slate-500">
           <span>⏱ {Math.ceil(timeLeft)}s</span>
           <span>·</span>
-          <span>{Object.keys(session.currentAnswers).length} answered</span>
+          <span>{roundAnswerCount} / {(session.roundParticipantIds ?? []).length || registeredParticipantIds.length} answered</span>
         </div>
       </div>
     </div>

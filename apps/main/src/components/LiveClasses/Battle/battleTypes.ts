@@ -47,6 +47,12 @@ export interface BattleParticipant {
   lastAnswerCorrect: boolean | null;
 }
 
+export interface BattleRosterParticipant {
+  uid: string;
+  name: string;
+  joinedAt: number;
+}
+
 export interface BattleAnswer {
   uid: string;
   name: string;
@@ -66,6 +72,8 @@ export interface BattleSession {
   questions: BattleQuestion[];
   currentQuestionIndex: number;
   questionStartedAt: number; // timestamp ms
+  participants?: Record<string, BattleRosterParticipant>;
+  roundParticipantIds?: string[];
   scores: Record<string, BattleParticipant>;
   // answers for the CURRENT question: uid → BattleAnswer
   currentAnswers: Record<string, BattleAnswer>;

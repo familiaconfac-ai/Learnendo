@@ -11,11 +11,13 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../../services/firebase';
 import type {
-  BattleSession, BattleConfig, BattleQuestion, BattleParticipant, BattleAnswer
+  BattleSession, BattleConfig, BattleQuestion, BattleParticipant, BattleAnswer, BattleRosterParticipant
 } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
 import {
+  buildInitialBattleParticipants,
   buildInitialBattleScores,
+  canBattleParticipantAnswerCurrentQuestion,
   evaluateBattleAnswer,
   getExpectedBattleParticipantIds,
   sanitizeBattleQuestions,
@@ -30,6 +32,13 @@ function battleDocRef(classId: string) {
 }
 
 // ─── Teacher operations ────────────────────────────────────────────────────────
+
+function buildRoundParticipantMap(participants: BattleRosterParticipant[]) {
+  return participants.reduce<Record<string, BattleRosterParticipant>>((acc, participant) => {
+    acc[participant.uid] = participant;
+    return acc;
+  }, {});
+}
 
 export async function createBattleSession(
   classId: string,
@@ -57,6 +66,8 @@ export async function createBattleSession(
     questions,
     currentQuestionIndex: 0,
     questionStartedAt: 0,
+    participants: buildInitialBattleParticipants(teacherUid, teacherName),
+    roundParticipantIds: [],
     scores: buildInitialBattleScores(config, teacherUid, teacherName),
     currentAnswers: {},
     createdAt: Date.now(),
@@ -66,28 +77,38 @@ export async function createBattleSession(
   await setDoc(battleDocRef(classId), session);
 }
 
-export async function startBattle(classId: string): Promise<void> {
+export async function startBattle(
+  classId: string,
+  participants: BattleRosterParticipant[]
+): Promise<void> {
+  const now = Date.now();
   await updateDoc(battleDocRef(classId), {
     status: 'active',
     currentQuestionIndex: 0,
-    questionStartedAt: Date.now(),
+    questionStartedAt: now,
+    participants: buildRoundParticipantMap(participants),
+    roundParticipantIds: participants.map((participant) => participant.uid),
     currentAnswers: {},
-    updatedAt: Date.now(),
+    updatedAt: now,
   });
 }
 
 export async function advanceBattleQuestion(
   classId: string,
   nextIndex: number,
-  totalQuestions: number
+  totalQuestions: number,
+  participants: BattleRosterParticipant[]
 ): Promise<void> {
   const isLast = nextIndex >= totalQuestions;
+  const now = Date.now();
   await updateDoc(battleDocRef(classId), {
     status: isLast ? 'finished' : 'active',
     currentQuestionIndex: nextIndex,
-    questionStartedAt: isLast ? 0 : Date.now(),
+    questionStartedAt: isLast ? 0 : now,
+    participants: buildRoundParticipantMap(participants),
+    roundParticipantIds: isLast ? [] : participants.map((participant) => participant.uid),
     currentAnswers: {},
-    updatedAt: Date.now(),
+    updatedAt: now,
   });
 }
 
@@ -114,11 +135,13 @@ export async function deleteBattleSession(classId: string): Promise<void> {
 export async function joinBattle(
   classId: string,
   uid: string,
-  name: string
+  name: string,
+  existingParticipant?: BattleParticipant | null
 ): Promise<void> {
+  const joinedAt = Date.now();
   await updateDoc(battleDocRef(classId), {
-    [`scores.${uid}`]: { uid, name, score: 0, streak: 0, lastAnswerCorrect: null } as BattleParticipant,
-    updatedAt: Date.now(),
+    [`scores.${uid}`]: existingParticipant ?? { uid, name, score: 0, streak: 0, lastAnswerCorrect: null } as BattleParticipant,
+    updatedAt: joinedAt,
   });
 }
 
@@ -150,6 +173,8 @@ export async function submitBattleAnswer(
   if (uid in (session.currentAnswers ?? {})) return;
   // Guard: question must be active
   if (session.status !== 'active') return;
+  // Guard: late joiners outside the frozen round snapshot wait for the next question
+  if (!canBattleParticipantAnswerCurrentQuestion(session, uid)) return;
 
   const answeredAt = Date.now();
   const qIdx = session.currentQuestionIndex;
@@ -235,7 +260,13 @@ export function subscribeBattleSession(
         onChange(null);
         return;
       }
-      onChange({ id: classId, ...snap.data() } as BattleSession);
+      const data = snap.data();
+      onChange({
+        id: classId,
+        ...data,
+        participants: data.participants ?? {},
+        roundParticipantIds: Array.isArray(data.roundParticipantIds) ? data.roundParticipantIds : [],
+      } as BattleSession);
     },
     (err) => {
       // Log the error but don't crash the component tree.

@@ -18,7 +18,7 @@ import { BattleSetupModal } from '../Battle/BattleSetupModal';
 import { BattleHostView } from '../Battle/BattleHostView';
 import { BattleSession, BattleConfig, BattleQuestion } from '../Battle/battleTypes';
 import { subscribeBattleSession, createBattleSession, deleteBattleSession } from '../Battle/battleService';
-import { buildInitialBattleScores, buildSavedBattleTemplate, sanitizeBattleQuestions } from '../Battle/battleUtils';
+import { buildInitialBattleParticipants, buildInitialBattleScores, buildSavedBattleTemplate, sanitizeBattleQuestions } from '../Battle/battleUtils';
 import { appendLiveClassBattleTemplate } from '../../../services/liveClassesService';
 import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode, BATTLE_STALE_THRESHOLD_MS } from '../../../services/liveClassStage';
 
@@ -38,10 +38,11 @@ interface TeacherRoomViewProps {
 const TeacherStage: React.FC<{
   liveClass: LiveClass;
   session: LiveClassSession;
+  presence: LiveClassPresence[];
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
   teacherUid: string;
   teacherName: string;
-}> = ({ liveClass, session, handleUpdateSession, teacherUid, teacherName }) => {
+}> = ({ liveClass, session, presence, handleUpdateSession, teacherUid, teacherName }) => {
 
   const [viewMode, setViewMode] = useState<MainStageMode>(getDefaultMainStageMode());
   const room = useRoomContext();
@@ -127,6 +128,8 @@ const TeacherStage: React.FC<{
       questions: sanitizedQuestions,
       currentQuestionIndex: 0,
       questionStartedAt: 0,
+      participants: buildInitialBattleParticipants(teacherUid, teacherName),
+      roundParticipantIds: [],
       scores: buildInitialBattleScores(config, teacherUid, teacherName),
       currentAnswers: {},
       createdAt: now,
@@ -314,6 +317,10 @@ const TeacherStage: React.FC<{
           session={battleSession}
           classId={liveClass.id}
           teacherUid={teacherUid}
+          activeParticipants={presence.filter((participant) => participant.isOnline).map((participant) => ({
+            uid: participant.uid,
+            name: participant.name || participant.uid,
+          }))}
           onClose={handleCloseBattle}
           onNewBattle={() => { void handleCloseBattle().then(() => setShowBattleSetup(true)); }}
         />
@@ -360,6 +367,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
       <TeacherStage
         liveClass={liveClass}
         session={session}
+        presence={presence}
         handleUpdateSession={handleUpdateSession}
         teacherUid={user.uid}
         teacherName={user.displayName || 'Professor'}

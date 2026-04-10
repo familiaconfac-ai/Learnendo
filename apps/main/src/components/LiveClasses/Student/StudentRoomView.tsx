@@ -66,14 +66,13 @@ const StudentStage: React.FC<{
         if (
           s &&
           isActiveBattleStatus(s.status) &&
-          s.status !== 'lobby' &&
           (s.updatedAt || 0) > mountedAtRef.current - BATTLE_STALE_THRESHOLD_MS
         ) {
           console.log('[Battle:Student] initial window — recovering live battle');
           battleWasActivatedRef.current = true;
           setBattleSession(s);
         } else {
-          console.log('[Battle:Student] initial window — stale/lobby, ignored');
+          console.log('[Battle:Student] initial window — stale battle ignored');
         }
         return;
       }
