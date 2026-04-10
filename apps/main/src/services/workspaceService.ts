@@ -107,9 +107,17 @@ export function subscribeWorkspace(
     callback(null);
     return () => {};
   }
-  return onSnapshot(workspaceRef(classId), (snap) => {
-    callback(snap.exists() ? (snap.data() as WorkspaceDoc) : null);
-  });
+  console.log(`[WS] subscribeWorkspace path=liveClasses/${classId}/shared/workspace`);
+  return onSnapshot(
+    workspaceRef(classId),
+    (snap) => {
+      console.log(`[WS] snapshot received exists=${snap.exists()} by=${(snap.data() as WorkspaceDoc | undefined)?.updatedByName ?? '?'}`);
+      callback(snap.exists() ? (snap.data() as WorkspaceDoc) : null);
+    },
+    (err) => {
+      console.error('[WS] subscribeWorkspace PERMISSION ERROR — student writes will not sync:', err.code, err.message);
+    },
+  );
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────

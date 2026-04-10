@@ -264,12 +264,12 @@ service cloud.firestore {
           || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId))
           || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId))
           || (docId == 'editor' && canAccessLiveClassRoom(classId))
-          || (docId == 'workspace' && canAccessLiveClassRoom(classId));
+          || (docId == 'workspace' && signedIn() && liveClassExists(classId));
         allow update: if isTeacherForClass(classId)
           || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId))
           || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId))
           || (docId == 'editor' && canAccessLiveClassRoom(classId))
-          || (docId == 'workspace' && canAccessLiveClassRoom(classId));
+          || (docId == 'workspace' && signedIn() && liveClassExists(classId));
         allow delete: if isTeacherForClass(classId);
       }
 
