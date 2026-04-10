@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import CollaborativeBoard from './CollaborativeBoard';
-import { SharedEditor } from '../Editor/SharedEditor';
+import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import {
   LiveKitRoom,
   VideoTrack,
@@ -59,13 +58,7 @@ const TeacherStage: React.FC<{
   // callbacks are treated as "initial state" so a stale lobby session can't
   // auto-open the battle overlay.
 
-  /** * LOGICA DA LOUSA CORRIGIDA:
-   * A trava agora é reativa. Se 'allowStudentWhiteboardEdit' for false, 
-   * consideramos a lousa como bloqueada.
-   */
-  const isBoardLocked = session.allowStudentWhiteboardEdit === false;
-
-  // ── Battle state ───────────────────────────────────────────────────────────
+  // ── Battle state ─────────────────────────────────────────────────────────────────────────────
   const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
   const [showBattleSetup, setShowBattleSetup] = useState(false);
 
@@ -221,18 +214,6 @@ const TeacherStage: React.FC<{
     handleUpdateSession({ mainStageMode: newMode });
   };
 
-  /**
-   * FUNÇÃO DE TRAVA CORRIGIDA:
-   * Atualiza as duas variáveis simultaneamente para evitar conflitos de estado.
-   */
-  const toggleBoardLock = () => {
-    const nextLockedState = !isBoardLocked;
-    handleUpdateSession({ 
-      isBoardLocked: nextLockedState,
-      allowStudentWhiteboardEdit: !nextLockedState 
-    });
-  };
-
   return (
     <>
     {/* ── Mobile responsive overrides ───────────────────────────────────────── */}
@@ -268,23 +249,10 @@ const TeacherStage: React.FC<{
             </div>
           )}
 
-          {/* LOUSA */}
-          {viewMode === 'board' && (
-            <div className="w-full h-full bg-white pb-12 sm:pb-0">
-              <CollaborativeBoard
-                roomId={liveClass.id}
-                userId={teacherUid}
-                userName={teacherName}
-                isReadOnly={false} // Professor sempre tem acesso total
-                isLocked={isBoardLocked}
-              />
-            </div>
-          )}
-
-          {/* EDITOR */}
-          {viewMode === 'editor' && (
-            <div className="absolute inset-0 z-10 bg-white overflow-hidden">
-              <SharedEditor
+          {/* WORKSPACE */}
+          {viewMode === 'workspace' && (
+            <div className="absolute inset-0 z-10 overflow-hidden">
+              <WorkspaceCanvas
                 classId={liveClass.id}
                 userId={teacherUid}
                 userName={teacherName}
@@ -322,21 +290,12 @@ const TeacherStage: React.FC<{
               🎥
             </button>
             <button
-              onClick={() => handleModeChange('board')}
-              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'board' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
+              onClick={() => handleModeChange('workspace')}
+              title="Workspace colaborativo"
+              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'workspace' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
             >
               ✏️
             </button>
-
-            {viewMode === 'board' && (
-              <button
-                onClick={toggleBoardLock}
-                title={isBoardLocked ? "Liberar edição para alunos" : "Bloquear edição dos alunos"}
-                className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-colors ${isBoardLocked ? 'bg-red-600' : 'bg-emerald-600'}`}
-              >
-                {isBoardLocked ? '🔒' : '🔓'}
-              </button>
-            )}
 
             <button
               onClick={() => setShowBattleSetup(true)}
@@ -354,14 +313,6 @@ const TeacherStage: React.FC<{
               }`}
             >
               📺
-            </button>
-
-            <button
-              onClick={() => handleModeChange('editor')}
-              title="Editor colaborativo"
-              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'editor' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
-            >
-              📝
             </button>
           </div>
         </div>

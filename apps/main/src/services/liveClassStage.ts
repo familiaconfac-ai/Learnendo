@@ -14,13 +14,12 @@ const ACTIVE_BATTLE_STATUSES: readonly BattleStatus[] = ['lobby', 'active', 'sho
 export const BATTLE_STALE_THRESHOLD_MS = 5 * 60 * 1000;
 
 export function getDefaultMainStageMode(): MainStageMode {
-  return 'board';
+  return 'workspace';
 }
 
 export function sanitizeMainStageMode(mode: unknown): MainStageMode {
   if (mode === 'camera') return 'camera';
-  if (mode === 'editor') return 'editor';
-  return 'board';
+  return 'workspace';
 }
 
 export function isActiveBattleStatus(status: BattleStatus | null | undefined): boolean {
