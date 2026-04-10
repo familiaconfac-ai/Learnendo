@@ -51,6 +51,10 @@ export const BattleHostView: React.FC<Props> = ({
   // This is NOT visual-only: same evaluation math as battleService.ts.
   // Works identically for solo and multiplayer — no special-casing required.
   const [localCurrentAnswers, setLocalCurrentAnswers] = useState<Record<string, BattleAnswer>>({});
+  // Snapshot of cumulative scores at the MOMENT a question becomes active.
+  // Used in revealRows to compute totalScore = preRoundScore + answer.roundPoints,
+  // which is race-free: we don’t need session.scores to update before the reveal.
+  const preRoundScoresRef = useRef<Record<string, number>>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -102,8 +106,13 @@ export const BattleHostView: React.FC<Props> = ({
   );
 
   // Per-player round results used in the 'showing-answer' reveal panel.
-  // Correct answers are sorted by answer speed; wrong answers follow; unanswered last.
-  // Uses mergedCurrentAnswers so it populates immediately when local answer is registered.
+  // totalScore = preRoundScore[pid] + answer.roundPoints
+  // This is stable and race-free:
+  //   - preRoundScore is captured before any answers arrive this round
+  //   - answer.roundPoints is written atomically by submitBattleAnswer for ALL
+  //     participants (teacher and students) using the same scoring pipeline
+  // No dependency on session.scores timing — works even if Firestore score
+  // update arrives after the reveal panel renders.
   const revealRows = useMemo(() => {
     if (effectiveStatus !== 'showing-answer') return [];
 
@@ -119,20 +128,23 @@ export const BattleHostView: React.FC<Props> = ({
     const answered: RevealRow[] = [];
     const unanswered: RevealRow[] = [];
 
-    for (const pid of expectedParticipantIds) {
+    // Collect all participants: those already in session.scores + any who answered
+    // but joined after the question started (edge case for late joiners).
+    const allPids = new Set([...expectedParticipantIds, ...Object.keys(mergedCurrentAnswers)]);
+
+    for (const pid of allPids) {
       const participant = session.scores[pid];
-      const displayName = participant?.name ?? pid;
-      const baseScore = participant?.score ?? 0;
-      // If localCurrentAnswers has an entry for this pid, the Firestore score update
-      // hasn't come back yet. Add the roundPoints optimistically so totals are correct.
-      const localEntry = localCurrentAnswers[pid];
-      const optimisticExtra = localEntry ? (localEntry.roundPoints ?? 0) : 0;
-      const totalScore = baseScore + optimisticExtra;
+      const displayName = participant?.name ?? mergedCurrentAnswers[pid]?.name ?? pid;
+      // Pre-round score captured when the question became active.
+      // Falls back to session.scores[pid].score in case the ref wasn’t populated
+      // (e.g., participant joined mid-round).
+      const preRoundScore = preRoundScoresRef.current[pid] ?? participant?.score ?? 0;
       const answer = mergedCurrentAnswers[pid];
 
       if (!answer) {
-        unanswered.push({ pid, name: displayName, isCorrect: null, elapsedMs: null, roundPoints: 0, totalScore });
+        unanswered.push({ pid, name: displayName, isCorrect: null, elapsedMs: null, roundPoints: 0, totalScore: preRoundScore });
       } else {
+        const roundPoints = answer.roundPoints ?? 0;
         const elapsedMs =
           answer.elapsedMs != null
             ? answer.elapsedMs
@@ -144,8 +156,9 @@ export const BattleHostView: React.FC<Props> = ({
           name: displayName,
           isCorrect: answer.isCorrect,
           elapsedMs,
-          roundPoints: answer.roundPoints ?? 0,
-          totalScore,
+          roundPoints,
+          // totalScore is always correct: pre-round baseline + this round's points
+          totalScore: preRoundScore + roundPoints,
         });
       }
     }
@@ -154,7 +167,7 @@ export const BattleHostView: React.FC<Props> = ({
     const wrong = answered.filter((r) => !r.isCorrect).sort((a, b) => (a.elapsedMs ?? 999999) - (b.elapsedMs ?? 999999));
 
     return [...correct, ...wrong, ...unanswered];
-  }, [effectiveStatus, mergedCurrentAnswers, localCurrentAnswers, session.scores, session.questionStartedAt, expectedParticipantIds]);
+  }, [effectiveStatus, mergedCurrentAnswers, session.scores, session.questionStartedAt, expectedParticipantIds]);
 
   useEffect(() => {
     const audio = new Audio('/sounds/battle_theme.mp3');
@@ -184,6 +197,17 @@ export const BattleHostView: React.FC<Props> = ({
     setTeacherSubmitting(false);
     setTimeLeft(session.config.timePerQuestion);
     setLocalCurrentAnswers({}); // clear local answers when question changes
+    // Capture pre-round scores for every participant so revealRows can show
+    // correct totals without waiting for Firestore score updates to arrive.
+    // session.scores is stable at question start (before any writes this round).
+    const snapshot: Record<string, number> = {};
+    for (const pid of Object.keys(session.scores)) {
+      snapshot[pid] = session.scores[pid]?.score ?? 0;
+    }
+    preRoundScoresRef.current = snapshot;
+    // NOTE: session.scores intentionally not in deps — we only want to capture
+    // the score snapshot at the START of this question index, not on every update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
       recognitionRef.current = null;
