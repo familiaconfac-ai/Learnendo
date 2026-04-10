@@ -175,6 +175,11 @@ const TeacherStage: React.FC<{
   const remoteParticipants = participants.filter((p) => !p.isLocal);
   const allTracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
   const { localParticipant } = useLocalParticipant();
+  // A real (published) camera track has a non-null track on the publication.
+  // withPlaceholder:true returns a placeholder ref even before cam is started — we must
+  // distinguish "actually streaming" from "placeholder / camera off".
+  const localCamPublished = !!localParticipant.getTrackPublication(Track.Source.Camera)?.track;
+  const [camError, setCamError] = useState<string | null>(null);
 
   // ── Screen sharing ────────────────────────────────────────────────────────
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -187,6 +192,27 @@ const TeacherStage: React.FC<{
     setIsScreenSharing(sharing);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [localScreenTrack]);
+
+  // ── Camera toggle with error handling ─────────────────────────────────────
+  async function toggleCamera() {
+    if (localCamPublished) {
+      await localParticipant.setCameraEnabled(false);
+      setCamError(null);
+    } else {
+      try {
+        setCamError(null);
+        await localParticipant.setCameraEnabled(true);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('Permission denied') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
+          setCamError('Permissão de câmera negada ou câmera não encontrada.');
+        } else {
+          setCamError('Câmera indisponível. Verifique as permissões do navegador.');
+        }
+        console.warn('[TeacherCamera] toggle error:', err);
+      }
+    }
+  }
 
   async function toggleScreenShare() {
     try {
@@ -241,11 +267,29 @@ const TeacherStage: React.FC<{
           {/* CAMERA */}
           {viewMode === 'camera' && (
             <div className="w-full h-full flex items-center justify-center bg-black">
-              {localTrack && isTrackReference(localTrack) ? (
+              {localCamPublished && localTrack && isTrackReference(localTrack) ? (
                 <VideoTrack trackRef={localTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : camError ? (
+                <div className="flex flex-col items-center justify-center text-center gap-3 px-6">
+                  <span className="text-4xl">🚫</span>
+                  <span className="text-red-400 text-sm font-medium">{camError}</span>
+                  <button
+                    onClick={() => void toggleCamera()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
               ) : (
-                <div className="flex flex-col items-center justify-center text-slate-400 gap-2">
-                  <span className="text-base font-medium">Câmera Desligada</span>
+                <div className="flex flex-col items-center justify-center gap-3">
+                  <span className="text-slate-500 text-4xl">🎥</span>
+                  <span className="text-slate-400 text-sm font-medium">Câmera desligada</span>
+                  <button
+                    onClick={() => void toggleCamera()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition"
+                  >
+                    Ligar câmera
+                  </button>
                 </div>
               )}
             </div>
@@ -263,10 +307,10 @@ const TeacherStage: React.FC<{
               {/* Camera PIP — teacher's own camera shown in corner while using workspace */}
               {camVisible && (
                 <div className="absolute bottom-14 sm:bottom-16 right-2 sm:right-3 w-28 sm:w-36 aspect-video rounded-xl overflow-hidden border-2 border-blue-500/60 shadow-xl z-20 bg-black flex items-center justify-center pointer-events-none">
-                  {localTrack && isTrackReference(localTrack) ? (
+                  {localCamPublished && localTrack && isTrackReference(localTrack) ? (
                     <VideoTrack trackRef={localTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   ) : (
-                    <span className="text-slate-400 text-[10px]">Câm. off</span>
+                    <span className="text-slate-500 text-[10px]">{camError ? '🚫 Câm.' : '🎥 Off'}</span>
                   )}
                   <div className="absolute bottom-0.5 left-0.5 text-[8px] text-white/80 bg-black/50 px-1 rounded leading-tight">
                     Você
@@ -299,8 +343,13 @@ const TeacherStage: React.FC<{
           {/* BARRA DE FERRAMENTAS */}
           <div className="absolute bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 sm:gap-3 bg-black/90 px-2.5 sm:px-4 py-1 sm:py-2 rounded-full border border-slate-700 z-[100]">
             <button
-              onClick={() => handleModeChange('camera')}
+              onClick={() => {
+                handleModeChange('camera');
+                // If cam mode is entered and camera not yet started, try to start it
+                if (!localCamPublished) void toggleCamera();
+              }}
               className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'camera' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
+              title="Modo câmera"
             >
               🎥
             </button>

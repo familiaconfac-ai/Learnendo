@@ -1,4 +1,4 @@
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -34,9 +34,42 @@ export interface WorkspaceItem {
 
 export interface WorkspaceDoc {
   items: WorkspaceItem[];
+  /** Main shared document HTML content */
+  docContent?: string;
+  /** Scroll position (0-1) for scroll-sync */
+  scrollRatio?: number;
   updatedAt: number;
   updatedBy: string;
   updatedByName: string;
+}
+
+/** Save only the main document content (debounced separately from items) */
+export async function saveDocContent(
+  classId: string,
+  docContent: string,
+  uid: string,
+  name: string,
+): Promise<void> {
+  if (!db) return;
+  const { updateDoc } = await import('firebase/firestore');
+  await updateDoc(workspaceRef(classId), {
+    docContent,
+    updatedAt: Date.now(),
+    updatedBy: uid,
+    updatedByName: name,
+  });
+}
+
+/** Persist scroll ratio so students can follow (0-1). */
+export async function saveScrollRatio(
+  classId: string,
+  scrollRatio: number,
+): Promise<void> {
+  if (!db) return;
+  const { updateDoc } = await import('firebase/firestore');
+  await updateDoc(workspaceRef(classId), { scrollRatio }).catch(() => {
+    // ignore if doc doesn't exist yet
+  });
 }
 
 // ── Firestore path ────────────────────────────────────────────────────────────
@@ -72,10 +105,21 @@ export async function saveWorkspace(
   name: string,
 ): Promise<void> {
   if (!db) return;
-  await setDoc(workspaceRef(classId), {
-    items,
-    updatedAt: Date.now(),
-    updatedBy: uid,
-    updatedByName: name,
-  });
+  const { updateDoc, setDoc } = await import('firebase/firestore');
+  // Use updateDoc to preserve docContent/scrollRatio; fall back to setDoc on first write
+  try {
+    await updateDoc(workspaceRef(classId), {
+      items,
+      updatedAt: Date.now(),
+      updatedBy: uid,
+      updatedByName: name,
+    });
+  } catch {
+    await setDoc(workspaceRef(classId), {
+      items,
+      updatedAt: Date.now(),
+      updatedBy: uid,
+      updatedByName: name,
+    });
+  }
 }
