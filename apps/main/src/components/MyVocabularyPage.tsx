@@ -111,12 +111,27 @@ const FlashCard: React.FC<{
   onPrev: () => void;
   onNext: () => void;
 }> = ({ entry, index, total, L, onPrev, onNext }) => {
-  const [revealed, setRevealed] = useState(false);
+  const [showTranslation, setShowTranslation] = useState(false);
+  const [showPhonetic, setShowPhonetic] = useState(false);
+  const [showGrammar, setShowGrammar] = useState(false);
+
+  // Reset all panels when card changes
+  useEffect(() => {
+    setShowTranslation(false);
+    setShowPhonetic(false);
+    setShowGrammar(false);
+  }, [entry.id]);
+
   const translation = entry.translation?.trim() ?? '';
   const hasTranslation = Boolean(translation);
 
-  // Reset revealed state when card changes
-  useEffect(() => { setRevealed(false); }, [entry.id]);
+  // Access optional fields that may exist in Firestore but are not in the typed interface
+  const raw = entry as Record<string, unknown>;
+  const phonetic = typeof raw.phonetic === 'string' ? raw.phonetic.trim() : '';
+  const hasPhonetic = Boolean(phonetic);
+  const grammarLabel = typeof raw.grammarLabel === 'string' ? raw.grammarLabel.trim() : '';
+  const grammarNote = typeof raw.grammarNote === 'string' ? raw.grammarNote.trim() : '';
+  const hasGrammar = Boolean(grammarLabel || grammarNote);
 
   return (
     <div className="flex flex-col items-center gap-6 py-8 px-4">
@@ -125,46 +140,87 @@ const FlashCard: React.FC<{
         {index + 1} {L.of} {total}
       </p>
 
-      {/* Card face */}
-      <div
-        className="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden cursor-pointer select-none"
-        style={{ minHeight: '200px' }}
-        onClick={() => setRevealed((r) => !r)}
-      >
-        {/* Word side */}
-        <div className="flex flex-col items-center justify-center gap-3 p-8" style={{ minHeight: '200px' }}>
+      {/* Card */}
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+        {/* Word area */}
+        <div className="flex flex-col items-center gap-4 p-8">
           <span className="text-3xl font-bold text-slate-800 text-center break-words">
             {entry.text}
           </span>
-          <button
-            onClick={(e) => { e.stopPropagation(); speak(entry.text, entry.sourceLang); }}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs transition"
-          >
-            🔊
-          </button>
 
-          {/* Translation panel */}
-          <div
-            className={`mt-2 transition-all duration-300 overflow-hidden ${revealed ? 'max-h-32 opacity-100' : 'max-h-0 opacity-0'}`}
-          >
-            {hasTranslation ? (
-              <div className="border-t border-slate-100 pt-3 mt-3 text-center">
-                <span className="text-lg text-blue-700 font-medium break-words">
-                  {translation}
-                </span>
-              </div>
-            ) : null}
-          </div>
-
-          {!revealed && hasTranslation && (
-            <span className="text-xs text-slate-400 mt-1">{L.showTranslation} →</span>
+          {/* Revealed panels */}
+          {showTranslation && hasTranslation && (
+            <div className="border-t border-slate-100 pt-3 w-full text-center">
+              <span className="text-lg text-blue-700 font-medium break-words">{translation}</span>
+            </div>
           )}
+          {showPhonetic && hasPhonetic && (
+            <div className="border-t border-slate-100 pt-3 w-full text-center">
+              <span className="text-base text-slate-500 font-mono">{phonetic}</span>
+            </div>
+          )}
+          {showGrammar && hasGrammar && (
+            <div className="border-t border-slate-100 pt-3 w-full text-center">
+              {grammarLabel ? (
+                <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">{grammarLabel}</span>
+              ) : null}
+              {grammarNote ? (
+                <p className="text-sm text-slate-600 mt-1">{grammarNote}</p>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="border-t border-slate-100 grid grid-cols-4 divide-x divide-slate-100">
+          <button
+            type="button"
+            onClick={() => speak(entry.text, entry.sourceLang)}
+            className="flex flex-col items-center gap-1 py-3 text-slate-500 hover:bg-slate-50 transition"
+          >
+            <span>🔊</span>
+            <span className="text-[10px]">Audio</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowTranslation((v) => !v)}
+            disabled={!hasTranslation}
+            className={`flex flex-col items-center gap-1 py-3 transition disabled:opacity-30 ${
+              showTranslation ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <span>🌐</span>
+            <span className="text-[10px]">Translation</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowPhonetic((v) => !v)}
+            disabled={!hasPhonetic}
+            className={`flex flex-col items-center gap-1 py-3 transition disabled:opacity-30 ${
+              showPhonetic ? 'bg-purple-50 text-purple-700' : 'text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <span>🔤</span>
+            <span className="text-[10px]">Phonetic</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowGrammar((v) => !v)}
+            disabled={!hasGrammar}
+            className={`flex flex-col items-center gap-1 py-3 transition disabled:opacity-30 ${
+              showGrammar ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            <span>📘</span>
+            <span className="text-[10px]">Grammar</span>
+          </button>
         </div>
       </div>
 
       {/* Navigation */}
       <div className="flex items-center gap-4">
         <button
+          type="button"
           onClick={onPrev}
           disabled={index === 0}
           className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-30 transition shadow-sm"
@@ -172,6 +228,7 @@ const FlashCard: React.FC<{
           ← {L.prev}
         </button>
         <button
+          type="button"
           onClick={onNext}
           disabled={index === total - 1}
           className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-30 transition shadow-sm"
@@ -320,10 +377,14 @@ export const MyVocabularyPage: React.FC<MyVocabularyPageProps> = ({
         {/* List mode */}
         {!loading && !error && entries.length > 0 && viewMode === 'list' && (
           <ul className="flex flex-col gap-2 pt-2">
-            {entries.map((entry) => (
+            {entries.map((entry, idx) => (
               <li
                 key={entry.id}
-                className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-200 shadow-sm"
+                className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-200 shadow-sm cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition"
+                role="button"
+                tabIndex={0}
+                onClick={() => { setFlashIndex(idx); setViewMode('flashcard'); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFlashIndex(idx); setViewMode('flashcard'); } }}
               >
                 {/* Word + translation */}
                 <div className="flex-1 min-w-0">
@@ -342,7 +403,7 @@ export const MyVocabularyPage: React.FC<MyVocabularyPageProps> = ({
 
                 {/* Audio */}
                 <button
-                  onClick={() => speak(entry.text, entry.sourceLang)}
+                  onClick={(e) => { e.stopPropagation(); speak(entry.text, entry.sourceLang); }}
                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
                   title={L.playAudio}
                   aria-label={L.playAudio}
@@ -352,7 +413,7 @@ export const MyVocabularyPage: React.FC<MyVocabularyPageProps> = ({
 
                 {/* Delete */}
                 <button
-                  onClick={() => handleDelete(entry.id)}
+                  onClick={(e) => { e.stopPropagation(); void handleDelete(entry.id); }}
                   disabled={deletingId === entry.id}
                   className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-400 transition disabled:opacity-40"
                   title={L.delete}
