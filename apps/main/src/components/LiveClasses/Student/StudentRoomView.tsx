@@ -44,7 +44,6 @@ const StudentStage: React.FC<{
   const [mainStageMode, setMainStageMode] = useState<MainStageMode>(getDefaultMainStageMode());
   const [chatOpen, setChatOpen] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
-  const hasAppliedInitialStageRef = useRef(false);
   const battleWasActivatedRef = useRef(false);
   const mountedAtRef = useRef(Date.now());
   // NOTE: do NOT use a boolean one-shot flag here — Firestore onSnapshot fires
@@ -103,12 +102,7 @@ const StudentStage: React.FC<{
   }, [liveClass.id]);
 
   useEffect(() => {
-    if (!hasAppliedInitialStageRef.current) {
-      hasAppliedInitialStageRef.current = true;
-      setMainStageMode(getDefaultMainStageMode());
-      return;
-    }
-
+    // Teacher session state is the source of truth for student main stage.
     setMainStageMode(sanitizeMainStageMode(session.mainStageMode));
   }, [session.mainStageMode]);
 
@@ -136,9 +130,29 @@ const StudentStage: React.FC<{
     (t) => t.participant && !t.participant.isLocal
   );
   const isTeacherSharing = !!teacherScreenTrack && isTrackReference(teacherScreenTrack);
+  
+  // DIAGNOSTIC: Log screen share state changes
+  useEffect(() => {
+    console.log('[ScreenShare:Student] State check:', {
+      screenShareTracksCount: screenShareTracks.length,
+      hasTeacherScreenTrack: !!teacherScreenTrack,
+      isTrackRef: teacherScreenTrack ? isTrackReference(teacherScreenTrack) : 'N/A',
+      isTeacherSharing,
+      mainStageMode,
+    });
+  }, [screenShareTracks.length, teacherScreenTrack, isTeacherSharing, mainStageMode]);
 
   // ── Local camera preview via ref (direct MediaStream — bypasses useTracks) ──
   const localVideoRef = useRef<HTMLVideoElement>(null);
+
+  // DIAGNOSTIC: Log screen share render condition
+  useEffect(() => {
+    if (isTeacherSharing) {
+      console.log('[ScreenShare:Student] RENDER CONDITION TRUE - screen share element should be visible');
+    } else if (teacherScreenTrack) {
+      console.log('[ScreenShare:Student] RENDER BLOCKED: track exists but isTeacherSharing is false');
+    }
+  }, [isTeacherSharing, teacherScreenTrack]);
 
   useEffect(() => {
     const el = localVideoRef.current;
@@ -202,8 +216,13 @@ const StudentStage: React.FC<{
   useEffect(() => {
     const onConn = () => console.log('[Student] Room connected');
     const onDisc = () => console.log('[Student] Room disconnected');
-    const onSub = (track: any, _pub: any, p: any) =>
-      console.log('[Student] TrackSubscribed', track.kind, track.source, 'from', p.identity);
+    const onSub = (track: any, _pub: any, p: any) => {
+      if (track.source === 'screen_share') {
+        console.log('[ScreenShare:Student] SCREEN SHARE SUBSCRIBED!', { kind: track.kind, from: p.identity });
+      } else {
+        console.log('[Student] TrackSubscribed', track.kind, track.source, 'from', p.identity);
+      }
+    };
     const onUnsub = (track: any, _pub: any, p: any) =>
       console.log('[Student] TrackUnsubscribed', track.kind, track.source, 'from', p.identity);
     const onLocalPub = (pub: any) =>
