@@ -31,7 +31,6 @@ const LABELS: Record<UILang, {
   next: string;
   prev: string;
   of: string;
-  noTranslation: string;
   back: string;
   wordsCount: (n: number) => string;
   retry: string;
@@ -50,7 +49,6 @@ const LABELS: Record<UILang, {
     next: 'Next',
     prev: 'Previous',
     of: 'of',
-    noTranslation: '(no translation)',
     back: 'Back',
     wordsCount: (n) => `${n} word${n !== 1 ? 's' : ''}`,
     retry: 'Retry',
@@ -69,7 +67,6 @@ const LABELS: Record<UILang, {
     next: 'Próxima',
     prev: 'Anterior',
     of: 'de',
-    noTranslation: '(sem tradução)',
     back: 'Voltar',
     wordsCount: (n) => `${n} palavra${n !== 1 ? 's' : ''}`,
     retry: 'Tentar novamente',
@@ -88,7 +85,6 @@ const LABELS: Record<UILang, {
     next: 'Siguiente',
     prev: 'Anterior',
     of: 'de',
-    noTranslation: '(sin traducción)',
     back: 'Volver',
     wordsCount: (n) => `${n} palabra${n !== 1 ? 's' : ''}`,
     retry: 'Reintentar',
@@ -116,6 +112,8 @@ const FlashCard: React.FC<{
   onNext: () => void;
 }> = ({ entry, index, total, L, onPrev, onNext }) => {
   const [revealed, setRevealed] = useState(false);
+  const translation = entry.translation?.trim() ?? '';
+  const hasTranslation = Boolean(translation);
 
   // Reset revealed state when card changes
   useEffect(() => { setRevealed(false); }, [entry.id]);
@@ -149,14 +147,16 @@ const FlashCard: React.FC<{
           <div
             className={`mt-2 transition-all duration-300 overflow-hidden ${revealed ? 'max-h-32 opacity-100' : 'max-h-0 opacity-0'}`}
           >
-            <div className="border-t border-slate-100 pt-3 mt-3 text-center">
-              <span className="text-lg text-blue-700 font-medium break-words">
-                {entry.translation || L.noTranslation}
-              </span>
-            </div>
+            {hasTranslation ? (
+              <div className="border-t border-slate-100 pt-3 mt-3 text-center">
+                <span className="text-lg text-blue-700 font-medium break-words">
+                  {translation}
+                </span>
+              </div>
+            ) : null}
           </div>
 
-          {!revealed && (
+          {!revealed && hasTranslation && (
             <span className="text-xs text-slate-400 mt-1">{L.showTranslation} →</span>
           )}
         </div>

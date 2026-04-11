@@ -40,6 +40,26 @@ export interface VocabularyEntryDoc {
   createdAt: Timestamp | null;
 }
 
+function pickTranslation(data: Record<string, any>): string {
+  const candidates = [
+    data.translation,
+    data.meaning,
+    data.pt,
+    data.translatedText,
+    data.translationText,
+    data.responseData?.translatedText,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string') {
+      const normalized = candidate.trim();
+      if (normalized) return normalized;
+    }
+  }
+
+  return '';
+}
+
 // ── Translation ────────────────────────────────────────────────────────────────
 
 /**
@@ -102,11 +122,11 @@ export async function listVocabularyEntries(userId: string): Promise<VocabularyE
   );
   const snap = await getDocs(q);
   return snap.docs.map((d) => {
-    const data = d.data();
+    const data = d.data() as Record<string, any>;
     return {
       id: d.id,
       text: data.text ?? '',
-      translation: data.translation ?? '',
+      translation: pickTranslation(data),
       sourceLang: data.sourceLang ?? 'en',
       targetLang: data.targetLang ?? 'en',
       createdAt: (data.createdAt as Timestamp) ?? null,

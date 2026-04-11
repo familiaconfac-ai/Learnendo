@@ -342,18 +342,37 @@ const App: React.FC = () => {
   const liveClassViewerRole = userRole === 'teacher' && !canManageLiveClasses ? 'student' : userRole;
   const availableViewModes = getAllowedViewModes(userRole);
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
-  const languagePlacementDone = Boolean((progress.tests as any)?.placements?.[language]);
+  const languagePlacement = (progress.tests as any)?.placements?.[language];
+  const legacyPlacement = (progress.tests as any)?.placement;
+  const hasPlacementScore =
+    typeof (languagePlacement as any)?.score === 'number' ||
+    typeof (legacyPlacement as any)?.score === 'number' ||
+    typeof (progress as any)?.placementScore === 'number';
+  const hasPlacementLevel = Boolean(
+    (languagePlacement as any)?.level ||
+    (legacyPlacement as any)?.level ||
+    (progress as any)?.placementLevel,
+  );
+  const hasPlacementReport = Boolean(
+    (progress as any)?.placementPdf ||
+    (progress as any)?.placementReport ||
+    (progress as any)?.placementReportUrl,
+  );
   const localPlacementDone = user?.uid
     ? Boolean(
       localStorage.getItem(`learnendo_placement_${user.uid}_${language}`)
       || localStorage.getItem(`learnendo_placement_${user.uid}`),
     )
     : false;
-  const hasPlacementDone = progressLoaded && (
-    languagePlacementDone ||
+  const hasPlacementResult = progressLoaded && (
+    Boolean(languagePlacement) ||
+    Boolean(legacyPlacement) ||
+    hasPlacementScore ||
+    hasPlacementLevel ||
+    hasPlacementReport ||
     localPlacementDone
   );
-  const showPlacementBanner = progressLoaded && !hasPlacementDone &&
+  const showPlacementBanner = progressLoaded && !hasPlacementResult &&
     !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON, SectionType.LIVE_CLASSES] as string[]).includes(currentSection);
   const isInLiveRoom =
     currentSection === SectionType.LIVE_CLASSES &&
@@ -2299,7 +2318,7 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-black text-yellow-400 mb-6">
               {uiLanguage === 'pt' ? 'Cadernos' : uiLanguage === 'es' ? 'Libros de trabajo' : 'Workbooks'}
             </h1>
-            {!hasPlacementDone && (
+            {!hasPlacementResult && (
               <div className="mb-5 bg-amber-400/10 border border-amber-400 rounded-2xl p-4 flex items-center justify-between gap-3">
                 <p className="text-amber-300 text-sm font-semibold">
                   {uiLanguage === 'pt'
