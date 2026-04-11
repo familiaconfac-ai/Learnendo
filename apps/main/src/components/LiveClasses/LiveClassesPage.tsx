@@ -8,7 +8,6 @@ import {
   deleteLiveClass,
   ensureLiveClassSession,
   filterLiveClassesForViewer,
-  getLiveClassMeetLink,
   subscribeLiveClass,
   subscribeLiveClassGroups,
   subscribeLiveClasses,
@@ -32,12 +31,6 @@ interface LiveClassesPageProps {
   onRoomContextChange: (liveClass: LiveClass | null) => void;
   onBack: () => void;
 }
-
-const statusClassMap: Record<LiveClass['status'], string> = {
-  upcoming: 'bg-amber-500 text-slate-900',
-  live: 'bg-emerald-500 text-slate-900',
-  finished: 'bg-slate-600 text-white',
-};
 
 const upsertLiveClass = (items: LiveClass[], nextItem: LiveClass) => {
   const withoutExisting = items.filter((item) => item.id !== nextItem.id);
@@ -90,13 +83,6 @@ const getRoomClassIdFromPath = (): string => {
   } catch {
     return match[1];
   }
-};
-
-const openExternalLink = (rawUrl: string) => {
-  const trimmed = rawUrl.trim();
-  if (!trimmed) return;
-  const target = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  window.open(target, '_blank', 'noopener,noreferrer');
 };
 
 const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string, courseId: string): Partial<LiveClassInput> => ({
@@ -421,26 +407,17 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
           ) : null}
         </div>
         {canManageClasses ? (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={openGroupCreate}
-              className="rounded-xl border border-slate-500 px-3 py-2 text-xs font-black text-slate-100"
-            >
-              + New Group
-            </button>
-            <button
-              type="button"
-              onClick={() => openCreate({
-                courseId: currentCourseId,
-                teacherName: teacherDisplayName,
-                isPrivate: true,
-              })}
-              className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
-            >
-              + New Session
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => openCreate({
+              courseId: currentCourseId,
+              teacherName: teacherDisplayName,
+              isPrivate: true,
+            })}
+            className="rounded-xl bg-blue-600 px-3 py-2 text-xs font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
+          >
+            + New Class
+          </button>
         ) : null}
       </div>
 
@@ -469,79 +446,6 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
             onSubmit={handleSaveGroup}
             submitting={savingGroup}
           />
-        </div>
-      ) : null}
-
-      {canManageClasses ? (
-        <div className="mb-4 rounded-2xl border border-slate-700 bg-slate-800 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-black text-white">Groups</h2>
-              <p className="text-sm text-slate-400">
-                Reuse the same students for recurring classes and quick meetings.
-              </p>
-            </div>
-            <span className="rounded-full bg-slate-900 px-3 py-1 text-xs font-black uppercase tracking-wide text-slate-300">
-              {groups.length} groups
-            </span>
-          </div>
-
-          {groupsLoading ? (
-            <div className="rounded-2xl border border-slate-700 bg-slate-900 p-4 text-sm text-slate-300">
-              Loading groups...
-            </div>
-          ) : groupsError ? (
-            <div className="rounded-2xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
-              {groupsError}
-            </div>
-          ) : groups.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-600 bg-slate-900/60 p-4 text-sm text-slate-300">
-              No groups yet. Create your first group to save a fixed roster.
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {groups.map((group) => (
-                <article
-                  key={group.id}
-                  className="rounded-2xl border border-slate-700 bg-slate-900/70 p-4"
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <h3 className="text-base font-black text-white">{group.name}</h3>
-                      <p className="mt-1 text-sm text-slate-300">
-                        {group.assignedStudentNames.length} student{group.assignedStudentNames.length === 1 ? '' : 's'}
-                      </p>
-                      {group.description ? (
-                        <p className="mt-2 text-sm text-slate-400">{group.description}</p>
-                      ) : null}
-                      {group.assignedStudentNames.length > 0 ? (
-                        <p className="mt-2 text-xs text-slate-400">
-                          {group.assignedStudentNames.join(', ')}
-                        </p>
-                      ) : null}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => openCreateFromGroup(group)}
-                        className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
-                      >
-                        New Session From Group
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openGroupEdit(group)}
-                        className="rounded-xl border border-slate-500 px-3 py-2 text-sm font-bold text-slate-100"
-                      >
-                        Edit Group
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
         </div>
       ) : null}
 
@@ -577,27 +481,33 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
               role="button"
               tabIndex={0}
             >
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h2 className="text-base font-black text-white">{liveClass.title}</h2>
-                <span className={`rounded-full px-2 py-1 text-[11px] font-black uppercase ${statusClassMap[liveClass.status]}`}>
-                  {liveClass.status}
-                </span>
-              </div>
-
-              <p className="text-sm font-semibold text-slate-200">{liveClass.teacherName}</p>
-              <p className="text-sm text-slate-300">{liveClass.date} • {liveClass.time}</p>
-              {liveClass.groupName ? (
-                <p className="mt-1 text-xs font-bold uppercase tracking-wide text-blue-300">
-                  Group: {liveClass.groupName}
-                </p>
-              ) : null}
-
-              <div className="my-4 flex justify-center">
-                <img src={learnendoLogoTransparent} alt="Learnendo" className="h-16 w-auto opacity-80" />
+              <div className="flex items-start gap-3 mb-3">
+                <img src={learnendoLogoTransparent} alt="Learnendo" className="h-16 w-auto shrink-0 opacity-80" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2">
+                    <h2 className="text-xl font-black leading-tight text-white">{liveClass.title}</h2>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-black uppercase ${
+                      liveClass.status === 'live'
+                        ? 'bg-emerald-500 text-slate-900'
+                        : liveClass.status === 'upcoming'
+                          ? 'bg-amber-500 text-slate-900'
+                          : 'bg-blue-600 text-white'
+                    }`}>
+                      {liveClass.status === 'finished' ? 'Recurring' : liveClass.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-sm font-semibold text-slate-300">{liveClass.teacherName}</p>
+                  {liveClass.assignedStudentNames.length > 0 ? (
+                    <p className="mt-1 text-xs text-slate-400">
+                      <span className="font-semibold text-slate-300">Students: </span>
+                      {liveClass.assignedStudentNames.join(', ')}
+                    </p>
+                  ) : null}
+                </div>
               </div>
 
               {liveClass.description ? (
-                <p className="mt-2 text-sm leading-relaxed text-white">
+                <p className="mb-3 text-sm leading-relaxed text-white">
                   {liveClass.description}
                 </p>
               ) : null}
@@ -625,17 +535,18 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
                 >
                   Enter Room
                 </button>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openExternalLink(getLiveClassMeetLink(liveClass));
-                  }}
-                  disabled={!getLiveClassMeetLink(liveClass)}
-                  className="rounded-xl bg-blue-500 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8] disabled:opacity-50"
-                >
-                  Meet
-                </button>
+                {canManageClasses ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openEdit(liveClass);
+                    }}
+                    className="rounded-xl bg-blue-500 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
+                  >
+                    Settings
+                  </button>
+                ) : null}
               </div>
             </article>
           ))
