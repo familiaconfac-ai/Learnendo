@@ -26,6 +26,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   liveClass,
   user,
   isTeacher,
+  onExit,
 }) => {
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
@@ -126,6 +127,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
         showExerciseSession={showExerciseSession}
         setShowExerciseSession={setShowExerciseSession}
         handleUpdateSession={handleUpdateSession}
+        onExit={onExit}
       />
     );
   }
@@ -142,6 +144,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       showExerciseSession={showExerciseSession}
       setShowExerciseSession={setShowExerciseSession}
       handleUpdateSession={handleUpdateSession}
+      onExit={onExit}
     />
   );
 };

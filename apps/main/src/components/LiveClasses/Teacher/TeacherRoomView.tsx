@@ -34,6 +34,7 @@ interface TeacherRoomViewProps {
   showExerciseSession: boolean;
   setShowExerciseSession: (show: boolean) => void;
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
+  onExit: () => void;
 }
 
 const TeacherStage: React.FC<{
@@ -43,7 +44,8 @@ const TeacherStage: React.FC<{
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
   teacherUid: string;
   teacherName: string;
-}> = ({ liveClass, session, presence, handleUpdateSession, teacherUid, teacherName }) => {
+  onExit: () => void;
+}> = ({ liveClass, session, presence, handleUpdateSession, teacherUid, teacherName, onExit }) => {
 
   const [viewMode, setViewMode] = useState<MainStageMode>(getDefaultMainStageMode());
   // Whether the teacher's own camera PIP is shown while in workspace mode
@@ -356,6 +358,9 @@ const TeacherStage: React.FC<{
                 userName={teacherName}
                 readOnly={false}
                 toolbarLeading={<>
+                  <button onClick={onExit} className="w-7 h-7 flex items-center justify-center rounded border transition text-sm text-slate-600 border-slate-200 hover:bg-slate-100" title="Home" aria-label="Home">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M3 9.5L10 4l7 5.5V17a1 1 0 01-1 1h-4.5v-4.5h-3V18H4a1 1 0 01-1-1V9.5z"/></svg>
+                  </button>
                   <button onClick={handleCameraButton} className="w-7 h-7 flex items-center justify-center rounded border transition text-sm text-slate-600 border-slate-200 hover:bg-slate-100" title={rl.camera} aria-label={rl.camera}>&#x1F4F7;</button>
                   <button onClick={() => handleModeChange('workspace')} className="w-7 h-7 flex items-center justify-center rounded border transition text-sm bg-blue-600 text-white border-blue-600" title={rl.workspace} aria-label={rl.workspace}>&#x270F;&#xFE0F;</button>
                   <button onClick={() => setShowBattleSetup(true)} className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-orange-600 hover:bg-orange-50 transition text-sm" title={rl.battle} aria-label={rl.battle}>&#x2694;&#xFE0F;</button>
@@ -454,7 +459,7 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, session, presence, handleUpdateSession } = props;
+  const { liveClass, user, session, presence, handleUpdateSession, onExit } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
 
@@ -494,6 +499,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
         handleUpdateSession={handleUpdateSession}
         teacherUid={user.uid}
         teacherName={user.displayName || 'Professor'}
+        onExit={onExit}
       />
     </LiveKitRoom>
   );

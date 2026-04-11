@@ -31,6 +31,7 @@ interface StudentRoomViewProps {
   showExerciseSession: boolean;
   setShowExerciseSession: (show: boolean) => void;
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
+  onExit: () => void;
 }
 
 /** Inner component — runs inside <LiveKitRoom> so LiveKit hooks have context. */
@@ -38,7 +39,8 @@ const StudentStage: React.FC<{
   liveClass: LiveClass;
   user: User;
   session: LiveClassSession;
-}> = ({ liveClass, user, session }) => {
+  onExit: () => void;
+}> = ({ liveClass, user, session, onExit }) => {
   const [mainStageMode, setMainStageMode] = useState<MainStageMode>(getDefaultMainStageMode());
   const [chatOpen, setChatOpen] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
@@ -349,6 +351,16 @@ const StudentStage: React.FC<{
               userId={user.uid}
               userName={user.displayName || user.email || 'Aluno'}
               readOnly={false}
+              toolbarLeading={
+                <button
+                  onClick={onExit}
+                  className="w-7 h-7 flex items-center justify-center rounded border transition text-sm text-slate-600 border-slate-200 hover:bg-slate-100"
+                  title="Home"
+                  aria-label="Home"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M3 9.5L10 4l7 5.5V17a1 1 0 01-1 1h-4.5v-4.5h-3V18H4a1 1 0 01-1-1V9.5z"/></svg>
+                </button>
+              }
             />
             {/* Teacher camera PIP while workspace is active */}
             {mainStageMode === 'workspace' && teacherTrack && isTrackReference(teacherTrack) && (
@@ -570,7 +582,7 @@ const StudentStage: React.FC<{
 
 /** Outer component — fetches LiveKit token, then mounts LiveKitRoom + stage. */
 export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
-  const { liveClass, user, session } = props;
+  const { liveClass, user, session, onExit } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
 
@@ -603,7 +615,7 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
   return (
     <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={true} audio={true}>
       <RoomAudioRenderer />
-      <StudentStage liveClass={liveClass} user={user} session={session} />
+      <StudentStage liveClass={liveClass} user={user} session={session} onExit={onExit} />
     </LiveKitRoom>
   );
 };

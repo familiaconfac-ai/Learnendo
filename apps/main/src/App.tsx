@@ -355,6 +355,9 @@ const App: React.FC = () => {
   );
   const showPlacementBanner = progressLoaded && !hasPlacementDone &&
     !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON, SectionType.LIVE_CLASSES] as string[]).includes(currentSection);
+  const isInLiveRoom =
+    currentSection === SectionType.LIVE_CLASSES &&
+    (Boolean(activeOnlineClass) || (typeof window !== 'undefined' && window.location.pathname.startsWith('/live-class/')));
   const activeCourse = COURSES.find((course) => course.id === activeCourseId) ?? null;
   // Qualify the lesson-test prefix with the current language so that English
   // completions ('lesson_test_passed_1') never appear as completed in PT/ES
@@ -2829,12 +2832,14 @@ const App: React.FC = () => {
           </button>
         </div>
       )}
-      <BottomNavigation
-        currentSection={currentSection}
-        onNavigate={handleNavigate}
-        onShare={handleShare}
-        uiLanguage={uiLanguage}
-      />
+      {!isInLiveRoom && (
+        <BottomNavigation
+          currentSection={currentSection}
+          onNavigate={handleNavigate}
+          onShare={handleShare}
+          uiLanguage={uiLanguage}
+        />
+      )}
     </div>
   );
 };
