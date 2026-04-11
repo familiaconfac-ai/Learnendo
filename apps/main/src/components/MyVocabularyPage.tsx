@@ -126,7 +126,7 @@ const FlashCard: React.FC<{
   const hasTranslation = Boolean(translation);
 
   // Access optional fields that may exist in Firestore but are not in the typed interface
-  const raw = entry as Record<string, unknown>;
+  const raw = entry as unknown as Record<string, unknown>;
   const phonetic = typeof raw.phonetic === 'string' ? raw.phonetic.trim() : '';
   const hasPhonetic = Boolean(phonetic);
   const grammarLabel = typeof raw.grammarLabel === 'string' ? raw.grammarLabel.trim() : '';

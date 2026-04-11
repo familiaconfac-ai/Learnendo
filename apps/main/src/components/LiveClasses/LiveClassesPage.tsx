@@ -97,6 +97,31 @@ const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string, 
   isPrivate: true,
 });
 
+/**
+ * Returns the next expected start time for a LiveClass.
+ *
+ * - live     → Date(0)  — always sorts first
+ * - upcoming → the stored date/time (the actual next occurrence)
+ * - recurring (finished) → next occurrence of the same weekday + time from now
+ */
+const getNextOccurrence = (liveClass: LiveClass): Date => {
+  const FAR_FUTURE = new Date(8640000000000000);
+  if (liveClass.status === 'live') return new Date(0);
+  const stored = new Date(`${liveClass.date}T${liveClass.time}:00`);
+  if (liveClass.status === 'upcoming') {
+    return Number.isNaN(stored.getTime()) ? FAR_FUTURE : stored;
+  }
+  // recurring: project to the next same weekday
+  if (Number.isNaN(stored.getTime())) return FAR_FUTURE;
+  const now = new Date();
+  const candidate = new Date(now);
+  candidate.setHours(stored.getHours(), stored.getMinutes(), 0, 0);
+  let daysUntil = (stored.getDay() - now.getDay() + 7) % 7;
+  if (daysUntil === 0 && candidate.getTime() <= now.getTime()) daysUntil = 7;
+  candidate.setDate(candidate.getDate() + daysUntil);
+  return candidate;
+};
+
 export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   user,
   userRole,
@@ -124,6 +149,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   const [groupsError, setGroupsError] = useState('');
   const [roomClassId, setRoomClassId] = useState<string>(() => getRoomClassIdFromPath());
   const [accessError, setAccessError] = useState('');
+  const [now, setNow] = useState(() => new Date());
   const teacherDisplayName = user.displayName || user.email || 'Professor';
   const viewerRole = userRole === 'teacher' && !canManageClasses ? 'student' : userRole;
   const viewer = useMemo(() => ({
@@ -226,6 +252,27 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
     () => filterLiveClassesForViewer(classes, viewer),
     [classes, viewer],
   );
+
+  // Keep `now` fresh for countdown display (every 30 s is sufficient)
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const sortedClasses = useMemo(
+    () => [...visibleClasses].sort((a, b) => getNextOccurrence(a).getTime() - getNextOccurrence(b).getTime()),
+    [visibleClasses],
+  );
+
+  const getCountdown = (liveClass: LiveClass): string | null => {
+    if (liveClass.status !== 'upcoming') return null;
+    const start = new Date(`${liveClass.date}T${liveClass.time}:00`);
+    if (Number.isNaN(start.getTime())) return null;
+    const minsUntil = Math.round((start.getTime() - now.getTime()) / 60_000);
+    if (minsUntil < 0 || minsUntil > 60) return null;
+    if (minsUntil === 0) return 'Starting now';
+    return `Starts in ${minsUntil} min`;
+  };
 
   const activeRoomClass = useMemo(() => {
     if (!roomClassId) return null;
@@ -463,7 +510,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
             {emptyStateText}
           </div>
         ) : (
-          visibleClasses.map((liveClass) => (
+          sortedClasses.map((liveClass) => (
             <article
               key={liveClass.id}
               onClick={() => {
@@ -482,7 +529,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
               tabIndex={0}
             >
               <div className="flex items-start gap-3 mb-3">
-                <img src={learnendoLogoTransparent} alt="Learnendo" className="h-16 w-auto shrink-0 opacity-80" />
+                <img src={learnendoLogoTransparent} alt="Learnendo" className="h-28 w-auto shrink-0 opacity-80" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between gap-2">
                     <h2 className="text-xl font-black leading-tight text-white">{liveClass.title}</h2>
@@ -497,6 +544,9 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
                     </span>
                   </div>
                   <p className="mt-1 text-sm font-semibold text-slate-300">{liveClass.teacherName}</p>
+                  {getCountdown(liveClass) ? (
+                    <p className="mt-0.5 text-xs font-bold text-amber-300">⏱ {getCountdown(liveClass)}</p>
+                  ) : null}
                   {liveClass.assignedStudentNames.length > 0 ? (
                     <p className="mt-1 text-xs text-slate-400">
                       <span className="font-semibold text-slate-300">Students: </span>
@@ -540,7 +590,10 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      openEdit(liveClass);
+                      setEditingClass(liveClass);
+                      setSessionDraft(undefined);
+                      setShowForm(true);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
                     className="rounded-xl bg-blue-500 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
                   >
