@@ -16,6 +16,7 @@ import { ConversionModal } from './components/AnonymousConversion/ConversionModa
 import { LanguageSelector } from './components/LanguageSelector';
 import { RankScreen } from './components/RankScreen';
 import { LiveClassesPage } from './components/LiveClasses/LiveClassesPage';
+import { MyVocabularyPage } from './components/MyVocabularyPage';
 import { ProgressEngine } from './engine/progressEngine';
 import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
@@ -2574,6 +2575,14 @@ const App: React.FC = () => {
         return <RankScreen currentUserId={user?.uid} courseId={currentCourseId ?? DEFAULT_COURSE_ID} />;
       case SectionType.SHARE:
         return <div>Share App Placeholder</div>;
+      case SectionType.VOCABULARY:
+        return (
+          <MyVocabularyPage
+            userId={user?.uid ?? ''}
+            uiLanguage={uiLanguage as 'en' | 'pt' | 'es'}
+            onBack={() => handleNavigate(SectionType.COURSES)}
+          />
+        );
       default:
         return (
           <WorkbookView
@@ -2710,6 +2719,7 @@ const App: React.FC = () => {
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.LIVE_CLASSES); setMenuOpen(false); }}>Live Classes</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.VOCABULARY); setMenuOpen(false); }}>📖 My Vocabulary</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
               {canManageUsers && (
                 <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>

@@ -9,10 +9,10 @@ interface BottomNavigationProps {
   uiLanguage?: UILang;
 }
 
-const NAV_LABELS: Record<UILang, { workbooks: string; classes: string; pronounce: string; rank: string; share: string; videos: string; teacher: string }> = {
-  en: { workbooks: 'Workbooks', classes: 'Online', pronounce: 'Pronounce', rank: 'Rank', share: 'Share', videos: 'Videos', teacher: 'Teacher' },
-  pt: { workbooks: 'Cadernos', classes: 'Online', pronounce: 'Pronuncia', rank: 'Ranking', share: 'Compartilhar', videos: 'Videos', teacher: 'Professor' },
-  es: { workbooks: 'Libros', classes: 'Online', pronounce: 'Pronunciacion', rank: 'Ranking', share: 'Compartir', videos: 'Videos', teacher: 'Profesor' },
+const NAV_LABELS: Record<UILang, { workbooks: string; classes: string; pronounce: string; rank: string; share: string; videos: string; teacher: string; vocab: string }> = {
+  en: { workbooks: 'Workbooks', classes: 'Online', pronounce: 'Pronounce', rank: 'Rank', share: 'Share', videos: 'Videos', teacher: 'Teacher', vocab: 'Vocab' },
+  pt: { workbooks: 'Cadernos', classes: 'Online', pronounce: 'Pronuncia', rank: 'Ranking', share: 'Compartilhar', videos: 'Videos', teacher: 'Professor', vocab: 'Vocab' },
+  es: { workbooks: 'Libros', classes: 'Online', pronounce: 'Pronunciacion', rank: 'Ranking', share: 'Compartir', videos: 'Videos', teacher: 'Profesor', vocab: 'Vocab' },
 };
 
 export const BottomNavigation: React.FC<BottomNavigationProps> = ({
@@ -56,6 +56,15 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
       >
         <span className="text-lg">🏆</span>
         <span className="hidden sm:inline">{L.rank}</span>
+      </button>
+
+      <button
+        onClick={() => onNavigate('VOCABULARY')}
+        className={`flex flex-shrink-0 flex-col items-center gap-0.5 px-1.5 text-xs sm:px-2 ${currentSection === 'VOCABULARY' ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400 transition-colors'}`}
+        title={L.vocab}
+      >
+        <span className="text-lg">📖</span>
+        <span className="hidden sm:inline">{L.vocab}</span>
       </button>
 
       <button

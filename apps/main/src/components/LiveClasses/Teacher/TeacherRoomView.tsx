@@ -303,57 +303,22 @@ const TeacherStage: React.FC<{
         .teacher-stage-sidebar .student-tile { width: 3rem !important; height: 2.25rem !important; }
       }
     `}</style>
-    <div className="teacher-stage-root relative w-full h-screen bg-black overflow-hidden flex flex-col sm:flex-row">
+    <div className="teacher-stage-root fixed inset-0 z-50 bg-black overflow-hidden flex flex-col sm:flex-row">
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 min-h-0">
 
-        {/* ── Mode controls ──────────────────────────────────────────────── */}
-        <div className="flex-shrink-0 w-full sm:max-w-3xl flex flex-wrap items-center gap-1 px-2 py-1.5 bg-white border-b border-slate-200">
-          <button
-            onClick={handleCameraButton}
-            className={`flex items-center px-2 py-1 rounded text-xs border transition ${
-              viewMode === 'camera' ? 'bg-blue-600 text-white border-blue-600' : 'text-slate-700 border-slate-200 hover:bg-slate-100'
-            }`}
-            title={rl.camera}
-          >&#x1F4F7;</button>
-          <button
-            onClick={() => handleModeChange('workspace')}
-            className={`flex items-center px-2 py-1 rounded text-xs border transition ${
-              viewMode === 'workspace' ? 'bg-blue-600 text-white border-blue-600' : 'text-slate-700 border-slate-200 hover:bg-slate-100'
-            }`}
-            title={rl.workspace}
-          >&#x270F;&#xFE0F;</button>
-          {viewMode === 'workspace' && (
-            <button
-              onClick={() => setCamVisible(!camVisible)}
-              className={`flex items-center px-2 py-1 rounded text-xs border transition ${
-                camVisible ? 'text-blue-700 border-blue-200 bg-blue-50' : 'text-slate-700 border-slate-200 hover:bg-slate-100'
-              }`}
-              title={rl.pip}
-            >&#x1F4F7;</button>
-          )}
-          <button
-            onClick={() => setShowBattleSetup(true)}
-            className="flex items-center px-2 py-1 rounded text-xs border border-orange-200 text-orange-700 hover:bg-orange-50 transition"
-            title={rl.battle}
-          >&#x2694;&#xFE0F;</button>
-          <button
-            onClick={() => void toggleScreenShare()}
-            className={`flex items-center px-2 py-1 rounded text-xs border transition ${
-              isScreenSharing ? 'bg-green-600 text-white border-green-600' : 'text-slate-700 border-slate-200 hover:bg-slate-100'
-            }`}
-            title={rl.screen}
-          >&#x1F4FA;</button>
-          <div className="flex-1" />
-          {camError && (
-            <span className="text-[11px] text-red-500 truncate max-w-[9rem]" title={camError}>&#x26A0;&#xFE0F; {camError}</span>
-          )}
-        </div>
-
-        <div className="relative w-full flex-1 sm:flex-none sm:max-w-3xl sm:aspect-[16/9] overflow-hidden border border-t-0 border-slate-800 bg-slate-900/80 shadow-xl rounded-b-xl">
+        <div className="relative w-full flex-1 sm:flex-none sm:max-w-3xl sm:aspect-[16/9] overflow-hidden border border-slate-800 bg-slate-900/80 shadow-xl rounded-xl">
           
           {/* CAMERA */}
           {viewMode === 'camera' && (
-            <div className="w-full h-full flex items-center justify-center bg-black">
+            <div className="relative w-full h-full flex items-center justify-center bg-black">
+              {/* Floating mode switcher */}
+              <div className="absolute top-2 left-2 z-20 flex gap-1">
+                <button onClick={handleCameraButton} className="w-7 h-7 flex items-center justify-center rounded bg-blue-600 text-white text-sm shadow" title={rl.camera} aria-label={rl.camera}>&#x1F4F7;</button>
+                <button onClick={() => handleModeChange('workspace')} className="w-7 h-7 flex items-center justify-center rounded bg-black/50 text-white hover:bg-white/20 text-sm shadow transition" title={rl.workspace} aria-label={rl.workspace}>&#x270F;&#xFE0F;</button>
+                <button onClick={() => setShowBattleSetup(true)} className="w-7 h-7 flex items-center justify-center rounded bg-black/50 text-orange-400 hover:bg-white/20 text-sm shadow transition" title={rl.battle} aria-label={rl.battle}>&#x2694;&#xFE0F;</button>
+                <button onClick={() => void toggleScreenShare()} className={`w-7 h-7 flex items-center justify-center rounded text-sm shadow transition ${isScreenSharing ? 'bg-green-600 text-white' : 'bg-black/50 text-white hover:bg-white/20'}`} title={rl.screen} aria-label={rl.screen}>&#x1F4FA;</button>
+                {camError && <span className="text-[10px] text-red-400 bg-black/50 rounded px-1.5 flex items-center" title={camError}>&#x26A0;&#xFE0F;</span>}
+              </div>
               {isCameraEnabled ? (
                 <video ref={camVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
               ) : camError ? (
@@ -390,6 +355,13 @@ const TeacherStage: React.FC<{
                 userId={teacherUid}
                 userName={teacherName}
                 readOnly={false}
+                toolbarLeading={<>
+                  <button onClick={handleCameraButton} className="w-7 h-7 flex items-center justify-center rounded border transition text-sm text-slate-600 border-slate-200 hover:bg-slate-100" title={rl.camera} aria-label={rl.camera}>&#x1F4F7;</button>
+                  <button onClick={() => handleModeChange('workspace')} className="w-7 h-7 flex items-center justify-center rounded border transition text-sm bg-blue-600 text-white border-blue-600" title={rl.workspace} aria-label={rl.workspace}>&#x270F;&#xFE0F;</button>
+                  <button onClick={() => setShowBattleSetup(true)} className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-orange-600 hover:bg-orange-50 transition text-sm" title={rl.battle} aria-label={rl.battle}>&#x2694;&#xFE0F;</button>
+                  <button onClick={() => void toggleScreenShare()} className={`w-7 h-7 flex items-center justify-center rounded border transition text-sm ${isScreenSharing ? 'bg-green-600 text-white border-green-600' : 'text-slate-600 border-slate-200 hover:bg-slate-100'}`} title={rl.screen} aria-label={rl.screen}>&#x1F4FA;</button>
+                  {camError && <span className="text-[10px] text-red-500 flex items-center" title={camError}>&#x26A0;&#xFE0F;</span>}
+                </>}
               />
               {/* Camera PIP — teacher's own camera shown in corner while using workspace */}
               {camVisible && (

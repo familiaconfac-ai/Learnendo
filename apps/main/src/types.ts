@@ -312,6 +312,7 @@ export enum SectionType {
   HELP = 'HELP',
   TEACHER_DASHBOARD = 'TEACHER_DASHBOARD',
   RANK = 'RANK',
+  VOCABULARY = 'VOCABULARY',
 }
 
 export interface AnswerLog {
