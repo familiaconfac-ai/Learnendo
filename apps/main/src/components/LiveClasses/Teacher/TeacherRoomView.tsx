@@ -263,6 +263,28 @@ const TeacherStage: React.FC<{
     handleUpdateSession({ mainStageMode: newMode });
   };
 
+  // ── UI language & translations ──────────────────────────────────────────────────
+  const _uiLang: 'en' | 'pt' | 'es' = (() => {
+    try { return (localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es') ?? 'pt'; }
+    catch { return 'pt'; }
+  })();
+  const ROOM_LABELS = {
+    en: { camera: 'Camera', workspace: 'Workspace', battle: 'Battle', screen: 'Screen', pip: 'Cam' },
+    pt: { camera: 'Câmera',  workspace: 'Lousa',     battle: 'Batalha', screen: 'Tela',     pip: 'Câm' },
+    es: { camera: 'Cámara',  workspace: 'Pizarra',   battle: 'Batalla', screen: 'Pantalla', pip: 'Cám' },
+  } as const;
+  const rl = ROOM_LABELS[_uiLang] ?? ROOM_LABELS.pt;
+
+  // ── Camera button: toggle when already in camera view; switch + enable otherwise ──
+  const handleCameraButton = () => {
+    if (viewMode !== 'camera') {
+      handleModeChange('camera');
+      if (!isCameraEnabled) void toggleCamera();
+    } else {
+      void toggleCamera();
+    }
+  };
+
   return (
     <>
     {/* ── Mobile responsive overrides ───────────────────────────────────────── */}
@@ -283,7 +305,51 @@ const TeacherStage: React.FC<{
     `}</style>
     <div className="teacher-stage-root relative w-full h-screen bg-black overflow-hidden flex flex-col sm:flex-row">
       <div className="flex-1 flex flex-col items-center justify-center min-w-0 min-h-0">
-        <div className="relative w-full flex-1 sm:flex-none sm:max-w-3xl sm:aspect-[16/9] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900/80 shadow-xl">
+
+        {/* ── Mode controls ──────────────────────────────────────────────── */}
+        <div className="flex-shrink-0 w-full sm:max-w-3xl flex flex-wrap items-center gap-1 px-2 py-1.5 bg-white border-b border-slate-200">
+          <button
+            onClick={handleCameraButton}
+            className={`flex items-center px-2 py-1 rounded text-xs border transition ${
+              viewMode === 'camera' ? 'bg-blue-600 text-white border-blue-600' : 'text-slate-700 border-slate-200 hover:bg-slate-100'
+            }`}
+            title={rl.camera}
+          >&#x1F4F7;</button>
+          <button
+            onClick={() => handleModeChange('workspace')}
+            className={`flex items-center px-2 py-1 rounded text-xs border transition ${
+              viewMode === 'workspace' ? 'bg-blue-600 text-white border-blue-600' : 'text-slate-700 border-slate-200 hover:bg-slate-100'
+            }`}
+            title={rl.workspace}
+          >&#x270F;&#xFE0F;</button>
+          {viewMode === 'workspace' && (
+            <button
+              onClick={() => setCamVisible(!camVisible)}
+              className={`flex items-center px-2 py-1 rounded text-xs border transition ${
+                camVisible ? 'text-blue-700 border-blue-200 bg-blue-50' : 'text-slate-700 border-slate-200 hover:bg-slate-100'
+              }`}
+              title={rl.pip}
+            >&#x1F4F7;</button>
+          )}
+          <button
+            onClick={() => setShowBattleSetup(true)}
+            className="flex items-center px-2 py-1 rounded text-xs border border-orange-200 text-orange-700 hover:bg-orange-50 transition"
+            title={rl.battle}
+          >&#x2694;&#xFE0F;</button>
+          <button
+            onClick={() => void toggleScreenShare()}
+            className={`flex items-center px-2 py-1 rounded text-xs border transition ${
+              isScreenSharing ? 'bg-green-600 text-white border-green-600' : 'text-slate-700 border-slate-200 hover:bg-slate-100'
+            }`}
+            title={rl.screen}
+          >&#x1F4FA;</button>
+          <div className="flex-1" />
+          {camError && (
+            <span className="text-[11px] text-red-500 truncate max-w-[9rem]" title={camError}>&#x26A0;&#xFE0F; {camError}</span>
+          )}
+        </div>
+
+        <div className="relative w-full flex-1 sm:flex-none sm:max-w-3xl sm:aspect-[16/9] overflow-hidden border border-t-0 border-slate-800 bg-slate-900/80 shadow-xl rounded-b-xl">
           
           {/* CAMERA */}
           {viewMode === 'camera' && (
@@ -327,7 +393,7 @@ const TeacherStage: React.FC<{
               />
               {/* Camera PIP — teacher's own camera shown in corner while using workspace */}
               {camVisible && (
-                <div className="absolute bottom-14 sm:bottom-16 right-2 sm:right-3 w-28 sm:w-36 aspect-video rounded-xl overflow-hidden border-2 border-blue-500/60 shadow-xl z-20 bg-black flex items-center justify-center pointer-events-none">
+                <div className="absolute bottom-2 right-2 sm:right-3 w-28 sm:w-36 aspect-video rounded-xl overflow-hidden border-2 border-blue-500/60 shadow-xl z-20 bg-black flex items-center justify-center pointer-events-none">
                   {isCameraEnabled ? (
                     <video ref={pipVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                   ) : (
@@ -361,58 +427,6 @@ const TeacherStage: React.FC<{
             </div>
           )}
 
-          {/* BARRA DE FERRAMENTAS */}
-          <div className="absolute bottom-2 sm:bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 sm:gap-3 bg-black/90 px-2.5 sm:px-4 py-1 sm:py-2 rounded-full border border-slate-700 z-[100]">
-            <button
-              onClick={() => {
-                handleModeChange('camera');
-                // If cam mode is entered and camera not yet started, try to start it
-                if (!isCameraEnabled) void toggleCamera();
-              }}
-              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'camera' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
-              title="Modo câmera"
-            >
-              🎥
-            </button>
-            <button
-              onClick={() => handleModeChange('workspace')}
-              title="Workspace colaborativo"
-              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${viewMode === 'workspace' ? 'bg-blue-600 scale-110' : 'bg-transparent hover:bg-slate-800'}`}
-            >
-              ✏️
-            </button>
-
-            {/* Camera PIP toggle — only visible in workspace mode */}
-            {viewMode === 'workspace' && (
-              <button
-                onClick={() => setCamVisible(!camVisible)}
-                title={camVisible ? 'Ocultar câmera' : 'Mostrar câmera'}
-                className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-all ${
-                  camVisible ? 'bg-blue-600/70 ring-1 ring-blue-400' : 'bg-slate-700 hover:bg-slate-600'
-                }`}
-              >
-                🎥
-              </button>
-            )}
-
-            <button
-              onClick={() => setShowBattleSetup(true)}
-              title="Learnendo Battle"
-              className="w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center bg-orange-600 hover:bg-orange-500 transition-colors"
-            >
-              ⚔️
-            </button>
-
-            <button
-              onClick={() => void toggleScreenShare()}
-              title={isScreenSharing ? 'Parar compartilhamento de tela' : 'Compartilhar tela'}
-              className={`w-8 h-8 sm:w-11 sm:h-11 rounded-full border-none cursor-pointer text-sm sm:text-xl flex items-center justify-center transition-colors ${
-                isScreenSharing ? 'bg-green-500 hover:bg-green-400 ring-2 ring-green-300' : 'bg-slate-700 hover:bg-slate-600'
-              }`}
-            >
-              📺
-            </button>
-          </div>
         </div>
       </div>
 
@@ -445,7 +459,7 @@ const TeacherStage: React.FC<{
           onStart={handleLaunchBattle}
           onClose={() => setShowBattleSetup(false)}
           defaultLessonId={liveClass.lessonId?.toString()}
-          defaultWorkbookId={liveClass.workbookId}
+          defaultWorkbookId={liveClass.workbookId ?? undefined}
           defaultCourseId={liveClass.courseId}
         />
       )}

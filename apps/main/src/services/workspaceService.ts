@@ -14,6 +14,16 @@ export interface WorkspaceTextStyles {
 
 export type WorkspaceItemType = 'text' | 'image';
 
+/** A single page within a workspace material or live session. */
+export interface WorkspacePage {
+  id: string;
+  name: string;
+  /** HTML snapshot as of the last time this page was the active page.
+   *  While a page is active, authoritative content lives in WorkspaceDoc.docContent / .items. */
+  docContent: string;
+  items: WorkspaceItem[];
+}
+
 export interface WorkspaceItem {
   id: string;
   type: WorkspaceItemType;
@@ -42,9 +52,28 @@ export interface WorkspaceDoc {
   docUpdatedBy?: string;
   /** Scroll position (0-1) for scroll-sync */
   scrollRatio?: number;
+  /** All pages (Fase 2). Active page content is always mirrored in docContent/items for real-time sync. */
+  pages?: WorkspacePage[];
+  /** ID of the currently active page (Fase 2). */
+  currentPageId?: string;
   updatedAt: number;
   updatedBy: string;
   updatedByName: string;
+}
+
+/**
+ * Normalize a raw pages array coming from Firestore.
+ * Handles pre-Fase-2 data that may be missing the `id` field.
+ */
+export function normalizeWorkspacePages(
+  raw: Partial<WorkspacePage>[],
+): WorkspacePage[] {
+  return (raw ?? []).map((p, i) => ({
+    id: p.id ?? `pg_${i}_${Math.random().toString(36).slice(2, 6)}`,
+    name: p.name ?? `Página ${i + 1}`,
+    docContent: p.docContent ?? '',
+    items: p.items ?? [],
+  }));
 }
 
 /** Save only the main document content (debounced separately from items) */
@@ -150,5 +179,42 @@ export async function saveWorkspace(
       { merge: true },
     );
     console.log('[WS] saveWorkspace setDoc ✅');
+  }
+}
+
+/**
+ * Write the full page-aware workspace state in one atomic call.
+ * Used when switching pages or changing page structure (add/delete/rename/duplicate).
+ * Writes both the pages array AND the active page's docContent/items so that
+ * subscribeWorkspace on all clients immediately reflects the new active page.
+ */
+export async function savePageSwitch(
+  classId: string,
+  pages: WorkspacePage[],
+  currentPageId: string,
+  docContent: string,
+  items: WorkspaceItem[],
+  uid: string,
+  name: string,
+): Promise<void> {
+  if (!db) return;
+  const { updateDoc, setDoc } = await import('firebase/firestore');
+  const payload = {
+    pages,
+    currentPageId,
+    docContent,
+    docUpdatedBy: uid,
+    items,
+    itemsUpdatedBy: uid,
+    updatedAt: Date.now(),
+    updatedBy: uid,
+    updatedByName: name,
+  };
+  try {
+    await updateDoc(workspaceRef(classId), payload);
+    console.log(`[WS] savePageSwitch ✅ cpid=${currentPageId} pages=${pages.length}`);
+  } catch {
+    await setDoc(workspaceRef(classId), payload, { merge: true });
+    console.log('[WS] savePageSwitch setDoc ✅');
   }
 }

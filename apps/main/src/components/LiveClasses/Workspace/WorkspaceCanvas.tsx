@@ -24,9 +24,18 @@ import {
   saveWorkspace,
   saveDocContent,
   saveScrollRatio,
+  savePageSwitch,
+  normalizeWorkspacePages,
   WorkspaceItem,
   WorkspaceItemType,
+  WorkspacePage,
 } from '../../../services/workspaceService';
+import {
+  saveWorkspaceAsMaterial,
+  loadMaterialToWorkspace,
+  getMaterialsByUser,
+  WorkspaceMaterial,
+} from '../../../services/materialsService';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -154,6 +163,151 @@ const ColorSwatch: React.FC<{
   );
 };
 
+// ── PageTab ────────────────────────────────────────────────────────────────────
+
+interface PageTabProps {
+  page: WorkspacePage;
+  isActive: boolean;
+  readOnly: boolean;
+  canDelete: boolean;
+  onActivate: () => void;
+  onRename: (name: string) => void;
+  onDuplicate: () => void;
+  onDelete: () => void;
+}
+
+const PageTab: React.FC<PageTabProps> = ({
+  page, isActive, readOnly, canDelete, onActivate, onRename, onDuplicate, onDelete,
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Used to show the ⋯ button on hover for inactive tabs
+  const [hovered, setHovered] = useState(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const h = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [menuOpen]);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  const startEdit = () => {
+    if (readOnly) return;
+    // Switch to this tab first so the rename is visible immediately
+    if (!isActive) onActivate();
+    setEditValue(page.name);
+    setEditing(true);
+  };
+
+  const commitEdit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== page.name) onRename(trimmed);
+    setEditing(false);
+  };
+
+  // Three-dot button is always present for the teacher but:
+  //   - active tab: always visible
+  //   - inactive tab: only visible on hover (opacity trick)
+  const showMenuBtn = !readOnly && (isActive || hovered || menuOpen);
+
+  return (
+    <div
+      className={`relative flex items-center flex-shrink-0 border-b-2 select-none transition-colors ${
+        isActive
+          ? 'bg-white border-blue-500'
+          : 'bg-slate-50 border-transparent hover:bg-slate-100 cursor-pointer'
+      }`}
+      onClick={() => { if (!isActive) onActivate(); }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { if (!menuOpen) setHovered(false); }}
+      style={{ minWidth: '5rem', maxWidth: '10rem' }}
+    >
+      {/* Page name / inline rename input */}
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={editValue}
+          onChange={(e) => setEditValue(e.target.value)}
+          onBlur={commitEdit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') commitEdit();
+            if (e.key === 'Escape') setEditing(false);
+            e.stopPropagation();
+          }}
+          onClick={(e) => e.stopPropagation()}
+          className="w-full mx-1 px-1 py-0 text-xs border border-blue-400 rounded focus:outline-none bg-white text-slate-800"
+          autoFocus
+        />
+      ) : (
+        <span
+          className={`flex-1 truncate px-2 py-1 text-xs ${isActive ? 'text-blue-700 font-medium' : 'text-slate-500'}`}
+          onDoubleClick={(e) => { e.stopPropagation(); startEdit(); }}
+          title={page.name}
+        >
+          {page.name}
+        </span>
+      )}
+
+      {/* Three-dot context menu — visible on any tab for the teacher */}
+      {!readOnly && (
+        <div
+          ref={menuRef}
+          className={`relative flex-shrink-0 transition-opacity ${showMenuBtn ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((o) => !o); }}
+            className="flex items-center justify-center w-5 h-6 mx-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600"
+            title="Opções da página"
+          >
+            <svg viewBox="0 0 4 14" className="w-1 h-3.5" fill="currentColor">
+              <circle cx="2" cy="2" r="1.5"/><circle cx="2" cy="7" r="1.5"/><circle cx="2" cy="12" r="1.5"/>
+            </svg>
+          </button>
+          {menuOpen && (
+            <div className="absolute top-full left-0 mt-0.5 z-50 bg-white border border-slate-200 rounded-lg shadow-xl py-1 min-w-[8rem]">
+              <button
+                onClick={(e) => { e.stopPropagation(); setMenuOpen(false); startEdit(); }}
+                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+              >
+                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 16 16"><path d="M11 2l3 3-8 8H3v-3l8-8z"/></svg>
+                Renomear
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDuplicate(); }}
+                className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
+              >
+                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 16 16"><rect x="5" y="5" width="9" height="9" rx="1"/><path d="M2 11V2h9"/></svg>
+                Duplicar
+              </button>
+              {canDelete && (
+                <>
+                  <div className="h-px bg-slate-100 my-0.5" />
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setMenuOpen(false); onDelete(); }}
+                    className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+                  >
+                    <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 16 16"><path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M4 4l1 9h6l1-9"/></svg>
+                    Excluir
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
@@ -170,6 +324,28 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [fontSize, setFontSize] = useState<number>(16);
   const [textColor, setTextColor] = useState<string>('#000000');
   const [bgColor, setBgColor] = useState<string>('');
+
+  // ── Page state (───────────────────────────────────────────────────────────────
+  // The ‘pages’ array owns names / IDs and the content snapshots of INACTIVE pages.
+  // The ACTIVE page’s live content lives in the existing docHtml / items state.
+  // On page switch (or save), we ‘flush’ docRef.current.innerHTML + items into pages first.
+  const _initPageId = useRef<string>(uid()).current; // stable across re-renders
+  const [pages, setPages] = useState<WorkspacePage[]>([
+    { id: _initPageId, name: 'Página 1', docContent: '', items: [] },
+  ]);
+  const [activePageId, setActivePageId] = useState<string>(_initPageId);
+  // Refs are kept in sync manually (no useEffect delay) so closures always see latest.
+  const pagesRef = useRef<WorkspacePage[]>([{ id: _initPageId, name: 'Página 1', docContent: '', items: [] }]);
+  const activePageIdRef = useRef<string>(_initPageId);
+
+  // ── Materials state ──────────────────────────────────────────────────────
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saveMaterialTitle, setSaveMaterialTitle] = useState('');
+  const [savingMaterial, setSavingMaterial] = useState(false);
+  const [showOpenModal, setShowOpenModal] = useState(false);
+  const [materialsList, setMaterialsList] = useState<WorkspaceMaterial[]>([]);
+  const [loadingMaterials, setLoadingMaterials] = useState(false);
+  const [loadingMaterialId, setLoadingMaterialId] = useState<string | null>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const overflowRef = useRef<HTMLDivElement>(null);
@@ -205,6 +381,41 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         (data.docUpdatedBy ?? data.updatedBy) === userId;
       const isItemsSelfEcho = !!data &&
         (data.itemsUpdatedBy ?? data.updatedBy) === userId;
+      // For page-structure changes (switch/add/delete/rename) we use the top-level updatedBy.
+      const isPageSelfEcho = !!data && data.updatedBy === userId;
+
+      // ── Pages / active-page sync (Fase 2) ──────────────────────────────────
+      // Only apply remote changes; skip our own echo (local state already updated).
+      if (data?.currentPageId && !isPageSelfEcho) {
+        const remoteCPID = data.currentPageId;
+        const remotePages = data.pages;
+        if (remotePages && remotePages.length > 0) {
+          const normalized = normalizeWorkspacePages(remotePages);
+          if (remoteCPID !== activePageIdRef.current) {
+            // Remote page switch → follow it
+            pagesRef.current = normalized;
+            setPages(normalized);
+            activePageIdRef.current = remoteCPID;
+            setActivePageId(remoteCPID);
+            // docContent/items for the new active page will be applied below by the
+            // existing handler (they are the top-level docContent/items in the snapshot).
+          } else {
+            // Same active page, but pages structure changed (rename/add/delete/duplicate).
+            // Update pages metadata; keep active page’s live content.
+            const merged = normalized.map((rp) =>
+              rp.id === activePageIdRef.current
+                ? { ...rp, docContent: pagesRef.current.find((p) => p.id === rp.id)?.docContent ?? rp.docContent, items: pagesRef.current.find((p) => p.id === rp.id)?.items ?? rp.items }
+                : rp,
+            );
+            pagesRef.current = merged;
+            setPages(merged);
+          }
+        } else if (remoteCPID !== activePageIdRef.current) {
+          // currentPageId changed but pages array isn’t present (legacy or partial write)
+          activePageIdRef.current = remoteCPID;
+          setActivePageId(remoteCPID);
+        }
+      }
 
       console.log(
         `[WS] snap from "${data?.updatedByName ?? '?'}" docBy=${data?.docUpdatedBy?.slice(0,6) ?? '?'} itemsBy=${data?.itemsUpdatedBy?.slice(0,6) ?? '?'} docSelf=${isDocSelfEcho} itemsSelf=${isItemsSelfEcho}`,
@@ -433,6 +644,172 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (t === canvasRef.current || t === overflowRef.current || t === docRef.current) setSelectedId(null);
   };
 
+  // ── Page operations ───────────────────────────────────────────────────────────────
+
+  /**
+   * Flush the current active page’s live content (from DOM + items state) into
+   * the pages array. Returns the flushed pages array.
+   * Must be called before any operation that reads pages content (switch, save material).
+   */
+  const flushPages = (): WorkspacePage[] => {
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const flushed = pagesRef.current.map((p) =>
+      p.id === activePageIdRef.current ? { ...p, docContent: currentDoc, items } : p,
+    );
+    pagesRef.current = flushed;
+    setPages(flushed);
+    return flushed;
+  };
+
+  const switchPage = (pageId: string) => {
+    if (pageId === activePageIdRef.current || readOnly) return;
+    const flushed = flushPages();
+    const newPage = flushed.find((p) => p.id === pageId);
+    if (!newPage) return;
+    // Cancel debounced saves to avoid stale writes after the switch.
+    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    setDocHtml(newPage.docContent);
+    if (docRef.current) docRef.current.innerHTML = newPage.docContent;
+    setItems(newPage.items);
+    setSelectedId(null);
+    activePageIdRef.current = pageId;
+    setActivePageId(pageId);
+    savePageSwitch(classId, flushed, pageId, newPage.docContent, newPage.items, userId, userName).catch(console.error);
+  };
+
+  const addPage = () => {
+    if (readOnly) return;
+    const flushed = flushPages();
+    const newId = uid();
+    const newPage: WorkspacePage = { id: newId, name: `Página ${flushed.length + 1}`, docContent: '', items: [] };
+    const updated = [...flushed, newPage];
+    pagesRef.current = updated;
+    setPages(updated);
+    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    setDocHtml('');
+    if (docRef.current) docRef.current.innerHTML = '';
+    setItems([]);
+    setSelectedId(null);
+    activePageIdRef.current = newId;
+    setActivePageId(newId);
+    savePageSwitch(classId, updated, newId, '', [], userId, userName).catch(console.error);
+  };
+
+  const deletePage = (pageId: string) => {
+    if (readOnly) return;
+    const current = pagesRef.current;
+    if (current.length <= 1) return; // never delete the last page
+    if (!window.confirm('Excluir esta página?')) return;
+    const isActive = pageId === activePageIdRef.current;
+    const idx = current.findIndex((p) => p.id === pageId);
+    const remaining = current.filter((p) => p.id !== pageId);
+    pagesRef.current = remaining;
+    setPages(remaining);
+    if (isActive) {
+      const nextPage = remaining[Math.max(0, idx - 1)];
+      if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+      if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+      setDocHtml(nextPage.docContent);
+      if (docRef.current) docRef.current.innerHTML = nextPage.docContent;
+      setItems(nextPage.items);
+      setSelectedId(null);
+      activePageIdRef.current = nextPage.id;
+      setActivePageId(nextPage.id);
+      savePageSwitch(classId, remaining, nextPage.id, nextPage.docContent, nextPage.items, userId, userName).catch(console.error);
+    } else {
+      const currentDoc = docRef.current?.innerHTML ?? docHtml;
+      savePageSwitch(classId, remaining, activePageIdRef.current, currentDoc, items, userId, userName).catch(console.error);
+    }
+  };
+
+  const renamePage = (pageId: string, newName: string) => {
+    if (readOnly) return;
+    const updated = pagesRef.current.map((p) => (p.id === pageId ? { ...p, name: newName } : p));
+    pagesRef.current = updated;
+    setPages(updated);
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName).catch(console.error);
+  };
+
+  const duplicatePage = (pageId: string) => {
+    if (readOnly) return;
+    const flushed = flushPages();
+    const idx = flushed.findIndex((p) => p.id === pageId);
+    if (idx === -1) return;
+    const source = flushed[idx];
+    const copy: WorkspacePage = {
+      id: uid(),
+      name: `${source.name} (cópia)`,
+      docContent: source.docContent,
+      items: source.items.map((it) => ({ ...it, id: uid() })),
+    };
+    const updated = [...flushed.slice(0, idx + 1), copy, ...flushed.slice(idx + 1)];
+    pagesRef.current = updated;
+    setPages(updated);
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName).catch(console.error);
+  };
+
+  const handleSaveMaterial = async () => {
+    const title = saveMaterialTitle.trim();
+    if (!title) return;
+    setSavingMaterial(true);
+    try {
+      // Flush the active page content into the pages array before saving.
+      const allPages = flushPages();
+      await saveWorkspaceAsMaterial(allPages, userId, { title });
+      setShowSaveModal(false);
+      setSaveMaterialTitle('');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[Materials] save failed:', msg, err);
+      alert(`Erro ao salvar material: ${msg}`);
+    } finally {
+      setSavingMaterial(false);
+    }
+  };
+
+  const handleOpenMaterialsList = async () => {
+    setShowOpenModal(true);
+    setLoadingMaterials(true);
+    try {
+      const list = await getMaterialsByUser(userId);
+      setMaterialsList(list);
+    } catch (err) {
+      console.error('[Materials] list failed', err);
+    } finally {
+      setLoadingMaterials(false);
+    }
+  };
+
+  const handleLoadMaterial = async (materialId: string) => {
+    setLoadingMaterialId(materialId);
+    try {
+      const { pages: loadedPages, currentPageId } = await loadMaterialToWorkspace(materialId, classId, userId, userName);
+      // Apply loaded material to local state immediately (before self-echo arrives).
+      const normalized = normalizeWorkspacePages(loadedPages);
+      pagesRef.current = normalized;
+      setPages(normalized);
+      activePageIdRef.current = currentPageId;
+      setActivePageId(currentPageId);
+      const activePage = normalized.find((p) => p.id === currentPageId) ?? normalized[0];
+      if (activePage) {
+        setDocHtml(activePage.docContent);
+        if (docRef.current) docRef.current.innerHTML = activePage.docContent;
+        setItems(activePage.items);
+      }
+      setSelectedId(null);
+      setShowOpenModal(false);
+    } catch (err) {
+      console.error('[Materials] load failed', err);
+      alert('Erro ao abrir material. Tente novamente.');
+    } finally {
+      setLoadingMaterialId(null);
+    }
+  };
+
   const selected = items.find((i) => i.id === selectedId) ?? null;
 
   return (
@@ -524,31 +901,162 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </>
         )}
 
+        {!readOnly && (
+          <>
+            <div className="w-px h-5 bg-slate-200 mx-0.5" />
+            <button
+              onClick={() => { setSaveMaterialTitle(''); setShowSaveModal(true); }}
+              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-green-50 text-green-700 text-xs border border-green-200 transition"
+              title="Salvar lousa como material reutilizável"
+            >
+              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M17 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1h9l4 4z"/><path d="M13 4v4H7V4"/><path d="M7 12h6"/></svg>
+            </button>
+            <button
+              onClick={handleOpenMaterialsList}
+              className="flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 text-blue-700 text-xs border border-blue-200 transition"
+              title="Abrir material salvo na lousa"
+            >
+              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M3 7a1 1 0 011-1h4l2 2h6a1 1 0 011 1v7a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/></svg>
+            </button>
+          </>
+        )}
+
         <div className="flex-1" />
 
-        <button onClick={handleExportPdf} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-100 text-slate-600 text-xs border border-slate-200 transition" title="Exportar como PDF">
+        <button onClick={handleExportPdf} className="flex items-center px-2 py-1 rounded hover:bg-slate-100 text-slate-600 text-xs border border-slate-200 transition" title="Exportar como PDF">
           <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M5 4h7l4 4v8a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/><polyline points="12 4 12 9 17 9"/><line x1="10" y1="12" x2="10" y2="17"/><polyline points="7 14 10 17 13 14"/></svg>
-          PDF
         </button>
 
         {!readOnly && (
           <button
             onClick={() => {
-              if (!window.confirm('Limpar todo o conteúdo?')) return;
+              if (!window.confirm('Limpar o conteúdo desta página?')) return;
               setItems([]); setSelectedId(null);
               if (docRef.current) docRef.current.innerHTML = '';
               setDocHtml('');
-              saveWorkspace(classId, [], userId, userName).catch(console.error);
-              saveDocContent(classId, '', userId, userName).catch(console.error);
+              // Flush cleared content into pagesRef and write to Firestore.
+              const updated = pagesRef.current.map((p) =>
+                p.id === activePageIdRef.current ? { ...p, docContent: '', items: [] } : p,
+              );
+              pagesRef.current = updated;
+              setPages(updated);
+              savePageSwitch(classId, updated, activePageIdRef.current, '', [], userId, userName).catch(console.error);
             }}
-            className="flex items-center gap-1 px-2 py-1 rounded hover:bg-red-50 text-red-500 text-xs border border-red-200 transition"
-            title="Limpar tudo"
+            className="flex items-center px-2 py-1 rounded hover:bg-red-50 text-red-500 text-xs border border-red-200 transition"
+            title="Limpar conteúdo desta página"
           >
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20"><path d="M4 7h12M6 7V5a1 1 0 011-1h6a1 1 0 011 1v2M16 7l-1 10a2 2 0 01-2 2H7a2 2 0 01-2-2L4 7"/></svg>
-            Limpar
           </button>
         )}
       </div>
+
+      {/* ── Page tab bar ────────────────────────────────────────────── */}
+      <div
+        className="flex-shrink-0 flex items-stretch gap-0 bg-slate-50 border-b border-slate-200 overflow-x-auto"
+        style={{ minHeight: '2rem', zIndex: 15 }}
+      >
+        {pages.map((page) => (
+          <PageTab
+            key={page.id}
+            page={page}
+            isActive={page.id === activePageId}
+            readOnly={readOnly}
+            canDelete={pages.length > 1}
+            onActivate={() => switchPage(page.id)}
+            onRename={(name) => renamePage(page.id, name)}
+            onDuplicate={() => duplicatePage(page.id)}
+            onDelete={() => deletePage(page.id)}
+          />
+        ))}
+        {!readOnly && (
+          <button
+            onClick={addPage}
+            className="flex-shrink-0 flex items-center justify-center w-8 h-full text-slate-400 hover:text-blue-600 hover:bg-white transition px-2"
+            title="Nova página"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 16 16">
+              <line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
+            </svg>
+          </button>
+        )}
+      </div>
+
+      {/* ── Save Material Modal ──────────────────────────────────────────── */}
+      {showSaveModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowSaveModal(false); }}
+        >
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4">
+            <h2 className="text-base font-semibold text-slate-800 mb-4">Salvar como material</h2>
+            <label className="block text-xs text-slate-500 mb-1">Título do material</label>
+            <input
+              type="text"
+              autoFocus
+              value={saveMaterialTitle}
+              onChange={(e) => setSaveMaterialTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveMaterial(); if (e.key === 'Escape') setShowSaveModal(false); }}
+              placeholder="Ex: Vocabulário — Cores"
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-green-400 mb-4"
+            />
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setShowSaveModal(false)}
+                className="px-3 py-1.5 rounded-lg text-xs border border-slate-200 text-slate-600 hover:bg-slate-50 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveMaterial}
+                disabled={savingMaterial || !saveMaterialTitle.trim()}
+                className="px-3 py-1.5 rounded-lg text-xs bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition"
+              >
+                {savingMaterial ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Open Material Modal ───────────────────────────────────────────── */}
+      {showOpenModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowOpenModal(false); }}
+        >
+          <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4 flex flex-col" style={{ maxHeight: '80vh' }}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-base font-semibold text-slate-800">Abrir material</h2>
+              <button onClick={() => setShowOpenModal(false)} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8"/></svg>
+              </button>
+            </div>
+            {loadingMaterials ? (
+              <p className="text-sm text-slate-400 text-center py-6">Carregando…</p>
+            ) : materialsList.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-6">Nenhum material salvo ainda.</p>
+            ) : (
+              <ul className="overflow-y-auto flex-1 divide-y divide-slate-100">
+                {materialsList.map((m) => (
+                  <li key={m.id} className="py-2.5 flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{m.title}</p>
+                      <p className="text-xs text-slate-400">{new Date(m.updatedAt).toLocaleDateString('pt-BR')}</p>
+                    </div>
+                    <button
+                      onClick={() => handleLoadMaterial(m.id)}
+                      disabled={loadingMaterialId === m.id}
+                      className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
+                    >
+                      {loadingMaterialId === m.id ? '…' : 'Abrir'}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Scrollable content ─────────────────────────────────────────────── */}
       <div
