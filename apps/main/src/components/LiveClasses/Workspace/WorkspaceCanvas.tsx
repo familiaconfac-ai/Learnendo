@@ -1,16 +1,16 @@
-﻿/**
- * WorkspaceCanvas — collaborative document editor for live classes.
+/**
+ * WorkspaceCanvas � collaborative document editor for live classes.
  *
  * Layout:
- *   ┌──────────────────── fixed toolbar ────────────────────┐
- *   │  font | size | B I U | align | color | tools | export │
- *   ├────────────────────────────────────────────────────────┤
- *   │  scrollable area                                       │
- *   │   ┌──── main document (contenteditable) ────────────┐  │
- *   │   │  type directly here                             │  │
- *   │   └─────────────────────────────────────────────────┘  │
- *   │   floating blocks (text boxes / images) overlay doc   │
- *   └────────────────────────────────────────────────────────┘
+ *   +-------------------- fixed toolbar --------------------+
+ *   �  font | size | B I U | align | color | tools | export �
+ *   +--------------------------------------------------------�
+ *   �  scrollable area                                       �
+ *   �   +---- main document (contenteditable) ------------+  �
+ *   �   �  type directly here                             �  �
+ *   �   +-------------------------------------------------+  �
+ *   �   floating blocks (text boxes / images) overlay doc   �
+ *   +--------------------------------------------------------+
  */
 import React, {
   useState,
@@ -38,9 +38,10 @@ import {
 } from '../../../services/materialsService';
 import { speak } from '../../../services/ttsService';
 import { translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
+import { subscribeUserAccounts, type UserAccountProfile } from '../../../services/userRoles';
 import { MyVocabularyPage } from '../../MyVocabularyPage';
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// -- Helpers -------------------------------------------------------------------
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -50,7 +51,7 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
-// ── Config ─────────────────────────────────────────────────────────────────────
+// -- Config ---------------------------------------------------------------------
 
 const FONT_FAMILIES = [
   { label: 'Arial', v: 'Arial, sans-serif' },
@@ -89,7 +90,7 @@ const BG_COLORS = [
   { label: 'Rosa', v: '#fce7f3' },
 ];
 
-// ── Workspace UI labels ────────────────────────────────────────────────────────
+// -- Workspace UI labels --------------------------------------------------------
 
 interface WsLabels {
   textSection: string;
@@ -143,35 +144,35 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     textSection: 'Texto', bgSection: 'Fundo', colorBtn: 'Cor do texto e fundo',
     alignLeft: 'Esquerda', alignCenter: 'Centralizar', alignRight: 'Direita', alignJustify: 'Justificar',
     alignLabel: (v) => `Alinhar: ${v}`,
-    bold: 'Negrito', italic: 'Itálico', underline: 'Sublinhado',
+    bold: 'Negrito', italic: 'It�lico', underline: 'Sublinhado',
     textBox: 'Caixa de texto flutuante',
-    image: 'Inserir imagem (PNG com transparência preservada)',
+    image: 'Inserir imagem (PNG com transpar�ncia preservada)',
     deleteBlock: 'Apagar bloco selecionado',
-    saveAll: 'Salvar lousa como material reutilizável',
+    saveAll: 'Salvar lousa como material reutiliz�vel',
     openMaterial: 'Abrir material salvo na lousa',
     exportPdf: 'Exportar como PDF',
-    clearPage: 'Limpar conteúdo desta página',
-    newPage: 'Nova página',
-    placeholder: 'Clique aqui e comece a digitar…',
-    readonlyPh: 'Aguardando conteúdo do professor…',
-    pageMenu: 'Opções da página', duplicate: 'Duplicar página',
-    savePage: 'Salvar esta página', deletePage: 'Excluir página',
-    confirmClear: 'Limpar o conteúdo desta página?',
-    confirmDelete: 'Excluir esta página?',
+    clearPage: 'Limpar conte�do desta p�gina',
+    newPage: 'Nova p�gina',
+    placeholder: 'Clique aqui e comece a digitar�',
+    readonlyPh: 'Aguardando conte�do do professor�',
+    pageMenu: 'Op��es da p�gina', duplicate: 'Duplicar p�gina',
+    savePage: 'Salvar esta p�gina', deletePage: 'Excluir p�gina',
+    confirmClear: 'Limpar o conte�do desta p�gina?',
+    confirmDelete: 'Excluir esta p�gina?',
     saveModalTitle: 'Salvar como material',
-    savePageModalTitle: 'Salvar página como material',
+    savePageModalTitle: 'Salvar p�gina como material',
     openModalTitle: 'Abrir material',
-    materialTitleLabel: 'Título do material',
-    materialPlaceholder: 'Ex: Vocabulário — Cores',
-    cancel: 'Cancelar', save: 'Salvar', saving: 'Salvando…',
+    materialTitleLabel: 'T�tulo do material',
+    materialPlaceholder: 'Ex: Vocabul�rio � Cores',
+    cancel: 'Cancelar', save: 'Salvar', saving: 'Salvando�',
     noMaterials: 'Nenhum material salvo ainda.',
-    loading: 'Carregando…', open: 'Abrir',
+    loading: 'Carregando�', open: 'Abrir',
     exportPopupError: 'Permita popups para exportar o PDF.',
-    pageName: (n) => `Página ${n}`,
-    pageNameTip: (name) => `${name} — duplo clique para renomear`,
+    pageName: (n) => `P�gina ${n}`,
+    pageNameTip: (name) => `${name} � duplo clique para renomear`,
     errorSave: (msg) => `Erro ao salvar material: ${msg}`,
     errorOpen: 'Erro ao abrir material. Tente novamente.',
-    vocab: 'Vocabulário',
+    vocab: 'Vocabul�rio',
   },
   en: {
     textSection: 'Text', bgSection: 'Background', colorBtn: 'Text and background color',
@@ -186,8 +187,8 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     exportPdf: 'Export as PDF',
     clearPage: 'Clear this page content',
     newPage: 'New page',
-    placeholder: 'Click here and start typing…',
-    readonlyPh: "Waiting for teacher's content…",
+    placeholder: 'Click here and start typing�',
+    readonlyPh: "Waiting for teacher's content�",
     pageMenu: 'Page options', duplicate: 'Duplicate page',
     savePage: 'Save this page', deletePage: 'Delete page',
     confirmClear: 'Clear this page content?',
@@ -196,13 +197,13 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     savePageModalTitle: 'Save page as material',
     openModalTitle: 'Open material',
     materialTitleLabel: 'Material title',
-    materialPlaceholder: 'E.g.: Vocabulary — Colors',
-    cancel: 'Cancel', save: 'Save', saving: 'Saving…',
+    materialPlaceholder: 'E.g.: Vocabulary � Colors',
+    cancel: 'Cancel', save: 'Save', saving: 'Saving�',
     noMaterials: 'No saved materials yet.',
-    loading: 'Loading…', open: 'Open',
+    loading: 'Loading�', open: 'Open',
     exportPopupError: 'Allow popups to export the PDF.',
     pageName: (n) => `Page ${n}`,
-    pageNameTip: (name) => `${name} — double-click to rename`,
+    pageNameTip: (name) => `${name} � double-click to rename`,
     errorSave: (msg) => `Error saving material: ${msg}`,
     errorOpen: 'Error opening material. Please try again.',
     vocab: 'Vocabulary',
@@ -218,27 +219,27 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     saveAll: 'Guardar pizarra como material',
     openMaterial: 'Abrir material guardado',
     exportPdf: 'Exportar como PDF',
-    clearPage: 'Limpiar esta página',
-    newPage: 'Nueva página',
-    placeholder: 'Haz clic aquí y comienza a escribir…',
-    readonlyPh: 'Esperando el contenido del profesor…',
-    pageMenu: 'Opciones de página', duplicate: 'Duplicar página',
-    savePage: 'Guardar esta página', deletePage: 'Eliminar página',
-    confirmClear: '¿Limpiar el contenido de esta página?',
-    confirmDelete: '¿Eliminar esta página?',
+    clearPage: 'Limpiar esta p�gina',
+    newPage: 'Nueva p�gina',
+    placeholder: 'Haz clic aqu� y comienza a escribir�',
+    readonlyPh: 'Esperando el contenido del profesor�',
+    pageMenu: 'Opciones de p�gina', duplicate: 'Duplicar p�gina',
+    savePage: 'Guardar esta p�gina', deletePage: 'Eliminar p�gina',
+    confirmClear: '�Limpiar el contenido de esta p�gina?',
+    confirmDelete: '�Eliminar esta p�gina?',
     saveModalTitle: 'Guardar como material',
-    savePageModalTitle: 'Guardar página como material',
+    savePageModalTitle: 'Guardar p�gina como material',
     openModalTitle: 'Abrir material',
-    materialTitleLabel: 'Título del material',
-    materialPlaceholder: 'Ej: Vocabulario — Colores',
-    cancel: 'Cancelar', save: 'Guardar', saving: 'Guardando…',
+    materialTitleLabel: 'T�tulo del material',
+    materialPlaceholder: 'Ej: Vocabulario � Colores',
+    cancel: 'Cancelar', save: 'Guardar', saving: 'Guardando�',
     noMaterials: 'No hay materiales guardados.',
-    loading: 'Cargando…', open: 'Abrir',
+    loading: 'Cargando�', open: 'Abrir',
     exportPopupError: 'Permite las ventanas emergentes para exportar el PDF.',
-    pageName: (n) => `Página ${n}`,
-    pageNameTip: (name) => `${name} — doble clic para renombrar`,
+    pageName: (n) => `P�gina ${n}`,
+    pageNameTip: (name) => `${name} � doble clic para renombrar`,
     errorSave: (msg) => `Error al guardar material: ${msg}`,
-    errorOpen: 'Error al abrir material. Inténtalo de nuevo.',
+    errorOpen: 'Error al abrir material. Int�ntalo de nuevo.',
     vocab: 'Vocabulario',
   },
 };
@@ -252,7 +253,41 @@ const getWsl = (): WsLabels => {
   }
 };
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+const getWorkspaceBoxFlowLabels = () => {
+  try {
+    const lang = localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es' | null;
+    if (lang === 'en') {
+      return {
+        move: 'Move',
+        unassigned: 'Unassigned',
+        none: 'None',
+        boxLabel: 'Box label',
+        selectStudent: 'Select a student',
+      };
+    }
+    if (lang === 'es') {
+      return {
+        move: 'Mover',
+        unassigned: 'Sin asignar',
+        none: 'Ninguno',
+        boxLabel: 'Nombre de la caja',
+        selectStudent: 'Selecciona un alumno',
+      };
+    }
+  } catch {
+    // fall through to pt defaults
+  }
+
+  return {
+    move: 'Mover',
+    unassigned: 'Sem dono',
+    none: 'Nenhum',
+    boxLabel: 'Nome da caixa',
+    selectStudent: 'Selecione um aluno',
+  };
+};
+
+// -- Types ---------------------------------------------------------------------
 
 interface DragState {
   itemId: string;
@@ -265,15 +300,86 @@ interface DragState {
   origH: number;
 }
 
+interface WorkspaceViewerContext {
+  classId: string;
+  userId: string;
+  userEmail?: string | null;
+  classTeacherUserId?: string | null;
+  isTeacherView: boolean;
+}
+
+interface AssignableStudentOption {
+  uid: string;
+  label: string;
+  email: string | null;
+  isOnline: boolean;
+}
+
+const WORKSPACE_ADMIN_EMAIL = 'learnendo@gmail.com';
+
+function normalizeEmail(email?: string | null): string {
+  return (email ?? '').trim().toLowerCase();
+}
+
+function isAdmin(viewer: WorkspaceViewerContext): boolean {
+  return normalizeEmail(viewer.userEmail) === WORKSPACE_ADMIN_EMAIL;
+}
+
+function isTeacher(viewer: WorkspaceViewerContext): boolean {
+  if (isAdmin(viewer)) return false;
+  if (viewer.isTeacherView) return true;
+  return Boolean(viewer.classTeacherUserId && viewer.userId === viewer.classTeacherUserId);
+}
+
+function isStudent(viewer: WorkspaceViewerContext): boolean {
+  return !isAdmin(viewer) && !isTeacher(viewer);
+}
+
+function isBoxOwner(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  return Boolean(item.ownerUserId && item.ownerUserId === viewer.userId);
+}
+
+function canManageBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  if (isAdmin(viewer)) return true;
+  if (!isTeacher(viewer)) return false;
+  if (item.classId && item.classId !== viewer.classId) return false;
+  return true;
+}
+
+function canEditBoxContent(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  return canManageBox(viewer, item) || isBoxOwner(viewer, item);
+}
+
+function canRenameBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  return canManageBox(viewer, item);
+}
+
+function canAssignBoxOwner(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  return canManageBox(viewer, item);
+}
+
+function canMoveBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  return canManageBox(viewer, item) || isBoxOwner(viewer, item);
+}
+
+function canResizeBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  return canManageBox(viewer, item);
+}
+
 export interface WorkspaceCanvasProps {
   classId: string;
   userId: string;
   userName: string;
+  userEmail?: string | null;
   readOnly?: boolean;
+  isTeacher?: boolean;
+  studentEditingEnabled?: boolean;
+  classTeacherUserId?: string | null;
+  assignedRoster?: Array<{ uid: string; label: string; isOnline: boolean }>;
   toolbarLeading?: React.ReactNode;
 }
 
-// ── UnifiedColorSwatch ────────────────────────────────────────────────────────
+// -- UnifiedColorSwatch --------------------------------------------------------
 
 const UnifiedColorSwatch: React.FC<{
   textColor: string;
@@ -339,7 +445,7 @@ const UnifiedColorSwatch: React.FC<{
   );
 };
 
-// ── AlignDropdown ─────────────────────────────────────────────────────────────
+// -- AlignDropdown -------------------------------------------------------------
 
 type AlignValue = 'left' | 'center' | 'right' | 'justify';
 
@@ -403,7 +509,7 @@ const AlignDropdown: React.FC<{
   );
 };
 
-// ── PageTab ────────────────────────────────────────────────────────────────────
+// -- PageTab --------------------------------------------------------------------
 
 interface PageTabProps {
   page: WorkspacePage;
@@ -560,12 +666,12 @@ const PageTab: React.FC<PageTabProps> = ({
   );
 };
 
-// ── VocabPopup ─────────────────────────────────────────────────────────────────
+// -- VocabPopup -----------------------------------------------------------------
 
 /** Map UI language codes to BCP-47 for TTS source (content is always in English). */
 const CONTENT_LANG = 'en'; // the whiteboard content is in English
 
-/** Map UI language  → MyMemory target language code */
+/** Map UI language  ? MyMemory target language code */
 const LANG_MM: Record<string, string> = {
   en: 'en',
   pt: 'pt',
@@ -602,7 +708,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
   // Translate on mount
   useEffect(() => {
     if (targetLang === CONTENT_LANG) {
-      setTranslation(null); // same language — no translation needed
+      setTranslation(null); // same language � no translation needed
       return;
     }
     setLoadingT(true);
@@ -689,7 +795,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
             ? <span className="italic">{wsl.loading}</span>
             : translation
               ? <span>{translation}</span>
-              : <span className="italic text-slate-400">—</span>}
+              : <span className="italic text-slate-400">�</span>}
         </div>
       )}
 
@@ -700,7 +806,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
           className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs transition"
           title="Play audio"
         >
-          🔊
+          ??
         </button>
         <button
           onClick={handleSave}
@@ -711,23 +817,49 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
               : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
           }`}
         >
-          {saved ? '✓ Saved' : saving ? '…' : 'Save'}
+          {saved ? '? Saved' : saving ? '�' : 'Save'}
         </button>
       </div>
     </div>
   );
 };
 
-// ── Main component ────────────────────────────────────────────────────────────
+// -- Main component ------------------------------------------------------------
 
 export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   classId,
   userId,
   userName,
+  userEmail,
   readOnly = false,
+  isTeacher: isTeacherView = false,
+  studentEditingEnabled = true,
+  classTeacherUserId,
+  assignedRoster = [],
   toolbarLeading,
 }) => {
+  console.log('[WorkspaceCanvas] INITIALIZED with userId:', userId, 'classId:', classId, 'userName:', userName);
+
+  const viewerContext: WorkspaceViewerContext = {
+    classId,
+    userId,
+    userEmail,
+    classTeacherUserId,
+    isTeacherView,
+  };
+  const viewerIsAdmin = isAdmin(viewerContext);
+  const viewerIsTeacher = isTeacher(viewerContext);
+  const viewerIsStudent = isStudent(viewerContext);
+  const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
+  const effectiveReadOnly = readOnly || (viewerIsStudent && !studentEditingEnabled);
+
+  if (!userId) {
+    console.error('[WorkspaceCanvas] userId is null/undefined! This will break save/load functionality');
+    alert('Erro: userId n�o fornecido. A funcionalidade de salvar/carregar materiais n�o funcionar�.');
+  }
+
   const wsl = getWsl();
+  const boxFlowLabels = getWorkspaceBoxFlowLabels();
   const [items, setItems] = useState<WorkspaceItem[]>([]);
   const [docHtml, setDocHtml] = useState<string>('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -738,10 +870,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
 
-  // ── Page state (───────────────────────────────────────────────────────────────
-  // The ‘pages’ array owns names / IDs and the content snapshots of INACTIVE pages.
-  // The ACTIVE page’s live content lives in the existing docHtml / items state.
-  // On page switch (or save), we ‘flush’ docRef.current.innerHTML + items into pages first.
+  // -- Page state (---------------------------------------------------------------
+  // The �pages� array owns names / IDs and the content snapshots of INACTIVE pages.
+  // The ACTIVE page�s live content lives in the existing docHtml / items state.
+  // On page switch (or save), we �flush� docRef.current.innerHTML + items into pages first.
   const _initPageId = useRef<string>(uid()).current; // stable across re-renders
   const [pages, setPages] = useState<WorkspacePage[]>([
     { id: _initPageId, name: wsl.pageName(1), docContent: '', items: [] },
@@ -751,7 +883,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const pagesRef = useRef<WorkspacePage[]>([{ id: _initPageId, name: wsl.pageName(1), docContent: '', items: [] }]);
   const activePageIdRef = useRef<string>(_initPageId);
 
-  // ── Materials state ──────────────────────────────────────────────────────
+  // -- Materials state ------------------------------------------------------
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveMaterialTitle, setSaveMaterialTitle] = useState('');
   const [savingMaterial, setSavingMaterial] = useState(false);
@@ -761,7 +893,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [loadingMaterialId, setLoadingMaterialId] = useState<string | null>(null);
   const [saveSinglePageId, setSaveSinglePageId] = useState<string | null>(null);
 
-  // ── Vocabulary popup state ──────────────────────────────────────────────────
+  // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
   const [showVocabModal, setShowVocabModal] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -788,6 +920,42 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // Also checked against dragRef.current so a snapshot never fires mid-drag.
   const lastItemEditRef = useRef<number>(0);
   const ITEM_GUARD_MS = 1500;
+  const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
+
+  const normalizeItemScope = useCallback(
+    (item: WorkspaceItem): WorkspaceItem => ({
+      ...item,
+      classId: item.classId ?? classId,
+      teacherUserId: item.teacherUserId ?? classTeacherUserId ?? undefined,
+    }),
+    [classId, classTeacherUserId],
+  );
+
+  useEffect(() => {
+    if (assignedRoster.length === 0) {
+      setUserAccounts([]);
+      return () => {};
+    }
+
+    const unsubscribe = subscribeUserAccounts(
+      (accounts) => setUserAccounts(accounts),
+      (error) => console.warn('[WorkspaceCanvas] failed to load roster accounts:', error),
+    );
+    return unsubscribe;
+  }, [assignedRoster]);
+
+  const assignableStudents: AssignableStudentOption[] = assignedRoster
+    .map((rosterStudent) => {
+      const account = userAccounts.find((candidate) => candidate.uid === rosterStudent.uid);
+      if (account && account.role !== 'student') return null;
+      return {
+        uid: rosterStudent.uid,
+        label: account?.name || rosterStudent.label || rosterStudent.uid,
+        email: account?.email ?? null,
+        isOnline: rosterStudent.isOnline,
+      };
+    })
+    .filter((option): option is AssignableStudentOption => Boolean(option));
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
@@ -795,7 +963,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // Problem: updatedBy is a single field for the whole document.  If the
       // teacher updates items (setting updatedBy = teacherUid) while the student
       // is mid-typing, the next snapshot arrives with updatedBy = teacherUid on
-      // the student's side.  isSelfEcho becomes false → no typing guard →
+      // the student's side.  isSelfEcho becomes false ? no typing guard ?
       // snapshot overwrites the student's unsaved text before the 600ms debounce
       // fires.  Using per-section fields (docUpdatedBy / itemsUpdatedBy) ensures
       // each section's echo is identified correctly regardless of who touched
@@ -807,7 +975,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // For page-structure changes (switch/add/delete/rename) we use the top-level updatedBy.
       const isPageSelfEcho = !!data && data.updatedBy === userId;
 
-      // ── Pages / active-page sync (Fase 2) ──────────────────────────────────
+      // -- Pages / active-page sync (Fase 2) ----------------------------------
       // Only apply remote changes; skip our own echo (local state already updated).
       if (data?.currentPageId && !isPageSelfEcho) {
         const remoteCPID = data.currentPageId;
@@ -815,7 +983,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         if (remotePages && remotePages.length > 0) {
           const normalized = normalizeWorkspacePages(remotePages);
           if (remoteCPID !== activePageIdRef.current) {
-            // Remote page switch → follow it
+            // Remote page switch ? follow it
             pagesRef.current = normalized;
             setPages(normalized);
             activePageIdRef.current = remoteCPID;
@@ -824,7 +992,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             // existing handler (they are the top-level docContent/items in the snapshot).
           } else {
             // Same active page, but pages structure changed (rename/add/delete/duplicate).
-            // Update pages metadata; keep active page’s live content.
+            // Update pages metadata; keep active page�s live content.
             const merged = normalized.map((rp) =>
               rp.id === activePageIdRef.current
                 ? { ...rp, docContent: pagesRef.current.find((p) => p.id === rp.id)?.docContent ?? rp.docContent, items: pagesRef.current.find((p) => p.id === rp.id)?.items ?? rp.items }
@@ -834,7 +1002,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             setPages(merged);
           }
         } else if (remoteCPID !== activePageIdRef.current) {
-          // currentPageId changed but pages array isn’t present (legacy or partial write)
+          // currentPageId changed but pages array isn�t present (legacy or partial write)
           activePageIdRef.current = remoteCPID;
           setActivePageId(remoteCPID);
         }
@@ -849,7 +1017,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         dragRef.current !== null ||
         (isItemsSelfEcho && Date.now() - lastItemEditRef.current < ITEM_GUARD_MS);
       if (!isLocallyEditingItems) {
-        setItems(data?.items ?? []);
+        setItems((data?.items ?? []).map(normalizeItemScope));
       }
 
       // Doc: only suppress our own echo while actively typing.
@@ -870,19 +1038,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
     });
     return unsub;
-  }, [classId, readOnly, userId]);
+  }, [classId, normalizeItemScope, readOnly, userId]);
 
   const scheduleItemsSave = useCallback(
     (nextItems: WorkspaceItem[]) => {
       if (readOnly) return;
       // Stamp the edit time so the snapshot guard stays active through the debounce.
       lastItemEditRef.current = Date.now();
+      const scopedItems = nextItems.map(normalizeItemScope);
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       saveItemsDebounce.current = setTimeout(() => {
-        saveWorkspace(classId, nextItems, userId, userName).catch(console.error);
+        saveWorkspace(classId, scopedItems, userId, userName).catch(console.error);
       }, 500);
     },
-    [classId, userId, userName, readOnly],
+    [classId, normalizeItemScope, userId, userName, readOnly],
   );
 
   const scheduleDocSave = useCallback(
@@ -925,7 +1094,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const execFmt = useCallback((cmd: string, value?: string) => {
     if (activeFloatingIdRef.current && activeFloatingElRef.current) {
-      // ── Floating block is the active editor ───────────────────────────────
+      // -- Floating block is the active editor -------------------------------
       // e.preventDefault() on toolbar buttons already prevented the button from
       // stealing focus, so the contentEditable still owns the selection.
       // Re-focus it (no-op if already focused) to be safe, then apply the command.
@@ -947,7 +1116,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         return next;
       });
     } else {
-      // ── Main document editor ──────────────────────────────────────────────
+      // -- Main document editor ----------------------------------------------
       docRef.current?.focus();
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       document.execCommand(cmd, false, value ?? undefined);
@@ -975,12 +1144,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const applyHighlight = (color: string) => {
     setBgColor(color);
     if (activeFloatingIdRef.current) {
-      // Cursor is inside a floating block → apply as inline text highlight
+      // Cursor is inside a floating block ? apply as inline text highlight
       execFmt('hiliteColor', color || 'transparent');
       return;
     }
     if (selectedId) {
-      // Block selected but not being edited → change the box background color
+      // Block selected but not being edited ? change the box background color
       const item = items.find((i) => i.id === selectedId);
       if (item) {
         updateItem(selectedId, { styles: { ...(item.styles ?? {}), bgColor: color || '' } });
@@ -994,13 +1163,21 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     (id: string, patch: Partial<WorkspaceItem>) => {
       setItems((prev) => {
         const next = prev.map((it) =>
-          it.id === id ? { ...it, ...patch, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName } : it,
+          it.id === id
+            ? normalizeItemScope({
+                ...it,
+                ...patch,
+                updatedAt: Date.now(),
+                updatedBy: userId,
+                updatedByName: userName,
+              })
+            : it,
         );
         scheduleItemsSave(next);
         return next;
       });
     },
-    [scheduleItemsSave, userId, userName],
+    [normalizeItemScope, scheduleItemsSave, userId, userName],
   );
 
   const deleteItem = useCallback(
@@ -1011,15 +1188,76 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     [scheduleItemsSave],
   );
 
+  const LOCK_TIMEOUT_MS = 60_000;
+
+  const isItemLockedByOther = (item: WorkspaceItem) => {
+    if (!item.editingByUserId || item.editingByUserId === userId) return false;
+    const age = Date.now() - (item.editingStartedAt ?? 0);
+    return age < LOCK_TIMEOUT_MS;
+  };
+
+  const clearItemLock = (item: WorkspaceItem) => {
+    if (item.editingByUserId !== userId) return;
+    updateItem(item.id, {
+      editingByUserId: '',
+      editingByUserName: '',
+      editingStartedAt: 0,
+    });
+  };
+
+  const acquireItemLock = (item: WorkspaceItem) => {
+    const canEditThisItem = canEditBoxContent(viewerContext, item);
+    if (!canEditThisItem) return false;
+    if (effectiveReadOnly && !canEditThisItem) return false;
+    if (isItemLockedByOther(item)) return false;
+    updateItem(item.id, {
+      editingByUserId: userId,
+      editingByUserName: userName,
+      editingStartedAt: Date.now(),
+    });
+    return true;
+  };
+
+  const releaseItemLock = (itemId: string) => {
+    const item = items.find((it) => it.id === itemId);
+    if (!item) return;
+    clearItemLock(item);
+  };
+
+  const requestItemEdit = (itemId: string, el: HTMLElement) => {
+    const item = items.find((it) => it.id === itemId);
+    if (!item || item.type !== 'text') return;
+    const canEditThisItem = canEditBoxContent(viewerContext, item);
+    if (!canEditThisItem || (effectiveReadOnly && !canEditThisItem) || isItemLockedByOther(item)) {
+      el.blur();
+      return;
+    }
+    if (!acquireItemLock(item)) {
+      el.blur();
+      return;
+    }
+    activeFloatingIdRef.current = itemId;
+    activeFloatingElRef.current = el;
+  };
+
+  const handleFloatingBlur = (itemId: string) => {
+    activeFloatingIdRef.current = null;
+    activeFloatingElRef.current = null;
+    releaseItemLock(itemId);
+  };
+
   const addTextBox = () => {
-    if (readOnly) return;
-    const newItem: WorkspaceItem = {
+    if (effectiveReadOnly || readOnly) return;
+    const newItem = normalizeItemScope({
       id: uid(), type: 'text' as WorkspaceItemType,
       x: 5, y: 5, w: 45, h: 20,
       content: '',
+      label: '',
+      ownerUserId: viewerIsStudent ? userId : undefined,
+      ownerEmail: viewerIsStudent ? userEmail ?? undefined : undefined,
       styles: { color: '#1e293b', fontSize: 16, bgColor: '#ffffff' },
       updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
-    };
+    });
     setItems((prev) => { const next = [...prev, newItem]; scheduleItemsSave(next); return next; });
     setSelectedId(newItem.id);
   };
@@ -1032,12 +1270,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      const newItem: WorkspaceItem = {
+      if (effectiveReadOnly || readOnly) {
+        setPendingImageUpload(false);
+        return;
+      }
+      const newItem = normalizeItemScope({
         id: uid(), type: 'image' as WorkspaceItemType,
         x: 5, y: 10, w: 40, h: 30,
         imageUrl: dataUrl,
         updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
-      };
+      });
       setItems((prev) => { const next = [...prev, newItem]; scheduleItemsSave(next); return next; });
       setSelectedId(newItem.id);
       setPendingImageUpload(false);
@@ -1046,7 +1288,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>, itemId: string, mode: 'move' | 'resize') => {
-    if (readOnly) return;
+    const item = items.find((candidate) => candidate.id === itemId);
+    if (!item) return;
+    const hasPermission = mode === 'move'
+      ? canMoveBox(viewerContext, item) && (!effectiveReadOnly || canManageBox(viewerContext, item))
+      : canResizeBox(viewerContext, item);
+    if (!hasPermission) return;
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     // Mark item editing immediately so the snapshot guard fires during the drag
@@ -1054,10 +1301,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     lastItemEditRef.current = Date.now();
     dragRef.current = {
       itemId, mode, startPx: e.clientX, startPy: e.clientY,
-      origX: items.find((i) => i.id === itemId)?.x ?? 0,
-      origY: items.find((i) => i.id === itemId)?.y ?? 0,
-      origW: items.find((i) => i.id === itemId)?.w ?? 20,
-      origH: items.find((i) => i.id === itemId)?.h ?? 20,
+      origX: item.x,
+      origY: item.y,
+      origW: item.w,
+      origH: item.h,
     };
     setSelectedId(itemId);
   };
@@ -1105,13 +1352,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const onCanvasClick = (e: React.MouseEvent) => {
     const t = e.target as HTMLElement;
-    if (t === canvasRef.current || t === overflowRef.current || t === docRef.current) setSelectedId(null);
+    if (t === canvasRef.current || t === overflowRef.current || t === docRef.current) {
+      if (selectedId) releaseItemLock(selectedId);
+      setSelectedId(null);
+    }
   };
 
-  // ── Page operations ───────────────────────────────────────────────────────────────
+  // -- Page operations ---------------------------------------------------------------
 
   /**
-   * Flush the current active page’s live content (from DOM + items state) into
+   * Flush the current active page�s live content (from DOM + items state) into
    * the pages array. Returns the flushed pages array.
    * Must be called before any operation that reads pages content (switch, save material).
    */
@@ -1135,7 +1385,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(newPage.docContent);
     if (docRef.current) docRef.current.innerHTML = newPage.docContent;
-    setItems(newPage.items);
+      setItems(newPage.items.map(normalizeItemScope));
     setSelectedId(null);
     activePageIdRef.current = pageId;
     setActivePageId(pageId);
@@ -1177,7 +1427,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(nextPage.docContent);
       if (docRef.current) docRef.current.innerHTML = nextPage.docContent;
-      setItems(nextPage.items);
+    setItems(nextPage.items.map(normalizeItemScope));
       setSelectedId(null);
       activePageIdRef.current = nextPage.id;
       setActivePageId(nextPage.id);
@@ -1205,7 +1455,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const source = flushed[idx];
     const copy: WorkspacePage = {
       id: uid(),
-      name: `${source.name} (cópia)`,
+      name: `${source.name} (c�pia)`,
       docContent: source.docContent,
       items: source.items.map((it) => ({ ...it, id: uid() })),
     };
@@ -1219,21 +1469,33 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const handleSaveMaterial = async () => {
     const title = saveMaterialTitle.trim();
     if (!title) return;
+    console.log('[WorkspaceCanvas] Save Material clicked � title:', title);
     setSavingMaterial(true);
     try {
       const allPages = flushPages();
+      console.log('[WorkspaceCanvas] Flushed pages count:', allPages.length);
       if (saveSinglePageId) {
         const targetPage = allPages.find((p) => p.id === saveSinglePageId);
-        if (targetPage) await saveWorkspaceAsMaterial([targetPage], userId, { title });
+        if (targetPage) {
+          console.log('[WorkspaceCanvas] Saving single page:', targetPage.name);
+          await saveWorkspaceAsMaterial([targetPage], { title });
+        }
       } else {
-        await saveWorkspaceAsMaterial(allPages, userId, { title });
+        console.log('[WorkspaceCanvas] Saving all pages');
+        await saveWorkspaceAsMaterial(allPages, { title });
+      }
+      console.log('[WorkspaceCanvas] Save completed successfully, closing modal');
+      // Refresh the materials list if the open modal is currently shown
+      if (showOpenModal) {
+        const list = await getMaterialsByUser();
+        setMaterialsList(list);
       }
       setShowSaveModal(false);
       setSaveMaterialTitle('');
       setSaveSinglePageId(null);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.error('[Materials] save failed:', msg, err);
+      console.error('[WorkspaceCanvas] save failed:', msg, err);
       alert(wsl.errorSave(msg));
     } finally {
       setSavingMaterial(false);
@@ -1241,22 +1503,29 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const handleOpenMaterialsList = async () => {
+    console.log('[WorkspaceCanvas] Open Materials clicked');
     setShowOpenModal(true);
     setLoadingMaterials(true);
     try {
-      const list = await getMaterialsByUser(userId);
+      console.log('[WorkspaceCanvas] Calling getMaterialsByUser');
+      const list = await getMaterialsByUser();
+      console.log('[WorkspaceCanvas] getMaterialsByUser returned:', list.length, 'materials');
       setMaterialsList(list);
     } catch (err) {
-      console.error('[Materials] list failed', err);
+      console.error('[WorkspaceCanvas] list failed', err);
+      setMaterialsList([]);
     } finally {
       setLoadingMaterials(false);
     }
   };
 
   const handleLoadMaterial = async (materialId: string) => {
+    console.log('[WorkspaceCanvas] Load Material clicked � materialId:', materialId, 'userId:', userId);
     setLoadingMaterialId(materialId);
     try {
-      const { pages: loadedPages, currentPageId } = await loadMaterialToWorkspace(materialId, classId, userId, userName);
+      console.log('[WorkspaceCanvas] Calling loadMaterialToWorkspace');
+      const { pages: loadedPages, currentPageId } = await loadMaterialToWorkspace(materialId, classId, userName);
+      console.log('[WorkspaceCanvas] Material loaded successfully � pages:', loadedPages.length);
       // Apply loaded material to local state immediately (before self-echo arrives).
       const normalized = normalizeWorkspacePages(loadedPages);
       pagesRef.current = normalized;
@@ -1267,19 +1536,19 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (activePage) {
         setDocHtml(activePage.docContent);
         if (docRef.current) docRef.current.innerHTML = activePage.docContent;
-        setItems(activePage.items);
+        setItems(activePage.items.map(normalizeItemScope));
       }
       setSelectedId(null);
       setShowOpenModal(false);
     } catch (err) {
-      console.error('[Materials] load failed', err);
+      console.error('[WorkspaceCanvas] load failed:', err);
       alert(wsl.errorOpen);
     } finally {
       setLoadingMaterialId(null);
     }
   };
 
-  // ── Vocabulary selection detection ─────────────────────────────────────────
+  // -- Vocabulary selection detection -----------------------------------------
   /**
    * Called on mouseup anywhere in the canvas scrollable area.
    * Opens the vocab popup when the user has a non-trivial text selection that
@@ -1301,7 +1570,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      // rect is zero when the selection is in a non-rendered node — ignore
+      // rect is zero when the selection is in a non-rendered node � ignore
       if (rect.width === 0 && rect.height === 0) return;
 
       setVocabPopup({
@@ -1313,10 +1582,301 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const selected = items.find((i) => i.id === selectedId) ?? null;
 
+  // -- ResizeHandle ---------------------------------------------------------------
+
+  const ResizeHandle: React.FC<{ onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void }> = ({ onPointerDown }) => (
+    <div onPointerDown={onPointerDown} className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-30 flex items-center justify-center bg-blue-500/20 rounded-tl">
+      <svg width="8" height="8" viewBox="0 0 8 8" fill="#2563eb"><path d="M0 8 L8 0 L8 8 Z" /></svg>
+    </div>
+  );
+
+  // -- FloatingBlock --------------------------------------------------------------
+
+  interface FloatingBlockProps {
+    item: WorkspaceItem;
+    isSelected: boolean;
+    readOnly: boolean;
+    currentUserId: string;
+    canvasRef: React.RefObject<HTMLDivElement | null>;
+    onSelect: () => void;
+    onPointerDownMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
+    onPointerDownResize: (e: ReactPointerEvent<HTMLDivElement>) => void;
+    onContentChange: (html: string) => void;
+    onEditorTyping?: () => void;
+    /** Called when the block's contentEditable receives focus. */
+    onEditorFocus: (id: string, el: HTMLElement) => void;
+    /** Called when the block's contentEditable loses focus. */
+    onEditorBlur: () => void;
+  }
+
+  const FloatingBlock: React.FC<FloatingBlockProps> = ({
+    item, isSelected, readOnly, currentUserId, canvasRef,
+    onSelect, onPointerDownMove, onPointerDownResize, onContentChange,
+    onEditorTyping, onEditorFocus, onEditorBlur,
+  }) => {
+    const contentRef = useRef<HTMLDivElement>(null);
+    // Timestamp of last keypress in this text box; remote DOM updates are
+    // suppressed for FLOATING_GUARD_MS after the last input.
+    const lastTypedAtRef = useRef<number>(0);
+    const FLOATING_GUARD_MS = 1500;
+    const LOCK_TIMEOUT_MS = 60_000;
+    const isLockedByOther = Boolean(
+      item.editingByUserId && item.editingByUserId !== currentUserId &&
+      Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS,
+    );
+    const lockOwnerName = item.editingByUserName || item.editingByUserId;
+    const [blockStyle, setBlockStyle] = useState<React.CSSProperties>({});
+
+    const canManageThisBox = canManageBox(viewerContext, item);
+    const canEditThisContent = canEditBoxContent(viewerContext, item) && (!readOnly || canManageThisBox);
+    const canRenameThisBox = canRenameBox(viewerContext, item);
+    const canAssignThisBox = canAssignBoxOwner(viewerContext, item);
+    const canMoveThisBox = canMoveBox(viewerContext, item) && (!readOnly || canManageThisBox);
+    const canResizeThisBox = canResizeBox(viewerContext, item);
+    const isOwnedByOther = Boolean(item.ownerUserId && item.ownerUserId !== currentUserId && !canManageThisBox);
+
+    const [editingLabel, setEditingLabel] = useState(false);
+    const [labelValue, setLabelValue] = useState(item.label || '');
+    const [assigningOwner, setAssigningOwner] = useState(false);
+    const inputRef = useRef<HTMLInputElement>(null);
+    useEffect(() => {
+      setLabelValue(item.label || '');
+    }, [item.label]);
+
+    useEffect(() => {
+      if (editingLabel) inputRef.current?.focus();
+    }, [editingLabel]);
+
+    useEffect(() => {
+      if (editingLabel && !canRenameThisBox) {
+        setEditingLabel(false);
+      }
+      if (assigningOwner && !canAssignThisBox) {
+        setAssigningOwner(false);
+      }
+
+      if (canEditThisContent && !isLockedByOther) return;
+
+      if (contentRef.current && document.activeElement === contentRef.current) {
+        contentRef.current.blur();
+      }
+
+      if (item.editingByUserId === currentUserId) {
+        onEditorBlur();
+      }
+    }, [
+      assigningOwner,
+      canAssignThisBox,
+      canEditThisContent,
+      canRenameThisBox,
+      currentUserId,
+      editingLabel,
+      isLockedByOther,
+      item.editingByUserId,
+      onEditorBlur,
+    ]);
+
+    useEffect(() => {
+      if (!viewerIsStudent) return;
+      console.log('[WorkspaceCanvas] student box permission', {
+        boxId: item.id,
+        currentUserId,
+        ownerUserId: item.ownerUserId ?? null,
+        ownerEmail: item.ownerEmail ?? null,
+        canEdit: canEditThisContent,
+      });
+    }, [
+      canEditThisContent,
+      currentUserId,
+      item.id,
+      item.ownerEmail,
+      item.ownerUserId,
+    ]);
+
+    const saveLabel = () => {
+      if (!canRenameThisBox) {
+        setEditingLabel(false);
+        return;
+      }
+      const newLabel = labelValue.trim();
+      updateItem(item.id, { label: newLabel || undefined });
+      setEditingLabel(false);
+    };
+
+    useEffect(() => {
+      const el = contentRef.current;
+      if (!el || item.type !== 'text') return;
+      const isTyping = Date.now() - lastTypedAtRef.current < FLOATING_GUARD_MS;
+      if (isTyping) return;
+      if (el.innerHTML !== (item.content ?? '')) el.innerHTML = item.content ?? '';
+    }, [item.content, item.type]);
+
+    useEffect(() => {
+      const update = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const cw = canvas.offsetWidth;
+        const ch = Math.max(canvas.scrollHeight, canvas.offsetHeight);
+        setBlockStyle({
+          position: 'absolute',
+          left: `${(item.x / 100) * cw}px`,
+          top: `${(item.y / 100) * ch}px`,
+          width: `${(item.w / 100) * cw}px`,
+          height: `${(item.h / 100) * ch}px`,
+          zIndex: isSelected ? 50 : 10,
+          pointerEvents: readOnly ? 'none' : 'auto',
+          boxSizing: 'border-box',
+          border: isSelected ? '2px solid #2563eb' : '1px dashed #94a3b8',
+          borderRadius: '6px',
+          overflow: 'hidden',
+          background: item.type === 'text' ? (item.styles?.bgColor || '#ffffff') : 'transparent',
+          cursor: canMoveThisBox ? 'grab' : 'default',
+          userSelect: 'text',
+          touchAction: 'none',
+          boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : '0 2px 8px rgba(0,0,0,0.08)',
+        });
+      };
+      update();
+      const obs = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+      if (obs && canvasRef.current) obs.observe(canvasRef.current);
+      return () => obs?.disconnect();
+    }, [item.x, item.y, item.w, item.h, item.styles?.bgColor, item.type, isSelected, readOnly, canvasRef]);
+
+    if (item.type === 'image') {
+      return (
+        <div style={blockStyle} onClick={onSelect}>
+          {canMoveThisBox && (
+            <div onPointerDown={onPointerDownMove} className="absolute inset-0 cursor-grab z-10" style={{ background: 'transparent' }} />
+          )}
+          <img src={item.imageUrl} alt="" className="w-full h-full object-contain select-none pointer-events-none" draggable={false} style={{ background: 'transparent' }} />
+          {isSelected && canResizeThisBox && <ResizeHandle onPointerDown={onPointerDownResize} />}
+        </div>
+      );
+    }
+
+    return (
+      <div style={blockStyle} onClick={onSelect}>
+        {isSelected && canMoveThisBox && (
+          <div onPointerDown={onPointerDownMove} className="absolute top-0 left-0 right-0 h-5 cursor-grab z-20 flex items-center justify-center" style={{ background: 'rgba(37,99,235,0.08)' }}>
+            <span className="text-[9px] text-blue-400 select-none pointer-events-none">{boxFlowLabels.move}</span>
+          </div>
+        )}
+        <div className="absolute inset-x-0 top-0 z-20 px-2 py-1 bg-white/90 border-b border-slate-200 text-[11px] font-semibold text-slate-700">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1 flex-1 min-w-0">
+              {!editingLabel ? (
+                <span onClick={canRenameThisBox ? () => setEditingLabel(true) : undefined} className={canRenameThisBox ? 'cursor-pointer' : ''}>
+                  {item.label?.trim() ? item.label : boxFlowLabels.boxLabel}
+                </span>
+              ) : (
+                <input ref={inputRef} value={labelValue} placeholder={boxFlowLabels.boxLabel} title={boxFlowLabels.boxLabel} onChange={(e) => setLabelValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); }} onBlur={saveLabel} className="bg-white border border-slate-300 rounded px-1 py-0 text-[11px] font-semibold text-slate-700 flex-1" />
+              )}
+              <span className="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                {item.ownerUserId ? (item.ownerEmail || item.ownerUserId.slice(0, 6)) : boxFlowLabels.unassigned}
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              {canAssignThisBox && isSelected && (
+                <button onClick={() => setAssigningOwner(!assigningOwner)} className="text-[9px] px-1.5 py-0.5 rounded hover:bg-slate-200 transition">
+                  👤
+                </button>
+              )}
+              {isLockedByOther && (
+                <span className="text-[9px] text-slate-500 font-normal">Editing by {lockOwnerName}</span>
+              )}
+            </div>
+          </div>
+          {assigningOwner && canAssignThisBox && (
+            <div className="mt-1 flex items-center gap-1">
+              <span className="text-[10px] text-slate-500 whitespace-nowrap">{boxFlowLabels.selectStudent}</span>
+              <select
+                value={item.ownerUserId ?? ''}
+                className="text-[10px] px-1 py-0.5 border border-slate-300 rounded flex-1 bg-white"
+                onChange={(e) => {
+                  const nextOwnerId = e.target.value;
+                  if (!nextOwnerId) {
+                    console.log('[WorkspaceCanvas] box owner updated', {
+                      boxId: item.id,
+                      ownerUserId: undefined,
+                      ownerEmail: undefined,
+                      label: item.label ?? '',
+                    });
+                    updateItem(item.id, {
+                      ownerUserId: undefined,
+                      ownerEmail: undefined,
+                    });
+                    setAssigningOwner(false);
+                    return;
+                  }
+
+                  const selectedStudent = assignableStudents.find((student) => student.uid === nextOwnerId);
+                  if (!selectedStudent) return;
+
+                  console.log('[WorkspaceCanvas] box owner updated', {
+                    boxId: item.id,
+                    ownerUserId: selectedStudent.uid,
+                    ownerEmail: selectedStudent.email ?? undefined,
+                    label: item.label?.trim() ? item.label : selectedStudent.label,
+                  });
+                  updateItem(item.id, {
+                    ownerUserId: selectedStudent.uid,
+                    ownerEmail: selectedStudent.email ?? undefined,
+                    label: item.label?.trim() ? item.label : selectedStudent.label,
+                  });
+                  setAssigningOwner(false);
+                }}
+                autoFocus
+              >
+                <option value="">{boxFlowLabels.none}</option>
+                {assignableStudents.map((student) => (
+                  <option key={student.uid} value={student.uid}>
+                    {student.label}{student.isOnline ? ' • online' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <div
+          ref={contentRef}
+          contentEditable={canEditThisContent && !isLockedByOther}
+          suppressContentEditableWarning
+          spellCheck
+          onFocus={(e) => { onEditorFocus(item.id, e.currentTarget); }}
+          onBlur={(e) => {
+            onEditorBlur();
+            if (!canEditThisContent || isLockedByOther) return;
+            onContentChange((e.target as HTMLDivElement).innerHTML);
+          }}
+          onInput={(e) => {
+            if (!canEditThisContent || isLockedByOther) {
+              e.currentTarget.blur();
+              return;
+            }
+            lastTypedAtRef.current = Date.now();
+            onContentChange((e.target as HTMLDivElement).innerHTML);
+            onEditorTyping?.();
+          }}
+          className="w-full h-full overflow-auto focus:outline-none p-2 leading-snug"
+          style={{
+            fontFamily: 'Arial, sans-serif',
+            fontSize: `${item.styles?.fontSize ?? 14}px`,
+            color: item.styles?.color ?? '#1e293b',
+            paddingTop: isSelected && !readOnly ? '2.1rem' : '0.5rem',
+            cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
+            wordBreak: 'break-word',
+            opacity: isOwnedByOther ? 0.65 : isLockedByOther ? 0.85 : 1,
+          }}
+        />
+        {isSelected && canResizeThisBox && <ResizeHandle onPointerDown={onPointerDownResize} />}
+      </div>
+    );
+  };
+
   return (
     <div className="flex flex-col w-full h-full bg-slate-100 overflow-hidden" style={{ fontFamily: 'Arial, sans-serif' }}>
 
-      {/* ── Fixed toolbar ─────────────────────────────────────────────────── */}
+      {/* -- Fixed toolbar --------------------------------------------------- */}
       <div
         ref={toolbarRef}
         className="flex-shrink-0 flex flex-wrap items-center gap-0.5 px-1.5 py-1 bg-white border-b border-slate-200"
@@ -1371,13 +1931,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
-        {!readOnly && (
+        {!effectiveReadOnly && !readOnly && (
           <button onClick={addTextBox} className="w-7 h-7 rounded hover:bg-slate-100 text-slate-600 flex items-center justify-center transition border border-slate-200" title={wsl.textBox}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2"/><line x1="5" y1="8" x2="15" y2="8"/><line x1="5" y1="11" x2="11" y2="11"/></svg>
           </button>
         )}
 
-        {!readOnly && (
+        {!effectiveReadOnly && !readOnly && (
           <>
             <button
               onClick={() => fileRef.current?.click()}
@@ -1393,7 +1953,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </>
         )}
 
-        {selected && !readOnly && (
+        {selected && canManageBox(viewerContext, selected) && (
           <>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
             <button onClick={() => deleteItem(selected.id)} className="w-7 h-7 rounded hover:bg-red-50 text-red-500 flex items-center justify-center transition border border-red-200" title={wsl.deleteBlock}>
@@ -1402,7 +1962,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </>
         )}
 
-        {!readOnly && (
+        {!readOnly && viewerCanManageWorkspace && (
           <>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
             <button
@@ -1440,11 +2000,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </svg>
         </button>
 
-        <button onClick={handleExportPdf} className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 text-slate-600 border border-slate-200 transition" title={wsl.exportPdf} aria-label={wsl.exportPdf}>
-          <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M5 4h7l4 4v8a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/><polyline points="12 4 12 9 17 9"/><line x1="10" y1="12" x2="10" y2="17"/><polyline points="7 14 10 17 13 14"/></svg>
-        </button>
-
         {!readOnly && (
+          <button onClick={handleExportPdf} className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 text-slate-600 border border-slate-200 transition" title={wsl.exportPdf} aria-label={wsl.exportPdf}>
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M5 4h7l4 4v8a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/><polyline points="12 4 12 9 17 9"/><line x1="10" y1="12" x2="10" y2="17"/><polyline points="7 14 10 17 13 14"/></svg>
+          </button>
+        )}
+
+        {!effectiveReadOnly && (
           <button
             onClick={() => {
               if (!window.confirm(wsl.confirmClear)) return;
@@ -1468,7 +2030,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         )}
       </div>
 
-      {/* ── Page tab bar ────────────────────────────────────────────── */}
+      {/* -- Page tab bar ---------------------------------------------- */}
       <div
         className="flex-shrink-0 flex items-stretch gap-0 bg-slate-50 border-b border-slate-200 overflow-x-auto"
         style={{ minHeight: '2rem', zIndex: 15 }}
@@ -1500,7 +2062,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         )}
       </div>
 
-      {/* ── Save Material Modal ──────────────────────────────────────────── */}
+      {/* -- Save Material Modal -------------------------------------------- */}
       {showSaveModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
@@ -1537,7 +2099,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         </div>
       )}
 
-      {/* ── Open Material Modal ───────────────────────────────────────────── */}
+      {/* -- Open Material Modal --------------------------------------------- */}
       {showOpenModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
@@ -1567,7 +2129,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                       disabled={loadingMaterialId === m.id}
                       className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
                     >
-                      {loadingMaterialId === m.id ? '…' : wsl.open}
+                      {loadingMaterialId === m.id ? '�' : wsl.open}
                     </button>
                   </li>
                 ))}
@@ -1577,7 +2139,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         </div>
       )}
 
-      {/* ── Scrollable content ─────────────────────────────────────────────── */}
+      {/* -- Scrollable content ----------------------------------------------- */}
       <div
         ref={overflowRef}
         className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-100 p-3 sm:p-4"
@@ -1613,19 +2175,19 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 key={item.id}
                 item={item}
                 isSelected={item.id === selectedId}
-                readOnly={readOnly}
+                readOnly={effectiveReadOnly}
+                currentUserId={userId}
                 canvasRef={canvasRef}
-                onSelect={() => !readOnly && setSelectedId(item.id)}
+                onSelect={() => setSelectedId(item.id)}
                 onPointerDownMove={(e) => onPointerDown(e, item.id, 'move')}
                 onPointerDownResize={(e) => onPointerDown(e, item.id, 'resize')}
                 onContentChange={(html) => updateItem(item.id, { content: html })}
-                onEditorFocus={(id, el) => {
-                  activeFloatingIdRef.current = id;
-                  activeFloatingElRef.current = el;
-                }}
+                onEditorTyping={() => updateItem(item.id, { editingStartedAt: Date.now() })}
+                onEditorFocus={requestItemEdit}
                 onEditorBlur={() => {
                   activeFloatingIdRef.current = null;
                   activeFloatingElRef.current = null;
+                  handleFloatingBlur(item.id);
                 }}
               />
             ))}
@@ -1635,7 +2197,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         </div>
       </div>
 
-      {/* ── Vocabulary popup ─────────────────────────────────────────────── */}
+      {/* -- Vocabulary popup ----------------------------------------------- */}
       {vocabPopup && (
         <VocabPopup
           vocab={vocabPopup}
@@ -1644,7 +2206,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         />
       )}
 
-      {/* ── My Vocabulary modal ──────────────────────────────────────────── */}
+      {/* -- My Vocabulary modal -------------------------------------------- */}
       {showVocabModal && (
         <div className="fixed inset-0 z-[10001] bg-black/40 flex flex-col">
           <div className="flex-1 overflow-hidden">
@@ -1660,118 +2222,3 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   );
 };
 
-// ── FloatingBlock ──────────────────────────────────────────────────────────────
-
-interface FloatingBlockProps {
-  item: WorkspaceItem;
-  isSelected: boolean;
-  readOnly: boolean;
-  canvasRef: React.RefObject<HTMLDivElement | null>;
-  onSelect: () => void;
-  onPointerDownMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerDownResize: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onContentChange: (html: string) => void;
-  /** Called when the block's contentEditable receives focus. */
-  onEditorFocus: (id: string, el: HTMLElement) => void;
-  /** Called when the block's contentEditable loses focus. */
-  onEditorBlur: () => void;
-}
-
-const FloatingBlock: React.FC<FloatingBlockProps> = ({
-  item, isSelected, readOnly, canvasRef,
-  onSelect, onPointerDownMove, onPointerDownResize, onContentChange,
-  onEditorFocus, onEditorBlur,
-}) => {
-  const contentRef = useRef<HTMLDivElement>(null);
-  // Timestamp of last keypress in this text box; remote DOM updates are
-  // suppressed for FLOATING_GUARD_MS after the last input.
-  const lastTypedAtRef = useRef<number>(0);
-  const FLOATING_GUARD_MS = 1500;
-  const [blockStyle, setBlockStyle] = useState<React.CSSProperties>({});
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el || item.type !== 'text') return;
-    const isTyping = Date.now() - lastTypedAtRef.current < FLOATING_GUARD_MS;
-    if (isTyping) return;
-    if (el.innerHTML !== (item.content ?? '')) el.innerHTML = item.content ?? '';
-  }, [item.content, item.type]);
-
-  useEffect(() => {
-    const update = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const cw = canvas.offsetWidth;
-      const ch = Math.max(canvas.scrollHeight, canvas.offsetHeight);
-      setBlockStyle({
-        position: 'absolute',
-        left: `${(item.x / 100) * cw}px`,
-        top: `${(item.y / 100) * ch}px`,
-        width: `${(item.w / 100) * cw}px`,
-        height: `${(item.h / 100) * ch}px`,
-        zIndex: isSelected ? 50 : 10,
-        pointerEvents: readOnly ? 'none' : 'auto',
-        boxSizing: 'border-box',
-        border: isSelected ? '2px solid #2563eb' : '1px dashed #94a3b8',
-        borderRadius: '6px',
-        overflow: 'hidden',
-        background: item.type === 'text' ? (item.styles?.bgColor || '#ffffff') : 'transparent',
-        cursor: readOnly ? 'default' : 'grab',
-        userSelect: 'text',
-        touchAction: 'none',
-        boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : '0 2px 8px rgba(0,0,0,0.08)',
-      });
-    };
-    update();
-    const obs = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
-    if (obs && canvasRef.current) obs.observe(canvasRef.current);
-    return () => obs?.disconnect();
-  }, [item.x, item.y, item.w, item.h, item.styles?.bgColor, item.type, isSelected, readOnly, canvasRef]);
-
-  if (item.type === 'image') {
-    return (
-      <div style={blockStyle} onClick={onSelect}>
-        {!readOnly && <div onPointerDown={onPointerDownMove} className="absolute inset-0 cursor-grab z-10" style={{ background: 'transparent' }} />}
-        <img src={item.imageUrl} alt="" className="w-full h-full object-contain select-none pointer-events-none" draggable={false} style={{ background: 'transparent' }} />
-        {isSelected && !readOnly && <ResizeHandle onPointerDown={onPointerDownResize} />}
-      </div>
-    );
-  }
-
-  return (
-    <div style={blockStyle} onClick={onSelect}>
-      {isSelected && !readOnly && (
-        <div onPointerDown={onPointerDownMove} className="absolute top-0 left-0 right-0 h-5 cursor-grab z-20 flex items-center justify-center" style={{ background: 'rgba(37,99,235,0.08)' }}>
-          <span className="text-[9px] text-blue-400 select-none pointer-events-none">⠿ mover</span>
-        </div>
-      )}
-      <div
-        ref={contentRef}
-        contentEditable={!readOnly}
-        suppressContentEditableWarning
-        spellCheck
-        onFocus={(e) => { onEditorFocus(item.id, e.currentTarget); }}
-        onBlur={(e) => { onEditorBlur(); onContentChange((e.target as HTMLDivElement).innerHTML); }}
-        onInput={(e) => { lastTypedAtRef.current = Date.now(); onContentChange((e.target as HTMLDivElement).innerHTML); }}
-        className="w-full h-full overflow-auto focus:outline-none p-2 leading-snug"
-        style={{
-          fontFamily: 'Arial, sans-serif',
-          fontSize: `${item.styles?.fontSize ?? 14}px`,
-          color: item.styles?.color ?? '#1e293b',
-          paddingTop: isSelected && !readOnly ? '1.5rem' : '0.5rem',
-          cursor: readOnly ? 'default' : 'text',
-          wordBreak: 'break-word',
-        }}
-      />
-      {isSelected && !readOnly && <ResizeHandle onPointerDown={onPointerDownResize} />}
-    </div>
-  );
-};
-
-// ── ResizeHandle ───────────────────────────────────────────────────────────────
-
-const ResizeHandle: React.FC<{ onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void }> = ({ onPointerDown }) => (
-  <div onPointerDown={onPointerDown} className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize z-30 flex items-center justify-center bg-blue-500/20 rounded-tl">
-    <svg width="8" height="8" viewBox="0 0 8 8" fill="#2563eb"><path d="M0 8 L8 0 L8 8 Z" /></svg>
-  </div>
-);

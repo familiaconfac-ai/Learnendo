@@ -8,7 +8,7 @@ import {
   useRoomContext,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
-import { Track, RoomEvent } from 'livekit-client';
+import { Track, RoomEvent, createLocalVideoTrack } from 'livekit-client';
 import { isTrackReference } from '@livekit/components-core';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { User } from 'firebase/auth';
@@ -39,11 +39,14 @@ const StudentStage: React.FC<{
   liveClass: LiveClass;
   user: User;
   session: LiveClassSession;
+  assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
   onExit: () => void;
-}> = ({ liveClass, user, session, onExit }) => {
+}> = ({ liveClass, user, session, assignedRoster, onExit }) => {
   const [mainStageMode, setMainStageMode] = useState<MainStageMode>(getDefaultMainStageMode());
   const [chatOpen, setChatOpen] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
+  const [camVisible, setCamVisible] = useState(true);
+  const [expandedCameraId, setExpandedCameraId] = useState<string | null>(null);
   const battleWasActivatedRef = useRef(false);
   const mountedAtRef = useRef(Date.now());
   // NOTE: do NOT use a boolean one-shot flag here — Firestore onSnapshot fires
@@ -103,18 +106,23 @@ const StudentStage: React.FC<{
 
   useEffect(() => {
     // Teacher session state is the source of truth for student main stage.
-    setMainStageMode(sanitizeMainStageMode(session.mainStageMode));
+    const nextMode = sanitizeMainStageMode(session.mainStageMode);
+    setMainStageMode(nextMode === 'camera' ? 'workspace' : nextMode);
   }, [session.mainStageMode]);
 
   const room = useRoomContext();
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
+  const [cameraBusy, setCameraBusy] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   const tracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
   const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);
+  const cameraTrackRefs = tracks.filter(isTrackReference);
+  const localCameraTrack = cameraTrackRefs.find((track) => track.participant?.isLocal) ?? null;
 
   // Prefer the teacher track when role metadata is present; otherwise fall back
   // to the first remote camera track so the student still sees the host video.
-  const teacherTrack = tracks.find((t) => {
+  const teacherTrack = cameraTrackRefs.find((t) => {
     if (!t.participant || t.participant.isLocal) return false;
     try {
       const meta = JSON.parse(t.participant.metadata || '{}');
@@ -122,7 +130,7 @@ const StudentStage: React.FC<{
     } catch {
       return false;
     }
-  }) ?? tracks.find((t) => t.participant && !t.participant.isLocal);
+  }) ?? cameraTrackRefs.find((t) => t.participant && !t.participant.isLocal);
 
   // Teacher screen share track — any remote ScreenShare track (teacher is expected
   // to be the only publisher; if multiple exist, first wins)
@@ -187,6 +195,67 @@ const StudentStage: React.FC<{
       };
     }
   }, [localParticipant, isCameraEnabled]);
+
+  const clearLocalCameraPreview = () => {
+    if (!localVideoRef.current) return;
+    localVideoRef.current.srcObject = null;
+  };
+
+  const hasLiveCameraTrack = () => {
+    const publication = localParticipant.getTrackPublication(Track.Source.Camera);
+    const mediaTrack = (publication?.track as any)?.mediaStreamTrack as MediaStreamTrack | undefined;
+    return Boolean(publication?.track && mediaTrack && mediaTrack.readyState === 'live');
+  };
+
+  const waitForLiveCameraTrack = async (timeoutMs = 1500) => {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      if (hasLiveCameraTrack()) return true;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return hasLiveCameraTrack();
+  };
+
+  const republishCameraTrack = async () => {
+    const publication = localParticipant.getTrackPublication(Track.Source.Camera);
+    if (publication?.track) {
+      await localParticipant.unpublishTrack(publication.track).catch(() => {});
+      try {
+        publication.track.stop();
+      } catch {
+        // ignore cleanup failures from stale camera tracks
+      }
+    }
+
+    const newTrack = await createLocalVideoTrack();
+    await localParticipant.publishTrack(newTrack, { source: Track.Source.Camera });
+  };
+
+  const toggleCameraWithRecovery = useCallback(async (forceEnable = !isCameraEnabled) => {
+    if (cameraBusy) return;
+
+    setCameraBusy(true);
+    setCameraError(null);
+    try {
+      if (!forceEnable) {
+        await localParticipant.setCameraEnabled(false);
+        clearLocalCameraPreview();
+        return;
+      }
+
+      await localParticipant.setCameraEnabled(true);
+      const becameLive = await waitForLiveCameraTrack();
+      if (!becameLive) {
+        await republishCameraTrack();
+        await waitForLiveCameraTrack();
+      }
+    } catch (err) {
+      console.warn('[StudentRoomView] camera toggle with recovery failed:', err);
+      setCameraError('Camera unavailable. Please check browser permissions.');
+    } finally {
+      setCameraBusy(false);
+    }
+  }, [cameraBusy, isCameraEnabled, localParticipant]);
 
   // ── Audio: room.startAudio() to defeat browser autoplay policy ──
   const startAudio = useCallback(async () => {
@@ -267,17 +336,98 @@ const StudentStage: React.FC<{
     }
     return count;
   })();
+  void remoteAudioCount;
+
+  const _uiLang: 'en' | 'pt' | 'es' = (() => {
+    try { return (localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es') ?? 'pt'; }
+    catch { return 'pt'; }
+  })();
+
+  const cameraUi = {
+    title: _uiLang === 'en' ? 'Cameras' : _uiLang === 'es' ? 'Cámaras' : 'Câmeras',
+    you: _uiLang === 'en' ? 'You' : _uiLang === 'es' ? 'Tú' : 'Você',
+    cameraOff: _uiLang === 'en' ? 'Camera off' : _uiLang === 'es' ? 'Cámara apagada' : 'Sem cam',
+    noCamera: _uiLang === 'en' ? 'No camera' : _uiLang === 'es' ? 'Sin cámara' : 'Sem cam',
+    doubleClick: _uiLang === 'en' ? 'Double click to expand' : _uiLang === 'es' ? 'Doble clic para ampliar' : 'Duplo clique para ampliar',
+    back: _uiLang === 'en' ? 'Back' : _uiLang === 'es' ? 'Volver' : 'Voltar',
+  };
+
+  const remoteCameraParticipants = Array.from(room.remoteParticipants.values()).sort((left, right) => {
+    const getRole = (participant: typeof left) => {
+      try {
+        return JSON.parse(participant.metadata || '{}').role || 'student';
+      } catch {
+        return 'student';
+      }
+    };
+
+    const leftRole = getRole(left);
+    const rightRole = getRole(right);
+    if (leftRole !== rightRole) return leftRole === 'teacher' ? -1 : 1;
+    return (left.name || left.identity).localeCompare(right.name || right.identity);
+  });
+
+  const teacherRemoteParticipant = remoteCameraParticipants.find((participant) => {
+    try {
+      return JSON.parse(participant.metadata || '{}').role === 'teacher';
+    } catch {
+      return false;
+    }
+  }) ?? null;
+
+  const otherRemoteParticipants = remoteCameraParticipants.filter((participant) => participant !== teacherRemoteParticipant);
+
+  const studentCameraTiles = [
+    ...(teacherRemoteParticipant
+      ? [{
+          id: teacherRemoteParticipant.sid,
+          label: teacherRemoteParticipant.name || teacherRemoteParticipant.identity,
+          trackRef: cameraTrackRefs.find(
+            (track) => track.participant?.sid === teacherRemoteParticipant.sid && !track.participant?.isLocal,
+          ) ?? null,
+          emptyLabel: cameraUi.noCamera,
+        }]
+      : []),
+    {
+      id: 'local',
+      label: cameraUi.you,
+      trackRef: localCameraTrack,
+      emptyLabel: cameraUi.cameraOff,
+    },
+    ...otherRemoteParticipants.map((participant) => {
+      const trackRef =
+        cameraTrackRefs.find(
+          (track) =>
+            track.participant?.sid === participant.sid &&
+            !track.participant?.isLocal,
+        ) ?? null;
+
+      return {
+        id: participant.sid,
+        label: participant.name || participant.identity,
+        trackRef,
+        emptyLabel: cameraUi.noCamera,
+      };
+    }),
+  ];
+
+  const expandedCameraTile = studentCameraTiles.find((tile) => tile.id === expandedCameraId) ?? null;
+
+  useEffect(() => {
+    if (!expandedCameraId) return;
+    if (!studentCameraTiles.some((tile) => tile.id === expandedCameraId && tile.trackRef)) {
+      setExpandedCameraId(null);
+    }
+  }, [expandedCameraId, studentCameraTiles]);
 
   return (
     <>
     {/* ── Mobile landscape: board fills most of screen ───────────────────── */}
-    <style>{`
+    {/* <style>{`
       @media (orientation: landscape) and (max-width: 767px) {
         .student-stage-root {
-          padding-top: 0 !important;
-          padding-bottom: 3.5rem !important;
-          flex-direction: row !important;
-          align-items: stretch !important;
+          flex-direction: column !important;
+          align-items: center !important;
         }
         .student-title-bar { display: none !important; }
         .student-main-stage {
@@ -287,28 +437,36 @@ const StudentStage: React.FC<{
           flex: 1 !important;
           margin-bottom: 0 !important;
         }
-        .student-local-preview { width: 4.5rem !important; }
+        .student-camera-sidebar {
+          width: 100% !important;
+          height: 3.5rem !important;
+          overflow-x: auto !important;
+          overflow-y: hidden !important;
+        }
+        .student-camera-tile { width: 3rem !important; height: 2.25rem !important; }
       }
-    `}</style>
-    <div className="student-stage-root min-h-screen bg-gradient-to-b from-slate-950 to-slate-900 px-2 pb-20 pt-2 sm:pb-24 sm:pt-4 flex flex-col items-center w-full">
-      {/* Título da sala */}
-      <div className="student-title-bar w-full max-w-3xl mb-2 sm:mb-3 flex items-center justify-between px-2">
-        <h1 className="text-lg md:text-xl font-black text-white truncate drop-shadow">
-          {liveClass.title}
-        </h1>
-        <button
-          type="button"
-          className="text-xs md:text-sm font-bold text-rose-400 hover:bg-rose-900/20 rounded-lg px-3 py-1 transition"
-          onClick={() => window.history.back()}
-        >
-          Sair
-        </button>
-      </div>
+    `}</style> */}
+    <div className="student-stage-root box-border h-screen overflow-hidden bg-gradient-to-b from-slate-950 to-slate-900 px-2 pb-20 pt-16 sm:pb-24 sm:pt-20 flex flex-col w-full">
 
-      {/* PALCO PRINCIPAL */}
-      <div className="relative w-full max-w-3xl flex flex-col items-center flex-1 min-h-0">
-        {/* Audio blocked banner */}
-        {!audioPlaybackOk && (
+
+        {/* Título da sala */}
+        <div className="student-title-bar w-full max-w-6xl mx-auto mb-2 sm:mb-3 flex items-center justify-between px-2 flex-shrink-0">
+          <h1 className="text-lg md:text-xl font-black text-white truncate drop-shadow">
+            {liveClass.title}
+          </h1>
+          <button
+            type="button"
+            className="text-xs md:text-sm font-bold text-rose-400 hover:bg-rose-900/20 rounded-lg px-3 py-1 transition"
+            onClick={() => window.history.back()}
+          >
+            {(() => { try { return (localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es') ?? 'pt'; } catch { return 'pt'; } })() === 'en' ? 'Log out' : 'Sair'}
+          </button>
+        </div>
+
+        <div className="flex-1 min-h-0 w-full max-w-6xl mx-auto flex flex-col sm:flex-row items-stretch gap-3 overflow-hidden">
+          <div className="flex-1 flex flex-col items-center justify-start min-w-0 min-h-0 overflow-hidden">
+          <div className="relative w-full flex-1 min-h-0 sm:flex-none sm:max-w-3xl sm:aspect-[16/9] overflow-hidden border border-slate-800 bg-slate-900/80 shadow-xl rounded-xl">
+            {!audioPlaybackOk && (
           <button
             onClick={() => startAudio()}
             className="w-full flex items-center justify-center gap-2 py-2 bg-amber-600/90 text-white text-sm font-bold rounded-xl mb-2 z-40 animate-pulse"
@@ -317,10 +475,11 @@ const StudentStage: React.FC<{
           </button>
         )}
 
-        <div className={`student-main-stage relative w-full rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 mb-3 overflow-hidden transition-all ${
+        <div className={`student-main-stage absolute inset-0 overflow-hidden transition-all ${
           mainStageMode === 'workspace' ? 'min-h-[72vw] sm:aspect-[16/9] sm:min-h-0' : 'min-h-[55vw] sm:aspect-[16/9] sm:min-h-0'
         }`}>
           {/* CAMERA DO PROFESSOR — sempre montada, só escondida */}
+          {false && (
           <div
             className={`absolute inset-0 bg-black flex items-center justify-center transition-opacity ${
               mainStageMode === 'camera'
@@ -356,33 +515,36 @@ const StudentStage: React.FC<{
               </div>
             )}
           </div>
+          )}
 
           {/* WORKSPACE — always mounted, shown when teacher activates workspace mode */}
-          <div
-            className={`absolute inset-0 transition-opacity ${
-              mainStageMode === 'workspace'
-                ? 'opacity-100 pointer-events-auto z-20'
-                : 'opacity-0 pointer-events-none z-0'
-            }`}
-          >
+          {!expandedCameraTile?.trackRef && (
+          <div className="absolute inset-0 z-20 transition-opacity opacity-100 pointer-events-auto">
             <WorkspaceCanvas
               classId={liveClass.id}
               userId={user.uid}
               userName={user.displayName || user.email || 'Aluno'}
+              userEmail={user.email}
               readOnly={false}
+              isTeacher={false}
+              studentEditingEnabled={session.studentEditingEnabled ?? true}
+              classTeacherUserId={liveClass.teacherUid ?? null}
+              assignedRoster={assignedRoster}
               toolbarLeading={
-                <button
-                  onClick={onExit}
-                  className="w-7 h-7 flex items-center justify-center rounded border transition text-sm text-slate-600 border-slate-200 hover:bg-slate-100"
-                  title="Home"
-                  aria-label="Home"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M3 9.5L10 4l7 5.5V17a1 1 0 01-1 1h-4.5v-4.5h-3V18H4a1 1 0 01-1-1V9.5z"/></svg>
-                </button>
+                <>
+                  <button
+                    onClick={() => setMainStageMode('workspace')}
+                    className="w-7 h-7 flex items-center justify-center rounded border transition text-sm bg-blue-600 text-white border-blue-600"
+                    title="Workspace"
+                    aria-label="Workspace"
+                  >
+                    &#x270F;&#xFE0F;
+                  </button>
+                </>
               }
             />
-            {/* Teacher camera PIP while workspace is active */}
-            {mainStageMode === 'workspace' && teacherTrack && isTrackReference(teacherTrack) && (
+            {/* Legacy workspace camera PIP removed in favor of the right sidebar. */}
+            {false && mainStageMode === 'workspace' && teacherTrack && isTrackReference(teacherTrack) && (
               <div className="absolute top-2 left-2 w-24 sm:w-32 aspect-video rounded-xl overflow-hidden border-2 border-blue-500/40 shadow-lg z-10 bg-black pointer-events-none">
                 <VideoTrack
                   trackRef={teacherTrack}
@@ -394,10 +556,11 @@ const StudentStage: React.FC<{
               </div>
             )}
           </div>
+          )}
 
-          {/* Preview local do aluno */}
-          {isCameraEnabled && (
-            <div className="student-local-preview absolute top-2 right-2 sm:top-3 sm:right-3 w-20 sm:w-32 aspect-video rounded-xl overflow-hidden border-2 border-emerald-500/60 shadow-lg z-30 bg-black">
+          {/* Legacy floating self-view removed in favor of the right sidebar. */}
+          {false && camVisible && isCameraEnabled && (
+            <div className="student-local-preview absolute top-2 right-4 sm:top-3 sm:right-4 w-20 sm:w-32 aspect-video rounded-xl overflow-hidden border-2 border-emerald-500/60 shadow-lg z-30 bg-black cursor-pointer" onClick={() => setCamVisible(false)}>
               <video
                 ref={localVideoRef}
                 autoPlay
@@ -405,6 +568,32 @@ const StudentStage: React.FC<{
                 muted
                 className="w-full h-full object-cover"
               />
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            </div>
+          )}
+          {expandedCameraTile?.trackRef && (
+            <div className="absolute inset-0 z-30 bg-black">
+              <VideoTrack
+                trackRef={expandedCameraTile.trackRef}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              <div className="absolute top-2 left-2 z-40 flex items-center gap-2">
+                <span className="text-xs text-white bg-black/50 px-2 py-1 rounded-full font-semibold">
+                  {expandedCameraTile.label}
+                </span>
+                <button
+                  onClick={() => setExpandedCameraId(null)}
+                  className="px-2.5 py-1 rounded-full bg-black/60 text-white text-xs font-semibold hover:bg-black/80 transition"
+                >
+                  {cameraUi.back}
+                </button>
+              </div>
             </div>
           )}
 
@@ -420,7 +609,36 @@ const StudentStage: React.FC<{
               </div>
             </div>
           )}
-        </div>
+          </div>
+          </div>
+
+          </div>
+
+          <div className="student-camera-sidebar flex flex-row sm:flex-col gap-2 items-center px-2 sm:px-0 py-1 sm:py-3 bg-slate-950/80 border-t sm:border-t-0 sm:border-l border-slate-800 overflow-x-auto sm:overflow-y-auto w-full sm:w-28 md:w-36 h-14 sm:h-auto flex-shrink-0 sm:self-stretch">
+        <span className="text-[9px] sm:text-[10px] uppercase text-slate-500 font-bold tracking-wider whitespace-nowrap mb-0 sm:mb-1">
+          {cameraUi.title}
+        </span>
+        {studentCameraTiles.map((tile) => (
+          <button
+            key={tile.id}
+            type="button"
+            onDoubleClick={() => tile.trackRef && setExpandedCameraId(tile.id)}
+            className={`student-camera-tile w-16 h-10 sm:w-24 sm:h-16 rounded-lg sm:rounded-xl bg-black border overflow-hidden flex items-center justify-center relative flex-shrink-0 ${
+              expandedCameraId === tile.id ? 'border-blue-500 ring-2 ring-blue-500/40' : 'border-slate-700'
+            }`}
+            title={tile.trackRef ? cameraUi.doubleClick : tile.emptyLabel}
+          >
+            {tile.trackRef ? (
+              <VideoTrack trackRef={tile.trackRef} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span className="text-[9px] text-slate-500">{tile.emptyLabel}</span>
+            )}
+            <span className="absolute bottom-0.5 left-1 text-[8px] sm:text-[9px] text-slate-300 bg-slate-800/80 px-1 rounded font-semibold truncate max-w-[90%]">
+              {tile.label}
+            </span>
+          </button>
+        ))}
+      </div>
       </div>
 
       {/* Barra de controles mínimos */}
@@ -436,7 +654,7 @@ const StudentStage: React.FC<{
             isMicrophoneEnabled
               ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
               : 'bg-slate-700 hover:bg-slate-600 text-slate-300'
-          }`}
+          } disabled:opacity-60`}
           title={isMicrophoneEnabled ? 'Desligar microfone' : 'Ligar microfone'}
         >
           {isMicrophoneEnabled ? (
@@ -487,11 +705,8 @@ const StudentStage: React.FC<{
 
         {/* Câmera */}
         <button
-          onClick={() => {
-            localParticipant.setCameraEnabled(!isCameraEnabled).catch((err) => {
-              console.warn('[StudentRoomView] camera toggle failed:', err);
-            });
-          }}
+          onClick={() => { void toggleCameraWithRecovery(!isCameraEnabled); }}
+          disabled={cameraBusy}
           className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow transition ${
             isCameraEnabled
               ? 'bg-sky-500 hover:bg-sky-400 text-white'
@@ -530,6 +745,9 @@ const StudentStage: React.FC<{
             </svg>
           )}
         </button>
+        {cameraError && (
+          <span className="sr-only">{cameraError}</span>
+        )}
 
         {/* Chat */}
         <button
@@ -634,7 +852,7 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
   return (
     <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={true} audio={true}>
       <RoomAudioRenderer />
-      <StudentStage liveClass={liveClass} user={user} session={session} onExit={onExit} />
+      <StudentStage liveClass={liveClass} user={user} session={session} assignedRoster={props.assignedRoster} onExit={onExit} />
     </LiveKitRoom>
   );
 };

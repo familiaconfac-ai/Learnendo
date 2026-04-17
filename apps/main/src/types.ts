@@ -217,6 +217,7 @@ export interface LiveClassSession {
   audioNotesEnabled?: boolean;
   mainStageMode?: 'workspace' | 'camera'; // 'workspace' = área de trabalho colaborativa, 'camera' = câmera principal
   isBoardLocked?: boolean; // professor pode travar a lousa para alunos
+  studentEditingEnabled?: boolean; // professor pode desabilitar edição de caixas por alunos
   lastUpdatedBy?: string;
   updatedAt?: string;
 }

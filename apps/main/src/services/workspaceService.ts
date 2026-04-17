@@ -34,6 +34,14 @@ export interface WorkspaceItem {
   // text block
   content?: string;   // raw HTML from contenteditable
   styles?: WorkspaceTextStyles;
+  label?: string;     // optional human-readable box label / owner name
+  ownerUserId?: string;  // actual owner of the box (aluno dono)
+  ownerEmail?: string;   // owner email for display
+  classId?: string;
+  teacherUserId?: string;
+  editingByUserId?: string;
+  editingByUserName?: string;
+  editingStartedAt?: number;
   // image block
   imageUrl?: string;  // data-URL or hosted URL
   // metadata

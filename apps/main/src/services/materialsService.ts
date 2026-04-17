@@ -32,7 +32,7 @@ import {
   where,
   orderBy,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import type { WorkspaceItem, WorkspacePage } from './workspaceService';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -100,11 +100,24 @@ function materialDocRef(materialId: string) {
  */
 export async function saveWorkspaceAsMaterial(
   pages: WorkspacePage[],
-  userId: string,
   options: SaveMaterialOptions,
 ): Promise<string> {
-  if (!db) throw new Error('Firestore not initialized');
-  if (!userId) throw new Error('userId is required to save a material');
+  console.log('[Materials] saveWorkspaceAsMaterial CALLED with pages:', pages.length, 'title:', options.title);
+  console.log('[Materials] Auth currentUser:', auth.currentUser?.uid, 'isAnonymous:', auth.currentUser?.isAnonymous);
+
+  if (!db) {
+    console.error('[Materials] Firestore not initialized (db is null)');
+    throw new Error('Firestore not initialized');
+  }
+
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    console.error('[Materials] No authenticated user when saving material');
+    throw new Error('User must be authenticated to save materials');
+  }
+
+  // Log userId comparison for debugging
+  console.log('[Materials] Using auth uid:', uid);
 
   // Strip data-URL imageUrls from every page's items — base64 images can exceed Firestore's 1 MB limit.
   const safePages: WorkspaceMaterialPage[] = pages.map((page, i) => ({
@@ -130,19 +143,20 @@ export async function saveWorkspaceAsMaterial(
     level: options.level ?? '',
     tags: options.tags ?? [],
     pages: safePages,
-    createdBy: userId,
+    createdBy: uid,
     createdAt: now,
     updatedAt: now,
   };
 
-  console.log(`[Materials] saveWorkspaceAsMaterial — id=${materialId} title="${options.title}" pages=${safePages.length} userId=${userId.slice(0, 6)}`);
+  console.log(`[Materials] SAVE START — id=${materialId} title="${options.title}" pages=${safePages.length} createdBy=${uid.slice(0, 8)}`);
+  console.log('[Materials] save payload:', material);
   try {
     await setDoc(materialDocRef(materialId), material);
+    console.log(`[Materials] SAVE SUCCESS ✅ — materialId=${materialId} in Firestore`);
   } catch (err) {
-    console.error('[Materials] saveWorkspaceAsMaterial FAILED:', err);
+    console.error('[Materials] SAVE FAILED ❌:', err);
     throw err;
   }
-  console.log(`[Materials] saveWorkspaceAsMaterial ✅ id=${materialId}`);
   return materialId;
 }
 
@@ -159,20 +173,38 @@ export async function saveWorkspaceAsMaterial(
 export async function loadMaterialToWorkspace(
   materialId: string,
   classId: string,
-  uid: string,
   name: string,
 ): Promise<{ pages: WorkspaceMaterialPage[]; currentPageId: string }> {
+  console.log('[Materials] loadMaterialToWorkspace CALLED with materialId:', materialId, 'classId:', classId);
+
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    throw new Error('User not authenticated');
+  }
+
   if (!db) throw new Error('Firestore not initialized');
 
+  console.log(`[Materials] LOAD TO WORKSPACE START — materialId=${materialId} classId=${classId} uid=${uid.slice(0, 8)}`);
+  
   const snap = await getDoc(materialDocRef(materialId));
-  if (!snap.exists()) throw new Error(`Material ${materialId} not found`);
+  if (!snap.exists()) {
+    console.error(`[Materials] Material not found: ${materialId}`);
+    throw new Error(`Material ${materialId} not found`);
+  }
 
   const material = snap.data() as Omit<WorkspaceMaterial, 'id'>;
+  console.log(`[Materials] Material fetched: title="${material.title}" createdBy=${material.createdBy.slice(0, 8)}`);
+  
   const pages = normalizePages(material.pages);
-  if (pages.length === 0) throw new Error('Material has no pages');
+  if (pages.length === 0) {
+    console.error('[Materials] Material has no pages');
+    throw new Error('Material has no pages');
+  }
 
   const firstPage = pages[0];
   const workspaceRef = doc(db, 'liveClasses', classId, 'shared', 'workspace');
+  
+  console.log(`[Materials] Writing to workspace: pages=${pages.length} currentPageId=${firstPage.id}`);
   await setDoc(
     workspaceRef,
     {
@@ -188,7 +220,7 @@ export async function loadMaterialToWorkspace(
     },
     { merge: true },
   );
-  console.log(`[Materials] loadMaterialToWorkspace materialId=${materialId} → classId=${classId} pages=${pages.length}`);
+  console.log(`[Materials] LOAD TO WORKSPACE SUCCESS ✅ — materialId=${materialId} written to classId=${classId}`);
   return { pages, currentPageId: firstPage.id };
 }
 
@@ -228,16 +260,42 @@ export async function duplicateMaterial(
 
 /**
  * Returns all materials created by a user, ordered by updatedAt descending.
+ * Firestore rules restrict read access to documents where createdBy == request.auth.uid.
  */
-export async function getMaterialsByUser(userId: string): Promise<WorkspaceMaterial[]> {
-  if (!db) return [];
+export async function getMaterialsByUser(): Promise<WorkspaceMaterial[]> {
+  console.log('[Materials] getMaterialsByUser CALLED');
+  console.log('[Materials] Auth currentUser:', auth.currentUser?.uid, 'isAnonymous:', auth.currentUser?.isAnonymous);
 
-  const q = query(
-    materialsCollection(),
-    where('createdBy', '==', userId),
-    orderBy('updatedAt', 'desc'),
-  );
+  const uid = auth.currentUser?.uid;
+  if (!uid) {
+    console.error('[Materials] LOAD FAILED ❌ — No authenticated user');
+    return [];
+  }
 
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as WorkspaceMaterial));
+  if (!db) {
+    console.warn('[Materials] LOAD WARNING — Firestore not initialized, returning empty list');
+    return [];
+  }
+
+  console.log(`[Materials] LOAD START — querying materials for user=${uid.slice(0, 8)}`);
+
+  try {
+    const q = query(
+      materialsCollection(),
+      where('createdBy', '==', uid),
+      orderBy('updatedAt', 'desc'),
+    );
+
+    const snapshot = await getDocs(q);
+    const materials = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as WorkspaceMaterial));
+    console.log(`[Materials] LOAD SUCCESS ✅ — found ${materials.length} materials for user=${uid.slice(0, 8)}`);
+    if (materials.length === 0) {
+      console.log('[Materials] No materials found (empty list is OK)');
+    }
+    return materials;
+  } catch (err) {
+    console.error('[Materials] LOAD FAILED ❌ — query error:', err);
+    console.error('[Materials] Attempted query: userId=${userId.slice(0, 8)}');
+    return [];
+  }
 }
