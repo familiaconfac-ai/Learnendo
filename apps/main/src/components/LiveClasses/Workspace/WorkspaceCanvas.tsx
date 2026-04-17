@@ -263,6 +263,8 @@ const getWorkspaceBoxFlowLabels = () => {
         none: 'None',
         boxLabel: 'Box label',
         selectStudent: 'Select a student',
+        searchStudent: 'Search by name or email',
+        clearOwner: 'Remove owner',
       };
     }
     if (lang === 'es') {
@@ -272,6 +274,8 @@ const getWorkspaceBoxFlowLabels = () => {
         none: 'Ninguno',
         boxLabel: 'Nombre de la caja',
         selectStudent: 'Selecciona un alumno',
+        searchStudent: 'Buscar por nombre o correo',
+        clearOwner: 'Quitar alumno',
       };
     }
   } catch {
@@ -284,6 +288,8 @@ const getWorkspaceBoxFlowLabels = () => {
     none: 'Nenhum',
     boxLabel: 'Nome da caixa',
     selectStudent: 'Selecione um aluno',
+    searchStudent: 'Buscar por nome ou e-mail',
+    clearOwner: 'Remover dono',
   };
 };
 
@@ -298,6 +304,7 @@ interface DragState {
   origY: number;
   origW: number;
   origH: number;
+  forceSave: boolean;
 }
 
 interface WorkspaceViewerContext {
@@ -336,7 +343,11 @@ function isStudent(viewer: WorkspaceViewerContext): boolean {
 }
 
 function isBoxOwner(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
-  return Boolean(item.ownerUserId && item.ownerUserId === viewer.userId);
+  if (item.ownerUserId && item.ownerUserId === viewer.userId) return true;
+  if (item.ownerEmail && viewer.userEmail) {
+    return normalizeEmail(item.ownerEmail) === normalizeEmail(viewer.userEmail);
+  }
+  return false;
 }
 
 function canManageBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
@@ -363,7 +374,7 @@ function canMoveBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolea
 }
 
 function canResizeBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
-  return canManageBox(viewer, item);
+  return canManageBox(viewer, item) || isBoxOwner(viewer, item);
 }
 
 export interface WorkspaceCanvasProps {
@@ -384,9 +395,10 @@ export interface WorkspaceCanvasProps {
 const UnifiedColorSwatch: React.FC<{
   textColor: string;
   bgColor: string;
+  disabled?: boolean;
   onPickText: (v: string) => void;
   onPickBg: (v: string) => void;
-}> = ({ textColor, bgColor, onPickText, onPickBg }) => {
+}> = ({ textColor, bgColor, disabled = false, onPickText, onPickBg }) => {
   const wsl = getWsl();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -403,8 +415,12 @@ const UnifiedColorSwatch: React.FC<{
   return (
     <div ref={ref} className="relative flex-shrink-0">
       <button
-        onMouseDown={(e) => { e.preventDefault(); setOpen((o) => !o); }}
-        className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 border border-slate-200 transition"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          if (!disabled) setOpen((o) => !o);
+        }}
+        disabled={disabled}
+        className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 border border-slate-200 transition disabled:opacity-40"
         title={wsl.colorBtn}
         aria-label={wsl.colorBtn}
       >
@@ -413,7 +429,7 @@ const UnifiedColorSwatch: React.FC<{
           <span className="absolute right-0 bottom-0 w-2.5 h-2.5 rounded-sm border border-white" style={{ background: bgColor || 'repeating-conic-gradient(#ccc 0% 25%, white 0% 50%) 0 0 / 6px 6px' }} />
         </span>
       </button>
-      {open && (
+      {open && !disabled && (
         <div className="absolute top-full left-0 mt-1 z-50 bg-white border border-slate-200 rounded-lg shadow-xl p-2" style={{ minWidth: '11rem' }}>
           <p className="text-[10px] font-medium text-slate-400 mb-1.5">{wsl.textSection}</p>
           <div className="grid grid-cols-5 gap-1 mb-2.5">
@@ -824,6 +840,429 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
   );
 };
 
+interface StableResizeHandleProps {
+  onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
+}
+
+const StableResizeHandle: React.FC<StableResizeHandleProps> = ({ onPointerDown }) => (
+  <div
+    onPointerDown={onPointerDown}
+    className="absolute bottom-0 right-0 z-30 flex h-5 w-5 cursor-nwse-resize items-center justify-center rounded-tl bg-blue-500/20"
+  >
+    <svg width="8" height="8" viewBox="0 0 8 8" fill="#2563eb"><path d="M0 8 L8 0 L8 8 Z" /></svg>
+  </div>
+);
+
+interface StableFloatingBlockProps {
+  item: WorkspaceItem;
+  isSelected: boolean;
+  readOnly: boolean;
+  currentUserId: string;
+  currentUserEmail?: string | null;
+  viewerContext: WorkspaceViewerContext;
+  viewerIsStudent: boolean;
+  canvasRef: React.RefObject<HTMLDivElement | null>;
+  assignableStudents: AssignableStudentOption[];
+  boxFlowLabels: ReturnType<typeof getWorkspaceBoxFlowLabels>;
+  getCanvasMetrics: () => { width: number; height: number };
+  onSelect: () => void;
+  onPointerDownMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerDownResize: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onContentChange: (html: string) => void;
+  onUpdateItem: (id: string, patch: Partial<WorkspaceItem>, options?: { forceSave?: boolean }) => void;
+  onEditorTyping?: () => void;
+  onEditorFocus: (id: string, el: HTMLElement) => void;
+  onEditorBlur: () => void;
+}
+
+const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
+  item,
+  isSelected,
+  readOnly,
+  currentUserId,
+  currentUserEmail,
+  viewerContext,
+  viewerIsStudent,
+  canvasRef,
+  assignableStudents,
+  boxFlowLabels,
+  getCanvasMetrics,
+  onSelect,
+  onPointerDownMove,
+  onPointerDownResize,
+  onContentChange,
+  onUpdateItem,
+  onEditorTyping,
+  onEditorFocus,
+  onEditorBlur,
+}) => {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const lastTypedAtRef = useRef<number>(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const ownerMenuRef = useRef<HTMLDivElement>(null);
+  const FLOATING_GUARD_MS = 1500;
+  const LOCK_TIMEOUT_MS = 60_000;
+
+  const isLockedByOther = Boolean(
+    item.editingByUserId &&
+      item.editingByUserId !== currentUserId &&
+      Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS,
+  );
+  const lockOwnerName = item.editingByUserName || item.editingByUserId;
+  const canManageThisBox = canManageBox(viewerContext, item);
+  const isOwner = isBoxOwner(viewerContext, item);
+  const canBypassReadonlyForBox = canManageThisBox || isOwner;
+  const canEditThisContent = canEditBoxContent(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
+  const canRenameThisBox = canRenameBox(viewerContext, item);
+  const canAssignThisBox = canAssignBoxOwner(viewerContext, item);
+  const canMoveThisBox = canMoveBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
+  const canResizeThisBox = canResizeBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
+  const isOwnedByOther = Boolean(
+    !canManageThisBox &&
+      (
+        (item.ownerUserId && item.ownerUserId !== currentUserId) ||
+        (!item.ownerUserId && item.ownerEmail && currentUserEmail && normalizeEmail(item.ownerEmail) !== normalizeEmail(currentUserEmail))
+      ),
+  );
+
+  const [blockStyle, setBlockStyle] = useState<React.CSSProperties>({});
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelValue, setLabelValue] = useState(item.label || '');
+  const [assigningOwner, setAssigningOwner] = useState(false);
+  const [ownerQuery, setOwnerQuery] = useState('');
+
+  const ownerBadgeLabel =
+    item.ownerName?.trim() ||
+    item.ownerEmail?.trim() ||
+    (item.ownerUserId ? item.ownerUserId.slice(0, 6) : '');
+  const filteredAssignableStudents = assignableStudents.filter((student) => {
+    const query = ownerQuery.trim().toLowerCase();
+    if (!query) return true;
+    return student.label.toLowerCase().includes(query) || (student.email ?? '').toLowerCase().includes(query);
+  });
+
+  const handleHeaderPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!canMoveThisBox) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-box-no-drag="true"]')) return;
+    onPointerDownMove(e);
+  };
+
+  useEffect(() => {
+    setLabelValue(item.label || '');
+  }, [item.label]);
+
+  useEffect(() => {
+    if (editingLabel) inputRef.current?.focus();
+  }, [editingLabel]);
+
+  useEffect(() => {
+    if (!assigningOwner) {
+      setOwnerQuery('');
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (ownerMenuRef.current && !ownerMenuRef.current.contains(event.target as Node)) {
+        setAssigningOwner(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [assigningOwner]);
+
+  useEffect(() => {
+    if (editingLabel && !canRenameThisBox) {
+      setEditingLabel(false);
+    }
+    if (assigningOwner && !canAssignThisBox) {
+      setAssigningOwner(false);
+    }
+
+    if (canEditThisContent && !isLockedByOther) return;
+
+    if (contentRef.current && document.activeElement === contentRef.current) {
+      contentRef.current.blur();
+    }
+
+    if (item.editingByUserId === currentUserId) {
+      onEditorBlur();
+    }
+  }, [
+    assigningOwner,
+    canAssignThisBox,
+    canEditThisContent,
+    canRenameThisBox,
+    currentUserId,
+    editingLabel,
+    isLockedByOther,
+    item.editingByUserId,
+    onEditorBlur,
+  ]);
+
+  useEffect(() => {
+    if (!viewerIsStudent) return;
+    console.log('[WorkspaceCanvas] student box permission', {
+      boxId: item.id,
+      currentUserId,
+      currentUserEmail,
+      ownerUserId: item.ownerUserId ?? null,
+      ownerEmail: item.ownerEmail ?? null,
+      canEdit: canEditThisContent,
+    });
+  }, [
+    canEditThisContent,
+    currentUserEmail,
+    currentUserId,
+    item.id,
+    item.ownerEmail,
+    item.ownerUserId,
+    viewerIsStudent,
+  ]);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || item.type !== 'text') return;
+    const isTyping = Date.now() - lastTypedAtRef.current < FLOATING_GUARD_MS;
+    if (isTyping) return;
+    if (el.innerHTML !== (item.content ?? '')) el.innerHTML = item.content ?? '';
+  }, [item.content, item.type]);
+
+  useEffect(() => {
+    const update = () => {
+      const { width, height } = getCanvasMetrics();
+      setBlockStyle({
+        position: 'absolute',
+        left: `${(item.x / 100) * width}px`,
+        top: `${(item.y / 100) * height}px`,
+        width: `${(item.w / 100) * width}px`,
+        height: `${(item.h / 100) * height}px`,
+        zIndex: isSelected ? 50 : 10,
+        pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
+        boxSizing: 'border-box',
+        border: isSelected ? '2px solid #2563eb' : '1px dashed #94a3b8',
+        borderRadius: '6px',
+        overflow: 'hidden',
+        background: item.type === 'text' ? (item.styles?.bgColor || '#ffffff') : 'transparent',
+        cursor: 'default',
+        userSelect: 'text',
+        touchAction: 'none',
+        boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : '0 2px 8px rgba(0,0,0,0.08)',
+      });
+    };
+    update();
+    const obs = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    if (obs && canvasRef.current) obs.observe(canvasRef.current);
+    return () => obs?.disconnect();
+  }, [canvasRef, canBypassReadonlyForBox, canMoveThisBox, getCanvasMetrics, isSelected, item, readOnly]);
+
+  const saveLabel = () => {
+    if (!canRenameThisBox) {
+      setEditingLabel(false);
+      return;
+    }
+    const newLabel = labelValue.trim();
+    onUpdateItem(item.id, { label: newLabel || undefined });
+    setEditingLabel(false);
+  };
+
+  if (item.type === 'image') {
+    return (
+      <div
+        style={blockStyle}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
+      >
+        {canMoveThisBox && (
+          <div onPointerDown={onPointerDownMove} className="absolute inset-0 z-10 cursor-grab" style={{ background: 'transparent' }} />
+        )}
+        <img src={item.imageUrl} alt="" className="pointer-events-none h-full w-full select-none object-contain" draggable={false} style={{ background: 'transparent' }} />
+        {isSelected && canResizeThisBox && <StableResizeHandle onPointerDown={onPointerDownResize} />}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={blockStyle}
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect();
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div
+        className={`pointer-events-auto absolute inset-x-0 top-0 z-30 border-b border-slate-200 bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 ${canMoveThisBox ? 'cursor-grab' : ''}`}
+        onPointerDown={handleHeaderPointerDown}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {!editingLabel ? (
+              <span
+                data-box-no-drag="true"
+                onClick={canRenameThisBox ? () => setEditingLabel(true) : undefined}
+                className={canRenameThisBox ? 'cursor-pointer' : ''}
+              >
+                {item.label?.trim() ? item.label : boxFlowLabels.boxLabel}
+              </span>
+            ) : (
+              <input
+                data-box-no-drag="true"
+                ref={inputRef}
+                value={labelValue}
+                placeholder={boxFlowLabels.boxLabel}
+                title={boxFlowLabels.boxLabel}
+                onChange={(e) => setLabelValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); }}
+                onBlur={saveLabel}
+                className="flex-1 rounded border border-slate-300 bg-white px-1 py-0 text-[11px] font-semibold text-slate-700"
+              />
+            )}
+            {item.ownerUserId && ownerBadgeLabel ? (
+              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">
+                {ownerBadgeLabel}
+              </span>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-1">
+            {canAssignThisBox && isSelected ? (
+              <button
+                data-box-no-drag="true"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setAssigningOwner((prev) => !prev);
+                }}
+                className="rounded px-1.5 py-0.5 text-[9px] transition hover:bg-slate-200"
+                type="button"
+              >
+                👤
+              </button>
+            ) : null}
+            {isLockedByOther ? (
+              <span className="text-[9px] font-normal text-slate-500">Editing by {lockOwnerName}</span>
+            ) : null}
+          </div>
+        </div>
+        {assigningOwner && canAssignThisBox ? (
+          <div
+            ref={ownerMenuRef}
+            data-box-no-drag="true"
+            className="mt-2 rounded-lg border border-slate-200 bg-white shadow-lg"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="border-b border-slate-100 px-2 py-1.5">
+              <div className="mb-1 text-[10px] font-semibold text-slate-600">{boxFlowLabels.selectStudent}</div>
+               <input
+                 data-box-no-drag="true"
+                 type="text"
+                 value={ownerQuery}
+                onChange={(e) => setOwnerQuery(e.target.value)}
+                placeholder={boxFlowLabels.searchStudent}
+                className="w-full rounded border border-slate-300 px-2 py-1 text-[10px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                autoFocus
+              />
+            </div>
+            <div className="max-h-40 overflow-y-auto py-1">
+               <button
+                 data-box-no-drag="true"
+                 type="button"
+                className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-[10px] text-slate-600 transition hover:bg-slate-50"
+                onClick={() => {
+                  onUpdateItem(item.id, {
+                    ownerUserId: undefined,
+                    ownerName: undefined,
+                    ownerEmail: undefined,
+                  });
+                  setAssigningOwner(false);
+                }}
+              >
+                <span>{boxFlowLabels.clearOwner}</span>
+              </button>
+              {filteredAssignableStudents.map((student) => (
+                <button
+                  data-box-no-drag="true"
+                  key={student.uid}
+                  type="button"
+                  className={`flex w-full items-start justify-between gap-2 px-2 py-1.5 text-left transition hover:bg-slate-50 ${item.ownerUserId === student.uid ? 'bg-blue-50' : ''}`}
+                  onClick={() => {
+                    onUpdateItem(item.id, {
+                      ownerUserId: student.uid,
+                      ownerName: student.label,
+                      ownerEmail: student.email ?? undefined,
+                      label: item.label?.trim() ? item.label : student.label,
+                    });
+                    setAssigningOwner(false);
+                  }}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-[10px] font-medium text-slate-700">{student.label}</span>
+                    <span className="block truncate text-[9px] text-slate-500">{student.email ?? student.uid}</span>
+                  </span>
+                  {student.isOnline ? <span className="text-[9px] text-emerald-600">online</span> : null}
+                </button>
+              ))}
+              {filteredAssignableStudents.length === 0 ? (
+                <div className="px-2 py-2 text-[10px] text-slate-400">{boxFlowLabels.none}</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </div>
+      <div
+        ref={contentRef}
+        contentEditable={canEditThisContent && !isLockedByOther}
+        suppressContentEditableWarning
+        spellCheck
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onFocus={(e) => {
+          onSelect();
+          onEditorFocus(item.id, e.currentTarget);
+        }}
+        onBlur={(e) => {
+          onEditorBlur();
+          if (!canEditThisContent || isLockedByOther) return;
+          onContentChange((e.target as HTMLDivElement).innerHTML);
+        }}
+        onInput={(e) => {
+          if (!canEditThisContent || isLockedByOther) {
+            e.currentTarget.blur();
+            return;
+          }
+          lastTypedAtRef.current = Date.now();
+          onContentChange((e.target as HTMLDivElement).innerHTML);
+          onEditorTyping?.();
+        }}
+        className="h-full w-full overflow-auto p-2 leading-snug focus:outline-none"
+        style={{
+          fontFamily: 'Arial, sans-serif',
+          fontSize: `${item.styles?.fontSize ?? 14}px`,
+          color: item.styles?.color ?? '#1e293b',
+          paddingTop: isSelected ? '2.1rem' : '0.5rem',
+          cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
+          wordBreak: 'break-word',
+          opacity: isOwnedByOther ? 0.65 : isLockedByOther ? 0.85 : 1,
+        }}
+      />
+      {isSelected && canResizeThisBox ? <StableResizeHandle onPointerDown={onPointerDownResize} /> : null}
+    </div>
+  );
+});
+
 // -- Main component ------------------------------------------------------------
 
 export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
@@ -852,6 +1291,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
   const effectiveReadOnly = readOnly || (viewerIsStudent && !studentEditingEnabled);
+  const toolbarDisabled = effectiveReadOnly;
 
   if (!userId) {
     console.error('[WorkspaceCanvas] userId is null/undefined! This will break save/load functionality');
@@ -882,6 +1322,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // Refs are kept in sync manually (no useEffect delay) so closures always see latest.
   const pagesRef = useRef<WorkspacePage[]>([{ id: _initPageId, name: wsl.pageName(1), docContent: '', items: [] }]);
   const activePageIdRef = useRef<string>(_initPageId);
+  const syncActivePageDocRef = useCallback((html: string) => {
+    const nextPages = pagesRef.current.map((page) =>
+      page.id === activePageIdRef.current ? { ...page, docContent: html } : page,
+    );
+    pagesRef.current = nextPages;
+    return nextPages;
+  }, []);
 
   // -- Materials state ------------------------------------------------------
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -957,6 +1404,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     })
     .filter((option): option is AssignableStudentOption => Boolean(option));
 
+  const getCanvasMetrics = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return { width: 1, height: 1 };
+    }
+
+    return {
+      width: Math.max(canvas.offsetWidth, 1),
+      height: Math.max(canvas.scrollHeight, canvas.offsetHeight, 1),
+    };
+  }, []);
+
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
       // Use SECTION-SPECIFIC authorship instead of a single updatedBy field.
@@ -993,9 +1452,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           } else {
             // Same active page, but pages structure changed (rename/add/delete/duplicate).
             // Update pages metadata; keep active page�s live content.
+            const normalizedItems = (data.items ?? []).map(normalizeItemScope);
             const merged = normalized.map((rp) =>
               rp.id === activePageIdRef.current
-                ? { ...rp, docContent: pagesRef.current.find((p) => p.id === rp.id)?.docContent ?? rp.docContent, items: pagesRef.current.find((p) => p.id === rp.id)?.items ?? rp.items }
+                ? { ...rp, docContent: data.docContent ?? rp.docContent, items: normalizedItems.length > 0 ? normalizedItems : rp.items }
                 : rp,
             );
             pagesRef.current = merged;
@@ -1029,6 +1489,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         if (docRef.current && docRef.current.innerHTML !== nextDoc) {
           docRef.current.innerHTML = nextDoc;
         }
+        syncActivePageDocRef(nextDoc);
       }
 
       if (readOnly && data?.scrollRatio != null && overflowRef.current) {
@@ -1038,11 +1499,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
     });
     return unsub;
-  }, [classId, normalizeItemScope, readOnly, userId]);
+  }, [classId, normalizeItemScope, readOnly, syncActivePageDocRef, userId]);
 
   const scheduleItemsSave = useCallback(
-    (nextItems: WorkspaceItem[]) => {
-      if (readOnly) return;
+    (nextItems: WorkspaceItem[], options?: { forceSave?: boolean }) => {
+      if (effectiveReadOnly && !options?.forceSave) return;
       // Stamp the edit time so the snapshot guard stays active through the debounce.
       lastItemEditRef.current = Date.now();
       const scopedItems = nextItems.map(normalizeItemScope);
@@ -1051,18 +1512,26 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         saveWorkspace(classId, scopedItems, userId, userName).catch(console.error);
       }, 500);
     },
-    [classId, normalizeItemScope, userId, userName, readOnly],
+    [classId, effectiveReadOnly, normalizeItemScope, userId, userName],
   );
 
   const scheduleDocSave = useCallback(
     (html: string) => {
-      if (readOnly) return;
+      if (effectiveReadOnly) return;
+      const syncedPages = syncActivePageDocRef(html);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       saveDocDebounce.current = setTimeout(() => {
-        saveDocContent(classId, html, userId, userName).catch(console.error);
+        saveDocContent(
+          classId,
+          html,
+          userId,
+          userName,
+          activePageIdRef.current,
+          syncedPages,
+        ).catch(console.error);
       }, 600);
     },
-    [classId, userId, userName, readOnly],
+    [classId, effectiveReadOnly, syncActivePageDocRef, userId, userName],
   );
 
   const onDocInput = () => {
@@ -1081,7 +1550,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   };
 
   const onScrollSync = () => {
-    if (readOnly || !overflowRef.current) return;
+    if (effectiveReadOnly || !overflowRef.current) return;
     const el = overflowRef.current;
     const max = el.scrollHeight - el.clientHeight;
     if (max <= 0) return;
@@ -1091,6 +1560,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       saveScrollRatio(classId, ratio).catch(() => {});
     }, 300);
   };
+
+  const normalizeExecCommandFontSize = useCallback((root: HTMLElement | null, size: number) => {
+    root?.querySelectorAll('font[size="7"]').forEach((el) => {
+      (el as HTMLElement).removeAttribute('size');
+      (el as HTMLElement).style.fontSize = `${size}px`;
+    });
+  }, []);
 
   const execFmt = useCallback((cmd: string, value?: string) => {
     if (activeFloatingIdRef.current && activeFloatingElRef.current) {
@@ -1134,10 +1610,28 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     setFontSize(size);
     execFmt('fontSize', '7');
     setTimeout(() => {
-      docRef.current?.querySelectorAll('font[size="7"]').forEach((el) => {
-        (el as HTMLElement).removeAttribute('size');
-        (el as HTMLElement).style.fontSize = `${size}px`;
-      });
+      if (activeFloatingIdRef.current && activeFloatingElRef.current) {
+        const floatingId = activeFloatingIdRef.current;
+        const floatingEl = activeFloatingElRef.current;
+        normalizeExecCommandFontSize(floatingEl, size);
+        const html = floatingEl.innerHTML;
+        setItems((prev) => {
+          const next = prev.map((it) =>
+            it.id === floatingId
+              ? { ...it, content: html, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName }
+              : it,
+          );
+          scheduleItemsSave(next);
+          return next;
+        });
+        return;
+      }
+
+      normalizeExecCommandFontSize(docRef.current, size);
+      if (!docRef.current) return;
+      const html = docRef.current.innerHTML;
+      setDocHtml(html);
+      scheduleDocSave(html);
     }, 20);
   };
   const applyTextColor = (color: string) => { setTextColor(color); execFmt('foreColor', color || '#000000'); };
@@ -1160,7 +1654,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   };
 
   const updateItem = useCallback(
-    (id: string, patch: Partial<WorkspaceItem>) => {
+    (id: string, patch: Partial<WorkspaceItem>, options?: { forceSave?: boolean }) => {
       setItems((prev) => {
         const next = prev.map((it) =>
           it.id === id
@@ -1173,7 +1667,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
               })
             : it,
         );
-        scheduleItemsSave(next);
+        scheduleItemsSave(next, options);
         return next;
       });
     },
@@ -1202,7 +1696,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       editingByUserId: '',
       editingByUserName: '',
       editingStartedAt: 0,
-    });
+    }, { forceSave: canEditBoxContent(viewerContext, item) });
   };
 
   const acquireItemLock = (item: WorkspaceItem) => {
@@ -1214,7 +1708,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       editingByUserId: userId,
       editingByUserName: userName,
       editingStartedAt: Date.now(),
-    });
+    }, { forceSave: canEditThisItem });
     return true;
   };
 
@@ -1254,6 +1748,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       content: '',
       label: '',
       ownerUserId: viewerIsStudent ? userId : undefined,
+      ownerName: viewerIsStudent ? userName : undefined,
       ownerEmail: viewerIsStudent ? userEmail ?? undefined : undefined,
       styles: { color: '#1e293b', fontSize: 16, bgColor: '#ffffff' },
       updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
@@ -1290,10 +1785,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>, itemId: string, mode: 'move' | 'resize') => {
     const item = items.find((candidate) => candidate.id === itemId);
     if (!item) return;
+    const canBypassReadonlyForBox = canManageBox(viewerContext, item) || isBoxOwner(viewerContext, item);
     const hasPermission = mode === 'move'
-      ? canMoveBox(viewerContext, item) && (!effectiveReadOnly || canManageBox(viewerContext, item))
-      : canResizeBox(viewerContext, item);
+      ? canMoveBox(viewerContext, item) && (!effectiveReadOnly || canBypassReadonlyForBox)
+      : canResizeBox(viewerContext, item) && (!effectiveReadOnly || canBypassReadonlyForBox);
     if (!hasPermission) return;
+    e.preventDefault();
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     // Mark item editing immediately so the snapshot guard fires during the drag
@@ -1305,6 +1802,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       origY: item.y,
       origW: item.w,
       origH: item.h,
+      forceSave: effectiveReadOnly && canBypassReadonlyForBox,
     };
     setSelectedId(itemId);
   };
@@ -1312,26 +1810,39 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || !canvasRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
-    const dx = ((e.clientX - drag.startPx) / rect.width) * 100;
-    const dy = ((e.clientY - drag.startPy) / rect.height) * 100;
+    const { width, height } = getCanvasMetrics();
+    const dx = ((e.clientX - drag.startPx) / width) * 100;
+    const dy = ((e.clientY - drag.startPy) / height) * 100;
+    lastItemEditRef.current = Date.now();
     if (drag.mode === 'move') {
       setItems((prev) => prev.map((it) =>
-        it.id === drag.itemId ? { ...it, x: clamp(drag.origX + dx, 0, 95), y: clamp(drag.origY + dy, 0, 95) } : it));
+        it.id === drag.itemId
+          ? {
+              ...it,
+              x: clamp(drag.origX + dx, 0, Math.max(0, 100 - it.w)),
+              y: clamp(drag.origY + dy, 0, Math.max(0, 100 - it.h)),
+            }
+          : it));
     } else {
       setItems((prev) => prev.map((it) =>
-        it.id === drag.itemId ? { ...it, w: clamp(drag.origW + dx, 10, 100), h: clamp(drag.origH + dy, 5, 100) } : it));
+        it.id === drag.itemId
+          ? {
+              ...it,
+              w: clamp(drag.origW + dx, 10, Math.max(10, 100 - it.x)),
+              h: clamp(drag.origH + dy, 5, Math.max(5, 100 - it.y)),
+            }
+          : it));
     }
   };
 
   const onPointerUp = () => {
     if (!dragRef.current) return;
-    const { itemId } = dragRef.current;
+    const { itemId, forceSave } = dragRef.current;
     dragRef.current = null;
     setItems((prev) => {
       const next = prev.map((it) =>
         it.id === itemId ? { ...it, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName } : it);
-      scheduleItemsSave(next);
+      scheduleItemsSave(next, { forceSave });
       return next;
     });
   };
@@ -1376,7 +1887,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const switchPage = (pageId: string) => {
-    if (pageId === activePageIdRef.current || readOnly) return;
+    if (pageId === activePageIdRef.current || effectiveReadOnly) return;
     const flushed = flushPages();
     const newPage = flushed.find((p) => p.id === pageId);
     if (!newPage) return;
@@ -1393,7 +1904,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const addPage = () => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const flushed = flushPages();
     const newId = uid();
     const newPage: WorkspacePage = { id: newId, name: wsl.pageName(flushed.length + 1), docContent: '', items: [] };
@@ -1412,7 +1923,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const deletePage = (pageId: string) => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const current = pagesRef.current;
     if (current.length <= 1) return; // never delete the last page
     if (!window.confirm(wsl.confirmDelete)) return;
@@ -1439,7 +1950,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const renamePage = (pageId: string, newName: string) => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const updated = pagesRef.current.map((p) => (p.id === pageId ? { ...p, name: newName } : p));
     pagesRef.current = updated;
     setPages(updated);
@@ -1448,7 +1959,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const duplicatePage = (pageId: string) => {
-    if (readOnly) return;
+    if (effectiveReadOnly) return;
     const flushed = flushPages();
     const idx = flushed.findIndex((p) => p.id === pageId);
     if (idx === -1) return;
@@ -1638,14 +2149,42 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const [editingLabel, setEditingLabel] = useState(false);
     const [labelValue, setLabelValue] = useState(item.label || '');
     const [assigningOwner, setAssigningOwner] = useState(false);
+    const [ownerQuery, setOwnerQuery] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
+    const ownerMenuRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
       setLabelValue(item.label || '');
     }, [item.label]);
 
+    const ownerBadgeLabel =
+      item.ownerName?.trim() ||
+      item.ownerEmail?.trim() ||
+      (item.ownerUserId ? item.ownerUserId.slice(0, 6) : '');
+    const filteredAssignableStudents = assignableStudents.filter((student) => {
+      const query = ownerQuery.trim().toLowerCase();
+      if (!query) return true;
+      return student.label.toLowerCase().includes(query) || (student.email ?? '').toLowerCase().includes(query);
+    });
+
     useEffect(() => {
       if (editingLabel) inputRef.current?.focus();
     }, [editingLabel]);
+
+    useEffect(() => {
+      if (!assigningOwner) {
+        setOwnerQuery('');
+        return;
+      }
+
+      const handlePointerDown = (event: MouseEvent) => {
+        if (ownerMenuRef.current && !ownerMenuRef.current.contains(event.target as Node)) {
+          setAssigningOwner(false);
+        }
+      };
+
+      document.addEventListener('mousedown', handlePointerDown);
+      return () => document.removeEventListener('mousedown', handlePointerDown);
+    }, [assigningOwner]);
 
     useEffect(() => {
       if (editingLabel && !canRenameThisBox) {
@@ -1713,16 +2252,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
     useEffect(() => {
       const update = () => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const cw = canvas.offsetWidth;
-        const ch = Math.max(canvas.scrollHeight, canvas.offsetHeight);
+        const { width, height } = getCanvasMetrics();
         setBlockStyle({
           position: 'absolute',
-          left: `${(item.x / 100) * cw}px`,
-          top: `${(item.y / 100) * ch}px`,
-          width: `${(item.w / 100) * cw}px`,
-          height: `${(item.h / 100) * ch}px`,
+          left: `${(item.x / 100) * width}px`,
+          top: `${(item.y / 100) * height}px`,
+          width: `${(item.w / 100) * width}px`,
+          height: `${(item.h / 100) * height}px`,
           zIndex: isSelected ? 50 : 10,
           pointerEvents: readOnly ? 'none' : 'auto',
           boxSizing: 'border-box',
@@ -1740,7 +2276,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       const obs = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
       if (obs && canvasRef.current) obs.observe(canvasRef.current);
       return () => obs?.disconnect();
-    }, [item.x, item.y, item.w, item.h, item.styles?.bgColor, item.type, isSelected, readOnly, canvasRef]);
+    }, [canMoveThisBox, canvasRef, getCanvasMetrics, isSelected, item.h, item.styles?.bgColor, item.type, item.w, item.x, item.y, readOnly]);
 
     if (item.type === 'image') {
       return (
@@ -1755,13 +2291,24 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     }
 
     return (
-      <div style={blockStyle} onClick={onSelect}>
+      <div
+        style={blockStyle}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect();
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
         {isSelected && canMoveThisBox && (
           <div onPointerDown={onPointerDownMove} className="absolute top-0 left-0 right-0 h-5 cursor-grab z-20 flex items-center justify-center" style={{ background: 'rgba(37,99,235,0.08)' }}>
             <span className="text-[9px] text-blue-400 select-none pointer-events-none">{boxFlowLabels.move}</span>
           </div>
         )}
-        <div className="absolute inset-x-0 top-0 z-20 px-2 py-1 bg-white/90 border-b border-slate-200 text-[11px] font-semibold text-slate-700">
+        <div
+          className="pointer-events-auto absolute inset-x-0 top-0 z-30 px-2 py-1 bg-white/90 border-b border-slate-200 text-[11px] font-semibold text-slate-700"
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1 flex-1 min-w-0">
               {!editingLabel ? (
@@ -1771,13 +2318,26 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               ) : (
                 <input ref={inputRef} value={labelValue} placeholder={boxFlowLabels.boxLabel} title={boxFlowLabels.boxLabel} onChange={(e) => setLabelValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); }} onBlur={saveLabel} className="bg-white border border-slate-300 rounded px-1 py-0 text-[11px] font-semibold text-slate-700 flex-1" />
               )}
-              <span className="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
-                {item.ownerUserId ? (item.ownerEmail || item.ownerUserId.slice(0, 6)) : boxFlowLabels.unassigned}
-              </span>
+              {item.ownerUserId && ownerBadgeLabel ? (
+                <span className="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                  {ownerBadgeLabel}
+                </span>
+              ) : null}
             </div>
             <div className="flex items-center gap-1">
               {canAssignThisBox && isSelected && (
-                <button onClick={() => setAssigningOwner(!assigningOwner)} className="text-[9px] px-1.5 py-0.5 rounded hover:bg-slate-200 transition">
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setAssigningOwner((prev) => !prev);
+                  }}
+                  className="text-[9px] px-1.5 py-0.5 rounded hover:bg-slate-200 transition"
+                >
                   👤
                 </button>
               )}
@@ -1787,6 +2347,84 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             </div>
           </div>
           {assigningOwner && canAssignThisBox && (
+            <div
+              ref={ownerMenuRef}
+              className="mt-2 rounded-lg border border-slate-200 bg-white shadow-lg"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-2 py-1.5 border-b border-slate-100">
+                <div className="mb-1 text-[10px] font-semibold text-slate-600">{boxFlowLabels.selectStudent}</div>
+                <input
+                  type="text"
+                  value={ownerQuery}
+                  onChange={(e) => setOwnerQuery(e.target.value)}
+                  placeholder={boxFlowLabels.searchStudent}
+                  className="w-full rounded border border-slate-300 px-2 py-1 text-[10px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  autoFocus
+                />
+              </div>
+              <div className="max-h-40 overflow-y-auto py-1">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-[10px] text-slate-600 transition hover:bg-slate-50"
+                  onClick={() => {
+                    console.log('[WorkspaceCanvas] box owner updated', {
+                      boxId: item.id,
+                      ownerUserId: undefined,
+                      ownerName: undefined,
+                      ownerEmail: undefined,
+                      label: item.label ?? '',
+                    });
+                    updateItem(item.id, {
+                      ownerUserId: undefined,
+                      ownerName: undefined,
+                      ownerEmail: undefined,
+                    });
+                    setAssigningOwner(false);
+                  }}
+                >
+                  <span>{boxFlowLabels.clearOwner}</span>
+                </button>
+                {filteredAssignableStudents.map((student) => (
+                  <button
+                    key={student.uid}
+                    type="button"
+                    className={`flex w-full items-start justify-between gap-2 px-2 py-1.5 text-left transition hover:bg-slate-50 ${item.ownerUserId === student.uid ? 'bg-blue-50' : ''}`}
+                    onClick={() => {
+                      console.log('[WorkspaceCanvas] box owner updated', {
+                        boxId: item.id,
+                        ownerUserId: student.uid,
+                        ownerName: student.label,
+                        ownerEmail: student.email ?? undefined,
+                        label: item.label?.trim() ? item.label : student.label,
+                      });
+                      updateItem(item.id, {
+                        ownerUserId: student.uid,
+                        ownerName: student.label,
+                        ownerEmail: student.email ?? undefined,
+                        label: item.label?.trim() ? item.label : student.label,
+                      });
+                      setAssigningOwner(false);
+                    }}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-[10px] font-medium text-slate-700">{student.label}</span>
+                      <span className="block truncate text-[9px] text-slate-500">{student.email ?? student.uid}</span>
+                    </span>
+                    {student.isOnline && <span className="text-[9px] text-emerald-600">online</span>}
+                  </button>
+                ))}
+                {filteredAssignableStudents.length === 0 && (
+                  <div className="px-2 py-2 text-[10px] text-slate-400">{boxFlowLabels.none}</div>
+                )}
+              </div>
+            </div>
+          )}
+          {false && assigningOwner && canAssignThisBox && (
             <div className="mt-1 flex items-center gap-1">
               <span className="text-[10px] text-slate-500 whitespace-nowrap">{boxFlowLabels.selectStudent}</span>
               <select
@@ -1895,7 +2533,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <select
           value={fontFamily}
           onChange={(e) => applyFont(e.target.value)}
-          disabled={readOnly}
+          disabled={toolbarDisabled}
           className="h-7 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
           style={{ fontFamily, maxWidth: '8rem' }}
         >
@@ -1907,7 +2545,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <select
           value={fontSize}
           onChange={(e) => applySize(Number(e.target.value))}
-          disabled={readOnly}
+          disabled={toolbarDisabled}
           className="h-7 w-14 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
         >
           {FONT_SIZES.map((s) => (<option key={s} value={s}>{s}</option>))}
@@ -1916,18 +2554,18 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
         <div className="flex items-center">
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={readOnly} className="w-7 h-7 rounded font-bold text-sm hover:bg-slate-100 disabled:opacity-40 flex items-center justify-center transition" title={wsl.bold}>B</button>
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={readOnly} className="w-7 h-7 rounded italic text-sm hover:bg-slate-100 disabled:opacity-40 flex items-center justify-center transition" title={wsl.italic}>I</button>
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={readOnly} className="w-7 h-7 rounded underline text-sm hover:bg-slate-100 disabled:opacity-40 flex items-center justify-center transition" title={wsl.underline}>U</button>
+          <button onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
+          <button onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
+          <button onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
         </div>
 
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
-        <AlignDropdown current={textAlign} disabled={readOnly} onPick={(cmd, value) => { setTextAlign(value); execFmt(cmd); }} />
+        <AlignDropdown current={textAlign} disabled={toolbarDisabled} onPick={(cmd, value) => { setTextAlign(value); execFmt(cmd); }} />
 
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
-        <UnifiedColorSwatch textColor={textColor} bgColor={bgColor} onPickText={applyTextColor} onPickBg={applyHighlight} />
+        <UnifiedColorSwatch textColor={textColor} bgColor={bgColor} disabled={toolbarDisabled} onPickText={applyTextColor} onPickBg={applyHighlight} />
 
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
@@ -1962,7 +2600,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </>
         )}
 
-        {!readOnly && viewerCanManageWorkspace && (
+        {!effectiveReadOnly && viewerCanManageWorkspace && (
           <>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
             <button
@@ -2000,7 +2638,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </svg>
         </button>
 
-        {!readOnly && (
+        {!effectiveReadOnly && (
           <button onClick={handleExportPdf} className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 text-slate-600 border border-slate-200 transition" title={wsl.exportPdf} aria-label={wsl.exportPdf}>
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M5 4h7l4 4v8a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/><polyline points="12 4 12 9 17 9"/><line x1="10" y1="12" x2="10" y2="17"/><polyline points="7 14 10 17 13 14"/></svg>
           </button>
@@ -2040,7 +2678,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             key={page.id}
             page={page}
             isActive={page.id === activePageId}
-            readOnly={readOnly}
+            readOnly={effectiveReadOnly}
             canDelete={pages.length > 1}
             onActivate={() => switchPage(page.id)}
             onRename={(name) => renamePage(page.id, name)}
@@ -2049,7 +2687,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             onDelete={() => deletePage(page.id)}
           />
         ))}
-        {!readOnly && (
+        {!effectiveReadOnly && (
           <button
             onClick={addPage}
             className="flex-shrink-0 flex items-center justify-center w-8 h-full text-slate-400 hover:text-blue-600 hover:bg-white transition px-2"
@@ -2153,12 +2791,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <div className="relative w-full bg-white rounded-xl shadow-sm border border-slate-200 mb-6" style={{ minHeight: '60vh' }}>
             {!docHtml && (
               <div className="absolute top-6 left-6 text-slate-300 text-sm pointer-events-none select-none" style={{ fontFamily }}>
-                {readOnly ? wsl.readonlyPh : wsl.placeholder}
+                {effectiveReadOnly ? wsl.readonlyPh : wsl.placeholder}
               </div>
             )}
             <div
               ref={docRef}
-              contentEditable={!readOnly}
+              contentEditable={!effectiveReadOnly}
               suppressContentEditableWarning
               spellCheck
               onBlur={onDocBlur}
@@ -2171,18 +2809,25 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           {/* Floating blocks overlay */}
           <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
             {items.map((item) => (
-              <FloatingBlock
+              <StableFloatingBlock
                 key={item.id}
                 item={item}
                 isSelected={item.id === selectedId}
                 readOnly={effectiveReadOnly}
                 currentUserId={userId}
+                currentUserEmail={userEmail}
+                viewerContext={viewerContext}
+                viewerIsStudent={viewerIsStudent}
                 canvasRef={canvasRef}
+                assignableStudents={assignableStudents}
+                boxFlowLabels={boxFlowLabels}
+                getCanvasMetrics={getCanvasMetrics}
                 onSelect={() => setSelectedId(item.id)}
                 onPointerDownMove={(e) => onPointerDown(e, item.id, 'move')}
                 onPointerDownResize={(e) => onPointerDown(e, item.id, 'resize')}
-                onContentChange={(html) => updateItem(item.id, { content: html })}
-                onEditorTyping={() => updateItem(item.id, { editingStartedAt: Date.now() })}
+                onContentChange={(html) => updateItem(item.id, { content: html }, { forceSave: canEditBoxContent(viewerContext, item) })}
+                onUpdateItem={updateItem}
+                onEditorTyping={() => updateItem(item.id, { editingStartedAt: Date.now() }, { forceSave: canEditBoxContent(viewerContext, item) })}
                 onEditorFocus={requestItemEdit}
                 onEditorBlur={() => {
                   activeFloatingIdRef.current = null;

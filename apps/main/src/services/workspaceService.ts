@@ -36,6 +36,7 @@ export interface WorkspaceItem {
   styles?: WorkspaceTextStyles;
   label?: string;     // optional human-readable box label / owner name
   ownerUserId?: string;  // actual owner of the box (aluno dono)
+  ownerName?: string;    // display name of the owner for the classroom UI
   ownerEmail?: string;   // owner email for display
   classId?: string;
   teacherUserId?: string;
@@ -90,24 +91,32 @@ export async function saveDocContent(
   docContent: string,
   uid: string,
   name: string,
+  currentPageId?: string,
+  pages?: WorkspacePage[],
 ): Promise<void> {
   if (!db) return;
   console.log(`[WS] saveDocContent by ${name} (${uid.slice(0, 6)})`);
   const { updateDoc, setDoc } = await import('firebase/firestore');
+  const syncedPages =
+    currentPageId && pages
+      ? pages.map((page) => (page.id === currentPageId ? { ...page, docContent } : page))
+      : undefined;
+  const payload = {
+    docContent,
+    docUpdatedBy: uid,
+    updatedAt: Date.now(),
+    updatedBy: uid,
+    updatedByName: name,
+    ...(syncedPages ? { pages: syncedPages } : {}),
+  };
   try {
-    await updateDoc(workspaceRef(classId), {
-      docContent,
-      docUpdatedBy: uid,
-      updatedAt: Date.now(),
-      updatedBy: uid,
-      updatedByName: name,
-    });
+    await updateDoc(workspaceRef(classId), payload);
     console.log('[WS] saveDocContent ✅');
   } catch (err) {
     console.warn('[WS] saveDocContent updateDoc failed — falling back to setDoc:', err);
     await setDoc(
       workspaceRef(classId),
-      { docContent, docUpdatedBy: uid, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
+      payload,
       { merge: true },
     );
     console.log('[WS] saveDocContent setDoc ✅');
