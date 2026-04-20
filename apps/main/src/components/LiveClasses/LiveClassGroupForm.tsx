@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { LiveClassGroupInput } from '../../types';
-import { getAllStudents, StudentBasicInfo } from '../../services/teacherDashboard';
+import { getLiveClassAssignableUsers, StudentBasicInfo } from '../../services/teacherDashboard';
 import { StudentRosterPicker } from './StudentRosterPicker';
 
 interface LiveClassGroupFormProps {
@@ -37,8 +37,8 @@ export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
   const [assignedIdsText, setAssignedIdsText] = useState((merged.assignedStudentIds ?? []).join(', '));
   const [assignedNamesText, setAssignedNamesText] = useState((merged.assignedStudentNames ?? []).join(', '));
   const [error, setError] = useState('');
-  const [students, setStudents] = useState<StudentBasicInfo[]>([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
+  const [participants, setParticipants] = useState<StudentBasicInfo[]>([]);
+  const [loadingParticipants, setLoadingParticipants] = useState(false);
 
   useEffect(() => {
     setForm(merged);
@@ -48,17 +48,17 @@ export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
 
   useEffect(() => {
     let mounted = true;
-    setLoadingStudents(true);
-    getAllStudents()
+    setLoadingParticipants(true);
+    getLiveClassAssignableUsers()
       .then((rows) => {
         if (!mounted) return;
-        setStudents(rows.filter((student) => !student.isAnonymous));
+        setParticipants(rows);
       })
       .catch((err) => {
-        console.warn('[LiveClassGroupForm] unable to load students:', err);
+        console.warn('[LiveClassGroupForm] unable to load participants:', err);
       })
       .finally(() => {
-        if (mounted) setLoadingStudents(false);
+        if (mounted) setLoadingParticipants(false);
       });
 
     return () => {
@@ -129,8 +129,8 @@ export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
       />
 
       <StudentRosterPicker
-        students={students}
-        loading={loadingStudents}
+        students={participants}
+        loading={loadingParticipants}
         selectedStudentIds={selectedStudentIds}
         onToggleStudent={toggleStudentSelection}
       />
@@ -139,14 +139,14 @@ export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
         value={assignedIdsText}
         onChange={(event) => setAssignedIdsText(event.target.value)}
         className="h-20 w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="Assigned student UIDs (comma separated)"
+        placeholder="Assigned participant UIDs (comma separated)"
       />
 
       <textarea
         value={assignedNamesText}
         onChange={(event) => setAssignedNamesText(event.target.value)}
         className="h-20 w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="Assigned student names (comma separated)"
+        placeholder="Assigned participant names (comma separated)"
       />
 
       <textarea

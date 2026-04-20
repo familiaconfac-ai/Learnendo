@@ -5,6 +5,7 @@ import { Course, Day, Lesson, UserProgress, SectionType, LessonLanguageCode, Act
 import { Dashboard } from './components/Dashboard';
 import { CoursesView } from './components/CoursesView';
 import { BottomNavigation } from './components/BottomNavigation';
+import { BattleHubPage } from './components/BattleHub/BattleHubPage';
 import { LoginScreen } from './components/LoginScreen';
 import { PlacementTest } from './components/PlacementTest';
 import { WorkbookView } from './components/WorkbookView';
@@ -1277,6 +1278,13 @@ const App: React.FC = () => {
       return;
     }
 
+    if (section === SectionType.BATTLE) {
+      setActiveWeeklyTest(null);
+      setCurrentDay(null);
+      setCurrentSection(SectionType.BATTLE);
+      return;
+    }
+
     if (params?.lessonId) {
       setCurrentLessonId(params.lessonId);
     }
@@ -2302,6 +2310,22 @@ const App: React.FC = () => {
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
         );
+      case SectionType.BATTLE:
+        return (
+          <BattleHubPage
+            uid={user?.uid ?? 'guest'}
+            name={user?.displayName || user?.email || 'Player'}
+            courseId={currentCourseId ?? DEFAULT_COURSE_ID}
+            workbookId={currentWorkbookId || progress.currentWorkbook || 1}
+            lessonId={currentLessonId || null}
+            uiLanguage={uiLanguage}
+            fire={currentLessonId ? Math.min(1, lessonScore.completed) : (score?.streak ?? 0)}
+            ice={currentLessonId ? lessonScore.missed : (score?.freeze ?? 0)}
+            diamonds={currentLessonId ? lessonScore.total : (score?.diamonds ?? 0)}
+            stars={currentLessonId ? lessonScore.total + Math.min(1, lessonScore.completed) : (score?.stars ?? 0)}
+            onOpenLiveClasses={() => handleNavigate(SectionType.LIVE_CLASSES)}
+          />
+        );
       case SectionType.WORKBOOK_LIST: {
         const _courseId = currentCourseId ?? DEFAULT_COURSE_ID;
         const _registry = COURSE_WORKBOOKS[_courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
@@ -2738,7 +2762,8 @@ const App: React.FC = () => {
               </div>
             </div>
             <div className="space-y-2">
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { handleNavigate(SectionType.WORKBOOK); setMenuOpen(false); }}>Workbooks</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { handleNavigate(SectionType.BATTLE); setMenuOpen(false); }}>Battle Arena</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.LIVE_CLASSES); setMenuOpen(false); }}>Live Classes</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.VOCABULARY); setMenuOpen(false); }}>📖 My Vocabulary</button>

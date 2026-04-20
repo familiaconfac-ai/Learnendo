@@ -9,10 +9,10 @@ interface BottomNavigationProps {
   uiLanguage?: UILang;
 }
 
-const NAV_LABELS: Record<UILang, { workbooks: string; classes: string; pronounce: string; rank: string; share: string; videos: string; teacher: string; vocab: string }> = {
-  en: { workbooks: 'Workbooks', classes: 'Online', pronounce: 'Pronounce', rank: 'Rank', share: 'Share', videos: 'Videos', teacher: 'Teacher', vocab: 'Vocab' },
-  pt: { workbooks: 'Cadernos', classes: 'Online', pronounce: 'Pronuncia', rank: 'Ranking', share: 'Compartilhar', videos: 'Videos', teacher: 'Professor', vocab: 'Vocab' },
-  es: { workbooks: 'Libros', classes: 'Online', pronounce: 'Pronunciacion', rank: 'Ranking', share: 'Compartir', videos: 'Videos', teacher: 'Profesor', vocab: 'Vocab' },
+const NAV_LABELS: Record<UILang, { battle: string; classes: string; pronounce: string; rank: string; share: string; videos: string; teacher: string; vocab: string }> = {
+  en: { battle: 'Battle', classes: 'Live', pronounce: 'Pronounce', rank: 'Rank', share: 'Share', videos: 'Videos', teacher: 'Teacher', vocab: 'Vocab' },
+  pt: { battle: 'Battle', classes: 'Live', pronounce: 'Pronuncia', rank: 'Ranking', share: 'Compartilhar', videos: 'Videos', teacher: 'Professor', vocab: 'Vocab' },
+  es: { battle: 'Battle', classes: 'Live', pronounce: 'Pronunciacion', rank: 'Ranking', share: 'Compartir', videos: 'Videos', teacher: 'Profesor', vocab: 'Vocab' },
 };
 
 export const BottomNavigation: React.FC<BottomNavigationProps> = ({
@@ -26,12 +26,12 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   return (
     <div className="bottom-navigation fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around overflow-x-hidden border-t border-slate-700 bg-slate-900 px-1 py-2 max-w-full">
       <button
-        onClick={() => onNavigate('WORKBOOK_LIST')}
-        className={`flex flex-shrink-0 flex-col items-center gap-0.5 px-1.5 text-xs sm:px-2 ${currentSection === 'WORKBOOK_LIST' || currentSection === 'WORKBOOK' ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400 transition-colors'}`}
-        title={L.workbooks}
+        onClick={() => onNavigate('BATTLE')}
+        className={`flex flex-shrink-0 flex-col items-center gap-0.5 px-1.5 text-xs sm:px-2 ${currentSection === 'BATTLE' ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400 transition-colors'}`}
+        title={L.battle}
       >
-        <span className="text-lg">📚</span>
-        <span className="hidden sm:inline">{L.workbooks}</span>
+        <span className="text-lg">⚔️</span>
+        <span className="hidden sm:inline">{L.battle}</span>
       </button>
 
       <button

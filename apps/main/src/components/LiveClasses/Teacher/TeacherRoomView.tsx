@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -76,6 +76,25 @@ const TeacherStage: React.FC<{
 }) => {
   const participants = useParticipants();
   const remoteParticipants = participants.filter((participant) => !participant.isLocal);
+  const battleActiveParticipants = React.useMemo(() => {
+    const mergedParticipants = new Map<string, { uid: string; name: string }>();
+
+    for (const participant of remoteParticipants) {
+      mergedParticipants.set(participant.identity, {
+        uid: participant.identity,
+        name: participant.name || participant.identity,
+      });
+    }
+
+    for (const participant of presence.filter((entry) => entry.isOnline)) {
+      mergedParticipants.set(participant.uid, {
+        uid: participant.uid,
+        name: participant.name || participant.uid,
+      });
+    }
+
+    return Array.from(mergedParticipants.values());
+  }, [presence, remoteParticipants]);
   const cameraTrackRefs = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]).filter(
     isTrackReference,
   );
@@ -94,6 +113,7 @@ const TeacherStage: React.FC<{
   const [micError, setMicError] = useState<string | null>(null);
   const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
   const [showBattleSetup, setShowBattleSetup] = useState(false);
+  const pendingBattleSessionRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     setStudentEditingEnabled(session.studentEditingEnabled ?? true);
@@ -104,6 +124,18 @@ const TeacherStage: React.FC<{
     let battleWasActivated = false;
 
     const unsub = subscribeBattleSession(liveClass.id, (nextSession) => {
+      console.log('[BATTLE HOST] battleId', nextSession?.id ?? liveClass.id);
+      console.log('[BATTLE HOST] liveClassId/roomId', liveClass.id);
+      console.log('[BATTLE HOST] status after local update', nextSession?.status ?? null);
+      console.log('[BATTLE HOST] currentQuestionIndex after start', nextSession?.currentQuestionIndex ?? null);
+      console.log('[BATTLE HOST] currentQuestionId after start', nextSession?.questions?.[nextSession.currentQuestionIndex ?? 0]?.id ?? null);
+      console.info('[BATTLE HOST] snapshot received', {
+        roomId: liveClass.id,
+        battleId: nextSession?.id ?? liveClass.id,
+        status: nextSession?.status ?? null,
+        currentQuestionIndex: nextSession?.currentQuestionIndex ?? null,
+        roundParticipantIds: nextSession?.roundParticipantIds ?? [],
+      });
       const isInInitialWindow = Date.now() - mountedAt < 1000;
       if (isInInitialWindow) {
         if (
@@ -321,7 +353,7 @@ const TeacherStage: React.FC<{
       questions: sanitizedQuestions,
       currentQuestionIndex: 0,
       questionStartedAt: 0,
-      participants: buildInitialBattleParticipants(teacherUid, teacherName),
+      participants: buildInitialBattleParticipants(config, teacherUid, teacherName),
       roundParticipantIds: [],
       scores: buildInitialBattleScores(config, teacherUid, teacherName),
       currentAnswers: {},
@@ -330,19 +362,23 @@ const TeacherStage: React.FC<{
     };
     setBattleSession(optimisticSession);
 
-    createBattleSession(
+    const createSessionPromise = createBattleSession(
       liveClass.id,
       config,
       teacherUid,
       teacherName,
       sanitizedQuestions,
-    ).catch((err) => {
+    );
+    pendingBattleSessionRef.current = createSessionPromise;
+    createSessionPromise.catch((err) => {
       console.error('[Battle] Firestore sync failed:', err);
       setBattleSession(null);
       setShowBattleSetup(true);
       window.alert(
         'Nao foi possivel iniciar o Battle. Revise a pergunta editada e tente novamente.',
       );
+    }).finally(() => {
+      pendingBattleSessionRef.current = null;
     });
 
     const savedTemplate = buildSavedBattleTemplate(
@@ -356,6 +392,7 @@ const TeacherStage: React.FC<{
   };
 
   const handleCloseBattle = async () => {
+    pendingBattleSessionRef.current = null;
     await deleteBattleSession(liveClass.id);
     setBattleSession(null);
   };
@@ -622,16 +659,12 @@ const TeacherStage: React.FC<{
               session={battleSession}
               classId={liveClass.id}
               teacherUid={teacherUid}
-              activeParticipants={presence
-                .filter((participant) => participant.isOnline)
-                .map((participant) => ({
-                  uid: participant.uid,
-                  name: participant.name || participant.uid,
-                }))}
+              activeParticipants={battleActiveParticipants}
               onClose={handleCloseBattle}
               onNewBattle={() => {
                 void handleCloseBattle().then(() => setShowBattleSetup(true));
               }}
+              ensureSessionReady={() => pendingBattleSessionRef.current ?? Promise.resolve()}
             />
           ) : null}
         </>

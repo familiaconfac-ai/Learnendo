@@ -301,6 +301,7 @@ export interface UserProgress {
 export enum SectionType {
   COURSES = 'COURSES',
   DASHBOARD = 'DASHBOARD',
+  BATTLE = 'BATTLE',
   LIVE_CLASSES = 'LIVE_CLASSES',
   WORKBOOK = 'WORKBOOK',
   WORKBOOK_LIST = 'WORKBOOK_LIST',

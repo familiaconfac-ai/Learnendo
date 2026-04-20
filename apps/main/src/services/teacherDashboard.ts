@@ -1,7 +1,7 @@
 import { collection, query, getDocs, doc, getDoc, limit, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
 import type { User as FirebaseUser } from 'firebase/auth';
-import { getEffectiveUserRole } from './userRoles';
+import { getEffectiveUserRole, type UserRole } from './userRoles';
 
 // ===== FIRESTORE QUERIES FOR TEACHER DASHBOARD =====
 
@@ -9,6 +9,7 @@ export interface StudentBasicInfo {
   uid: string;
   name: string;
   email: string | null;
+  role?: UserRole;
   isAnonymous: boolean;
   createdAt: any;
   lastActive: any;
@@ -118,6 +119,44 @@ export async function getStudentActivityStats(uid: string): Promise<StudentActiv
   } catch (error) {
     console.error('[TeacherDash] ❌ Error fetching activity stats for', uid, ':', error);
     return { totalSessions: 0, lastLogin: null, dailyAccessCount: 0, lastAccessDate: null };
+  }
+}
+
+/**
+ * getLiveClassAssignableUsers
+ * Fetches all registered non-anonymous teacher/student accounts for live class assignment.
+ */
+export async function getLiveClassAssignableUsers(): Promise<StudentBasicInfo[]> {
+  if (!db) {
+    console.error('[TeacherDash] Firestore not initialized');
+    return [];
+  }
+
+  try {
+    console.log('[TeacherDash] Fetching live-class assignable users...');
+    const usersQuery = query(
+      collection(db, 'users'),
+      orderBy('lastActive', 'desc')
+    );
+    const snapshot = await getDocs(usersQuery);
+
+    const users: StudentBasicInfo[] = snapshot.docs
+      .map(doc => ({
+        uid: doc.id,
+        name: doc.data().name || doc.data().displayName || 'Unknown',
+        email: doc.data().email || null,
+        isAnonymous: doc.data().isAnonymous || false,
+        createdAt: doc.data().createdAt,
+        lastActive: doc.data().lastActive,
+        role: getEffectiveUserRole(doc.data().email || null, doc.data().role || null),
+      }))
+      .filter((user) => !user.isAnonymous && user.role !== 'admin');
+
+    console.log('[TeacherDash] Fetched', users.length, 'assignable users');
+    return users;
+  } catch (error) {
+    console.error('[TeacherDash] Error fetching assignable users:', error);
+    throw error;
   }
 }
 

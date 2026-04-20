@@ -11,6 +11,9 @@ export interface BattleConfig {
   questionCount: number;           // UI offers 5/10/20 but editor can trim to any count
   timePerQuestion: 5 | 10 | 15; // seconds
   includeTeacher?: boolean;
+  botEnabled?: boolean;
+  botAvatarId?: string;
+  botName?: string;
   courseId?: string;
   workbookId?: number;
   lessonId?: string;
@@ -45,12 +48,16 @@ export interface BattleParticipant {
   score: number;
   streak: number;
   lastAnswerCorrect: boolean | null;
+  avatarId?: string;
+  isBot?: boolean;
 }
 
 export interface BattleRosterParticipant {
   uid: string;
   name: string;
   joinedAt: number;
+  avatarId?: string;
+  isBot?: boolean;
 }
 
 export interface BattleAnswer {
@@ -63,6 +70,7 @@ export interface BattleAnswer {
   answeredAt: number;  // Date.now() ms
   elapsedMs?: number;  // ms from questionStartedAt → answeredAt (for speed ranking)
   roundPoints?: number; // points earned in this round only
+  frozenTimeLeft?: number;
 }
 
 export interface BattleSession {

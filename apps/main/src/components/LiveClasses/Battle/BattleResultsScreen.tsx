@@ -1,6 +1,7 @@
 // ── Learnendo Battle — Results Screen ─────────────────────────────────────────
 import React, { useMemo } from 'react';
 import type { BattleParticipant } from './battleTypes';
+import { BattleParticipantAvatar } from './BattleParticipantAvatar';
 
 interface Props {
   scores: Record<string, BattleParticipant>;
@@ -53,6 +54,13 @@ export const BattleResultsScreen: React.FC<Props> = ({
               <span className="text-xl w-7 text-center">
                 {i < 3 ? MEDALS[i] : `#${i + 1}`}
               </span>
+              <BattleParticipantAvatar
+                name={p.name}
+                avatarId={p.avatarId}
+                isBot={p.isBot}
+                sizeClassName="h-8 w-8"
+                showBotBadge
+              />
               <span className="flex-1 text-sm font-semibold text-white truncate">
                 {p.name}
                 {p.uid === myUid && <span className="text-orange-400 text-xs ml-1">(you)</span>}

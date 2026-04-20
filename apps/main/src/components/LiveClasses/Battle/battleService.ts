@@ -1,13 +1,13 @@
-// ── Learnendo Battle — Firestore service ───────────────────────────────────────
-// Battle state lives at:  liveClasses/{classId}/session/battle
+// Learnendo Battle - Firestore service
+// Battle state lives at: liveClasses/{classId}/session/battle
 // This reuses the already-deployed `session/{docId}` rules:
-//   - READ:   any canAccessLiveClassRoom participant  (students see the battle)
+//   - READ: any canAccessLiveClassRoom participant (students see the battle)
 //   - CREATE: teacher only
 //   - UPDATE: teacher always; students can update their own answer/score
 //             once the updated firestore.rules are deployed.
 
 import {
-  doc, setDoc, updateDoc, onSnapshot, Unsubscribe, deleteDoc
+  doc, setDoc, updateDoc, onSnapshot, Unsubscribe, deleteDoc, getDoc
 } from 'firebase/firestore';
 import { db } from '../../../services/firebase';
 import type {
@@ -17,8 +17,14 @@ import { getBattleQuestions } from './battleQuestions';
 import {
   buildInitialBattleParticipants,
   buildInitialBattleScores,
+  buildBattleParticipantScore,
+  buildBattleRoundParticipantsSnapshot,
+  calculateBattleRoundScore,
+  canBattleParticipantAnswerCurrentQuestion,
   evaluateBattleAnswer,
   getExpectedBattleParticipantIds,
+  isReservedFirestoreFieldKey,
+  mergeBattleScoresWithParticipants,
   sanitizeBattleQuestions,
 } from './battleUtils';
 
@@ -30,10 +36,17 @@ function battleDocRef(classId: string) {
   return doc(db, 'liveClasses', classId, 'session', 'battle');
 }
 
-// ─── Teacher operations ────────────────────────────────────────────────────────
+function battleDocPath(classId: string) {
+  return `liveClasses/${classId}/session/battle`;
+}
+
+// Teacher operations
 
 function buildRoundParticipantMap(participants: BattleRosterParticipant[]) {
   return participants.reduce<Record<string, BattleRosterParticipant>>((acc, participant) => {
+    if (isReservedFirestoreFieldKey(participant.uid)) {
+      throw new Error(`Invalid battle participant uid for Firestore map key: ${participant.uid}`);
+    }
     acc[participant.uid] = participant;
     return acc;
   }, {});
@@ -45,7 +58,7 @@ export async function createBattleSession(
   teacherUid: string,
   teacherName: string,
   // Pass pre-generated questions to guarantee teacher + students see the same
-  // shuffled order.  If omitted, questions are generated here.
+  // shuffled order. If omitted, questions are generated here.
   precomputedQuestions?: BattleQuestion[]
 ): Promise<void> {
   const generatedQuestions: BattleQuestion[] = precomputedQuestions ?? getBattleQuestions({
@@ -65,7 +78,7 @@ export async function createBattleSession(
     questions,
     currentQuestionIndex: 0,
     questionStartedAt: 0,
-    participants: buildInitialBattleParticipants(teacherUid, teacherName),
+    participants: buildInitialBattleParticipants(config, teacherUid, teacherName),
     roundParticipantIds: [],
     scores: buildInitialBattleScores(config, teacherUid, teacherName),
     currentAnswers: {},
@@ -78,25 +91,75 @@ export async function createBattleSession(
 
 export async function startBattle(
   classId: string,
-  participants: BattleRosterParticipant[]
+  session: BattleSession,
+  participants: BattleRosterParticipant[],
+  requestedByUid: string
 ): Promise<void> {
   const now = Date.now();
-  await updateDoc(battleDocRef(classId), {
+  const docRef = battleDocRef(classId);
+  const docPath = battleDocPath(classId);
+  console.log('[BATTLE START] entered');
+  console.log('[BATTLE START] doc path:', docRef.path);
+  console.log('[BATTLE START] session.id:', session.id || null);
+  console.log('[BATTLE START] classId:', classId);
+  console.log('[BATTLE START] requestedBy:', requestedByUid);
+  console.log('[BATTLE START] current status:', session.status);
+
+  const fallbackParticipants = buildBattleRoundParticipantsSnapshot({
+    session,
+    activeParticipants: [],
+    teacherUid: requestedByUid,
+    teacherName: session.scores[requestedByUid]?.name || 'Professor',
+  });
+  const resolvedParticipants = participants.length > 0 ? participants : fallbackParticipants;
+  console.log('[BATTLE START] participants received count:', participants.length);
+  console.log('[BATTLE START] participants fallback count:', fallbackParticipants.length);
+
+  const roundParticipantIds = Array.from(
+    new Set(resolvedParticipants.map((participant) => participant.uid).filter(Boolean))
+  );
+
+  const nextScores = mergeBattleScoresWithParticipants(session.scores, resolvedParticipants);
+  const payload = {
     status: 'active',
     currentQuestionIndex: 0,
     questionStartedAt: now,
-    participants: buildRoundParticipantMap(participants),
-    roundParticipantIds: participants.map((participant) => participant.uid),
+    participants: buildRoundParticipantMap(resolvedParticipants),
+    roundParticipantIds,
+    scores: nextScores,
     currentAnswers: {},
     updatedAt: now,
-  });
+  };
+
+  console.log('[BATTLE START] payload before save:', payload);
+
+  try {
+    const beforeSnap = await getDoc(docRef);
+    console.log('[BATTLE START] expected doc path:', docPath);
+    console.log('[BATTLE START] real doc path used:', docRef.path);
+    console.log('[BATTLE START] doc exists before start:', beforeSnap.exists());
+    console.log('[BATTLE START] updateDoc starting');
+    await setDoc(docRef, payload, { merge: true });
+    console.log('[BATTLE START] updateDoc resolved');
+  } catch (error) {
+    console.error('[BATTLE START] failed with error:', error);
+    if (error instanceof Error) {
+      console.error('[BATTLE START] error message:', error.message);
+      console.error('[BATTLE START] error stack:', error.stack);
+    }
+    if (typeof error === 'object' && error && 'code' in error) {
+      console.error('[BATTLE START] error code:', (error as { code?: string }).code ?? null);
+    }
+    throw error;
+  }
 }
 
 export async function advanceBattleQuestion(
   classId: string,
   nextIndex: number,
   totalQuestions: number,
-  participants: BattleRosterParticipant[]
+  participants: BattleRosterParticipant[],
+  existingScores: Record<string, BattleParticipant>
 ): Promise<void> {
   const isLast = nextIndex >= totalQuestions;
   const now = Date.now();
@@ -106,6 +169,7 @@ export async function advanceBattleQuestion(
     questionStartedAt: isLast ? 0 : now,
     participants: buildRoundParticipantMap(participants),
     roundParticipantIds: isLast ? [] : participants.map((participant) => participant.uid),
+    scores: isLast ? existingScores : mergeBattleScoresWithParticipants(existingScores, participants),
     currentAnswers: {},
     updatedAt: now,
   });
@@ -129,7 +193,7 @@ export async function deleteBattleSession(classId: string): Promise<void> {
   await deleteDoc(battleDocRef(classId));
 }
 
-// ─── Student operations ────────────────────────────────────────────────────────
+// Student operations
 
 export async function joinBattle(
   classId: string,
@@ -148,13 +212,13 @@ export async function joinBattle(
  * Submit a student's answer and recalculate their score.
  *
  * Uses a plain updateDoc (not a transaction) so that Firestore security rules
- * only need `update` permission — no `get` required inside a transaction.
+ * only need `update` permission - no `get` required inside a transaction.
  * The student's `session` prop is already the latest Firestore snapshot
  * delivered by onSnapshot, so score computation is accurate.
  *
  * Dot-notation field paths (`currentAnswers.uid`, `scores.uid`) are written
  * in a single atomic updateDoc call, so teacher's onSnapshot always sees
- * both fields change together — this is what drives the auto-reveal on the
+ * both fields change together - this is what drives the auto-reveal on the
  * host side when the last student answers.
  */
 export async function submitBattleAnswer(
@@ -168,29 +232,22 @@ export async function submitBattleAnswer(
     responseText?: string;
   }
 ): Promise<void> {
-  // Guard: already answered this question in the current snapshot
-  if (uid in (session.currentAnswers ?? {})) {
-    console.log('[Battle:submitBattleAnswer] BLOCKED — already answered', { uid, currentAnswers: Object.keys(session.currentAnswers ?? {}) });
-    return;
-  }
-  // Guard: question must be active (not showing-answer or finished)
-  if (session.status !== 'active') {
-    console.log('[Battle:submitBattleAnswer] BLOCKED — status is not active', { uid, status: session.status });
-    return;
-  }
-  // NOTE: roundParticipantIds eligibility is NOT checked here — the UI layer
-  // (BattleHostView / BattlePlayerView) already enforces participation rules.
-  // Removing this guard prevents false rejections when roundParticipantIds
-  // is stale or not yet populated in the Firestore snapshot.
+  const alreadyAnswered = uid in (session.currentAnswers ?? {});
+  const participantRecognized =
+    canBattleParticipantAnswerCurrentQuestion(session, uid)
+    || uid in (session.scores ?? {})
+    || uid in (session.participants ?? {});
 
-  console.log('[Battle:submitBattleAnswer] ACCEPTING answer', {
-    uid,
-    status: session.status,
-    roundParticipantIds: session.roundParticipantIds,
-    scoresKeys: Object.keys(session.scores ?? {}),
-    currentAnswersKeys: Object.keys(session.currentAnswers ?? {}),
-    payload,
-  });
+  console.log('[BATTLE SUBMIT] userId:', uid);
+  console.log('[BATTLE SUBMIT] session status:', session.status);
+  console.log('[BATTLE SUBMIT] currentQuestionIndex:', session.currentQuestionIndex);
+  console.log('[BATTLE SUBMIT] questionStartedAt:', session.questionStartedAt ?? 0);
+  console.log('[BATTLE SUBMIT] participant recognized:', participantRecognized);
+  console.log('[BATTLE SUBMIT] already answered:', alreadyAnswered);
+
+  if (alreadyAnswered) return;
+  if (session.status !== 'active') return;
+  if (!participantRecognized) return;
 
   const answeredAt = Date.now();
   const qIdx = session.currentQuestionIndex;
@@ -198,24 +255,20 @@ export async function submitBattleAnswer(
   if (!question) return;
 
   const isCorrect = evaluateBattleAnswer(question, payload);
-
-  // Speed bonus — 0–500 proportional to time remaining
-  const startedAt = session.questionStartedAt ?? 0;
-  const elapsed = startedAt > 0 ? (answeredAt - startedAt) / 1000 : 0;
-  const timeLimit = session.config.timePerQuestion;
-  const speedRatio = startedAt > 0 ? Math.max(0, 1 - elapsed / timeLimit) : 0;
-
-  const baseScore = isCorrect ? 500 : 0;
-  const speedBonus = isCorrect ? Math.round(speedRatio * 500) : 0;
-
   const prev: BattleParticipant = session.scores?.[uid] ?? {
     uid, name, score: 0, streak: 0, lastAnswerCorrect: null,
   };
-  const newStreak = isCorrect ? prev.streak + 1 : 0;
-  // +50 per consecutive correct answer, capped at +200
-  const streakBonus = isCorrect ? Math.min(200, newStreak * 50) : 0;
-  const roundPoints = baseScore + speedBonus + streakBonus;
-  const newScore = prev.score + roundPoints;
+  const { elapsedMs, roundPoints } = calculateBattleRoundScore({
+    answeredAt,
+    questionStartedAt: session.questionStartedAt ?? 0,
+    timePerQuestion: session.config.timePerQuestion,
+    isCorrect,
+  });
+
+  console.log('[BATTLE SUBMIT] answeredAt:', answeredAt);
+  console.log('[BATTLE SUBMIT] elapsedMs:', elapsedMs);
+  console.log('[BATTLE SUBMIT] isCorrect:', isCorrect);
+  console.log('[BATTLE SUBMIT] scoreAwarded:', roundPoints);
 
   const answer: BattleAnswer = {
     uid,
@@ -225,12 +278,18 @@ export async function submitBattleAnswer(
     responseText: payload.responseText,
     isCorrect,
     answeredAt,
-    // Store elapsed time (ms) and round points for the reveal panel
-    elapsedMs: startedAt > 0 ? answeredAt - startedAt : 0,
+    elapsedMs,
     roundPoints,
+    frozenTimeLeft: Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
   };
-  const updatedParticipant: BattleParticipant = {
-    uid, name, score: newScore, streak: newStreak, lastAnswerCorrect: isCorrect,
+  const updatedParticipant: BattleParticipant = buildBattleParticipantScore(uid, name, prev, isCorrect, roundPoints);
+  const nextAnswersSnapshot = {
+    ...(session.currentAnswers ?? {}),
+    [uid]: answer,
+  };
+  const nextScoresSnapshot = {
+    ...(session.scores ?? {}),
+    [uid]: updatedParticipant,
   };
 
   await updateDoc(battleDocRef(classId), {
@@ -238,6 +297,10 @@ export async function submitBattleAnswer(
     [`scores.${uid}`]: updatedParticipant,
     updatedAt: answeredAt,
   });
+
+  console.log('[BATTLE SAVE] updated player state:', updatedParticipant);
+  console.log('[BATTLE SAVE] scores snapshot:', nextScoresSnapshot);
+  console.log('[BATTLE SAVE] answers snapshot:', nextAnswersSnapshot);
 }
 
 /**
@@ -257,13 +320,13 @@ export async function autoRevealIfAllAnswered(
   const participantIds = getExpectedBattleParticipantIds(session, teacherUid);
   if (participantIds.length === 0) return;
 
-  const allAnswered = participantIds.every(id => id in session.currentAnswers);
+  const allAnswered = participantIds.every((id) => id in session.currentAnswers);
   if (!allAnswered) return;
 
   await showBattleAnswer(classId);
 }
 
-// ─── Subscription ─────────────────────────────────────────────────────────────
+// Subscription
 
 export function subscribeBattleSession(
   classId: string,

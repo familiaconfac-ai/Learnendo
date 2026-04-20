@@ -428,7 +428,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   }
 
   const emptyStateText = viewerRole === 'admin'
-    ? 'No online sessions yet. Teachers can create the first class.'
+    ? 'No live sessions yet. Teachers can create the first class.'
     : canManageClasses
       ? 'No classes registered for this teacher yet.'
       : 'No classes are assigned to this account yet.';
@@ -439,12 +439,12 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
 
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-white">Online</h1>
+          <h1 className="text-2xl font-black text-white">Live</h1>
           <p className="mt-1 text-sm text-slate-400">
             {viewerRole === 'admin'
               ? 'Admin can review every teacher and every live class.'
-              : canManageClasses
-                ? 'Teacher view shows only the classes owned by this account.'
+                : canManageClasses
+                  ? 'Teacher view shows only the classes owned by this account.'
                 : 'Student view shows only classes assigned to this email.'}
           </p>
           {viewMode !== 'admin' ? (
@@ -499,7 +499,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
       <div className="space-y-3">
         {loading ? (
           <div className="rounded-2xl border border-slate-700 bg-slate-800 p-4 text-sm text-slate-300">
-            Loading online sessions...
+            Loading live sessions...
           </div>
         ) : loadError ? (
           <div className="rounded-2xl border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">

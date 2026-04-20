@@ -13,6 +13,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, BattleQuestion } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
 import { sanitizeBattleQuestion, sanitizeBattleQuestions } from './battleUtils';
+import { BOT_AVATAR_OPTIONS, DEFAULT_BOT_AVATAR_ID } from './botAvatars';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 function buildExcludedKey(params: {
@@ -102,6 +103,9 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [questionCount,   setQuestionCount]   = useState<5 | 10 | 20>(10);
   const [timePerQuestion, setTimePerQuestion] = useState<5 | 10 | 15>(10);
   const [includeTeacher,  setIncludeTeacher]  = useState(false);
+  const [botEnabled,      setBotEnabled]      = useState(false);
+  const [botAvatarId,     setBotAvatarId]     = useState(DEFAULT_BOT_AVATAR_ID);
+  const [botName,         setBotName]         = useState('Bot');
 
   // ── Step 2 state ────────────────────────────────────────────────────────
   const [questions,    setQuestions]    = useState<BattleQuestion[]>([]);
@@ -145,6 +149,9 @@ export const BattleSetupModal: React.FC<Props> = ({
       questionCount: count,
       timePerQuestion,
       includeTeacher,
+      botEnabled,
+      botAvatarId,
+      botName: botName.trim() || 'Bot',
       courseId:    defaultCourseId,
       workbookId:  defaultWorkbookId,
       lessonId:    defaultLessonId,
@@ -326,10 +333,10 @@ export const BattleSetupModal: React.FC<Props> = ({
   if (step === 'config') {
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-        <div className="relative w-full max-w-md mx-4 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl overflow-hidden">
+        <div className="relative mx-4 flex max-h-[90vh] w-full max-w-md flex-col overflow-y-auto rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
 
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 bg-gradient-to-r from-orange-600/80 to-red-700/80">
+          <div className="sticky top-0 z-10 flex items-center justify-between bg-gradient-to-r from-orange-600/80 to-red-700/80 px-6 py-4">
             <div className="flex items-center gap-3">
               <span className="text-2xl">⚔️</span>
               <div>
@@ -435,10 +442,67 @@ export const BattleSetupModal: React.FC<Props> = ({
                 </div>
               </label>
             </div>
+
+            <div className="rounded-2xl border border-slate-700 bg-slate-800/40 px-4 py-3 space-y-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={botEnabled}
+                  onChange={(e) => setBotEnabled(e.target.checked)}
+                  className="mt-1 h-4 w-4 accent-orange-500"
+                />
+                <div>
+                  <div className="text-sm font-semibold text-white">Ativar Bot</div>
+                  <div className="text-xs text-slate-400">
+                    Inclui um participante artificial na batalha com avatar e pontuação normal.
+                  </div>
+                </div>
+              </label>
+
+              {botEnabled ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                      Avatar do Bot
+                    </label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {BOT_AVATAR_OPTIONS.map((avatar) => (
+                        <button
+                          key={avatar.id}
+                          type="button"
+                          onClick={() => setBotAvatarId(avatar.id)}
+                          className={`flex flex-col items-center justify-center rounded-xl border px-2 py-3 transition ${
+                            botAvatarId === avatar.id
+                              ? 'border-orange-500 bg-orange-500/20 text-orange-300'
+                              : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                          }`}
+                          title={avatar.label}
+                        >
+                          <span className="text-2xl leading-none">{avatar.icon}</span>
+                          <span className="mt-1 text-[10px] font-semibold">{avatar.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+                      Nome do Bot
+                    </label>
+                    <input
+                      value={botName}
+                      onChange={(event) => setBotName(event.target.value)}
+                      placeholder="Bot"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-500"
+                    />
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           {/* Footer — two launch paths */}
-          <div className="px-6 pb-6 space-y-2">
+          <div className="sticky bottom-0 z-10 space-y-2 border-t border-slate-800 bg-slate-900 px-6 pb-6 pt-4">
             <button
               onClick={handleOpenCuration}
               className="w-full py-3 rounded-xl bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white font-semibold text-sm transition"

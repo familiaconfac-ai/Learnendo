@@ -74,6 +74,20 @@ const StudentStage: React.FC<{
     let battleWasActivated = false;
 
     const unsub = subscribeBattleSession(liveClass.id, (nextSession) => {
+      console.log('[BATTLE PLAYER] battleId', nextSession?.id ?? liveClass.id);
+      console.log('[BATTLE PLAYER] liveClassId/roomId', liveClass.id);
+      console.log('[BATTLE PLAYER] snapshot received', nextSession);
+      console.log('[BATTLE PLAYER] status received', nextSession?.status ?? null);
+      console.log('[BATTLE PLAYER] currentQuestionIndex received', nextSession?.currentQuestionIndex ?? null);
+      console.log('[BATTLE PLAYER] currentQuestionId received', nextSession?.questions?.[nextSession.currentQuestionIndex ?? 0]?.id ?? null);
+      console.log('[BATTLE PLAYER] totalQuestions received', nextSession?.questions?.length ?? 0);
+      console.info('[BATTLE PLAYER] snapshot received', {
+        roomId: liveClass.id,
+        battleId: nextSession?.id ?? null,
+        status: nextSession?.status ?? null,
+        currentQuestionIndex: nextSession?.currentQuestionIndex ?? null,
+        roundParticipantIds: nextSession?.roundParticipantIds ?? [],
+      });
       const isInInitialWindow = Date.now() - mountedAt < 1000;
       if (isInInitialWindow) {
         if (

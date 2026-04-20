@@ -65,6 +65,45 @@ function normalizeStudentNames(names: string[] | undefined): string[] {
     .filter(Boolean);
 }
 
+function normalizeLegacyIdList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object') {
+        const record = item as Record<string, unknown>;
+        const raw = record.uid ?? record.userId ?? record.id ?? record.email;
+        return typeof raw === 'string' ? raw : '';
+      }
+      return '';
+    })
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeLegacyNameList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === 'string') return item;
+      if (item && typeof item === 'object') {
+        const record = item as Record<string, unknown>;
+        const raw = record.name ?? record.displayName ?? record.label;
+        return typeof raw === 'string' ? raw : '';
+      }
+      return '';
+    })
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function normalizeComparableName(value?: string | null): string {
+  return (value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
 function buildLiveClassPayload(input: LiveClassInput) {
   const normalizedMeetingLink = normalizeExternalLink(input.meetingLink);
   const normalizedMeetUrl = normalizeExternalLink(input.meetUrl ?? input.meetingLink);
@@ -94,8 +133,8 @@ function buildLiveClassPayload(input: LiveClassInput) {
 const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   id,
   title: data.title ?? 'Untitled class',
-  teacherName: data.teacherName ?? 'Teacher',
-  teacherUid: data.teacherUid ?? data.createdBy ?? '',
+  teacherName: data.teacherName ?? data.teacherDisplayName ?? data.hostName ?? 'Teacher',
+  teacherUid: data.teacherUid ?? data.createdBy ?? data.teacherId ?? data.ownerUid ?? '',
   courseId: data.courseId ?? '',
   groupId: data.groupId ?? '',
   groupName: data.groupName ?? '',
@@ -110,11 +149,26 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   unitId: data.unitId ?? null,
   lessonId: data.lessonId ?? null,
   isPrivate: data.isPrivate ?? false,
-  assignedStudentIds: Array.isArray(data.assignedStudentIds) ? data.assignedStudentIds : [],
-  assignedStudentNames: Array.isArray(data.assignedStudentNames) ? data.assignedStudentNames : [],
+  assignedStudentIds: Array.isArray(data.assignedStudentIds)
+    ? data.assignedStudentIds
+    : normalizeLegacyIdList(
+        data.studentIds
+        ?? data.studentUids
+        ?? data.assignedUserIds
+        ?? data.participantIds
+        ?? data.participants
+      ),
+  assignedStudentNames: Array.isArray(data.assignedStudentNames)
+    ? data.assignedStudentNames
+    : normalizeLegacyNameList(
+        data.studentNames
+        ?? data.assignedUsers
+        ?? data.participantNames
+        ?? data.participants
+      ),
   battleTemplates: Array.isArray(data.battleTemplates) ? data.battleTemplates : [],
   status: deriveLiveClassStatus(data.date ?? '', data.time ?? ''),
-  createdBy: data.createdBy ?? '',
+  createdBy: data.createdBy ?? data.teacherUid ?? data.teacherId ?? data.ownerUid ?? '',
   createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
   updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
 });
@@ -171,17 +225,28 @@ export function isStudentAssignedToLiveClass(
 }
 
 export function canManageLiveClass(
-  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid'>,
-  viewer: Pick<LiveClassViewer, 'uid' | 'role'>,
+  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'teacherName'>,
+  viewer: Pick<LiveClassViewer, 'uid' | 'role' | 'email' | 'name'>,
 ): boolean {
   if (!viewer.uid) return false;
   if (viewer.role === 'admin') return true;
   if (viewer.role !== 'teacher') return false;
-  return liveClass.createdBy === viewer.uid || liveClass.teacherUid === viewer.uid;
+  const normalizedTeacherName = normalizeComparableName(liveClass.teacherName);
+  const normalizedViewerName = normalizeComparableName(viewer.name);
+  const normalizedViewerEmail = normalizeComparableName(viewer.email);
+  const viewerEmailLocalPart = normalizedViewerEmail.includes('@')
+    ? normalizedViewerEmail.split('@')[0]
+    : normalizedViewerEmail;
+
+  return liveClass.createdBy === viewer.uid
+    || liveClass.teacherUid === viewer.uid
+    || (normalizedTeacherName !== '' && normalizedTeacherName === normalizedViewerName)
+    || (normalizedTeacherName !== '' && normalizedTeacherName === viewerEmailLocalPart)
+    || (normalizedTeacherName !== '' && normalizedTeacherName === normalizedViewerEmail);
 }
 
 export function canViewLiveClass(
-  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'assignedStudentIds' | 'assignedStudentNames'>,
+  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'teacherName' | 'assignedStudentIds' | 'assignedStudentNames'>,
   viewer: LiveClassViewer,
 ): boolean {
   if (!viewer.uid) return false;
@@ -197,7 +262,7 @@ export function filterLiveClassesForViewer(
 }
 
 export function canAccessLiveClass(
-  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'assignedStudentIds' | 'assignedStudentNames'>,
+  liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'teacherName' | 'assignedStudentIds' | 'assignedStudentNames'>,
   viewer: LiveClassViewer,
 ): boolean {
   return canViewLiveClass(liveClass, viewer);
@@ -234,14 +299,7 @@ export function subscribeLiveClasses(
   }
 
   const classesRef = collection(db, LIVE_CLASSES_COLLECTION);
-  const queries = viewer.role === 'admin'
-    ? [classesRef]
-    : viewer.role === 'teacher'
-      ? [
-        query(classesRef, where('teacherUid', '==', viewer.uid)),
-        query(classesRef, where('createdBy', '==', viewer.uid)),
-      ]
-      : [classesRef];
+  const queries = [classesRef];
 
   const snapshots = new Map<number, LiveClass[]>();
   const unsubscribes = queries.map((source, index) => onSnapshot(
@@ -250,9 +308,7 @@ export function subscribeLiveClasses(
       const mapped = snapshot.docs.map((d) => mapLiveClass(d.id, d.data() as Record<string, any>));
       snapshots.set(index, mapped);
       const classes = mergeLiveClassSnapshots(Array.from(snapshots.values()));
-      const visibleClasses = viewer.role === 'student'
-        ? filterLiveClassesForViewer(classes, viewer)
-        : classes;
+      const visibleClasses = filterLiveClassesForViewer(classes, viewer);
       console.log('[LiveClassesService] subscribeLiveClasses snapshot', {
         collection: LIVE_CLASSES_COLLECTION,
         viewerRole: viewer.role,

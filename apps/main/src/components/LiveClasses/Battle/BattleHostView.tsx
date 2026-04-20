@@ -9,17 +9,22 @@ import {
   submitBattleAnswer,
 } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
+import { BattleParticipantAvatar } from './BattleParticipantAvatar';
 import {
-  buildBattleRosterParticipant,
+  BATTLE_BOT_UID,
+  buildBattleRoundParticipantsSnapshot,
+  calculateBattleRoundScore,
   evaluateBattleAnswer,
   getBattleParticipantName,
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
   getBattleLanguage,
+  getBattleBotName,
   getBattlePromptAudioText,
   getExpectedBattleParticipantIds,
   getMyBattleAnswer,
   isChoiceQuestion,
+  buildBotBattlePayload,
 } from './battleUtils';
 import type { BattleAnswer } from './battleTypes';
 
@@ -30,6 +35,7 @@ interface Props {
   activeParticipants: Array<{ uid: string; name: string }>;
   onClose: () => void;
   onNewBattle: () => void;
+  ensureSessionReady?: () => Promise<void>;
 }
 
 export const BattleHostView: React.FC<Props> = ({
@@ -39,7 +45,12 @@ export const BattleHostView: React.FC<Props> = ({
   activeParticipants,
   onClose,
   onNewBattle,
+  ensureSessionReady,
 }) => {
+  const knownBattleStatuses = useMemo(
+    () => ['idle', 'lobby', 'active', 'showing-answer', 'finished'] as const,
+    [],
+  );
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
   const [busy, setBusy] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -48,6 +59,7 @@ export const BattleHostView: React.FC<Props> = ({
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isListening, setIsListening] = useState(false);
   const [teacherSubmitting, setTeacherSubmitting] = useState(false);
+  const [teacherFrozenTimeLeft, setTeacherFrozenTimeLeft] = useState<number | null>(null);
   // ── Local answer registry ────────────────────────────────────────────────────
   // localCurrentAnswers stores BattleAnswer objects that this host has submitted
   // but that haven't yet returned from Firestore. It is merged with
@@ -61,12 +73,16 @@ export const BattleHostView: React.FC<Props> = ({
   // which is race-free: we don’t need session.scores to update before the reveal.
   const preRoundScoresRef = useRef<Record<string, number>>({});
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
+  const sessionRef = useRef(session);
+  const activeParticipantsRef = useRef(activeParticipants);
 
   const questionIdx = session.currentQuestionIndex;
   const question = session.questions[questionIdx];
+  const currentQuestionId = question?.id ?? null;
   const totalQ = session.questions.length;
   const includeTeacher = !!session.config.includeTeacher;
   const battleLanguage = getBattleLanguage(session.config.courseId);
@@ -75,35 +91,6 @@ export const BattleHostView: React.FC<Props> = ({
     [session.roundParticipantIds, session.participants, session.scores, teacherUid]
   );
   const teacherCanPlay = expectedParticipantIds.includes(teacherUid);
-
-  function buildRoundParticipantsSnapshot() {
-    const participantMap = new Map<string, ReturnType<typeof buildBattleRosterParticipant>>();
-
-    for (const participant of activeParticipants) {
-      participantMap.set(
-        participant.uid,
-        buildBattleRosterParticipant(
-          participant.uid,
-          participant.name,
-          session.participants?.[participant.uid]?.joinedAt ?? session.createdAt
-        )
-      );
-    }
-
-    for (const pid of expectedParticipantIds) {
-      if (participantMap.has(pid)) continue;
-      participantMap.set(
-        pid,
-        buildBattleRosterParticipant(
-          pid,
-          getBattleParticipantName(session, pid),
-          session.participants?.[pid]?.joinedAt ?? session.createdAt
-        )
-      );
-    }
-
-    return Array.from(participantMap.values());
-  }
 
   // ── Merged answer state (local + Firestore) ───────────────────────────────
   // localCurrentAnswers entries take precedence: they are newer (just submitted).
@@ -123,16 +110,36 @@ export const BattleHostView: React.FC<Props> = ({
       ? ('showing-answer' as const)
       : session.status;
 
-  const timeRatio = timeLeft / session.config.timePerQuestion;
   const myAnswer = mergedCurrentAnswers[teacherUid] ?? getMyBattleAnswer(session, teacherUid);
   const teacherHasAnswered = !!myAnswer || teacherSubmitting;
+  const effectiveTeacherFrozenTimeLeft = teacherFrozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
+  const displayTimeLeft = teacherHasAnswered && effectiveTeacherFrozenTimeLeft != null ? effectiveTeacherFrozenTimeLeft : timeLeft;
+  const timeRatio = displayTimeLeft / session.config.timePerQuestion;
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
-  const showTeacherInScores = includeTeacher || teacherCanPlay;
+  const showTeacherInScores = includeTeacher;
   const visibleScores = useMemo(
-    () => showTeacherInScores
-      ? session.scores
-      : Object.fromEntries(Object.entries(session.scores).filter(([uid]) => uid !== teacherUid)),
-    [session.scores, showTeacherInScores, teacherUid]
+    () => {
+      const derivedScores = { ...session.scores };
+
+      for (const [pid, answer] of Object.entries(mergedCurrentAnswers)) {
+        const previous = derivedScores[pid];
+        const preRoundScore = preRoundScoresRef.current[pid] ?? previous?.score ?? 0;
+        derivedScores[pid] = {
+          uid: pid,
+          name: previous?.name ?? answer.name ?? getBattleParticipantName(session, pid),
+          score: Math.max(previous?.score ?? 0, preRoundScore + (answer.roundPoints ?? 0)),
+          streak: previous?.streak ?? (answer.isCorrect ? 1 : 0),
+          lastAnswerCorrect: answer.isCorrect,
+          avatarId: previous?.avatarId ?? session.participants?.[pid]?.avatarId,
+          isBot: previous?.isBot ?? session.participants?.[pid]?.isBot,
+        };
+      }
+
+      return showTeacherInScores
+        ? derivedScores
+        : Object.fromEntries(Object.entries(derivedScores).filter(([uid]) => uid !== teacherUid));
+    },
+    [mergedCurrentAnswers, session, session.scores, showTeacherInScores, teacherUid]
   );
   const leaderboard = useMemo(
     () => Object.values(visibleScores).sort((a, b) => b.score - a.score).slice(0, 5),
@@ -150,14 +157,16 @@ export const BattleHostView: React.FC<Props> = ({
   const revealRows = useMemo(() => {
     if (effectiveStatus !== 'showing-answer') return [];
 
-    type RevealRow = {
-      pid: string;
-      name: string;
-      isCorrect: boolean | null;
-      elapsedMs: number | null;
-      roundPoints: number;
-      totalScore: number;
-    };
+      type RevealRow = {
+        pid: string;
+        name: string;
+        isCorrect: boolean | null;
+        elapsedMs: number | null;
+        roundPoints: number;
+        totalScore: number;
+        avatarId?: string;
+        isBot?: boolean;
+      };
 
     const answered: RevealRow[] = [];
     const unanswered: RevealRow[] = [];
@@ -168,6 +177,7 @@ export const BattleHostView: React.FC<Props> = ({
 
     for (const pid of allPids) {
       const participant = session.scores[pid];
+      const rosterParticipant = session.participants?.[pid];
       const displayName = mergedCurrentAnswers[pid]?.name ?? participant?.name ?? getBattleParticipantName(session, pid);
       // Pre-round score captured when the question became active.
       // Falls back to session.scores[pid].score in case the ref wasn’t populated
@@ -176,7 +186,16 @@ export const BattleHostView: React.FC<Props> = ({
       const answer = mergedCurrentAnswers[pid];
 
       if (!answer) {
-        unanswered.push({ pid, name: displayName, isCorrect: null, elapsedMs: null, roundPoints: 0, totalScore: preRoundScore });
+        unanswered.push({
+          pid,
+          name: displayName,
+          isCorrect: null,
+          elapsedMs: null,
+          roundPoints: 0,
+          totalScore: preRoundScore,
+          avatarId: participant?.avatarId ?? rosterParticipant?.avatarId,
+          isBot: participant?.isBot ?? rosterParticipant?.isBot,
+        });
       } else {
         const roundPoints = answer.roundPoints ?? 0;
         const elapsedMs =
@@ -193,6 +212,8 @@ export const BattleHostView: React.FC<Props> = ({
           roundPoints,
           // totalScore is always correct: pre-round baseline + this round's points
           totalScore: preRoundScore + roundPoints,
+          avatarId: participant?.avatarId ?? rosterParticipant?.avatarId,
+          isBot: participant?.isBot ?? rosterParticipant?.isBot,
         });
       }
     }
@@ -202,6 +223,20 @@ export const BattleHostView: React.FC<Props> = ({
 
     return [...correct, ...wrong, ...unanswered];
   }, [effectiveStatus, mergedCurrentAnswers, session.scores, session.questionStartedAt, expectedParticipantIds]);
+
+  useEffect(() => {
+    console.log('[BATTLE DEBUG] known statuses in code', {
+      statuses: knownBattleStatuses,
+    });
+  }, [knownBattleStatuses]);
+
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    activeParticipantsRef.current = activeParticipants;
+  }, [activeParticipants]);
 
   useEffect(() => {
     const audio = new Audio('/sounds/battle_theme.mp3');
@@ -229,6 +264,7 @@ export const BattleHostView: React.FC<Props> = ({
     setSelectedOptions([]);
     setTypedAnswer('');
     setTeacherSubmitting(false);
+    setTeacherFrozenTimeLeft(null);
     setTimeLeft(session.config.timePerQuestion);
     setLocalCurrentAnswers({}); // clear local answers when question changes
     setShowRankingOverlay(false); // close overlay between rounds
@@ -272,6 +308,44 @@ export const BattleHostView: React.FC<Props> = ({
   }, [session.status]);
 
   useEffect(() => {
+    console.log('[BATTLE HOST] battleId', session.id);
+    console.log('[BATTLE HOST] liveClassId/roomId', classId);
+    console.log('[BATTLE HOST] current status before start', session.status);
+    console.log('[BATTLE HOST] currentQuestionIndex before start', session.currentQuestionIndex);
+    console.log('[BATTLE HOST] currentQuestionId before start', currentQuestionId);
+    console.log('[BATTLE HOST] totalQuestions before start', session.questions?.length ?? 0);
+    console.log('[BATTLE HOST] render status', {
+      roomId: classId,
+      battleId: session.id,
+      status: session.status,
+      currentQuestionIndex: session.currentQuestionIndex,
+      roundParticipantIds: session.roundParticipantIds,
+      currentAnswersForUid: session.currentAnswers?.[teacherUid] ?? null,
+      answeredAt: myAnswer?.answeredAt ?? null,
+      frozenTimeLeft: effectiveTeacherFrozenTimeLeft,
+      roundPoints: myAnswer?.roundPoints ?? null,
+    });
+  }, [
+    classId,
+    effectiveTeacherFrozenTimeLeft,
+    myAnswer?.answeredAt,
+    myAnswer?.roundPoints,
+    session.currentAnswers,
+    session.currentQuestionIndex,
+    session.id,
+    session.roundParticipantIds,
+    session.status,
+    currentQuestionId,
+    teacherUid,
+  ]);
+
+  useEffect(() => {
+    if (!teacherHasAnswered) return;
+    if (myAnswer?.frozenTimeLeft == null) return;
+    setTeacherFrozenTimeLeft((current) => current ?? myAnswer.frozenTimeLeft ?? null);
+  }, [myAnswer?.frozenTimeLeft, teacherHasAnswered]);
+
+  useEffect(() => {
     if (!question || session.status !== 'active' || !question.playAudioOnce) return;
     const promptKey = `${session.id}:${question.id}:${session.status}`;
     if (promptPlayedRef.current === promptKey) return;
@@ -280,6 +354,66 @@ export const BattleHostView: React.FC<Props> = ({
       speak(getBattlePromptAudioText(question), battleLanguage);
     }, 250);
   }, [session.id, session.status, question, battleLanguage]);
+
+  useEffect(() => {
+    if (botTimeoutRef.current) {
+      clearTimeout(botTimeoutRef.current);
+      botTimeoutRef.current = null;
+    }
+    if (!question || session.status !== 'active') return;
+    if (!expectedParticipantIds.includes(BATTLE_BOT_UID)) return;
+    if (mergedCurrentAnswers[BATTLE_BOT_UID]) return;
+
+    const { delayMs, payload } = buildBotBattlePayload(session, question);
+    botTimeoutRef.current = setTimeout(() => {
+      const answeredAt = Date.now();
+      const isCorrect = evaluateBattleAnswer(question, payload);
+      const { elapsedMs, roundPoints } = calculateBattleRoundScore({
+        answeredAt,
+        questionStartedAt: session.questionStartedAt,
+        timePerQuestion: session.config.timePerQuestion,
+        isCorrect,
+      });
+    const botAnswer: BattleAnswer = {
+        uid: BATTLE_BOT_UID,
+        name: session.scores[BATTLE_BOT_UID]?.name || getBattleBotName(session.config),
+        optionIndex: payload.optionIndex,
+        optionIndexes: payload.optionIndexes,
+        responseText: payload.responseText,
+        isCorrect,
+        answeredAt,
+        elapsedMs,
+        roundPoints,
+        frozenTimeLeft: Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
+      };
+      console.info('[BATTLE ANSWER]', {
+        uid: BATTLE_BOT_UID,
+        answeredAt,
+        elapsedMs,
+        frozenTimeLeft: botAnswer.frozenTimeLeft,
+        roundPoints,
+        roomId: classId,
+        battleId: session.id,
+      });
+      setLocalCurrentAnswers((prev) => ({ ...prev, [BATTLE_BOT_UID]: botAnswer }));
+      void submitBattleAnswer(
+        classId,
+        session,
+        BATTLE_BOT_UID,
+        session.scores[BATTLE_BOT_UID]?.name || getBattleBotName(session.config),
+        payload,
+      ).catch((error) => {
+        console.error('[Battle:Host] bot submit failed:', error);
+      });
+    }, delayMs);
+
+    return () => {
+      if (botTimeoutRef.current) {
+        clearTimeout(botTimeoutRef.current);
+        botTimeoutRef.current = null;
+      }
+    };
+  }, [classId, expectedParticipantIds, mergedCurrentAnswers, question, session]);
 
   useEffect(() => {
     if (session.status !== 'active') return;
@@ -361,15 +495,12 @@ export const BattleHostView: React.FC<Props> = ({
     // React flush. mergedCurrentAnswers, answerCount, effectiveStatus, and revealRows
     // all update on the very next render without waiting for Firestore.
     const isCorrect = evaluateBattleAnswer(question, payload);
-    const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
-    const speedRatio = session.questionStartedAt > 0
-      ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
-      : 0;
-    const prevParticipant = session.scores[teacherUid] ?? { score: 0, streak: 0 };
-    const newStreak = isCorrect ? prevParticipant.streak + 1 : 0;
-    const roundPoints = isCorrect
-      ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
-      : 0;
+    const { elapsedMs, roundPoints } = calculateBattleRoundScore({
+      answeredAt,
+      questionStartedAt: session.questionStartedAt,
+      timePerQuestion: session.config.timePerQuestion,
+      isCorrect,
+    });
     const localAnswer: BattleAnswer = {
       uid: teacherUid,
       name: teacherName,
@@ -379,9 +510,22 @@ export const BattleHostView: React.FC<Props> = ({
       answeredAt,
       elapsedMs,
       roundPoints,
+      frozenTimeLeft: Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
     };
+    console.info('[BATTLE ANSWER]', {
+      uid: teacherUid,
+      answeredAt,
+      elapsedMs,
+      frozenTimeLeft: localAnswer.frozenTimeLeft,
+      roundPoints,
+      roomId: classId,
+      battleId: session.id,
+    });
     
     setLocalCurrentAnswers((prev) => ({ ...prev, [teacherUid]: localAnswer }));
+    setTeacherFrozenTimeLeft(
+      Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
+    );
     // ⚠️ Only stop the timer when the last active participant has answered.
     // In multiplayer, teacher may answer first while students still need time.
     const updatedMerged = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
@@ -453,15 +597,12 @@ export const BattleHostView: React.FC<Props> = ({
     
     // ── 1. Evaluate and register locally before any await ─────────────────────
     const isCorrect = evaluateBattleAnswer(question, payload);
-    const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
-    const speedRatio = session.questionStartedAt > 0
-      ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
-      : 0;
-    const prevParticipant = session.scores[teacherUid] ?? { score: 0, streak: 0 };
-    const newStreak = isCorrect ? prevParticipant.streak + 1 : 0;
-    const roundPoints = isCorrect
-      ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
-      : 0;
+    const { elapsedMs, roundPoints } = calculateBattleRoundScore({
+      answeredAt,
+      questionStartedAt: session.questionStartedAt,
+      timePerQuestion: session.config.timePerQuestion,
+      isCorrect,
+    });
     const localAnswer: BattleAnswer = {
       uid: teacherUid,
       name: teacherName,
@@ -470,9 +611,22 @@ export const BattleHostView: React.FC<Props> = ({
       answeredAt,
       elapsedMs,
       roundPoints,
+      frozenTimeLeft: Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
     };
+    console.info('[BATTLE ANSWER]', {
+      uid: teacherUid,
+      answeredAt,
+      elapsedMs,
+      frozenTimeLeft: localAnswer.frozenTimeLeft,
+      roundPoints,
+      roomId: classId,
+      battleId: session.id,
+    });
     
     setLocalCurrentAnswers((prev) => ({ ...prev, [teacherUid]: localAnswer }));
+    setTeacherFrozenTimeLeft(
+      Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
+    );
     const updatedMergedOpen = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
     const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMergedOpen);
     // ⚠️ Only stop timer when the last active participant answered
@@ -495,8 +649,69 @@ export const BattleHostView: React.FC<Props> = ({
   }
 
   async function handleStart() {
+    console.log('[BATTLE START CLICK] requested');
+    console.log('[BATTLE START CLICK] classId:', classId);
+    console.log('[BATTLE START CLICK] teacherUid:', teacherUid);
     setBusy(true);
-    try { await startBattle(classId, buildRoundParticipantsSnapshot()); } finally { setBusy(false); }
+    try {
+      console.log('[BATTLE START CLICK] awaiting ensureSessionReady...');
+      await ensureSessionReady?.();
+      console.log('[BATTLE START CLICK] ensureSessionReady resolved');
+      const latestSession = sessionRef.current;
+      const latestActiveParticipants = activeParticipantsRef.current;
+      console.log('[BATTLE START CLICK] latestSession.status before start:', latestSession?.status ?? null);
+      if (!latestSession?.id) {
+        console.warn('[BATTLE HOST] start blocked by guard: missing battle id', {
+          latestSession,
+          classId,
+        });
+        return;
+      }
+      if (!classId) {
+        console.warn('[BATTLE HOST] start blocked by guard: missing liveClassId/roomId', {
+          latestSession,
+          classId,
+        });
+        return;
+      }
+      if (!latestSession.questions?.length) {
+        console.warn('[BATTLE HOST] start blocked by guard: no questions available', {
+          battleId: latestSession.id,
+          classId,
+          latestSession,
+        });
+        return;
+      }
+      const firstQuestion = latestSession.questions?.[0] ?? null;
+      console.log('[BATTLE UTILS] resolved first question', {
+        currentQuestionIndex: 0,
+        currentQuestionId: firstQuestion?.id ?? null,
+        hasQuestion: !!firstQuestion,
+        totalQuestions: latestSession.questions?.length ?? 0,
+      });
+      const participantsSnapshot = buildBattleRoundParticipantsSnapshot({
+        session: latestSession,
+        activeParticipants: latestActiveParticipants,
+        teacherUid,
+        teacherName: latestSession.scores[teacherUid]?.name || 'Professor',
+      });
+      console.log('[BATTLE START CLICK] participantsSnapshot size:', participantsSnapshot.length);
+      console.log('[BATTLE START CLICK] calling startBattle...');
+      await startBattle(classId, latestSession, participantsSnapshot, teacherUid);
+      console.log('[BATTLE START CLICK] startBattle resolved');
+    } catch (error) {
+      console.error('[BATTLE START CLICK] startBattle rejected:', error);
+      if (error instanceof Error) {
+        console.error('[BATTLE START CLICK] error message:', error.message);
+        console.error('[BATTLE START CLICK] error stack:', error.stack);
+        window.alert(error.message || 'Start battle failed');
+      } else {
+        window.alert('Start battle failed');
+      }
+      console.error('[Battle:Host] start battle failed:', error);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleShowAnswer() {
@@ -506,7 +721,20 @@ export const BattleHostView: React.FC<Props> = ({
 
   async function handleNext() {
     setBusy(true);
-    try { await advanceBattleQuestion(classId, questionIdx + 1, totalQ, buildRoundParticipantsSnapshot()); } finally { setBusy(false); }
+    try {
+      await advanceBattleQuestion(
+        classId,
+        questionIdx + 1,
+        totalQ,
+        buildBattleRoundParticipantsSnapshot({
+          session,
+          activeParticipants,
+          teacherUid,
+          teacherName: session.scores[teacherUid]?.name || 'Professor',
+        }),
+        session.scores,
+      );
+    } finally { setBusy(false); }
   }
 
   async function handleEnd() {
@@ -595,7 +823,10 @@ export const BattleHostView: React.FC<Props> = ({
                     : 'Professor só comanda a partida nesta batalha.'}
               </p>
               <button
-                onClick={handleStart}
+                onClick={() => {
+                  console.log('[BATTLE HOST] raw button onClick fired');
+                  void handleStart();
+                }}
                 disabled={busy}
                 className="mt-4 px-8 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-lg hover:opacity-90 transition disabled:opacity-50"
               >
@@ -695,7 +926,7 @@ export const BattleHostView: React.FC<Props> = ({
               )}
 
               <div className="flex items-center gap-3 text-sm text-slate-400">
-                <span>⏱ {Math.ceil(timeLeft)}s</span>
+                <span>⏱ {Math.ceil(displayTimeLeft)}s</span>
                 <span>·</span>
                 <span>{answerCount} / {expectedParticipantIds.length} responderam</span>
               </div>
@@ -765,6 +996,13 @@ export const BattleHostView: React.FC<Props> = ({
                   <span className="text-base w-5 text-center">
                     {row.isCorrect === true ? '✅' : row.isCorrect === false ? '❌' : '⏰'}
                   </span>
+                  <BattleParticipantAvatar
+                    name={row.name}
+                    avatarId={row.avatarId}
+                    isBot={row.isBot}
+                    sizeClassName="h-7 w-7"
+                    showBotBadge
+                  />
                   <span className="flex-1 text-white truncate">
                     {row.name}
                     {row.pid === teacherUid && (
@@ -824,6 +1062,12 @@ export const BattleHostView: React.FC<Props> = ({
             {leaderboard.slice(0, 3).map((player, index) => (
               <div key={player.uid} className="flex items-center gap-1 bg-slate-800 rounded-full px-2 py-0.5 flex-shrink-0">
                 <span className="text-xs">{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</span>
+                <BattleParticipantAvatar
+                  name={player.name}
+                  avatarId={player.avatarId}
+                  isBot={player.isBot}
+                  sizeClassName="h-5 w-5"
+                />
                 <span className="text-[11px] text-white truncate max-w-[64px]">{player.name}</span>
                 <span className="text-[11px] font-bold text-orange-400 ml-1">{player.score.toLocaleString()}</span>
               </div>
@@ -843,6 +1087,12 @@ export const BattleHostView: React.FC<Props> = ({
               <span className="text-sm w-5 text-center text-slate-500">
                 {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
               </span>
+              <BattleParticipantAvatar
+                name={player.name}
+                avatarId={player.avatarId}
+                isBot={player.isBot}
+                sizeClassName="h-6 w-6"
+              />
               <span className="flex-1 text-xs text-white truncate">{player.name}</span>
               <span className="text-xs font-bold text-orange-400">{player.score.toLocaleString()}</span>
             </div>

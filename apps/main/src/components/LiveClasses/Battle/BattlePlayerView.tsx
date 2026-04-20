@@ -5,6 +5,7 @@ import { joinBattle, submitBattleAnswer } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
   canBattleParticipantAnswerCurrentQuestion,
+  calculateBattleRoundScore,
   evaluateBattleAnswer,
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
@@ -51,17 +52,23 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   // Ensures reveal shows correct/incorrect and roundPoints without waiting for Firestore.
   const [localMyAnswer, setLocalMyAnswer] = useState<BattleAnswer | null>(null);
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
+  const [frozenTimeLeft, setFrozenTimeLeft] = useState<number | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [musicMuted, setMusicMuted] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasJoinedRef = useRef(false);
+  const preRoundScoreRef = useRef(0);
   const musicRef = useRef<TensionLoop | null>(null);
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
 
-  const questionIdx = session.currentQuestionIndex;
-  const question = session.questions[questionIdx];
+  const questionIdx = Number.isInteger(session.currentQuestionIndex) ? session.currentQuestionIndex : 0;
+  const hasCurrentQuestion =
+    questionIdx >= 0 &&
+    questionIdx < session.questions.length;
+  const question = hasCurrentQuestion ? session.questions[questionIdx] : null;
+  const currentQuestionId = question?.id ?? null;
   const totalQ = session.questions.length;
   const registeredParticipantIds = useMemo(
     () => getBattleRegisteredParticipantIds(session),
@@ -72,21 +79,27 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     [session.roundParticipantIds, session.participants, session.scores, uid]
   );
   const myScore = session.scores[uid]?.score ?? 0;
-  // Show optimistic total including this round's points before Firestore score update arrives
-  const myTotalScore = myScore + (localMyAnswer?.roundPoints ?? 0);
-  const myStreak = session.scores[uid]?.streak ?? 0;
   // Use localMyAnswer as fallback so reveal shows correct/incorrect immediately
   // before Firestore echoes back the written answer.
   const myAnswer = localMyAnswer ?? getMyBattleAnswer(session, uid);
   const hasAnswered = submitted || !!myAnswer;
+  const myTotalScore = hasAnswered
+    ? Math.max(myScore, preRoundScoreRef.current + (myAnswer?.roundPoints ?? 0))
+    : myScore;
+  const myStreak = session.scores[uid]?.streak ?? 0;
+  const effectiveFrozenTimeLeft = frozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
+  const displayTimeLeft = hasAnswered && effectiveFrozenTimeLeft != null ? effectiveFrozenTimeLeft : timeLeft;
   const battleLanguage = getBattleLanguage(session.config.courseId);
-  const timeRatio = timeLeft / session.config.timePerQuestion;
+  const timeRatio = displayTimeLeft / session.config.timePerQuestion;
   const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
   const showMicButton = question?.kind === 'speaking';
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const roundAnswerCount = useMemo(
-    () => (session.roundParticipantIds ?? []).filter((participantId) => participantId in session.currentAnswers).length,
-    [session.roundParticipantIds, session.currentAnswers]
+    () => {
+      const mergedAnswers = localMyAnswer ? { ...session.currentAnswers, [uid]: localMyAnswer } : session.currentAnswers;
+      return (session.roundParticipantIds ?? []).filter((participantId) => participantId in mergedAnswers).length;
+    },
+    [localMyAnswer, session.roundParticipantIds, session.currentAnswers, uid]
   );
 
   useEffect(() => {
@@ -117,17 +130,19 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }, [classId, uid, name, session.scores]);
 
   useEffect(() => {
+    preRoundScoreRef.current = session.scores[uid]?.score ?? 0;
     setSelectedOptions([]);
     setTypedAnswer('');
     setSubmitted(false);
     setLocalMyAnswer(null); // clear local answer when question changes
+    setFrozenTimeLeft(null);
     setTimeLeft(session.config.timePerQuestion);
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
       recognitionRef.current = null;
       setIsListening(false);
     }
-  }, [questionIdx, session.config.timePerQuestion]);
+  }, [questionIdx, session.questionStartedAt, session.config.timePerQuestion]);
 
   useEffect(() => {
     if (session.status !== 'active') return;
@@ -147,6 +162,39 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   useEffect(() => {
     if (session.status === 'finished') setShowResults(true);
   }, [session.status]);
+
+  useEffect(() => {
+    console.log('[BATTLE PLAYER] snapshot received', session);
+    console.log('[BATTLE PLAYER] status received:', session.status);
+    console.log('[BATTLE PLAYER] currentQuestionIndex received:', session.currentQuestionIndex);
+    console.log('[BATTLE PLAYER] currentQuestion resolved:', {
+      battleId: session.id,
+      roomId: classId,
+      currentQuestionId,
+      hasCurrentQuestion,
+      questionStartedAt: session.questionStartedAt,
+      roundParticipantIds: session.roundParticipantIds ?? [],
+      currentAnswersForUid: session.currentAnswers?.[uid] ?? null,
+      answeredAt: myAnswer?.answeredAt ?? null,
+      frozenTimeLeft: effectiveFrozenTimeLeft,
+      roundPoints: myAnswer?.roundPoints ?? null,
+    });
+  }, [
+    classId,
+    effectiveFrozenTimeLeft,
+    hasCurrentQuestion,
+    myAnswer?.answeredAt,
+    myAnswer?.roundPoints,
+    session,
+    currentQuestionId,
+    uid,
+  ]);
+
+  useEffect(() => {
+    if (!hasAnswered) return;
+    if (effectiveFrozenTimeLeft == null) return;
+    setFrozenTimeLeft((current) => current ?? effectiveFrozenTimeLeft);
+  }, [effectiveFrozenTimeLeft, hasAnswered]);
 
   useEffect(() => {
     if (!question || session.status !== 'active' || !question.playAudioOnce) return;
@@ -208,24 +256,40 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     
     // Register locally before any await so reveal renders correct state immediately
     const isCorrect = evaluateBattleAnswer(question, payload);
-    const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
-    const speedRatio = session.questionStartedAt > 0
-      ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
-      : 0;
-    const prevParticipant = session.scores[uid] ?? { score: 0, streak: 0 };
-    const newStreak = isCorrect ? prevParticipant.streak + 1 : 0;
-    const roundPoints = isCorrect
-      ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
-      : 0;
-    setLocalMyAnswer({ uid, name, optionIndex: payload.optionIndex, optionIndexes: payload.optionIndexes, isCorrect, answeredAt, elapsedMs, roundPoints });
+    const { elapsedMs, roundPoints } = calculateBattleRoundScore({
+      answeredAt,
+      questionStartedAt: session.questionStartedAt,
+      timePerQuestion: session.config.timePerQuestion,
+      isCorrect,
+    });
+    const nextFrozenTimeLeft = Math.max(0, session.config.timePerQuestion - elapsedMs / 1000);
+    console.info('[BATTLE ANSWER]', {
+      uid,
+      answeredAt,
+      elapsedMs,
+      frozenTimeLeft: nextFrozenTimeLeft,
+      roundPoints,
+      roomId: classId,
+      battleId: session.id,
+    });
+    setLocalMyAnswer({
+      uid,
+      name,
+      optionIndex: payload.optionIndex,
+      optionIndexes: payload.optionIndexes,
+      isCorrect,
+      answeredAt,
+      elapsedMs,
+      roundPoints,
+      frozenTimeLeft: nextFrozenTimeLeft,
+    });
+    setFrozenTimeLeft(nextFrozenTimeLeft);
     setSubmitted(true);
     
     try {
       await submitBattleAnswer(classId, session, uid, name, payload);
     } catch (error) {
       console.error('[Battle] submit answer failed', error);
-      setSubmitted(false);
-      setLocalMyAnswer(null);
     }
   }
 
@@ -265,24 +329,39 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     const payload = { responseText: typedAnswer.trim() };
     
     const isCorrect = evaluateBattleAnswer(question, payload);
-    const elapsedMs = session.questionStartedAt > 0 ? answeredAt - session.questionStartedAt : 0;
-    const speedRatio = session.questionStartedAt > 0
-      ? Math.max(0, 1 - (elapsedMs / 1000) / session.config.timePerQuestion)
-      : 0;
-    const prevParticipant = session.scores[uid] ?? { score: 0, streak: 0 };
-    const newStreak = isCorrect ? prevParticipant.streak + 1 : 0;
-    const roundPoints = isCorrect
-      ? 500 + Math.round(speedRatio * 500) + Math.min(200, newStreak * 50)
-      : 0;
-    setLocalMyAnswer({ uid, name, responseText: payload.responseText, isCorrect, answeredAt, elapsedMs, roundPoints });
+    const { elapsedMs, roundPoints } = calculateBattleRoundScore({
+      answeredAt,
+      questionStartedAt: session.questionStartedAt,
+      timePerQuestion: session.config.timePerQuestion,
+      isCorrect,
+    });
+    const nextFrozenTimeLeft = Math.max(0, session.config.timePerQuestion - elapsedMs / 1000);
+    console.info('[BATTLE ANSWER]', {
+      uid,
+      answeredAt,
+      elapsedMs,
+      frozenTimeLeft: nextFrozenTimeLeft,
+      roundPoints,
+      roomId: classId,
+      battleId: session.id,
+    });
+    setLocalMyAnswer({
+      uid,
+      name,
+      responseText: payload.responseText,
+      isCorrect,
+      answeredAt,
+      elapsedMs,
+      roundPoints,
+      frozenTimeLeft: nextFrozenTimeLeft,
+    });
+    setFrozenTimeLeft(nextFrozenTimeLeft);
     setSubmitted(true);
     
     try {
       await submitBattleAnswer(classId, session, uid, name, payload);
     } catch (error) {
       console.error('[Battle] submit answer failed', error);
-      setSubmitted(false);
-      setLocalMyAnswer(null);
     }
   }
 
@@ -297,6 +376,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   );
 
   if (showResults) {
+    console.log('[BATTLE PLAYER] rendering finished');
     return (
       <BattleResultsScreen
         scores={session.scores}
@@ -308,6 +388,13 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }
 
   if (session.status === 'lobby') {
+    console.log('[BATTLE PLAYER] rendering waiting because:', {
+      status: session.status,
+      currentQuestionIndex: session.currentQuestionIndex,
+      currentQuestionId,
+      hasCurrentQuestion,
+      questionStartedAt: session.questionStartedAt,
+    });
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
         <div className="text-center space-y-4 px-8">
@@ -323,7 +410,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     );
   }
 
-  if (session.status === 'showing-answer' || !question) {
+  if (session.status === 'showing-answer') {
+    console.log('[BATTLE PLAYER] rendering showing-answer');
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
         <div className="w-full max-w-sm mx-4 text-center space-y-4">
@@ -360,6 +448,17 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     );
   }
 
+  if (session.status === 'active' && !question) {
+    console.log('[BATTLE PLAYER] currentQuestion resolved:', {
+      battleId: session.id,
+      roomId: classId,
+      currentQuestionIndex: session.currentQuestionIndex,
+      hasCurrentQuestion,
+      totalQuestions: session.questions.length,
+    });
+    return null;
+  }
+
   if (session.status === 'active' && !canAnswerCurrentQuestion) {
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
@@ -387,6 +486,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     );
   }
 
+  console.log('[BATTLE PLAYER] rendering active question');
   return (
     <div className="fixed inset-0 z-[9000] flex flex-col bg-slate-950 select-none">
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800">
@@ -395,7 +495,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 bg-slate-800 rounded-full px-3 py-1">
-            <span className="text-orange-400 font-bold text-sm">{myScore.toLocaleString()}</span>
+            <span className="text-orange-400 font-bold text-sm">{myTotalScore.toLocaleString()}</span>
             <span className="text-slate-500 text-xs">pts</span>
             {myStreak >= 3 && <span className="ml-1 text-xs">🔥{myStreak}</span>}
           </div>
@@ -520,7 +620,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
 
       <div className="px-4 pb-4">
         <div className="flex justify-center gap-4 text-xs text-slate-500">
-          <span>⏱ {Math.ceil(timeLeft)}s</span>
+          <span>⏱ {Math.ceil(displayTimeLeft)}s</span>
           <span>·</span>
           <span>{roundAnswerCount} / {(session.roundParticipantIds ?? []).length || registeredParticipantIds.length} answered</span>
         </div>
