@@ -1,6 +1,6 @@
 import React from 'react';
 
-type UILang = 'en' | 'pt' | 'es';
+export type UILang = 'en' | 'pt' | 'es';
 
 interface BottomNavigationProps {
   currentSection: string;
@@ -15,6 +15,31 @@ const NAV_LABELS: Record<UILang, { battle: string; classes: string; pronounce: s
   es: { battle: 'Battle', classes: 'Live', pronounce: 'Pronunciacion', rank: 'Ranking', share: 'Compartir', videos: 'Videos', teacher: 'Profesor', vocab: 'Vocab' },
 };
 
+interface BottomNavigationBattleButtonProps {
+  isActive: boolean;
+  onClick: () => void;
+  uiLanguage?: UILang;
+}
+
+export const BottomNavigationBattleButton: React.FC<BottomNavigationBattleButtonProps> = ({
+  isActive,
+  onClick,
+  uiLanguage = 'en',
+}) => {
+  const L = NAV_LABELS[uiLanguage] ?? NAV_LABELS.en;
+
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-shrink-0 flex-col items-center gap-0.5 px-1.5 text-xs sm:px-2 ${isActive ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400 transition-colors'}`}
+      title={L.battle}
+    >
+      <span className="text-lg">⚔️</span>
+      <span className="hidden sm:inline">{L.battle}</span>
+    </button>
+  );
+};
+
 export const BottomNavigation: React.FC<BottomNavigationProps> = ({
   currentSection,
   onNavigate,
@@ -25,14 +50,11 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
 
   return (
     <div className="bottom-navigation fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around overflow-x-hidden border-t border-slate-700 bg-slate-900 px-1 py-2 max-w-full">
-      <button
+      <BottomNavigationBattleButton
+        isActive={currentSection === 'BATTLE'}
         onClick={() => onNavigate('BATTLE')}
-        className={`flex flex-shrink-0 flex-col items-center gap-0.5 px-1.5 text-xs sm:px-2 ${currentSection === 'BATTLE' ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400 transition-colors'}`}
-        title={L.battle}
-      >
-        <span className="text-lg">⚔️</span>
-        <span className="hidden sm:inline">{L.battle}</span>
-      </button>
+        uiLanguage={uiLanguage}
+      />
 
       <button
         onClick={() => onNavigate('LIVE_CLASSES')}
