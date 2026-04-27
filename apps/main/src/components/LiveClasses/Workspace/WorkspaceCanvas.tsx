@@ -1329,6 +1329,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pagesRef.current = nextPages;
     return nextPages;
   }, []);
+  const syncActivePageItemsRef = useCallback((nextItems: WorkspaceItem[], shouldUpdateState = false) => {
+    const nextPages = pagesRef.current.map((page) =>
+      page.id === activePageIdRef.current ? { ...page, items: nextItems } : page,
+    );
+    pagesRef.current = nextPages;
+    if (shouldUpdateState) {
+      setPages(nextPages);
+    }
+    return nextPages;
+  }, []);
 
   // -- Materials state ------------------------------------------------------
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -1418,6 +1428,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
+      const normalizedItems = (data?.items ?? []).map(normalizeItemScope);
+      console.log('[LIVECLASS WORKSPACE] snapshot', {
+        role: viewerIsTeacher ? 'teacher' : viewerIsStudent ? 'student' : 'viewer',
+        liveClassId: classId,
+        workspacePath: `liveClasses/${classId}/shared/workspace`,
+        battlePath: `liveClasses/${classId}/session/battle`,
+        userId,
+        currentPageId: data?.currentPageId ?? null,
+        itemCount: normalizedItems.length,
+        docLength: (data?.docContent ?? '').length,
+        updatedBy: data?.updatedBy ?? null,
+        updatedByName: data?.updatedByName ?? null,
+      });
       // Use SECTION-SPECIFIC authorship instead of a single updatedBy field.
       // Problem: updatedBy is a single field for the whole document.  If the
       // teacher updates items (setting updatedBy = teacherUid) while the student
@@ -1452,7 +1475,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           } else {
             // Same active page, but pages structure changed (rename/add/delete/duplicate).
             // Update pages metadata; keep active page�s live content.
-            const normalizedItems = (data.items ?? []).map(normalizeItemScope);
             const merged = normalized.map((rp) =>
               rp.id === activePageIdRef.current
                 ? { ...rp, docContent: data.docContent ?? rp.docContent, items: normalizedItems.length > 0 ? normalizedItems : rp.items }
@@ -1477,7 +1499,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         dragRef.current !== null ||
         (isItemsSelfEcho && Date.now() - lastItemEditRef.current < ITEM_GUARD_MS);
       if (!isLocallyEditingItems) {
-        setItems((data?.items ?? []).map(normalizeItemScope));
+        setItems(normalizedItems);
+        syncActivePageItemsRef(normalizedItems, true);
       }
 
       // Doc: only suppress our own echo while actively typing.
@@ -1499,7 +1522,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
     });
     return unsub;
-  }, [classId, normalizeItemScope, readOnly, syncActivePageDocRef, userId]);
+  }, [
+    classId,
+    normalizeItemScope,
+    readOnly,
+    syncActivePageDocRef,
+    syncActivePageItemsRef,
+    userId,
+    viewerIsStudent,
+    viewerIsTeacher,
+  ]);
 
   const scheduleItemsSave = useCallback(
     (nextItems: WorkspaceItem[], options?: { forceSave?: boolean }) => {
@@ -1507,12 +1539,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // Stamp the edit time so the snapshot guard stays active through the debounce.
       lastItemEditRef.current = Date.now();
       const scopedItems = nextItems.map(normalizeItemScope);
+      const syncedPages = syncActivePageItemsRef(scopedItems);
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       saveItemsDebounce.current = setTimeout(() => {
-        saveWorkspace(classId, scopedItems, userId, userName).catch(console.error);
+        saveWorkspace(
+          classId,
+          scopedItems,
+          userId,
+          userName,
+          activePageIdRef.current,
+          syncedPages,
+        ).catch(console.error);
       }, 500);
     },
-    [classId, effectiveReadOnly, normalizeItemScope, userId, userName],
+    [classId, effectiveReadOnly, normalizeItemScope, syncActivePageItemsRef, userId, userName],
   );
 
   const scheduleDocSave = useCallback(

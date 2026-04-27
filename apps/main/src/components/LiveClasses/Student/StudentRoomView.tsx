@@ -18,6 +18,7 @@ import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import {
+  BATTLE_STALE_THRESHOLD_MS,
   getDefaultMainStageMode,
   isActiveBattleStatus,
   sanitizeMainStageMode,
@@ -71,6 +72,17 @@ const StudentStage: React.FC<{
   }, [session.mainStageMode]);
 
   useEffect(() => {
+    console.log('[LIVECLASS PATH DEBUG] student room', {
+      liveClassId: liveClass.id,
+      workspacePath: `liveClasses/${liveClass.id}/shared/workspace`,
+      battlePath: `liveClasses/${liveClass.id}/session/battle`,
+      userId: user.uid,
+      userEmail: user.email ?? null,
+      assignedRosterCount: assignedRoster.length,
+    });
+  }, [assignedRoster.length, liveClass.id, user.email, user.uid]);
+
+  useEffect(() => {
     console.info('[BATTLE FIREBASE] student listener attach', {
       classId: liveClass.id,
       docPath: `liveClasses/${liveClass.id}/session/battle`,
@@ -95,10 +107,48 @@ const StudentStage: React.FC<{
           return;
         }
 
+        const sessionUpdatedAt =
+          typeof nextSession.updatedAt === 'number'
+            ? nextSession.updatedAt
+            : typeof nextSession.createdAt === 'number'
+              ? nextSession.createdAt
+              : null;
+        const sessionAgeMs = sessionUpdatedAt != null ? Date.now() - sessionUpdatedAt : null;
+        const isStaleWaitingSession =
+          nextSession.status === 'WAITING' &&
+          sessionAgeMs != null &&
+          sessionAgeMs > BATTLE_STALE_THRESHOLD_MS;
+
+        if (nextSession.status === 'FINISHED') {
+          console.info('[BATTLE STUDENT SUBSCRIBE] finished battle session ignored', {
+            component: 'StudentRoomView',
+            classId: liveClass.id,
+            sessionId: nextSession.id,
+            status: nextSession.status,
+            updatedAt: sessionUpdatedAt,
+            sessionAgeMs,
+          });
+          setBattleSession(null);
+          return;
+        }
+
+        if (isStaleWaitingSession) {
+          console.info('[BATTLE STUDENT SUBSCRIBE] stale waiting battle session ignored', {
+            component: 'StudentRoomView',
+            classId: liveClass.id,
+            sessionId: nextSession.id,
+            status: nextSession.status,
+            updatedAt: sessionUpdatedAt,
+            sessionAgeMs,
+            staleThresholdMs: BATTLE_STALE_THRESHOLD_MS,
+          });
+          setBattleSession(null);
+          return;
+        }
+
         if (
           nextSession.status === 'WAITING' ||
-          isActiveBattleStatus(nextSession.status) ||
-          nextSession.status === 'FINISHED'
+          isActiveBattleStatus(nextSession.status)
         ) {
           console.info('[BATTLE STUDENT SUBSCRIBE] accepting shared battle session', {
             component: 'StudentRoomView',

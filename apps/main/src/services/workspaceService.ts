@@ -174,25 +174,33 @@ export async function saveWorkspace(
   items: WorkspaceItem[],
   uid: string,
   name: string,
+  currentPageId?: string,
+  pages?: WorkspacePage[],
 ): Promise<void> {
   if (!db) return;
   console.log(`[WS] saveWorkspace by ${name} (${uid.slice(0, 6)}) — ${items.length} items`);
   const { updateDoc, setDoc } = await import('firebase/firestore');
+  const syncedPages =
+    currentPageId && pages
+      ? pages.map((page) => (page.id === currentPageId ? { ...page, items } : page))
+      : undefined;
+  const payload = {
+    items,
+    itemsUpdatedBy: uid,
+    updatedAt: Date.now(),
+    updatedBy: uid,
+    updatedByName: name,
+    ...(syncedPages ? { pages: syncedPages } : {}),
+  };
   try {
-    await updateDoc(workspaceRef(classId), {
-      items,
-      itemsUpdatedBy: uid,
-      updatedAt: Date.now(),
-      updatedBy: uid,
-      updatedByName: name,
-    });
+    await updateDoc(workspaceRef(classId), payload);
     console.log('[WS] saveWorkspace ✅');
   } catch (err) {
     console.warn('[WS] saveWorkspace updateDoc failed — falling back to setDoc:', err);
     // Doc doesn't exist yet — use merge so we don't wipe docContent/scrollRatio.
     await setDoc(
       workspaceRef(classId),
-      { items, itemsUpdatedBy: uid, updatedAt: Date.now(), updatedBy: uid, updatedByName: name },
+      payload,
       { merge: true },
     );
     console.log('[WS] saveWorkspace setDoc ✅');

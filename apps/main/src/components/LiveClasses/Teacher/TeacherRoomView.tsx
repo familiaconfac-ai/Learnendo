@@ -133,6 +133,17 @@ const TeacherStage: React.FC<{
     }
   }, [cameraTiles, expandedCameraId]);
 
+  useEffect(() => {
+    console.log('[LIVECLASS PATH DEBUG] teacher room', {
+      liveClassId: liveClass.id,
+      workspacePath: `liveClasses/${liveClass.id}/shared/workspace`,
+      battlePath: `liveClasses/${liveClass.id}/session/battle`,
+      userId: teacherUid,
+      userEmail: teacherEmail ?? null,
+      assignedRosterCount: assignedRoster.length,
+    });
+  }, [assignedRoster.length, liveClass.id, teacherEmail, teacherUid]);
+
   const toggleCameraWithRecovery = async (forceEnable = !isCameraEnabled) => {
     if (cameraBusy) return;
 
