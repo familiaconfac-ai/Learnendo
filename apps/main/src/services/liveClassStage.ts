@@ -3,7 +3,7 @@ import type { LiveClassSession } from '../types';
 
 export type MainStageMode = NonNullable<LiveClassSession['mainStageMode']>;
 
-const ACTIVE_BATTLE_STATUSES: readonly BattleStatus[] = ['lobby', 'active', 'showing-answer'];
+const ACTIVE_BATTLE_STATUSES: readonly BattleStatus[] = ['WAITING', 'PLAYING', 'REVEALED'];
 
 /**
  * How old (in ms) a battle session can be before it is considered stale and

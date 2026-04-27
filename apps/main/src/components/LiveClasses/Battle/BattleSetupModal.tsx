@@ -62,11 +62,14 @@ interface EditDraft {
 }
 
 interface Props {
-  onStart: (config: BattleConfig, questions: BattleQuestion[]) => void;
+  onStart: (config: BattleConfig, questions: BattleQuestion[]) => void | Promise<void>;
   onClose: () => void;
   defaultLessonId?: string;
   defaultWorkbookId?: number;
   defaultCourseId?: string;
+  liveClassId?: string;
+  currentUserUid?: string;
+  selectedStudents?: Array<{ uid: string; name: string }>;
 }
 
 const SCOPES: { value: BattleScope; label: string; desc: string }[] = [
@@ -93,8 +96,24 @@ const QUESTION_KINDS: { value: BattleQuestionKind; label: string }[] = [
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export const BattleSetupModal: React.FC<Props> = ({
-  onStart, onClose, defaultLessonId, defaultWorkbookId, defaultCourseId,
+  onStart,
+  onClose,
+  defaultLessonId,
+  defaultWorkbookId,
+  defaultCourseId,
+  liveClassId,
+  currentUserUid,
+  selectedStudents = [],
 }) => {
+
+  useEffect(() => {
+    console.log('[BATTLE DEBUG] BattleSetupModal mounted', {
+      defaultLessonId,
+      defaultWorkbookId,
+      defaultCourseId,
+      step
+    });
+  }, []);
 
   // ── Step 1 state ────────────────────────────────────────────────────────
   const [step,            setStep]            = useState<Step>('config');
@@ -112,6 +131,8 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [excludedIds,  setExcludedIds]  = useState<Set<string>>(new Set());
   const [editingIdx,   setEditingIdx]   = useState<number | null>(null);
   const [editDraft,    setEditDraft]    = useState<EditDraft | null>(null);
+  const [startError,   setStartError]   = useState<string | null>(null);
+  const [startingNow,  setStartingNow]  = useState(false);
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
       courseId: defaultCourseId,
@@ -133,18 +154,19 @@ export const BattleSetupModal: React.FC<Props> = ({
   }, [excludedIds, exclusionStorageKey]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
-  function generateQuestions(): BattleQuestion[] {
+  function generateQuestions(selectedScope: BattleScope = scope): BattleQuestion[] {
     return getBattleQuestions({
       questionCount,
-      scope,
+      scope: selectedScope,
+      courseId: defaultCourseId,
       lessonId: defaultLessonId,
       workbookId: defaultWorkbookId,
     });
   }
 
-  function buildConfig(count: number): BattleConfig {
+  function buildConfig(count: number, selectedScope: BattleScope = scope): BattleConfig {
     return {
-      scope,
+      scope: selectedScope,
       difficulty,
       questionCount: count,
       timePerQuestion,
@@ -155,6 +177,41 @@ export const BattleSetupModal: React.FC<Props> = ({
       courseId:    defaultCourseId,
       workbookId:  defaultWorkbookId,
       lessonId:    defaultLessonId,
+    };
+  }
+
+  function resolveLaunchQuestions() {
+    const scopeFallbackOrder: BattleScope[] =
+      scope === 'current-lesson'
+        ? ['current-lesson', 'current-book', 'review']
+        : scope === 'current-book'
+          ? ['current-book', 'review']
+          : ['review'];
+
+    let lastError: unknown = null;
+
+    for (const candidateScope of scopeFallbackOrder) {
+      try {
+        const generatedQuestions = sanitizeBattleQuestions(generateQuestions(candidateScope));
+        if (generatedQuestions.length > 0) {
+          return {
+            generatedQuestions,
+            resolvedScope: candidateScope,
+          };
+        }
+      } catch (error) {
+        lastError = error;
+        console.error('[BATTLE START DEBUG] start failed:', error);
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    return {
+      generatedQuestions: [],
+      resolvedScope: scope,
     };
   }
 
@@ -214,19 +271,102 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   // ── Actions ─────────────────────────────────────────────────────────────
 
+  async function runStartFlow(generatedQuestions: BattleQuestion[], config: BattleConfig, source: 'quick' | 'curated') {
+    console.log('[BATTLE START DEBUG] handler entered');
+    setStartError(null);
+
+    if (startingNow) {
+      console.warn('[BATTLE START DEBUG] blocked before start:', {
+        motivo: 'already-starting',
+        dadosRelevantes: {
+          source,
+          liveClassId: liveClassId ?? null,
+          userUid: currentUserUid ?? null,
+        },
+      });
+      return;
+    }
+
+    if (!generatedQuestions || generatedQuestions.length === 0) {
+      console.warn('[BATTLE START DEBUG] blocked before start:', {
+        motivo: 'no-questions-generated',
+        dadosRelevantes: {
+          source,
+          liveClassId: liveClassId ?? null,
+          config,
+        },
+      });
+      setStartError('Nenhuma pergunta válida foi gerada para iniciar a batalha.');
+      return;
+    }
+
+    setStartingNow(true);
+
+    try {
+      console.log('[BATTLE START DEBUG] questions generated:', generatedQuestions?.length, generatedQuestions);
+      console.log('[BATTLE START DEBUG] creating battle session...');
+      await onStart(config, generatedQuestions);
+      console.log('[BATTLE START DEBUG] battle session created:', liveClassId ?? 'local-battle');
+    } catch (error) {
+      console.error('[BATTLE START DEBUG] start failed:', error);
+      setStartError(error instanceof Error ? error.message : 'Falha ao iniciar a batalha.');
+    } finally {
+      setStartingNow(false);
+    }
+  }
+
   /** ⚡ Quick Battle — generate and launch immediately, no curation */
-  function handleQuickBattle() {
-    const qs = generateQuestions();
-    onStart(buildConfig(qs.length), qs);
+  async function handleQuickBattle() {
+    try {
+      const previewConfig = buildConfig(questionCount);
+      console.log('[BATTLE START DEBUG] generating questions...', previewConfig);
+      console.log('[BATTLE FIREBASE] iniciar agora clicked', {
+        liveClassId: liveClassId ?? null,
+        userUid: currentUserUid ?? null,
+        includeTeacher,
+        includeBot: botEnabled,
+        selectedStudents: selectedStudents.map((student) => ({
+          uid: student.uid,
+          name: student.name,
+        })),
+      });
+
+      const { generatedQuestions, resolvedScope } = resolveLaunchQuestions();
+      const config = buildConfig(generatedQuestions.length, resolvedScope);
+
+      console.log('[BATTLE DEBUG] Quick Battle triggering onStart', {
+        scope: config.scope,
+        courseId: config.courseId,
+        lessonId: config.lessonId,
+        workbookId: config.workbookId,
+        questionCount: config.questionCount,
+        botEnabled: config.botEnabled,
+        includeTeacher: config.includeTeacher,
+      });
+      await runStartFlow(generatedQuestions, config, 'quick');
+    } catch (error) {
+      console.error('[BATTLE START DEBUG] start failed:', error);
+      setStartError(error instanceof Error ? error.message : 'Falha ao preparar as perguntas da batalha.');
+    }
   }
 
   /** 📋 Preparar Aula — generate and open the curation screen */
   function handleOpenCuration() {
-    const qs = generateQuestions();
-    setQuestions(qs);
-    setEditingIdx(null);
-    setEditDraft(null);
-    setStep('curate');
+    try {
+      const { generatedQuestions } = resolveLaunchQuestions();
+      if (generatedQuestions.length === 0) {
+        setStartError('Nenhuma pergunta válida foi encontrada para preparar a aula.');
+        return;
+      }
+      setStartError(null);
+      setQuestions(generatedQuestions);
+      setEditingIdx(null);
+      setEditDraft(null);
+      setStep('curate');
+    } catch (error) {
+      console.error('[BATTLE START DEBUG] start failed:', error);
+      setStartError(error instanceof Error ? error.message : 'Falha ao preparar as perguntas da batalha.');
+    }
   }
 
   function handleReshuffle() {
@@ -317,12 +457,41 @@ export const BattleSetupModal: React.FC<Props> = ({
   }
 
   /** ✅ Confirmar Lista Final — launch with curated questions */
-  function handleConfirm() {
+  async function handleConfirm() {
     const finalQs = sanitizeBattleQuestions(
       getEffectiveQuestions().filter(q => !excludedIds.has(q.id))
     );
-    if (finalQs.length === 0) return;
-    onStart(buildConfig(finalQs.length), finalQs);
+    if (finalQs.length === 0) {
+      console.warn('[BATTLE START DEBUG] blocked before start:', {
+        motivo: 'no-curated-questions-selected',
+        dadosRelevantes: {
+          liveClassId: liveClassId ?? null,
+          userUid: currentUserUid ?? null,
+          excludedCount: excludedIds.size,
+          totalQuestions: questions.length,
+        },
+      });
+      setStartError('Selecione pelo menos uma pergunta válida para iniciar a batalha.');
+      return;
+    }
+    const config = buildConfig(finalQs.length);
+    console.log('[BATTLE START DEBUG] generating questions...', config);
+    console.log('[BATTLE FIREBASE] iniciar agora clicked', {
+      liveClassId: liveClassId ?? null,
+      userUid: currentUserUid ?? null,
+      includeTeacher,
+      includeBot: botEnabled,
+      selectedStudents: selectedStudents.map((student) => ({
+        uid: student.uid,
+        name: student.name,
+      })),
+    });
+    await runStartFlow(finalQs, config, 'curated');
+    console.log('[BATTLE DEBUG] Curated Battle triggering onStart', {
+      questionsCount: finalQs.length,
+      botEnabled,
+      includeTeacher
+    });
   }
 
   const selectedCount = getEffectiveQuestions().filter(q => !excludedIds.has(q.id)).length;
@@ -348,6 +517,11 @@ export const BattleSetupModal: React.FC<Props> = ({
           </div>
 
           <div className="px-6 py-5 space-y-5">
+            {startError ? (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                {startError}
+              </div>
+            ) : null}
 
             {/* Scope */}
             <div>
@@ -431,7 +605,14 @@ export const BattleSetupModal: React.FC<Props> = ({
                 <input
                   type="checkbox"
                   checked={includeTeacher}
-                  onChange={(e) => setIncludeTeacher(e.target.checked)}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    console.log('[BATTLE DEBUG] includeTeacher changed', {
+                      checked,
+                      previousIncludeTeacher: includeTeacher,
+                    });
+                    setIncludeTeacher(checked);
+                  }}
                   className="mt-1 h-4 w-4 accent-orange-500"
                 />
                 <div>
@@ -505,12 +686,17 @@ export const BattleSetupModal: React.FC<Props> = ({
           <div className="sticky bottom-0 z-10 space-y-2 border-t border-slate-800 bg-slate-900 px-6 pb-6 pt-4">
             <button
               onClick={handleOpenCuration}
+              disabled={startingNow}
               className="w-full py-3 rounded-xl bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white font-semibold text-sm transition"
             >
               📋 Preparar Aula → (ver e editar perguntas)
             </button>
             <button
-              onClick={handleQuickBattle}
+              onClick={() => {
+                console.log('[BATTLE START DEBUG] Iniciar Agora clicked');
+                void handleQuickBattle();
+              }}
+              disabled={startingNow}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-base hover:from-orange-400 hover:to-red-500 transition-all shadow-lg"
             >
               ⚡ Iniciar Agora ({questionCount} perguntas)
@@ -554,6 +740,11 @@ export const BattleSetupModal: React.FC<Props> = ({
 
         {/* Curation list */}
         <div className="flex-1 overflow-y-auto py-3 px-4 space-y-2">
+          {startError ? (
+            <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+              {startError}
+            </div>
+          ) : null}
           {questions.map((q, idx) => {
             const excluded  = excludedIds.has(q.id);
             const isEditing = editingIdx === idx;
@@ -793,8 +984,11 @@ export const BattleSetupModal: React.FC<Props> = ({
             className="px-4 py-2.5 rounded-xl border border-slate-600 text-slate-300 font-semibold text-sm hover:border-slate-400 transition"
           >← Voltar</button>
           <button
-            onClick={handleConfirm}
-            disabled={selectedCount === 0}
+            onClick={() => {
+              console.log('[BATTLE START DEBUG] Iniciar Agora clicked');
+              void handleConfirm();
+            }}
+            disabled={selectedCount === 0 || startingNow}
             className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-sm hover:opacity-90 transition disabled:opacity-40"
           >✅ Confirmar Lista Final ({selectedCount} perguntas)</button>
         </div>

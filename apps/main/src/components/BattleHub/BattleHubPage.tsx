@@ -1,8 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BattlePracticeView } from '../LiveClasses/Battle/BattlePracticeView';
+import { BattleHostView } from '../LiveClasses/Battle/BattleHostView';
 import { BattleSetupModal } from '../LiveClasses/Battle/BattleSetupModal';
-import type { SavedBattleTemplate, BattleConfig, BattleQuestion } from '../LiveClasses/Battle/battleTypes';
+import type { SavedBattleTemplate, BattleConfig, BattleQuestion, BattleSession } from '../LiveClasses/Battle/battleTypes';
+import { createBattleSession, deleteBattleSession, subscribeBattleSession } from '../LiveClasses/Battle/battleService';
 import { buildSavedBattleTemplate } from '../LiveClasses/Battle/battleUtils';
+import type { LiveClass } from '../../types';
 
 type UILang = 'en' | 'pt' | 'es';
 
@@ -18,6 +21,9 @@ interface Props {
   diamonds: number;
   stars: number;
   onOpenLiveClasses?: () => void;
+  activeLiveClass?: LiveClass | null;
+  onlineParticipants?: Array<{ uid: string; name: string }>;
+  onDismiss?: () => void;
 }
 
 const COPY: Record<UILang, {
@@ -98,12 +104,19 @@ export const BattleHubPage: React.FC<Props> = ({
   diamonds,
   stars,
   onOpenLiveClasses,
+  activeLiveClass,
+  onlineParticipants,
+  onDismiss,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
-  const storageKey = useMemo(() => buildStorageKey(uid, courseId), [courseId, uid]);
-  const [showSetup, setShowSetup] = useState(false);
+  const effectiveCourseId = activeLiveClass?.courseId ?? courseId;
+  const effectiveWorkbookId = activeLiveClass?.workbookId ?? workbookId;
+  const effectiveLessonId = activeLiveClass?.lessonId?.toString() ?? lessonId;
+  const storageKey = useMemo(() => buildStorageKey(uid, effectiveCourseId), [effectiveCourseId, uid]);
+  const [showSetup, setShowSetup] = useState(() => Boolean(activeLiveClass?.id));
   const [lastTemplate, setLastTemplate] = useState<SavedBattleTemplate | null>(null);
   const [activeTemplate, setActiveTemplate] = useState<SavedBattleTemplate | null>(null);
+  const [liveSession, setLiveSession] = useState<BattleSession | null>(null);
 
   useEffect(() => {
     try {
@@ -114,7 +127,105 @@ export const BattleHubPage: React.FC<Props> = ({
     }
   }, [storageKey]);
 
-  function handleTemplateReady(config: BattleConfig, questions: BattleQuestion[]) {
+  useEffect(() => {
+    if (!activeLiveClass?.id) return;
+    setShowSetup(true);
+  }, [activeLiveClass?.id]);
+
+  useEffect(() => {
+    if (!activeLiveClass?.id || !liveSession || !showSetup) return;
+
+    console.info('[BATTLE ANSWER DEBUG] live session available, closing setup modal', {
+      liveClassId: activeLiveClass.id,
+      sessionId: liveSession.id,
+      status: liveSession.status,
+    });
+    setShowSetup(false);
+  }, [activeLiveClass?.id, liveSession, showSetup]);
+
+  useEffect(() => {
+    if (!activeLiveClass?.id) {
+      setLiveSession(null);
+      return;
+    }
+
+    console.info('[BATTLE FIREBASE] teacher listener attach', {
+      classId: activeLiveClass.id,
+      docPath: `liveClasses/${activeLiveClass.id}/session/battle`,
+      teacherUid: uid,
+    });
+
+    return subscribeBattleSession(activeLiveClass.id, setLiveSession);
+  }, [activeLiveClass?.id, uid]);
+
+  useEffect(() => {
+    if (!activeLiveClass?.id) return;
+
+    console.log('[LIVE BATTLE SESSION] loaded', {
+      liveClassId: activeLiveClass.id,
+      userId: uid,
+      role: 'teacher',
+      status: liveSession?.status ?? null,
+      currentQuestionIndex: liveSession?.currentQuestionIndex ?? null,
+      participants: liveSession?.participants ?? null,
+      answers: liveSession?.answers ?? liveSession?.currentAnswers ?? null,
+    });
+  }, [activeLiveClass?.id, liveSession, uid]);
+
+  async function handleTemplateReady(config: BattleConfig, questions: BattleQuestion[]) {
+    console.log('[BATTLE START DEBUG] handler entered');
+    if (activeLiveClass?.id) {
+      const normalizedConfig = {
+        ...config,
+        courseId: effectiveCourseId ?? config.courseId,
+        workbookId: effectiveWorkbookId ?? config.workbookId,
+        lessonId: effectiveLessonId ?? config.lessonId,
+      };
+
+      console.info('[BATTLE FIREBASE] handleTemplateReady:start', {
+        liveClassId: activeLiveClass.id,
+        docPath: `liveClasses/${activeLiveClass.id}/session/battle`,
+        teacherUid: uid,
+        includeTeacher: normalizedConfig.includeTeacher,
+        includeBot: normalizedConfig.botEnabled,
+        questionCount: questions.length,
+        participantIds: liveParticipants.map((participant) => participant.uid),
+      });
+
+      try {
+        console.log('[BATTLE START DEBUG] creating battle session...');
+        await createBattleSession(
+          activeLiveClass.id,
+          normalizedConfig,
+          uid,
+          name,
+          questions,
+          liveParticipants.map((participant) => ({
+            uid: participant.uid,
+            name: participant.name,
+            joinedAt: Date.now(),
+          })),
+        );
+        console.info('[BATTLE FIREBASE] handleTemplateReady:success', {
+          liveClassId: activeLiveClass.id,
+          docPath: `liveClasses/${activeLiveClass.id}/session/battle`,
+          teacherUid: uid,
+        });
+        console.log('[BATTLE START DEBUG] battle session created:', activeLiveClass.id);
+        setShowSetup(false);
+        return;
+      } catch (error) {
+        console.error('[BATTLE START DEBUG] start failed:', error);
+        console.error('[BATTLE FIREBASE] handleTemplateReady:error', {
+          liveClassId: activeLiveClass.id,
+          docPath: `liveClasses/${activeLiveClass.id}/session/battle`,
+          teacherUid: uid,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }
+
     const template = buildSavedBattleTemplate(
       config,
       questions,
@@ -129,6 +240,22 @@ export const BattleHubPage: React.FC<Props> = ({
       // Ignore storage quota issues and keep the in-memory template.
     }
   }
+
+  const liveParticipants = useMemo(() => {
+    const sourceParticipants = onlineParticipants
+      ?? Object.values(liveSession?.participants ?? {}).map((participant) => ({
+        uid: participant.uid,
+        name: participant.name,
+      }));
+
+    return Array.from(
+      new Map(
+        sourceParticipants
+          .filter((participant) => Boolean(participant?.uid))
+          .map((participant) => [participant.uid, participant])
+      ).values()
+    );
+  }, [liveSession?.participants, onlineParticipants]);
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 pb-28 pt-6">
@@ -185,15 +312,15 @@ export const BattleHubPage: React.FC<Props> = ({
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
                 <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Course</div>
-                <div className="mt-2 text-sm font-semibold text-white">{courseId ?? 'english'}</div>
+                <div className="mt-2 text-sm font-semibold text-white">{effectiveCourseId ?? 'english'}</div>
               </div>
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
                 <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Workbook</div>
-                <div className="mt-2 text-sm font-semibold text-white">{workbookId ?? 1}</div>
+                  <div className="mt-2 text-sm font-semibold text-white">{effectiveWorkbookId ?? 1}</div>
               </div>
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
                 <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Lesson</div>
-                <div className="mt-2 text-sm font-semibold text-white">{lessonId ?? 'current lesson'}</div>
+                  <div className="mt-2 text-sm font-semibold text-white">{effectiveLessonId ?? 'current lesson'}</div>
               </div>
             </div>
             {lastTemplate ? (
@@ -236,13 +363,58 @@ export const BattleHubPage: React.FC<Props> = ({
       </div>
 
       {showSetup ? (
-        <BattleSetupModal
-          onStart={handleTemplateReady}
-          onClose={() => setShowSetup(false)}
-          defaultCourseId={courseId ?? undefined}
-          defaultWorkbookId={workbookId ?? undefined}
-          defaultLessonId={lessonId ?? undefined}
-        />
+        (() => {
+          console.log('[LIVE BATTLE MAP]', {
+            role: 'teacher',
+            liveClassId: activeLiveClass?.id ?? null,
+            component: 'BattleSetupModal',
+            handler: 'BattleHubPage.handleTemplateReady',
+            source: 'LiveClassRoomPage -> BattleHubPage',
+          });
+          return (
+            <BattleSetupModal
+              onStart={handleTemplateReady}
+              onClose={() => setShowSetup(false)}
+              defaultCourseId={effectiveCourseId ?? undefined}
+              defaultWorkbookId={effectiveWorkbookId ?? undefined}
+              defaultLessonId={effectiveLessonId ?? undefined}
+              liveClassId={activeLiveClass?.id}
+              currentUserUid={uid}
+              selectedStudents={liveParticipants}
+            />
+          );
+        })()
+      ) : null}
+
+      {!showSetup && activeLiveClass?.id && liveSession ? (
+        (() => {
+          console.log('[LIVE BATTLE MAP]', {
+            role: 'teacher',
+            liveClassId: activeLiveClass.id,
+            component: 'BattleHostView',
+            handler: 'battleService.startBattle / battleService.submitBattleAnswer',
+            source: 'BattleHubPage',
+          });
+          return (
+            <BattleHostView
+              session={liveSession}
+              classId={activeLiveClass.id}
+              teacherUid={uid}
+              activeParticipants={liveParticipants}
+              onClose={() => {
+                void deleteBattleSession(activeLiveClass.id);
+                setLiveSession(null);
+                onDismiss?.();
+              }}
+              onNewBattle={() => {
+                void deleteBattleSession(activeLiveClass.id).then(() => {
+                  setLiveSession(null);
+                  setShowSetup(true);
+                });
+              }}
+            />
+          );
+        })()
       ) : null}
 
       {activeTemplate ? (

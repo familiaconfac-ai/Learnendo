@@ -65,7 +65,7 @@ export function getBattleCorrectIndexes(question: BattleQuestion): number[] {
 }
 
 export function getBattlePromptAudioText(question: BattleQuestion): string {
-  return question.promptAudioText?.trim() || question.text;
+  return question.promptAudioText?.trim() || (question.text || '');
 }
 
 export function getBattleCorrectAnswerLabel(question: BattleQuestion): string {
@@ -101,11 +101,12 @@ function uniqueValues(values: string[]): string[] {
 export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion | null {
   const id = normalizeOptionalText(question.id) ?? `battle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const text = normalizeOptionalText(question.text);
+  const kind = question.kind ?? 'multiple-choice';
   if (!text) return null;
 
   if (isChoiceQuestion(question)) {
     const options = uniqueValues((question.options ?? []).map((option) => option.trim()));
-    if (options.length < 2) return null;
+    if (options.length < 2 && kind !== 'speaking' && kind !== 'audio-open') return null;
 
     const fallbackCorrectOption = normalizeOptionalText(question.correctText);
     const matchedCorrectIndex = fallbackCorrectOption ? options.findIndex((option) => option === fallbackCorrectOption) : -1;
@@ -125,7 +126,7 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
 
     return {
       id,
-      kind: question.kind,
+      kind,
       text,
       options,
       correctIndex: correctIndexes[0],
@@ -147,7 +148,7 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
 
   return {
     id,
-    kind: question.kind,
+    kind,
     text,
     correctText,
     acceptedAnswers,
@@ -262,6 +263,11 @@ export function buildInitialBattleScores(
       score: 0,
       streak: 0,
       lastAnswerCorrect: null,
+      firstPlaceCount: 0,
+      secondPlaceCount: 0,
+      thirdPlaceCount: 0,
+      bestElapsedMs: null,
+      lastPlacement: null,
     },
   };
 }
@@ -287,20 +293,7 @@ export function calculateBattleRoundScore(params: {
   const elapsedMs = params.questionStartedAt > 0
     ? Math.max(0, params.answeredAt - params.questionStartedAt)
     : 0;
-
-  if (!params.isCorrect) {
-    return { elapsedMs, roundPoints: 0 };
-  }
-
-  const totalMs = Math.max(1, params.timePerQuestion * 1000);
-  const remainingRatio = params.questionStartedAt > 0
-    ? clamp((totalMs - elapsedMs) / totalMs, 0, 1)
-    : 0;
-
-  return {
-    elapsedMs,
-    roundPoints: Math.max(0, Math.round(1000 * remainingRatio)),
-  };
+  return { elapsedMs, roundPoints: 0 };
 }
 
 export function buildBattleParticipantScore(
@@ -313,9 +306,14 @@ export function buildBattleParticipantScore(
   return stripUndefinedFields({
     uid,
     name,
-    score: (previous?.score ?? 0) + roundPoints,
-    streak: isCorrect ? (previous?.streak ?? 0) + 1 : 0,
+    score: 0,
+    streak: 0,
     lastAnswerCorrect: isCorrect,
+    firstPlaceCount: previous?.firstPlaceCount ?? 0,
+    secondPlaceCount: previous?.secondPlaceCount ?? 0,
+    thirdPlaceCount: previous?.thirdPlaceCount ?? 0,
+    bestElapsedMs: previous?.bestElapsedMs ?? null,
+    lastPlacement: previous?.lastPlacement ?? null,
     avatarId: previous?.avatarId,
     isBot: previous?.isBot,
   });
@@ -330,9 +328,16 @@ export function mergeBattleScoresWithParticipants(
   for (const participant of participants) {
     const existing = nextScores[participant.uid];
     nextScores[participant.uid] = existing
-      ? stripUndefinedFields({
+        ? stripUndefinedFields({
           ...existing,
           name: participant.name || existing.name,
+          score: existing.score ?? 0,
+          streak: existing.streak ?? 0,
+          firstPlaceCount: existing.firstPlaceCount ?? 0,
+          secondPlaceCount: existing.secondPlaceCount ?? 0,
+          thirdPlaceCount: existing.thirdPlaceCount ?? 0,
+          bestElapsedMs: existing.bestElapsedMs ?? null,
+          lastPlacement: existing.lastPlacement ?? null,
           avatarId: participant.avatarId ?? existing.avatarId,
           isBot: participant.isBot ?? existing.isBot,
         })
@@ -342,12 +347,97 @@ export function mergeBattleScoresWithParticipants(
           score: 0,
           streak: 0,
           lastAnswerCorrect: null,
+          firstPlaceCount: 0,
+          secondPlaceCount: 0,
+          thirdPlaceCount: 0,
+          bestElapsedMs: null,
+          lastPlacement: null,
           avatarId: participant.avatarId,
           isBot: participant.isBot,
         });
   }
 
   return nextScores;
+}
+
+export interface BattleRoundRankingEntry {
+  uid: string;
+  placement: number;
+  isCorrect: boolean | null;
+  elapsedMs: number | null;
+  answeredAt: number | null;
+}
+
+export function buildBattleRoundRanking(
+  roundParticipantIds: string[],
+  currentAnswers: Record<string, BattleAnswer>,
+  questionStartedAt: number
+): BattleRoundRankingEntry[] {
+  const entries = Array.from(new Set(roundParticipantIds.filter(Boolean))).map((uid) => {
+    const answer = currentAnswers[uid];
+    const elapsedMs =
+      answer?.elapsedMs != null
+        ? answer.elapsedMs
+        : answer && questionStartedAt > 0
+          ? Math.max(0, answer.answeredAt - questionStartedAt)
+          : null;
+
+    return {
+      uid,
+      isCorrect: answer?.isCorrect ?? null,
+      elapsedMs,
+      answeredAt: answer?.answeredAt ?? null,
+    };
+  });
+
+  entries.sort((left, right) => {
+    const leftCorrectRank = left.isCorrect === true ? 0 : left.isCorrect === false ? 1 : 2;
+    const rightCorrectRank = right.isCorrect === true ? 0 : right.isCorrect === false ? 1 : 2;
+    if (leftCorrectRank !== rightCorrectRank) return leftCorrectRank - rightCorrectRank;
+
+    const leftAnsweredAt = left.answeredAt ?? Number.MAX_SAFE_INTEGER;
+    const rightAnsweredAt = right.answeredAt ?? Number.MAX_SAFE_INTEGER;
+    if (leftAnsweredAt !== rightAnsweredAt) return leftAnsweredAt - rightAnsweredAt;
+
+    const leftElapsed = left.elapsedMs ?? Number.MAX_SAFE_INTEGER;
+    const rightElapsed = right.elapsedMs ?? Number.MAX_SAFE_INTEGER;
+    if (leftElapsed !== rightElapsed) return leftElapsed - rightElapsed;
+
+    return left.uid.localeCompare(right.uid, 'pt-BR');
+  });
+
+  return entries.map((entry, index) => ({
+    ...entry,
+    placement: index + 1,
+  }));
+}
+
+export function compareBattleParticipantsByRanking(left: BattleParticipant, right: BattleParticipant): number {
+  const leftFirstPlaces = left.firstPlaceCount ?? 0;
+  const rightFirstPlaces = right.firstPlaceCount ?? 0;
+  if (leftFirstPlaces !== rightFirstPlaces) return rightFirstPlaces - leftFirstPlaces;
+
+  const leftSecondPlaces = left.secondPlaceCount ?? 0;
+  const rightSecondPlaces = right.secondPlaceCount ?? 0;
+  if (leftSecondPlaces !== rightSecondPlaces) return rightSecondPlaces - leftSecondPlaces;
+
+  const leftThirdPlaces = left.thirdPlaceCount ?? 0;
+  const rightThirdPlaces = right.thirdPlaceCount ?? 0;
+  if (leftThirdPlaces !== rightThirdPlaces) return rightThirdPlaces - leftThirdPlaces;
+
+  const leftScore = left.score ?? 0;
+  const rightScore = right.score ?? 0;
+  if (leftScore !== rightScore) return rightScore - leftScore;
+
+  const leftBestElapsed = left.bestElapsedMs ?? Number.MAX_SAFE_INTEGER;
+  const rightBestElapsed = right.bestElapsedMs ?? Number.MAX_SAFE_INTEGER;
+  if (leftBestElapsed !== rightBestElapsed) return leftBestElapsed - rightBestElapsed;
+
+  const leftPlacement = left.lastPlacement ?? Number.MAX_SAFE_INTEGER;
+  const rightPlacement = right.lastPlacement ?? Number.MAX_SAFE_INTEGER;
+  if (leftPlacement !== rightPlacement) return leftPlacement - rightPlacement;
+
+  return left.name.localeCompare(right.name, 'pt-BR');
 }
 
 export function buildBattleRoundParticipantsSnapshot(params: {

@@ -2,7 +2,7 @@
 
 export type BattleDifficulty = 'easy' | 'normal' | 'hard';
 export type BattleScope = 'current-lesson' | 'current-book' | 'review';
-export type BattleStatus = 'idle' | 'lobby' | 'active' | 'showing-answer' | 'finished';
+export type BattleStatus = 'WAITING' | 'PLAYING' | 'REVEALED' | 'FINISHED';
 export type BattleQuestionKind = 'multiple-choice' | 'image-choice' | 'audio-choice' | 'audio-open' | 'speaking';
 
 export interface BattleConfig {
@@ -20,9 +20,9 @@ export interface BattleConfig {
 }
 
 export interface BattleQuestion {
-  id: string;
-  kind: BattleQuestionKind;
-  text: string;          // question / prompt shown to students
+  id?: string;
+  kind?: BattleQuestionKind;
+  text?: string;          // question / prompt shown to students
   options?: string[];      // multiple-choice options when applicable
   correctIndex?: number;   // 0-based index into options
   correctIndexes?: number[]; // allows one or more correct alternatives
@@ -48,6 +48,11 @@ export interface BattleParticipant {
   score: number;
   streak: number;
   lastAnswerCorrect: boolean | null;
+  firstPlaceCount?: number;
+  secondPlaceCount?: number;
+  thirdPlaceCount?: number;
+  bestElapsedMs?: number | null;
+  lastPlacement?: number | null;
   avatarId?: string;
   isBot?: boolean;
 }
@@ -76,15 +81,29 @@ export interface BattleAnswer {
 export interface BattleSession {
   id: string;               // classId for now
   status: BattleStatus;
+  liveClassId?: string;
+  hostUid?: string;
+  roundStatus?: 'waiting' | 'active' | 'revealed' | 'finished';
   config: BattleConfig;
   questions: BattleQuestion[];
   currentQuestionIndex: number;
-  questionStartedAt: number; // timestamp ms
+  currentQuestionId?: string;
+  startedAt?: number | null;
+  roundStartedAt?: number | null;
+  roundDurationMs?: number | null;
+  durationMs?: number | null;
+  endsAt?: number | null;
+  isRevealed?: boolean;
+  showAnswer?: boolean;
+  questionStartedAt: any; // timestamp ms (can be number or Firestore FieldValue)
   participants?: Record<string, BattleRosterParticipant>;
   roundParticipantIds?: string[];
+  answeredCount?: number;
   scores: Record<string, BattleParticipant>;
+  answers?: Record<string, BattleAnswer>;
   // answers for the CURRENT question: uid → BattleAnswer
   currentAnswers: Record<string, BattleAnswer>;
   createdAt: number;
   updatedAt: number;
+  lastChange?: unknown;
 }

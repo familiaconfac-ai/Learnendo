@@ -18,7 +18,6 @@ import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import {
-  BATTLE_STALE_THRESHOLD_MS,
   getDefaultMainStageMode,
   isActiveBattleStatus,
   sanitizeMainStageMode,
@@ -38,6 +37,7 @@ interface StudentRoomViewProps {
   showExerciseSession: boolean;
   setShowExerciseSession: (show: boolean) => void;
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
+  onOpenBattleHub: () => void;
   onExit: () => void;
 }
 
@@ -46,8 +46,9 @@ const StudentStage: React.FC<{
   user: User;
   session: LiveClassSession;
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
+  onOpenBattleHub: () => void;
   onExit: () => void;
-}> = ({ liveClass, user, session, assignedRoster, onExit }) => {
+}> = ({ liveClass, user, session, assignedRoster, onOpenBattleHub, onExit }) => {
   const room = useRoomContext();
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
   const cameraTrackRefs = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]).filter(
@@ -70,60 +71,102 @@ const StudentStage: React.FC<{
   }, [session.mainStageMode]);
 
   useEffect(() => {
-    const mountedAt = Date.now();
-    let battleWasActivated = false;
-
-    const unsub = subscribeBattleSession(liveClass.id, (nextSession) => {
-      console.log('[BATTLE PLAYER] battleId', nextSession?.id ?? liveClass.id);
-      console.log('[BATTLE PLAYER] liveClassId/roomId', liveClass.id);
-      console.log('[BATTLE PLAYER] snapshot received', nextSession);
-      console.log('[BATTLE PLAYER] status received', nextSession?.status ?? null);
-      console.log('[BATTLE PLAYER] currentQuestionIndex received', nextSession?.currentQuestionIndex ?? null);
-      console.log('[BATTLE PLAYER] currentQuestionId received', nextSession?.questions?.[nextSession.currentQuestionIndex ?? 0]?.id ?? null);
-      console.log('[BATTLE PLAYER] totalQuestions received', nextSession?.questions?.length ?? 0);
-      console.info('[BATTLE PLAYER] snapshot received', {
-        roomId: liveClass.id,
-        battleId: nextSession?.id ?? null,
-        status: nextSession?.status ?? null,
-        currentQuestionIndex: nextSession?.currentQuestionIndex ?? null,
-        roundParticipantIds: nextSession?.roundParticipantIds ?? [],
-      });
-      const isInInitialWindow = Date.now() - mountedAt < 1000;
-      if (isInInitialWindow) {
-        if (
-          nextSession &&
-          isActiveBattleStatus(nextSession.status) &&
-          (nextSession.updatedAt || 0) > mountedAt - BATTLE_STALE_THRESHOLD_MS
-        ) {
-          battleWasActivated = true;
-          setBattleSession(nextSession);
-        }
-        return;
-      }
-
-      if (!nextSession) {
-        battleWasActivated = false;
-        setBattleSession(null);
-        return;
-      }
-
-      if (isActiveBattleStatus(nextSession.status)) {
-        battleWasActivated = true;
-        setBattleSession(nextSession);
-        return;
-      }
-
-      if (nextSession.status === 'finished' && battleWasActivated) {
-        setBattleSession(nextSession);
-        return;
-      }
-
-      battleWasActivated = false;
-      setBattleSession(null);
+    console.info('[BATTLE FIREBASE] student listener attach', {
+      classId: liveClass.id,
+      docPath: `liveClasses/${liveClass.id}/session/battle`,
+      studentUid: user.uid,
     });
 
+    const unsub = subscribeBattleSession(
+      liveClass.id,
+      (nextSession) => {
+        console.info('[BATTLE FIREBASE] student snapshot received', {
+          classId: liveClass.id,
+          docPath: `liveClasses/${liveClass.id}/session/battle`,
+          studentUid: user.uid,
+          hasSession: Boolean(nextSession),
+          sessionId: nextSession?.id ?? null,
+          status: nextSession?.status ?? null,
+          roundParticipantIds: nextSession?.roundParticipantIds ?? [],
+        });
+
+        if (!nextSession) {
+          setBattleSession(null);
+          return;
+        }
+
+        if (
+          nextSession.status === 'WAITING' ||
+          isActiveBattleStatus(nextSession.status) ||
+          nextSession.status === 'FINISHED'
+        ) {
+          console.info('[BATTLE STUDENT SUBSCRIBE] accepting shared battle session', {
+            component: 'StudentRoomView',
+            classId: liveClass.id,
+            sessionId: nextSession.id,
+            status: nextSession.status,
+            roundParticipantIds: nextSession.roundParticipantIds ?? [],
+          });
+          setBattleSession(nextSession);
+          return;
+        }
+
+        console.info('[BATTLE STUDENT SUBSCRIBE] unsupported status - clearing session', {
+          component: 'StudentRoomView',
+          classId: liveClass.id,
+          sessionId: nextSession.id,
+          status: nextSession.status,
+        });
+        setBattleSession(null);
+      },
+      (error) => {
+        console.error('[BATTLE STUDENT SUBSCRIBE] error listening', {
+          component: 'StudentRoomView',
+          classId: liveClass.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    );
+
     return unsub;
-  }, [liveClass.id]);
+  }, [liveClass.id, user.uid]);
+
+  useEffect(() => {
+    console.info('[STUDENT BATTLE RENDER]', {
+      roomId: liveClass.id,
+      hasBattleSession: Boolean(battleSession),
+      status: battleSession?.status ?? null,
+      updatedAt: battleSession?.updatedAt ?? null,
+      currentQuestionIndex: battleSession?.currentQuestionIndex ?? null,
+    });
+    console.info('[BATTLE SESSION MATCH] student battle session snapshot', {
+      component: 'StudentRoomView',
+      classId: liveClass.id,
+      sessionId: battleSession?.id ?? null,
+      status: battleSession?.status ?? null,
+      role: 'student',
+    });
+    if (battleSession) {
+      console.info('[BATTLE STUDENT LIVE ACCESS] student following official classroom battle session', {
+        component: 'StudentRoomView',
+        classId: liveClass.id,
+        sessionId: battleSession.id,
+        status: battleSession.status,
+      });
+    }
+  }, [battleSession, liveClass.id]);
+
+  useEffect(() => {
+    console.log('[LIVE BATTLE SESSION] loaded', {
+      liveClassId: liveClass.id,
+      userId: user.uid,
+      role: 'student',
+      status: battleSession?.status ?? null,
+      currentQuestionIndex: battleSession?.currentQuestionIndex ?? null,
+      participants: battleSession?.participants ?? null,
+      answers: battleSession?.answers ?? battleSession?.currentAnswers ?? null,
+    });
+  }, [battleSession, liveClass.id, user.uid]);
 
   const startAudio = useCallback(async () => {
     try {
@@ -362,24 +405,6 @@ const StudentStage: React.FC<{
                     >
                       &#x270F;&#xFE0F;
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {}}
-                      className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-orange-600 transition hover:bg-orange-50"
-                      title={labels.battle}
-                      aria-label={labels.battle}
-                    >
-                      &#x2694;&#xFE0F;
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {}}
-                      className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-600 transition hover:bg-slate-100"
-                      title={labels.screen}
-                      aria-label={labels.screen}
-                    >
-                      &#x1F4FA;
-                    </button>
                     {cameraError ? (
                       <span className="flex items-center text-[10px] text-red-500" title={cameraError}>
                         &#x26A0;&#xFE0F;
@@ -572,13 +597,42 @@ const StudentStage: React.FC<{
             </div>
           ) : null}
           {battleSession ? (
-            <BattlePlayerView
-              session={battleSession}
-              classId={liveClass.id}
-              uid={user.uid}
-              name={user.displayName || user.email || 'Aluno'}
-            />
-          ) : null}
+            (() => {
+              console.log('[LIVE BATTLE MAP]', {
+                role: 'student',
+                liveClassId: liveClass.id,
+                component: 'BattlePlayerView',
+                handler: 'battleService.submitBattleAnswer',
+                source: 'StudentRoomView',
+              });
+              console.log('[BATTLE NEW FLOW] BattlePlayerView is rendering because battleSession is active.');
+              console.info('[BATTLE STUDENT RENDER] BattlePlayerView render start', {
+                component: 'StudentRoomView',
+                classId: liveClass.id,
+                sessionId: battleSession.id,
+                status: battleSession.status,
+                uid: user.uid,
+                name: user.displayName || user.email,
+              });
+              return (
+                <BattlePlayerView
+                  session={battleSession}
+                  classId={liveClass.id}
+                  uid={user.uid}
+                  name={user.displayName || user.email || 'Aluno'}
+                />
+              );
+            })()
+          ) : (
+            (() => {
+              console.log('[BATTLE NEW FLOW] BattlePlayerView is NOT rendering because battleSession is null.');
+              console.info('[BATTLE STUDENT RENDER] no battleSession - BattlePlayerView skipped', {
+                component: 'StudentRoomView',
+                classId: liveClass.id,
+              });
+              return null;
+            })()
+          )}
         </>
       }
     />
@@ -586,7 +640,7 @@ const StudentStage: React.FC<{
 };
 
 export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
-  const { liveClass, user, session, onExit } = props;
+  const { liveClass, user, session, onOpenBattleHub, onExit } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
 
@@ -625,6 +679,7 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
         user={user}
         session={session}
         assignedRoster={props.assignedRoster}
+        onOpenBattleHub={onOpenBattleHub}
         onExit={onExit}
       />
     </LiveKitRoom>

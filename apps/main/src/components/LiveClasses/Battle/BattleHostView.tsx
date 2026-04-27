@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { appLangToTts, speak } from '../../../services/ttsService';
-import type { BattleSession } from './battleTypes';
+import { BattleResultsScreen } from './BattleResultsScreen';
 import {
   advanceBattleQuestion,
   endBattle,
@@ -8,49 +8,56 @@ import {
   startBattle,
   submitBattleAnswer,
 } from './battleService';
-import { BattleResultsScreen } from './BattleResultsScreen';
-import { BattleParticipantAvatar } from './BattleParticipantAvatar';
+import type {
+  BattleAnswer,
+  BattleParticipant,
+  BattleSession,
+  BattleQuestion,
+  BattleQuestionKind,
+} from './battleTypes';
 import {
   BATTLE_BOT_UID,
+  buildBotBattlePayload,
   buildBattleRoundParticipantsSnapshot,
+  buildBattleRoundRanking,
+  canBattleParticipantAnswerCurrentQuestion,
+  compareBattleParticipantsByRanking,
   calculateBattleRoundScore,
   evaluateBattleAnswer,
-  getBattleParticipantName,
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
   getBattleLanguage,
-  getBattleBotName,
+  getBattleParticipantName,
   getBattlePromptAudioText,
-  getExpectedBattleParticipantIds,
   getMyBattleAnswer,
   isChoiceQuestion,
-  buildBotBattlePayload,
 } from './battleUtils';
-import type { BattleAnswer } from './battleTypes';
 
-interface Props {
+interface BattleHostViewProps {
   session: BattleSession;
   classId: string;
   teacherUid: string;
   activeParticipants: Array<{ uid: string; name: string }>;
   onClose: () => void;
   onNewBattle: () => void;
-  ensureSessionReady?: () => Promise<void>;
 }
 
-export const BattleHostView: React.FC<Props> = ({
+interface RevealRow {
+  pid: string;
+  placement: number;
+  name: string;
+  isCorrect: boolean | null;
+  elapsedMs: number | null;
+}
+
+export const BattleHostView: React.FC<BattleHostViewProps> = ({
   session,
   classId,
   teacherUid,
   activeParticipants,
   onClose,
   onNewBattle,
-  ensureSessionReady,
 }) => {
-  const knownBattleStatuses = useMemo(
-    () => ['idle', 'lobby', 'active', 'showing-answer', 'finished'] as const,
-    [],
-  );
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
   const [busy, setBusy] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -60,391 +67,437 @@ export const BattleHostView: React.FC<Props> = ({
   const [isListening, setIsListening] = useState(false);
   const [teacherSubmitting, setTeacherSubmitting] = useState(false);
   const [teacherFrozenTimeLeft, setTeacherFrozenTimeLeft] = useState<number | null>(null);
-  // ── Local answer registry ────────────────────────────────────────────────────
-  // localCurrentAnswers stores BattleAnswer objects that this host has submitted
-  // but that haven't yet returned from Firestore. It is merged with
-  // session.currentAnswers for ALL display (answerCount, revealRows, effectiveStatus).
-  // This is NOT visual-only: same evaluation math as battleService.ts.
-  // Works identically for solo and multiplayer — no special-casing required.
   const [localCurrentAnswers, setLocalCurrentAnswers] = useState<Record<string, BattleAnswer>>({});
   const [showRankingOverlay, setShowRankingOverlay] = useState(false);
-  // Snapshot of cumulative scores at the MOMENT a question becomes active.
-  // Used in revealRows to compute totalScore = preRoundScore + answer.roundPoints,
-  // which is race-free: we don’t need session.scores to update before the reveal.
-  const preRoundScoresRef = useRef<Record<string, number>>({});
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const botTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
-  const sessionRef = useRef(session);
-  const activeParticipantsRef = useRef(activeParticipants);
+  const botAnswerAttemptRef = useRef<string | null>(null);
 
   const questionIdx = session.currentQuestionIndex;
-  const question = session.questions[questionIdx];
-  const currentQuestionId = question?.id ?? null;
-  const totalQ = session.questions.length;
-  const includeTeacher = !!session.config.includeTeacher;
+  const question = session.questions[questionIdx] ?? null;
+  const totalQuestions = session.questions.length;
   const battleLanguage = getBattleLanguage(session.config.courseId);
-  const expectedParticipantIds = useMemo(
-    () => getExpectedBattleParticipantIds(session, teacherUid),
-    [session.roundParticipantIds, session.participants, session.scores, teacherUid]
+  const roundParticipantIds = useMemo(
+    () => Array.from(new Set((session.roundParticipantIds ?? []).filter(Boolean))),
+    [session.roundParticipantIds],
   );
-  const teacherCanPlay = expectedParticipantIds.includes(teacherUid);
-
-  // ── Merged answer state (local + Firestore) ───────────────────────────────
-  // localCurrentAnswers entries take precedence: they are newer (just submitted).
   const mergedCurrentAnswers = useMemo(
-    () => ({ ...session.currentAnswers, ...localCurrentAnswers }),
-    [session.currentAnswers, localCurrentAnswers]
+    () => ({ ...(session.currentAnswers ?? {}), ...localCurrentAnswers }),
+    [localCurrentAnswers, session.currentAnswers],
   );
-  // answerCount and effectiveStatus are both driven by the merged view.
-  const answerCount = expectedParticipantIds.filter((pid) => pid in mergedCurrentAnswers).length;
-  // Reveal the round as soon as all participants have an entry in the merged map,
-  // without waiting for Firestore to deliver the 'showing-answer' status update.
+  const answerCount = roundParticipantIds.filter((participantId) => participantId in mergedCurrentAnswers).length;
   const allAnsweredLocally =
-    expectedParticipantIds.length > 0 &&
-    expectedParticipantIds.every((pid) => pid in mergedCurrentAnswers);
-  const effectiveStatus =
-    session.status === 'showing-answer' || (session.status === 'active' && allAnsweredLocally)
-      ? ('showing-answer' as const)
-      : session.status;
-
+    roundParticipantIds.length > 0 && roundParticipantIds.every((participantId) => participantId in mergedCurrentAnswers);
+  const effectiveStatus: BattleSession['status'] = session.status;
+  const teacherIsRegistered =
+    Boolean(session.participants?.[teacherUid]) ||
+    Boolean(session.scores?.[teacherUid]) ||
+    roundParticipantIds.includes(teacherUid);
+  const teacherCanPlay = effectiveStatus === 'PLAYING' && session.config.includeTeacher && teacherIsRegistered;
   const myAnswer = mergedCurrentAnswers[teacherUid] ?? getMyBattleAnswer(session, teacherUid);
-  const teacherHasAnswered = !!myAnswer || teacherSubmitting;
-  const effectiveTeacherFrozenTimeLeft = teacherFrozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
-  const displayTimeLeft = teacherHasAnswered && effectiveTeacherFrozenTimeLeft != null ? effectiveTeacherFrozenTimeLeft : timeLeft;
-  const timeRatio = displayTimeLeft / session.config.timePerQuestion;
+  const teacherHasAnswered = Boolean(myAnswer) || teacherSubmitting;
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
-  const showTeacherInScores = includeTeacher;
-  const visibleScores = useMemo(
-    () => {
-      const derivedScores = { ...session.scores };
-
-      for (const [pid, answer] of Object.entries(mergedCurrentAnswers)) {
-        const previous = derivedScores[pid];
-        const preRoundScore = preRoundScoresRef.current[pid] ?? previous?.score ?? 0;
-        derivedScores[pid] = {
-          uid: pid,
-          name: previous?.name ?? answer.name ?? getBattleParticipantName(session, pid),
-          score: Math.max(previous?.score ?? 0, preRoundScore + (answer.roundPoints ?? 0)),
-          streak: previous?.streak ?? (answer.isCorrect ? 1 : 0),
-          lastAnswerCorrect: answer.isCorrect,
-          avatarId: previous?.avatarId ?? session.participants?.[pid]?.avatarId,
-          isBot: previous?.isBot ?? session.participants?.[pid]?.isBot,
-        };
-      }
-
-      return showTeacherInScores
-        ? derivedScores
-        : Object.fromEntries(Object.entries(derivedScores).filter(([uid]) => uid !== teacherUid));
-    },
-    [mergedCurrentAnswers, session, session.scores, showTeacherInScores, teacherUid]
-  );
-  const leaderboard = useMemo(
-    () => Object.values(visibleScores).sort((a, b) => b.score - a.score).slice(0, 5),
-    [visibleScores]
-  );
-
-  // Per-player round results used in the 'showing-answer' reveal panel.
-  // totalScore = preRoundScore[pid] + answer.roundPoints
-  // This is stable and race-free:
-  //   - preRoundScore is captured before any answers arrive this round
-  //   - answer.roundPoints is written atomically by submitBattleAnswer for ALL
-  //     participants (teacher and students) using the same scoring pipeline
-  // No dependency on session.scores timing — works even if Firestore score
-  // update arrives after the reveal panel renders.
-  const revealRows = useMemo(() => {
-    if (effectiveStatus !== 'showing-answer') return [];
-
-      type RevealRow = {
-        pid: string;
-        name: string;
-        isCorrect: boolean | null;
-        elapsedMs: number | null;
-        roundPoints: number;
-        totalScore: number;
-        avatarId?: string;
-        isBot?: boolean;
-      };
-
-    const answered: RevealRow[] = [];
-    const unanswered: RevealRow[] = [];
-
-    // Collect all participants: those already in session.scores + any who answered
-    // but joined after the question started (edge case for late joiners).
-    const allPids = new Set([...expectedParticipantIds, ...Object.keys(mergedCurrentAnswers)]);
-
-    for (const pid of allPids) {
-      const participant = session.scores[pid];
-      const rosterParticipant = session.participants?.[pid];
-      const displayName = mergedCurrentAnswers[pid]?.name ?? participant?.name ?? getBattleParticipantName(session, pid);
-      // Pre-round score captured when the question became active.
-      // Falls back to session.scores[pid].score in case the ref wasn’t populated
-      // (e.g., participant joined mid-round).
-      const preRoundScore = preRoundScoresRef.current[pid] ?? participant?.score ?? 0;
-      const answer = mergedCurrentAnswers[pid];
-
-      if (!answer) {
-        unanswered.push({
-          pid,
-          name: displayName,
-          isCorrect: null,
-          elapsedMs: null,
-          roundPoints: 0,
-          totalScore: preRoundScore,
-          avatarId: participant?.avatarId ?? rosterParticipant?.avatarId,
-          isBot: participant?.isBot ?? rosterParticipant?.isBot,
-        });
-      } else {
-        const roundPoints = answer.roundPoints ?? 0;
-        const elapsedMs =
-          answer.elapsedMs != null
-            ? answer.elapsedMs
-            : session.questionStartedAt > 0
-            ? answer.answeredAt - session.questionStartedAt
-            : null;
-        answered.push({
-          pid,
-          name: displayName,
-          isCorrect: answer.isCorrect,
-          elapsedMs,
-          roundPoints,
-          // totalScore is always correct: pre-round baseline + this round's points
-          totalScore: preRoundScore + roundPoints,
-          avatarId: participant?.avatarId ?? rosterParticipant?.avatarId,
-          isBot: participant?.isBot ?? rosterParticipant?.isBot,
-        });
-      }
-    }
-
-    const correct = answered.filter((r) => r.isCorrect).sort((a, b) => (a.elapsedMs ?? 999999) - (b.elapsedMs ?? 999999));
-    const wrong = answered.filter((r) => !r.isCorrect).sort((a, b) => (a.elapsedMs ?? 999999) - (b.elapsedMs ?? 999999));
-
-    return [...correct, ...wrong, ...unanswered];
-  }, [effectiveStatus, mergedCurrentAnswers, session.scores, session.questionStartedAt, expectedParticipantIds]);
+  const effectiveFrozenTimeLeft = teacherFrozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
+  const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? session.config.timePerQuestion * 1000;
+  const roundStartedAt =
+    typeof session.roundStartedAt === 'number' && session.roundStartedAt > 0
+      ? session.roundStartedAt
+      : typeof session.questionStartedAt === 'number' && session.questionStartedAt > 0
+        ? session.questionStartedAt
+        : null;
+  const endsAt =
+    session.endsAt ?? (roundStartedAt != null && roundDurationMs > 0 ? roundStartedAt + roundDurationMs : null);
+  const liveRemainingMs =
+    effectiveFrozenTimeLeft != null
+      ? effectiveFrozenTimeLeft * 1000
+      : endsAt != null
+        ? Math.max(0, endsAt - Date.now())
+        : roundDurationMs;
+  const timeUp = effectiveStatus === 'PLAYING' && effectiveFrozenTimeLeft == null && endsAt != null && liveRemainingMs <= 0;
+  const displayTimeLeft = effectiveFrozenTimeLeft ?? timeLeft;
+  const timeRatio = displayTimeLeft / session.config.timePerQuestion;
 
   useEffect(() => {
-    console.log('[BATTLE DEBUG] known statuses in code', {
-      statuses: knownBattleStatuses,
+    console.log('[BATTLE ROUND STATE DEBUG] render', {
+      sessionId: session?.id,
+      status: session?.status,
+      roundStatus: session?.roundStatus ?? null,
+      currentQuestionIndex: session?.currentQuestionIndex,
+      roundStartedAt: session?.roundStartedAt ?? null,
+      questionStartedAt: session?.questionStartedAt ?? null,
+      endsAt: session?.endsAt ?? endsAt,
+      durationMs: session?.durationMs ?? null,
+      roundDurationMs: session?.roundDurationMs ?? null,
+      isRevealed: session?.isRevealed ?? null,
+      showAnswer: session?.showAnswer ?? null,
+      timeUp,
+      now: Date.now(),
+      remainingMs: liveRemainingMs,
+      answers: session?.answers ?? session?.currentAnswers,
+      participants: session?.participants,
+      roundParticipantIds: session?.roundParticipantIds,
     });
-  }, [knownBattleStatuses]);
+    console.log('[LIVE BATTLE SESSION] loaded', {
+      liveClassId: classId,
+      userId: teacherUid,
+      role: 'teacher',
+      status: session?.status,
+      currentQuestionIndex: session?.currentQuestionIndex,
+      participants: session?.participants,
+      answers: session?.answers ?? session?.currentAnswers,
+    });
+    console.log('[BATTLE ANSWER DEBUG] render question', {
+      sessionId: session?.id,
+      status: session?.status,
+      roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+      currentQuestionIndex: session?.currentQuestionIndex,
+      currentQuestion: question,
+      userId: teacherUid,
+      participantId: teacherUid,
+      isHost: true,
+      isTeacher: true,
+      participants: session?.participants,
+      roundParticipantIds: session?.roundParticipantIds,
+      answers: (session as BattleSession & { answers?: unknown }).answers ?? null,
+      responses: (session as BattleSession & { responses?: unknown }).responses ?? null,
+    });
+    console.log('[BATTLE PROFESSOR ANSWER DEBUG] render question view', {
+      sessionId: session?.id,
+      status: session?.status,
+      roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+      currentQuestionIndex: session?.currentQuestionIndex,
+      currentQuestion: question,
+      userId: teacherUid,
+      isHost: true,
+      isTeacher: true,
+      participants: session?.participants,
+      roundParticipantIds: session?.roundParticipantIds,
+    });
+  }, [
+    question,
+    endsAt,
+    liveRemainingMs,
+    session?.currentQuestionIndex,
+    session?.durationMs,
+    session?.endsAt,
+    session?.id,
+    session?.isRevealed,
+    session?.participants,
+    session?.questionStartedAt,
+    session?.roundDurationMs,
+    session?.roundParticipantIds,
+    session?.roundStartedAt,
+    session?.roundStatus,
+    session?.showAnswer,
+    session?.status,
+    teacherUid,
+    timeUp,
+  ]);
 
   useEffect(() => {
-    sessionRef.current = session;
-  }, [session]);
+    console.log('[BATTLE DEBUG] BattleHostView mounted', {
+      classId,
+      sessionId: session.id,
+      status: session.status,
+      teacherUid,
+      currentQuestionIndex: session.currentQuestionIndex,
+      roundParticipantIds
+    });
+  }, []);
+
+  const leaderboard = useMemo(() => {
+    return roundParticipantIds
+      .map((participantId) => {
+        const score = session.scores?.[participantId];
+        if (!score) return null;
+        return score;
+      })
+      .filter((participant): participant is BattleParticipant => Boolean(participant))
+      .sort(compareBattleParticipantsByRanking)
+      .slice(0, 10);
+  }, [roundParticipantIds, session.scores]);
+
+  const revealRows = useMemo(() => {
+    return buildBattleRoundRanking(
+      roundParticipantIds,
+      mergedCurrentAnswers,
+      session.questionStartedAt,
+    ).map((entry) => ({
+      pid: entry.uid,
+      placement: entry.placement,
+      name:
+        mergedCurrentAnswers[entry.uid]?.name ??
+        session.scores?.[entry.uid]?.name ??
+        getBattleParticipantName(session, entry.uid),
+      isCorrect: entry.isCorrect,
+      elapsedMs: entry.elapsedMs,
+    }));
+  }, [effectiveStatus, mergedCurrentAnswers, roundParticipantIds, session, session.scores]);
 
   useEffect(() => {
-    activeParticipantsRef.current = activeParticipants;
-  }, [activeParticipants]);
+    console.info('[BATTLE SESSION STATUS] teacher host snapshot', {
+      component: 'BattleHostView',
+      classId,
+      sessionId: session.id,
+      status: session.status,
+      currentQuestionIndex: session.currentQuestionIndex,
+      currentQuestionId: session.currentQuestionId ?? question?.id ?? null,
+      questionCount: session.questions.length,
+      roundParticipantIds,
+      teacherCanPlay,
+      showSetupBypassed: false,
+      scoreKeys: Object.keys(session.scores ?? {}),
+    });
+    console.info('[BATTLE HOST SESSION] teacher battle session snapshot', {
+      component: 'BattleHostView',
+      classId,
+      sessionId: session.id,
+      status: session.status,
+      roundParticipantIds,
+      currentQuestionId: session.currentQuestionId ?? question?.id ?? null,
+    });
+    console.info('[BATTLE REGRESSION FIX] teacher battle runtime active', {
+      component: 'BattleHostView',
+      classId,
+      sessionId: session.id,
+      status: session.status,
+      currentQuestionId: session.currentQuestionId ?? question?.id ?? null,
+      teacherCanPlay,
+    });
+  }, [
+    classId,
+    question?.id,
+    roundParticipantIds,
+    session.currentQuestionId,
+    session.currentQuestionIndex,
+    session.id,
+    session.questions.length,
+    session.scores,
+    session.status,
+    teacherCanPlay,
+  ]);
 
   useEffect(() => {
     const audio = new Audio('/sounds/battle_theme.mp3');
     audio.loop = true;
     audio.volume = 0.4;
     audioRef.current = audio;
-    return () => { audio.pause(); };
+
+    return () => {
+      audio.pause();
+    };
   }, []);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (session.status === 'active' && !musicMuted) {
+
+    if (session.status === 'PLAYING' && !musicMuted) {
       audio.play().catch(() => {});
     } else {
       audio.pause();
     }
-  }, [session.status, musicMuted]);
+  }, [musicMuted, session.status]);
 
   useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = musicMuted ? 0 : 0.4;
+    if (audioRef.current) {
+      audioRef.current.volume = musicMuted ? 0 : 0.4;
+    }
   }, [musicMuted]);
 
   useEffect(() => {
+    console.info('[BATTLE HOST ROUND RESET] resetting local teacher round state', {
+      classId,
+      sessionId: session.id,
+      status: session.status,
+      currentQuestionId: session.currentQuestionId ?? question?.id ?? null,
+      questionStartedAt: session.questionStartedAt,
+    });
     setSelectedOptions([]);
     setTypedAnswer('');
     setTeacherSubmitting(false);
     setTeacherFrozenTimeLeft(null);
     setTimeLeft(session.config.timePerQuestion);
-    setLocalCurrentAnswers({}); // clear local answers when question changes
-    setShowRankingOverlay(false); // close overlay between rounds
-    // Capture pre-round scores for every participant so revealRows can show
-    // correct totals without waiting for Firestore score updates to arrive.
-    // session.scores is stable at question start (before any writes this round).
-    const snapshot: Record<string, number> = {};
-    for (const pid of Object.keys(session.scores)) {
-      snapshot[pid] = session.scores[pid]?.score ?? 0;
-    }
-    preRoundScoresRef.current = snapshot;
-    // NOTE: session.scores intentionally not in deps — we only want to capture
-    // the score snapshot at the START of this question index, not on every update.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    setLocalCurrentAnswers({});
+    setShowRankingOverlay(false);
+
     if (recognitionRef.current) {
-      try { recognitionRef.current.abort(); } catch {}
+      try {
+        recognitionRef.current.abort();
+      } catch {
+        // ignore stale recognition cleanup
+      }
       recognitionRef.current = null;
       setIsListening(false);
     }
-  }, [questionIdx, session.config.timePerQuestion]);
+  }, [classId, questionIdx, question?.id, session.currentQuestionId, session.id, session.questionStartedAt, session.status]);
 
   useEffect(() => {
-    if (session.status !== 'active') {
-      if (timerRef.current) clearInterval(timerRef.current);
+    if (session.status !== 'PLAYING') {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
       return;
     }
 
-    if (timerRef.current) clearInterval(timerRef.current);
-    const start = session.questionStartedAt;
-    timerRef.current = setInterval(() => {
+    if (roundStartedAt == null || roundDurationMs <= 0) {
+      setTimeLeft(session.config.timePerQuestion);
+      return;
+    }
+
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+    }
+
+    const start = roundStartedAt;
+    const initialRemaining = Math.max(0, roundDurationMs - (Date.now() - start)) / 1000;
+    setTimeLeft(initialRemaining);
+    console.info('[BATTLE HOST TIMER] starting teacher timer interval', {
+      classId,
+      sessionId: session.id,
+      status: session.status,
+      questionStartedAt: session.questionStartedAt,
+      effectiveStartAt: start,
+      initialRemaining,
+    });
+    timerRef.current = window.setInterval(() => {
       const elapsed = Date.now() - start;
-      const remaining = Math.max(0, session.config.timePerQuestion - elapsed / 1000);
+      const remainingMs = Math.max(0, roundDurationMs - elapsed);
+      const remaining = remainingMs / 1000;
       setTimeLeft(remaining);
+      if (remaining <= 0 && timerRef.current) {
+        console.warn('[BATTLE ROUND STATE DEBUG] timer expired', {
+          now: Date.now(),
+          roundStartedAt: session?.roundStartedAt ?? roundStartedAt,
+          endsAt,
+          remainingMs,
+        });
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }, 200);
 
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [session.status, session.questionStartedAt, session.config.timePerQuestion]);
-
-  useEffect(() => {
-    if (session.status === 'finished') setShowResults(true);
-  }, [session.status]);
-
-  useEffect(() => {
-    console.log('[BATTLE HOST] battleId', session.id);
-    console.log('[BATTLE HOST] liveClassId/roomId', classId);
-    console.log('[BATTLE HOST] current status before start', session.status);
-    console.log('[BATTLE HOST] currentQuestionIndex before start', session.currentQuestionIndex);
-    console.log('[BATTLE HOST] currentQuestionId before start', currentQuestionId);
-    console.log('[BATTLE HOST] totalQuestions before start', session.questions?.length ?? 0);
-    console.log('[BATTLE HOST] render status', {
-      roomId: classId,
-      battleId: session.id,
-      status: session.status,
-      currentQuestionIndex: session.currentQuestionIndex,
-      roundParticipantIds: session.roundParticipantIds,
-      currentAnswersForUid: session.currentAnswers?.[teacherUid] ?? null,
-      answeredAt: myAnswer?.answeredAt ?? null,
-      frozenTimeLeft: effectiveTeacherFrozenTimeLeft,
-      roundPoints: myAnswer?.roundPoints ?? null,
-    });
-  }, [
-    classId,
-    effectiveTeacherFrozenTimeLeft,
-    myAnswer?.answeredAt,
-    myAnswer?.roundPoints,
-    session.currentAnswers,
-    session.currentQuestionIndex,
-    session.id,
-    session.roundParticipantIds,
-    session.status,
-    currentQuestionId,
-    teacherUid,
-  ]);
+    return () => {
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [endsAt, roundDurationMs, roundStartedAt, session.config.timePerQuestion, session.questionStartedAt, session.roundStartedAt, session.status]);
 
   useEffect(() => {
     if (!teacherHasAnswered) return;
-    if (myAnswer?.frozenTimeLeft == null) return;
-    setTeacherFrozenTimeLeft((current) => current ?? myAnswer.frozenTimeLeft ?? null);
-  }, [myAnswer?.frozenTimeLeft, teacherHasAnswered]);
+    if (effectiveFrozenTimeLeft == null) return;
+    setTeacherFrozenTimeLeft((current) => current ?? effectiveFrozenTimeLeft);
+  }, [effectiveFrozenTimeLeft, teacherHasAnswered]);
 
   useEffect(() => {
-    if (!question || session.status !== 'active' || !question.playAudioOnce) return;
-    const promptKey = `${session.id}:${question.id}:${session.status}`;
+    setShowResults(session.status === 'FINISHED');
+  }, [session.status]);
+
+  useEffect(() => {
+    if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) return;
+
+    const promptKey = `${session.id}:${(question.id as string)}:${session.status}`;
     if (promptPlayedRef.current === promptKey) return;
+
     promptPlayedRef.current = promptKey;
     window.setTimeout(() => {
       speak(getBattlePromptAudioText(question), battleLanguage);
     }, 250);
-  }, [session.id, session.status, question, battleLanguage]);
+  }, [battleLanguage, question, session.id, session.status]);
 
   useEffect(() => {
-    if (botTimeoutRef.current) {
-      clearTimeout(botTimeoutRef.current);
-      botTimeoutRef.current = null;
-    }
-    if (!question || session.status !== 'active') return;
-    if (!expectedParticipantIds.includes(BATTLE_BOT_UID)) return;
-    if (mergedCurrentAnswers[BATTLE_BOT_UID]) return;
+    if (session.status !== 'PLAYING' || roundParticipantIds.length === 0 || !allAnsweredLocally) return;
+
+    console.warn('[BATTLE ROUND STATE DEBUG] revealing answer', {
+      reason: 'all-participants-answered',
+      answeredCount: answerCount,
+      expectedCount: roundParticipantIds.length,
+      answers: session?.answers ?? session?.currentAnswers,
+      roundParticipantIds: session?.roundParticipantIds,
+    });
+    showBattleAnswer(classId).catch((error) => {
+      console.error('[BattleHostView] auto reveal failed:', error);
+    });
+  }, [allAnsweredLocally, answerCount, classId, roundParticipantIds.length, session, session.status]);
+
+  useEffect(() => {
+    if (session.status !== 'PLAYING' || !timeUp) return;
+
+    console.warn('[BATTLE ROUND STATE DEBUG] revealing answer', {
+      reason: 'timer-expired',
+      answeredCount: answerCount,
+      expectedCount: roundParticipantIds.length,
+      answers: session?.answers ?? session?.currentAnswers,
+      roundParticipantIds: session?.roundParticipantIds,
+    });
+    showBattleAnswer(classId).catch((error) => {
+      console.error('[BattleHostView] timer reveal failed:', error);
+    });
+  }, [answerCount, classId, roundParticipantIds.length, session, timeUp]);
+
+  useEffect(() => {
+    if (session.status !== 'PLAYING') return;
+    if (!session.config.botEnabled) return;
+    if (!question) return;
+    if (!roundParticipantIds.includes(BATTLE_BOT_UID)) return;
+    if ((session.currentAnswers ?? {})[BATTLE_BOT_UID]) return;
+
+    const botRoundKey = `${session.id}:${session.currentQuestionId ?? question.id ?? questionIdx}`;
+    if (botAnswerAttemptRef.current === botRoundKey) return;
+    botAnswerAttemptRef.current = botRoundKey;
 
     const { delayMs, payload } = buildBotBattlePayload(session, question);
-    botTimeoutRef.current = setTimeout(() => {
-      const answeredAt = Date.now();
-      const isCorrect = evaluateBattleAnswer(question, payload);
-      const { elapsedMs, roundPoints } = calculateBattleRoundScore({
-        answeredAt,
-        questionStartedAt: session.questionStartedAt,
-        timePerQuestion: session.config.timePerQuestion,
-        isCorrect,
-      });
-    const botAnswer: BattleAnswer = {
-        uid: BATTLE_BOT_UID,
-        name: session.scores[BATTLE_BOT_UID]?.name || getBattleBotName(session.config),
-        optionIndex: payload.optionIndex,
-        optionIndexes: payload.optionIndexes,
-        responseText: payload.responseText,
-        isCorrect,
-        answeredAt,
-        elapsedMs,
-        roundPoints,
-        frozenTimeLeft: Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
-      };
-      console.info('[BATTLE ANSWER]', {
-        uid: BATTLE_BOT_UID,
-        answeredAt,
-        elapsedMs,
-        frozenTimeLeft: botAnswer.frozenTimeLeft,
-        roundPoints,
-        roomId: classId,
-        battleId: session.id,
-      });
-      setLocalCurrentAnswers((prev) => ({ ...prev, [BATTLE_BOT_UID]: botAnswer }));
-      void submitBattleAnswer(
+    const timeoutId = window.setTimeout(() => {
+      submitBattleAnswer(
         classId,
         session,
         BATTLE_BOT_UID,
-        session.scores[BATTLE_BOT_UID]?.name || getBattleBotName(session.config),
+        session.participants?.[BATTLE_BOT_UID]?.name ?? session.config.botName ?? 'Bot',
         payload,
+        { forceCurrentRoundParticipation: true },
       ).catch((error) => {
-        console.error('[Battle:Host] bot submit failed:', error);
+        console.error('[BATTLE HOST BOT] bot answer failed:', error);
+        botAnswerAttemptRef.current = null;
       });
     }, delayMs);
 
     return () => {
-      if (botTimeoutRef.current) {
-        clearTimeout(botTimeoutRef.current);
-        botTimeoutRef.current = null;
-      }
+      window.clearTimeout(timeoutId);
     };
-  }, [classId, expectedParticipantIds, mergedCurrentAnswers, question, session]);
+  }, [
+    classId,
+    question,
+    questionIdx,
+    roundParticipantIds,
+    session,
+  ]);
 
-  useEffect(() => {
-    if (session.status !== 'active') return;
-    if (expectedParticipantIds.length === 0) return;
-    // Use mergedCurrentAnswers so teacher's optimistic local answer also counts.
-    // Without this, the round won't auto-close if teacher answered but Firestore
-    // hasn't echoed back yet when the last student submits.
-    const allAnswered = expectedParticipantIds.every((uid) => uid in mergedCurrentAnswers);
-    if (!allAnswered) return;
-
-    showBattleAnswer(classId).catch((error) => {
-      console.error('[Battle] auto-reveal failed:', error);
+  const buildRoundParticipantsSnapshot = () =>
+    buildBattleRoundParticipantsSnapshot({
+      session,
+      activeParticipants,
+      teacherUid,
+      teacherName: session.scores?.[teacherUid]?.name || 'Professor',
     });
-  }, [session.status, expectedParticipantIds, mergedCurrentAnswers, classId]);
-
-  useEffect(() => {
-    if (session.status !== 'active' || timeLeft > 0) return;
-    showBattleAnswer(classId).catch((error) => {
-      console.error('[Battle] timer auto-reveal failed:', error);
-    });
-  }, [session.status, timeLeft, classId]);
 
   function startSpeechRecognition() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Reconhecimento de voz não está disponível neste navegador.');
+      alert('Reconhecimento de voz nao esta disponivel neste navegador.');
       return;
     }
 
     if (recognitionRef.current) {
-      try { recognitionRef.current.abort(); } catch {}
+      try {
+        recognitionRef.current.abort();
+      } catch {
+        // ignore stale instance
+      }
     }
 
     const recognition = new SpeechRecognition();
@@ -463,37 +516,35 @@ export const BattleHostView: React.FC<Props> = ({
     recognition.start();
   }
 
-  function shouldRevealAfterTeacherAnswer() {
-    // Use mergedCurrentAnswers so previously-submitted local answers count.
-    return expectedParticipantIds.every((pid) => pid in mergedCurrentAnswers);
-  }
-
-  async function submitTeacherChoice(optionIndexes: number[]) {
-    console.log('[Battle:Host] submitTeacherChoice called', {
-      teacherCanPlay,
-      hasQuestion: !!question,
-      isChoice: question ? isChoiceQuestion(question) : false,
-      teacherHasAnswered,
-      sessionStatus: session.status,
-      optionIndexes,
-      teacherUid,
-      expectedParticipantIds,
-      roundParticipantIds: session.roundParticipantIds,
-      scoresKeys: Object.keys(session.scores ?? {}),
+  async function persistTeacherAnswer(payload: { optionIndex?: number; optionIndexes?: number[]; responseText?: string }) {
+    console.log('[BATTLE ANSWER DEBUG] submit answer entered', {
+      sessionId: session.id,
+      userId: teacherUid,
+      participantId: teacherUid,
+      optionIndex: payload.optionIndex ?? null,
     });
-    if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || optionIndexes.length === 0) {
-      console.log('[Battle:Host] submitTeacherChoice BLOCKED by guard', { teacherCanPlay, teacherHasAnswered, sessionStatus: session.status });
+    if (!question) {
+      console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+        reason: 'missing-question',
+        sessionId: session.id,
+        userId: teacherUid,
+        participantId: teacherUid,
+        status: session?.status,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        hasAnswered: teacherHasAnswered,
+      });
+      console.warn('[BATTLE PROFESSOR ANSWER DEBUG] answer blocked', {
+        reason: 'missing-question',
+        userId: teacherUid,
+        hasAnswered: teacherHasAnswered,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        status: session?.status,
+      });
       return;
     }
-    
+
     const answeredAt = Date.now();
-    const payload = { optionIndex: optionIndexes[0], optionIndexes };
-    const teacherName = session.scores[teacherUid]?.name || 'Professor';
-    
-    // ── 1. Evaluate and register the answer locally ───────────────────────────
-    // This runs BEFORE any await so the local state update is queued in the same
-    // React flush. mergedCurrentAnswers, answerCount, effectiveStatus, and revealRows
-    // all update on the very next render without waiting for Firestore.
+    const teacherName = session.scores?.[teacherUid]?.name || 'Professor';
     const isCorrect = evaluateBattleAnswer(question, payload);
     const { elapsedMs, roundPoints } = calculateBattleRoundScore({
       answeredAt,
@@ -501,73 +552,299 @@ export const BattleHostView: React.FC<Props> = ({
       timePerQuestion: session.config.timePerQuestion,
       isCorrect,
     });
+
     const localAnswer: BattleAnswer = {
       uid: teacherUid,
       name: teacherName,
       optionIndex: payload.optionIndex,
       optionIndexes: payload.optionIndexes,
+      responseText: payload.responseText,
       isCorrect,
       answeredAt,
       elapsedMs,
       roundPoints,
       frozenTimeLeft: Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
     };
-    console.info('[BATTLE ANSWER]', {
-      uid: teacherUid,
-      answeredAt,
-      elapsedMs,
-      frozenTimeLeft: localAnswer.frozenTimeLeft,
-      roundPoints,
-      roomId: classId,
-      battleId: session.id,
+    const nextFrozenTimeLeft = localAnswer.frozenTimeLeft ?? 0;
+
+    setLocalCurrentAnswers((current) => ({ ...current, [teacherUid]: localAnswer }));
+    setTeacherFrozenTimeLeft(nextFrozenTimeLeft);
+    setTimeLeft(nextFrozenTimeLeft);
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+    console.info('[BATTLE HOST FREEZE] teacher timer frozen on answer', {
+      classId,
+      sessionId: session.id,
+      teacherUid,
+      frozenTimeLeft: nextFrozenTimeLeft,
     });
-    
-    setLocalCurrentAnswers((prev) => ({ ...prev, [teacherUid]: localAnswer }));
-    setTeacherFrozenTimeLeft(
-      Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
-    );
-    // ⚠️ Only stop the timer when the last active participant has answered.
-    // In multiplayer, teacher may answer first while students still need time.
-    const updatedMerged = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
-    const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMerged);
+    console.info('[BATTLE TEACHER FLOW] teacher answer locked', {
+      classId,
+      sessionId: session.id,
+      teacherUid,
+      statusBeforeReveal: session.status,
+      elapsedMs,
+      frozenTimeLeft: nextFrozenTimeLeft,
+    });
+    const optimisticAnswers = { ...(session.currentAnswers ?? {}), ...localCurrentAnswers, [teacherUid]: localAnswer };
+    const everyoneAnswered =
+      roundParticipantIds.length > 0 && roundParticipantIds.every((participantId) => participantId in optimisticAnswers);
+
     if (everyoneAnswered) {
       setTimeLeft(0);
-      if (timerRef.current) clearInterval(timerRef.current);
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+      }
     }
+
     setTeacherSubmitting(true);
-    
-    // ── 2. Compute whether all participants have now answered ────────────────
-    // Already computed above before the async boundary.
-    
+
     try {
-      // ── 3. Persist to Firestore (scoring is also computed server-side here) ──
-      await submitBattleAnswer(classId, session, teacherUid, teacherName, payload);
-      // ── 4. If all answered, transition to reveal ─────────────────────────
-      // The auto-reveal useEffect also handles this, but calling explicitly here
-      // ensures the round closes even if session.currentAnswers is briefly stale.
+      console.log('[LIVE BATTLE ANSWER] saving', {
+        liveClassId: classId,
+        userId: teacherUid,
+        role: 'teacher',
+        optionIndex: payload.optionIndex ?? null,
+        currentQuestionIndex: session.currentQuestionIndex,
+      });
+      console.log('[BATTLE ANSWER DEBUG] saving answer payload', payload);
+      console.log('[BATTLE PROFESSOR ANSWER DEBUG] saving answer...', {
+        sessionId: session.id,
+        userId: teacherUid,
+        optionIndex: payload.optionIndex ?? null,
+      });
+      const result = await submitBattleAnswer(
+        classId,
+        session,
+        teacherUid,
+        teacherName,
+        payload,
+        { forceCurrentRoundParticipation: true },
+      );
+      if (result.status !== 'saved') {
+        console.warn('[LIVE BATTLE ANSWER] blocked', {
+          reason: result.reason,
+          liveClassId: classId,
+          userId: teacherUid,
+          role: 'teacher',
+          status: session?.status,
+          hasAnswered: teacherHasAnswered,
+        });
+        console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+          reason: result.reason,
+          sessionId: session.id,
+          userId: teacherUid,
+          participantId: teacherUid,
+          status: session?.status,
+          roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+          hasAnswered: teacherHasAnswered,
+        });
+        console.warn('[BATTLE PROFESSOR ANSWER DEBUG] answer blocked', {
+          reason: result.reason,
+          userId: teacherUid,
+          hasAnswered: teacherHasAnswered,
+          roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+          status: session?.status,
+        });
+        setLocalCurrentAnswers((current) => {
+          const next = { ...current };
+          delete next[teacherUid];
+          return next;
+        });
+        return;
+      }
+
+      console.log('[BATTLE ANSWER DEBUG] answer saved');
+      console.log('[BATTLE PROFESSOR ANSWER DEBUG] answer saved');
       if (everyoneAnswered) {
         await showBattleAnswer(classId);
       }
-    } catch (err) {
-      console.error('[Battle:Host] teacher choice submit failed:', err);
-      // Local state remains correct. Firestore will reconcile on next snapshot.
+    } catch (error) {
+      console.error('[LIVE BATTLE ANSWER] failed', error);
+      console.error('[BATTLE ANSWER DEBUG] answer failed', error);
+      console.error('[BATTLE PROFESSOR ANSWER DEBUG] answer failed:', error);
+      console.error('[BattleHostView] teacher submit failed:', error);
+      setLocalCurrentAnswers((current) => {
+        const next = { ...current };
+        delete next[teacherUid];
+        return next;
+      });
     } finally {
       setTeacherSubmitting(false);
     }
   }
 
+  async function submitTeacherChoice(optionIndexes: number[]) {
+    if (
+      !teacherCanPlay ||
+      !question ||
+      !isChoiceQuestion(question) ||
+      teacherHasAnswered ||
+      timeUp ||
+      session.status !== 'PLAYING' ||
+      optionIndexes.length === 0
+    ) {
+      console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+        reason: !teacherCanPlay
+          ? 'teacher-cannot-play'
+          : !question
+            ? 'missing-question'
+            : !isChoiceQuestion(question)
+              ? 'question-is-not-choice'
+              : teacherHasAnswered
+                ? 'already-answered'
+                : timeUp
+                  ? 'time-up'
+                : session.status !== 'PLAYING'
+                  ? 'session-not-playing'
+                  : 'missing-option-index',
+        sessionId: session.id,
+        userId: teacherUid,
+        participantId: teacherUid,
+        status: session?.status,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        hasAnswered: teacherHasAnswered,
+      });
+      console.warn('[BATTLE PROFESSOR ANSWER DEBUG] answer blocked', {
+        reason: !teacherCanPlay
+          ? 'teacher-cannot-play'
+          : !question
+            ? 'missing-question'
+            : !isChoiceQuestion(question)
+              ? 'question-is-not-choice'
+              : teacherHasAnswered
+                ? 'teacher-already-answered'
+                : session.status !== 'PLAYING'
+                  ? 'session-not-playing'
+                  : 'no-option-indexes',
+        userId: teacherUid,
+        hasAnswered: teacherHasAnswered,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        status: session?.status,
+      });
+      return;
+    }
+
+    await persistTeacherAnswer({
+      optionIndex: optionIndexes[0],
+      optionIndexes,
+    });
+  }
+
   function toggleTeacherChoice(optionIndex: number) {
-    if (!teacherCanPlay || !question || !isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active') return;
+    const option = question?.options?.[optionIndex] ?? null;
+    const disabled = effectiveStatus !== 'PLAYING' || teacherHasAnswered;
+    console.log('[LIVE BATTLE ANSWER] option clicked', {
+      liveClassId: classId,
+      userId: teacherUid,
+      role: 'teacher',
+      optionIndex,
+      status: session?.status,
+      currentQuestionIndex: session?.currentQuestionIndex,
+    });
+    console.log('[BATTLE ANSWER DEBUG] option clicked', {
+      optionIndex,
+      option,
+      userId: teacherUid,
+      participantId: teacherUid,
+      disabled,
+      hasAnswered: teacherHasAnswered,
+    });
+    console.log('[BATTLE PROFESSOR ANSWER DEBUG] option clicked', {
+      optionIndex,
+      option,
+      userId: teacherUid,
+      isHost: true,
+      isTeacher: true,
+      disabled,
+      hasAnswered: teacherHasAnswered,
+      roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+    });
+
+    if (!question || !isChoiceQuestion(question) || !teacherCanPlay || teacherHasAnswered || timeUp || effectiveStatus !== 'PLAYING') {
+      console.warn('[LIVE BATTLE ANSWER] blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isChoiceQuestion(question)
+            ? 'question-is-not-choice'
+            : !teacherCanPlay
+              ? 'teacher-cannot-play'
+              : teacherHasAnswered
+                ? 'already-answered'
+                : timeUp
+                  ? 'time-up'
+                : 'status-not-playing',
+        liveClassId: classId,
+        userId: teacherUid,
+        role: 'teacher',
+        status: session?.status,
+        hasAnswered: teacherHasAnswered,
+      });
+      console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isChoiceQuestion(question)
+            ? 'question-is-not-choice'
+            : !teacherCanPlay
+              ? 'teacher-cannot-play'
+              : teacherHasAnswered
+                ? 'already-answered'
+                : 'status-not-playing',
+        sessionId: session.id,
+        userId: teacherUid,
+        participantId: teacherUid,
+        status: session?.status,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        hasAnswered: teacherHasAnswered,
+      });
+      console.warn('[BATTLE PROFESSOR ANSWER DEBUG] answer blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isChoiceQuestion(question)
+            ? 'question-is-not-choice'
+            : !teacherCanPlay
+              ? 'teacher-cannot-play'
+              : teacherHasAnswered
+                ? 'teacher-already-answered'
+                : 'status-not-playing',
+        userId: teacherUid,
+        hasAnswered: teacherHasAnswered,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        status: session?.status,
+      });
+      console.info('[BATTLE HOST CLICK BLOCK] teacher choice blocked', {
+        classId,
+        sessionId: session.id,
+        teacherUid,
+        hasQuestion: Boolean(question),
+        teacherCanPlay,
+        teacherHasAnswered,
+        effectiveStatus,
+      });
+      return;
+    }
+
+    console.info('[BATTLE HOST CLICK] teacher choice accepted', {
+      classId,
+      sessionId: session.id,
+      teacherUid,
+      optionIndex,
+      currentQuestionId: session.currentQuestionId ?? question.id ?? null,
+    });
+
     if (!requiresChoiceConfirmation) {
       setSelectedOptions([optionIndex]);
       void submitTeacherChoice([optionIndex]);
       return;
     }
-    setSelectedOptions((current) => (
+
+    setSelectedOptions((current) =>
       current.includes(optionIndex)
         ? current.filter((value) => value !== optionIndex)
-        : [...current, optionIndex].sort((a, b) => a - b)
-    ));
+        : [...current, optionIndex].sort((left, right) => left - right),
+    );
   }
 
   async function confirmTeacherChoice() {
@@ -576,139 +853,134 @@ export const BattleHostView: React.FC<Props> = ({
   }
 
   async function handleTeacherOpenAnswer() {
-    console.log('[Battle:Host] handleTeacherOpenAnswer called', {
-      teacherCanPlay,
-      hasQuestion: !!question,
-      isChoice: question ? isChoiceQuestion(question) : false,
-      teacherHasAnswered,
-      sessionStatus: session.status,
-      typedAnswer: typedAnswer.trim(),
-      teacherUid,
-      expectedParticipantIds,
-    });
-    if (!teacherCanPlay || !question || isChoiceQuestion(question) || teacherHasAnswered || session.status !== 'active' || !typedAnswer.trim()) {
-      console.log('[Battle:Host] handleTeacherOpenAnswer BLOCKED by guard', { teacherCanPlay, teacherHasAnswered, sessionStatus: session.status });
+    if (
+      !teacherCanPlay ||
+      !question ||
+      isChoiceQuestion(question) ||
+      teacherHasAnswered ||
+      timeUp ||
+      session.status !== 'PLAYING' ||
+      !typedAnswer.trim()
+    ) {
+      console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+        reason: !teacherCanPlay
+          ? 'teacher-cannot-play'
+          : !question
+            ? 'missing-question'
+            : isChoiceQuestion(question)
+              ? 'question-is-choice'
+              : teacherHasAnswered
+                ? 'already-answered'
+                : timeUp
+                  ? 'time-up'
+                : session.status !== 'PLAYING'
+                  ? 'session-not-playing'
+                  : 'empty-response',
+        sessionId: session.id,
+        userId: teacherUid,
+        participantId: teacherUid,
+        status: session?.status,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        hasAnswered: teacherHasAnswered,
+      });
+      console.warn('[BATTLE PROFESSOR ANSWER DEBUG] answer blocked', {
+        reason: !teacherCanPlay
+          ? 'teacher-cannot-play'
+          : !question
+            ? 'missing-question'
+            : isChoiceQuestion(question)
+              ? 'question-is-choice'
+              : teacherHasAnswered
+                ? 'teacher-already-answered'
+                : session.status !== 'PLAYING'
+                  ? 'session-not-playing'
+                  : 'empty-typed-answer',
+        userId: teacherUid,
+        hasAnswered: teacherHasAnswered,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        status: session?.status,
+      });
       return;
     }
-    
-    const answeredAt = Date.now();
-    const payload = { responseText: typedAnswer.trim() };
-    const teacherName = session.scores[teacherUid]?.name || 'Professor';
-    
-    // ── 1. Evaluate and register locally before any await ─────────────────────
-    const isCorrect = evaluateBattleAnswer(question, payload);
-    const { elapsedMs, roundPoints } = calculateBattleRoundScore({
-      answeredAt,
-      questionStartedAt: session.questionStartedAt,
-      timePerQuestion: session.config.timePerQuestion,
-      isCorrect,
-    });
-    const localAnswer: BattleAnswer = {
-      uid: teacherUid,
-      name: teacherName,
-      responseText: payload.responseText,
-      isCorrect,
-      answeredAt,
-      elapsedMs,
-      roundPoints,
-      frozenTimeLeft: Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
-    };
-    console.info('[BATTLE ANSWER]', {
-      uid: teacherUid,
-      answeredAt,
-      elapsedMs,
-      frozenTimeLeft: localAnswer.frozenTimeLeft,
-      roundPoints,
-      roomId: classId,
-      battleId: session.id,
-    });
-    
-    setLocalCurrentAnswers((prev) => ({ ...prev, [teacherUid]: localAnswer }));
-    setTeacherFrozenTimeLeft(
-      Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
-    );
-    const updatedMergedOpen = { ...session.currentAnswers, ...localCurrentAnswers, [teacherUid]: localAnswer };
-    const everyoneAnswered = expectedParticipantIds.every((pid) => pid in updatedMergedOpen);
-    // ⚠️ Only stop timer when the last active participant answered
-    if (everyoneAnswered) {
-      setTimeLeft(0);
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    setTeacherSubmitting(true);
 
-    try {
-      await submitBattleAnswer(classId, session, teacherUid, teacherName, payload);
-      if (everyoneAnswered) {
-        await showBattleAnswer(classId);
-      }
-    } catch (err) {
-      console.error('[Battle:Host] teacher open answer submit failed:', err);
-    } finally {
-      setTeacherSubmitting(false);
-    }
+    await persistTeacherAnswer({
+      responseText: typedAnswer.trim(),
+    });
   }
 
   async function handleStart() {
-    console.log('[BATTLE START CLICK] requested');
-    console.log('[BATTLE START CLICK] classId:', classId);
-    console.log('[BATTLE START CLICK] teacherUid:', teacherUid);
+    if (busy) return;
     setBusy(true);
     try {
-      console.log('[BATTLE START CLICK] awaiting ensureSessionReady...');
-      await ensureSessionReady?.();
-      console.log('[BATTLE START CLICK] ensureSessionReady resolved');
-      const latestSession = sessionRef.current;
-      const latestActiveParticipants = activeParticipantsRef.current;
-      console.log('[BATTLE START CLICK] latestSession.status before start:', latestSession?.status ?? null);
-      if (!latestSession?.id) {
-        console.warn('[BATTLE HOST] start blocked by guard: missing battle id', {
-          latestSession,
-          classId,
-        });
-        return;
-      }
-      if (!classId) {
-        console.warn('[BATTLE HOST] start blocked by guard: missing liveClassId/roomId', {
-          latestSession,
-          classId,
-        });
-        return;
-      }
-      if (!latestSession.questions?.length) {
-        console.warn('[BATTLE HOST] start blocked by guard: no questions available', {
-          battleId: latestSession.id,
-          classId,
-          latestSession,
-        });
-        return;
-      }
-      const firstQuestion = latestSession.questions?.[0] ?? null;
-      console.log('[BATTLE UTILS] resolved first question', {
-        currentQuestionIndex: 0,
-        currentQuestionId: firstQuestion?.id ?? null,
-        hasQuestion: !!firstQuestion,
-        totalQuestions: latestSession.questions?.length ?? 0,
-      });
-      const participantsSnapshot = buildBattleRoundParticipantsSnapshot({
-        session: latestSession,
-        activeParticipants: latestActiveParticipants,
+      const dedupedActiveParticipants = Array.from(
+        new Map(activeParticipants.map((participant) => [participant.uid, participant])).values()
+      );
+      console.log('[BATTLE DEBUG] Teacher handleStart executing', {
+        classId,
+        sessionId: session.id,
         teacherUid,
-        teacherName: latestSession.scores[teacherUid]?.name || 'Professor',
+        includeTeacherConfig: session.config.includeTeacher,
+        botEnabledConfig: session.config.botEnabled,
+        activeParticipantIds: dedupedActiveParticipants.map((participant) => participant.uid),
       });
-      console.log('[BATTLE START CLICK] participantsSnapshot size:', participantsSnapshot.length);
-      console.log('[BATTLE START CLICK] calling startBattle...');
-      await startBattle(classId, latestSession, participantsSnapshot, teacherUid);
-      console.log('[BATTLE START CLICK] startBattle resolved');
-    } catch (error) {
-      console.error('[BATTLE START CLICK] startBattle rejected:', error);
-      if (error instanceof Error) {
-        console.error('[BATTLE START CLICK] error message:', error.message);
-        console.error('[BATTLE START CLICK] error stack:', error.stack);
-        window.alert(error.message || 'Start battle failed');
-      } else {
-        window.alert('Start battle failed');
+
+      // ── Build Participants Snapshot manually to ensure correct order and flags ──
+      const participantsSnapshot: any[] = [];
+      const seenUids = new Set<string>();
+
+      // 1. Include Teacher if option is marked and UID is valid
+      if (session.config.includeTeacher && teacherUid) {
+        const teacherName = session.scores?.[teacherUid]?.name || 'Professor';
+        participantsSnapshot.push({
+          uid: teacherUid,
+          role: 'teacher',
+          type: 'teacher',
+          name: teacherName,
+        });
+        seenUids.add(teacherUid);
       }
-      console.error('[Battle:Host] start battle failed:', error);
+
+      // 2. Include Bot if enabled
+      if (session.config.botEnabled) {
+        participantsSnapshot.push({
+          uid: BATTLE_BOT_UID,
+          role: 'bot',
+          type: 'bot',
+          name: session.config.botName || 'Bot',
+          avatarId: session.config.botAvatarId,
+        });
+        seenUids.add(BATTLE_BOT_UID);
+      }
+
+      // 3. Include all online students (activeParticipants)
+      dedupedActiveParticipants.forEach((student) => {
+        if (seenUids.has(student.uid)) return;
+        participantsSnapshot.push({
+          uid: student.uid,
+          role: 'student',
+          type: 'student',
+          name: student.name,
+        });
+        seenUids.add(student.uid);
+      });
+
+      const sessionToStart: BattleSession = {
+        ...session,
+        status: 'PLAYING',
+        currentQuestionIndex: 0,
+        currentQuestionId: session.questions[0]?.id ?? null,
+        roundParticipantIds: participantsSnapshot.map(p => p.uid),
+      };
+
+      console.log('[BATTLE DEBUG] handleStart — constructed payload', {
+        status: sessionToStart.status,
+        roundParticipantIds: sessionToStart.roundParticipantIds,
+        participantsSnapshotCount: participantsSnapshot.length,
+        participantEntries: participantsSnapshot,
+      });
+      await startBattle(classId, sessionToStart, participantsSnapshot, teacherUid);
+    } catch (error) {
+      console.error('[BATTLE START ERROR]', error);
     } finally {
       setBusy(false);
     }
@@ -716,7 +988,11 @@ export const BattleHostView: React.FC<Props> = ({
 
   async function handleShowAnswer() {
     setBusy(true);
-    try { await showBattleAnswer(classId); } finally { setBusy(false); }
+    try {
+      await showBattleAnswer(classId);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleNext() {
@@ -725,380 +1001,386 @@ export const BattleHostView: React.FC<Props> = ({
       await advanceBattleQuestion(
         classId,
         questionIdx + 1,
-        totalQ,
-        buildBattleRoundParticipantsSnapshot({
-          session,
-          activeParticipants,
-          teacherUid,
-          teacherName: session.scores[teacherUid]?.name || 'Professor',
-        }),
-        session.scores,
+        totalQuestions,
+        buildRoundParticipantsSnapshot(),
+        session.scores ?? {},
       );
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleEnd() {
     setBusy(true);
-    try { await endBattle(classId); } finally { setBusy(false); }
+    try {
+      await endBattle(classId);
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (showResults) {
     return (
       <BattleResultsScreen
-        scores={visibleScores}
+        scores={session.scores ?? {}}
         myUid={teacherUid}
         onNewBattle={onNewBattle}
         onClose={onClose}
-        isTeacher
-        hiddenUids={showTeacherInScores ? [] : [teacherUid]}
+        isTeacher={true}
+        validParticipantIds={roundParticipantIds}
       />
     );
   }
 
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
-  const correctCount = Object.values(mergedCurrentAnswers).filter((a) => a.isCorrect).length;
-  const wrongCount = Object.values(mergedCurrentAnswers).filter((a) => !a.isCorrect).length;
-  const unansweredCount = Math.max(0, expectedParticipantIds.length - answerCount);
+  const correctCount = Object.values(mergedCurrentAnswers).filter((answer) => answer.isCorrect).length;
+  const wrongCount = Object.values(mergedCurrentAnswers).filter((answer) => answer.isCorrect === false).length;
+  const unansweredCount = Math.max(0, roundParticipantIds.length - answerCount);
 
   return (
-    <div className="fixed inset-0 z-[9000] flex bg-slate-950 select-none">
-      {/* h-full + overflow-hidden bounds the column to the screen height so
-          the bottom button bar never gets pushed out of the viewport */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 bg-slate-900 border-b border-slate-800">
+    <div className="fixed inset-0 z-[9000] flex select-none bg-slate-950">
+      <div className="relative flex h-full flex-1 flex-col overflow-hidden">
+        <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-5 py-3">
           <div className="flex items-center gap-3">
-            <span className="text-lg">⚔️</span>
             <span className="text-white font-bold text-sm">Learnendo Battle</span>
-            <span className="px-2 py-0.5 rounded-full bg-slate-700 text-xs text-slate-300">
-              Q {questionIdx + 1} / {totalQ}
+            <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-300">
+              Q {Math.min(questionIdx + 1, totalQuestions)} / {totalQuestions}
             </span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setMusicMuted((value) => !value)}
-              title={musicMuted ? 'Unmute battle music' : 'Mute battle music'}
-              className="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-xs transition"
+              title={musicMuted ? 'Ativar musica' : 'Silenciar musica'}
+              className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-xs transition hover:bg-slate-700"
             >
-              {musicMuted ? '🔇' : '🔉'}
+              {musicMuted ? 'M' : 'S'}
             </button>
-            <button
-              onClick={handleEnd}
-              className="text-xs text-slate-500 hover:text-red-400 transition"
-            >
+            <button onClick={handleEnd} className="text-xs text-slate-500 transition hover:text-red-400">
               End Game
             </button>
           </div>
         </div>
 
-        <div className="flex-shrink-0 h-1.5 bg-slate-800">
+        <div className="h-1.5 flex-shrink-0 bg-slate-800">
           <div
             className="h-full transition-all duration-200"
             style={{
-              width: `${timeRatio * 100}%`,
+              width: `${Math.max(0, Math.min(1, timeRatio)) * 100}%`,
               backgroundColor: timeRatio > 0.5 ? '#22c55e' : timeRatio > 0.25 ? '#f97316' : '#ef4444',
             }}
           />
         </div>
 
-        {/* min-h-0 lets this shrink below its content height; overflow-y-auto
-            makes it scroll rather than pushing the footer down */}
-        <div className="flex-1 min-h-0 overflow-y-auto flex flex-col items-center justify-start py-4 px-6 gap-5">
-          {session.status === 'lobby' ? (
-            <div className="text-center space-y-4">
-              <div className="text-5xl">⚔️</div>
-              <h2 className="text-2xl font-black text-white">Sala de Batalha Aberta!</h2>
-              <p className="text-slate-400 text-sm">
-                {activeParticipants.length > 0
-                  ? `${activeParticipants.length} participante${activeParticipants.length !== 1 ? 's' : ''} pronto${activeParticipants.length !== 1 ? 's' : ''}`
-                  : 'Aguardando alunos entrarem...'}
-              </p>
-              <p className="text-slate-500 text-xs">
-                {totalQ} perguntas · {session.config.timePerQuestion}s cada · {session.config.difficulty}
-              </p>
-              <p className="text-slate-600 text-xs">
-                {includeTeacher
-                  ? 'Professor participa do placar nesta batalha.'
-                  : teacherCanPlay
-                    ? 'Modo solo do professor ativo para teste.'
-                    : 'Professor só comanda a partida nesta batalha.'}
-              </p>
-              <button
-                onClick={() => {
-                  console.log('[BATTLE HOST] raw button onClick fired');
-                  void handleStart();
-                }}
-                disabled={busy}
-                className="mt-4 px-8 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-lg hover:opacity-90 transition disabled:opacity-50"
-              >
-                🚀 Iniciar Batalha!
-              </button>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-start gap-5 overflow-y-auto px-6 py-4">
+          {session.status === 'WAITING' ? (
+            <div className="flex flex-col items-center justify-center h-full space-y-6">
+              {(() => {
+                console.info('[BATTLE HOST WAITING SCREEN] showing pre-start lobby', {
+                  classId,
+                  sessionId: session.id,
+                  status: session.status,
+                  participantCount: activeParticipants.length,
+                });
+                return null;
+              })()}
+              <div className="text-center space-y-4">
+                <h2 className="text-4xl font-black text-white">Sala de Batalha</h2>
+                <p className="text-sm text-slate-400">
+                  {activeParticipants.length > 0
+                    ? `${activeParticipants.length} participante(s) online`
+                    : 'Aguardando alunos entrarem...'}
+                </p>
+                <p className="text-xs text-slate-500 mt-4">
+                  {totalQuestions} perguntas | {session.config.timePerQuestion}s cada | {session.config.difficulty}
+                </p>
+              </div>
             </div>
           ) : question ? (
             <>
-              <div className="w-full max-w-2xl bg-slate-800/80 rounded-2xl p-6 text-center shadow-lg space-y-4">
-                <p className="text-xs text-slate-500 uppercase tracking-wider">Question {questionIdx + 1}</p>
-                <div className="text-3xl font-bold text-white leading-snug">{question.text}</div>
-                {question.imageUrl && (
+              {(() => {
+                console.info('[BATTLE HOST QUESTION STATE] rendering question during active battle', {
+                  classId,
+                  sessionId: session.id,
+                  status: session.status,
+                  questionIdx,
+                  questionId: question.id,
+                });
+                return null;
+              })()}
+              <div className="w-full max-w-2xl space-y-4 rounded-2xl bg-slate-800/80 p-6 text-center shadow-lg">
+                <p className="text-xs uppercase tracking-wider text-slate-500">Question {questionIdx + 1}</p>
+                <div className="text-3xl font-bold leading-snug text-white">{(question.text as string) || ''}</div>
+                {question.imageUrl ? (
                   <img
                     src={question.imageUrl}
                     alt="Question reference"
-                    className="mx-auto max-h-52 w-auto rounded-xl border border-slate-700 object-contain bg-slate-900"
+                    className="mx-auto max-h-52 w-auto rounded-xl border border-slate-700 bg-slate-900 object-contain"
                   />
-                )}
-                {question.kind === 'audio-choice' && (
-                  <p className="text-xs text-amber-300">Audio toca uma vez so e a turma escolhe entre as alternativas.</p>
-                )}
-                {question.kind === 'audio-open' && (
-                  <p className="text-xs text-amber-300">Áudio toca uma vez só para a turma.</p>
-                )}
-                {question.kind === 'speaking' && (
-                  <p className="text-xs text-amber-300">Speaking com frase completa. A turma responde falando.</p>
-                )}
+                ) : null}
               </div>
 
               {isChoiceQuestion(question) ? (
                 <>
-                  <div className="w-full max-w-lg grid grid-cols-2 gap-3">
-                    {(question.options ?? []).map((opt, index) => {
-                      const showCorrect = effectiveStatus === 'showing-answer';
-                      const isCorrect = (question.correctIndexes ?? [question.correctIndex ?? 0]).includes(index);
+                  <div className="pointer-events-auto relative z-10 grid w-full max-w-lg grid-cols-2 gap-3">
+                    {(question.options ?? []).map((option, index) => {
+                      const showCorrect =
+                        effectiveStatus === 'REVEALED' &&
+                        (teacherHasAnswered || displayTimeLeft <= 0);
+                      const isCorrect = getBattleCorrectIndexes(question).includes(index);
                       const isTeacherSelection = selectedOptions.includes(index);
+                      const disabled = effectiveStatus !== 'PLAYING' || teacherHasAnswered || timeUp;
+                      const disabledReason =
+                        effectiveStatus !== 'PLAYING'
+                          ? 'status-not-playing'
+                          : teacherHasAnswered
+                            ? 'already-answered'
+                            : timeUp
+                              ? 'time-up'
+                              : 'enabled';
+                      console.log('[BATTLE ROUND STATE DEBUG] option disabled check', {
+                        optionIndex: index,
+                        disabled,
+                        reason: disabledReason,
+                        roundStatus: session?.roundStatus ?? null,
+                        isRevealed: session?.isRevealed ?? false,
+                        showAnswer: session?.showAnswer ?? false,
+                        timeUp,
+                        hasAnswered: teacherHasAnswered,
+                      });
+                      console.log('[BATTLE ANSWER DEBUG] option state', {
+                        optionIndex: index,
+                        option,
+                        disabled,
+                        userId: teacherUid,
+                        participantId: teacherUid,
+                        hasAnswered: teacherHasAnswered,
+                        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+                      });
+
                       return (
                         <button
                           key={index}
                           onClick={() => toggleTeacherChoice(index)}
-                          disabled={effectiveStatus !== 'active' || (!teacherCanPlay ? true : teacherHasAnswered)}
-                          className={`py-4 px-3 rounded-xl border-2 text-center text-sm font-bold transition-all ${
+                          disabled={disabled}
+                          className={`pointer-events-auto relative z-10 rounded-xl border-2 px-3 py-4 text-center text-sm font-bold transition-all ${
                             showCorrect && isCorrect
                               ? 'border-green-500 bg-green-500/20 text-green-300'
                               : isTeacherSelection
-                              ? 'border-orange-500 bg-orange-500/20 text-orange-300'
-                              : showCorrect
-                              ? 'border-slate-700 text-slate-500'
-                              : 'border-slate-600 text-white'
+                                ? 'border-orange-500 bg-orange-500/20 text-orange-300'
+                                : showCorrect
+                                  ? 'border-slate-700 text-slate-500'
+                                  : 'border-slate-600 text-white'
                           }`}
                         >
-                          {opt}
+                          {option}
                         </button>
                       );
                     })}
                   </div>
-                  {teacherCanPlay && requiresChoiceConfirmation && (
+                  {teacherCanPlay && requiresChoiceConfirmation ? (
                     <button
                       onClick={confirmTeacherChoice}
-                      disabled={teacherHasAnswered || selectedOptions.length === 0 || effectiveStatus !== 'active'}
+                      disabled={teacherHasAnswered || selectedOptions.length === 0 || effectiveStatus !== 'PLAYING'}
                       className="w-full max-w-lg rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                     >
                       Confirmar resposta do professor
                     </button>
-                  )}
+                  ) : null}
                 </>
               ) : (
                 <div className="w-full max-w-lg space-y-3">
                   <textarea
                     value={typedAnswer}
                     onChange={(event) => setTypedAnswer(event.target.value)}
-                    disabled={!teacherCanPlay || teacherHasAnswered || effectiveStatus !== 'active'}
-                    placeholder={question.kind === 'speaking' ? 'Resposta do professor...' : 'Digite a resposta do professor...'}
-                    className="w-full min-h-28 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
+                    disabled={!teacherCanPlay || teacherHasAnswered || effectiveStatus !== 'PLAYING'}
+                    placeholder={(question.kind as BattleQuestionKind) === 'speaking' ? 'Resposta do professor...' : 'Digite a resposta do professor...'}
+                    className="min-h-28 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
                   />
-                  {teacherCanPlay && (
+                  {teacherCanPlay ? (
                     <div className="flex gap-3">
-                      {question.kind === 'speaking' && (
+                      {(question.kind as BattleQuestionKind) === 'speaking' ? (
                         <button
                           onClick={startSpeechRecognition}
-                          disabled={teacherHasAnswered || isListening || effectiveStatus !== 'active'}
-                          className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+                          disabled={teacherHasAnswered || isListening || effectiveStatus !== 'PLAYING'}
+                          className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50"
                         >
-                          {isListening ? 'Ouvindo...' : '🎤 Professor responde'}
+                          {isListening ? 'Ouvindo...' : 'Responder falando'}
                         </button>
-                      )}
+                      ) : null}
                       <button
                         onClick={handleTeacherOpenAnswer}
-                        disabled={!typedAnswer.trim() || teacherHasAnswered || effectiveStatus !== 'active'}
+                        disabled={!typedAnswer.trim() || teacherHasAnswered || effectiveStatus !== 'PLAYING'}
                         className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                       >
                         Confirmar resposta do professor
                       </button>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               )}
 
               <div className="flex items-center gap-3 text-sm text-slate-400">
-                <span>⏱ {Math.ceil(displayTimeLeft)}s</span>
-                <span>·</span>
-                <span>{answerCount} / {expectedParticipantIds.length} responderam</span>
+                <span>{Math.ceil(displayTimeLeft)}s</span>
+                <span>|</span>
+                <span>{answerCount} / {roundParticipantIds.length} responderam</span>
               </div>
 
-              {effectiveStatus === 'showing-answer' && (
+              {effectiveStatus === 'REVEALED' ? (
                 <>
-                  <p className="text-sm text-green-300 font-semibold text-center">
-                    Resposta correta: <span className="font-bold text-green-200">{answerLabel || '—'}</span>
+                  <p className="text-center text-sm font-semibold text-green-300">
+                    Resposta correta: <span className="font-bold text-green-200">{answerLabel || '-'}</span>
                   </p>
-
-                  {/* Compact summary chips — full per-player list lives in the ranking overlay */}
                   <div className="flex flex-wrap justify-center gap-2 text-xs">
-                    <span className="px-3 py-1 rounded-full bg-green-500/15 text-green-400 font-semibold">
-                      ✅ {correctCount} certo{correctCount !== 1 ? 's' : ''}
+                    <span className="rounded-full bg-green-500/15 px-3 py-1 font-semibold text-green-400">
+                      {correctCount} certo(s)
                     </span>
-                    <span className="px-3 py-1 rounded-full bg-red-500/15 text-red-400 font-semibold">
-                      ❌ {wrongCount} errado{wrongCount !== 1 ? 's' : ''}
+                    <span className="rounded-full bg-red-500/15 px-3 py-1 font-semibold text-red-400">
+                      {wrongCount} errado(s)
                     </span>
-                    {unansweredCount > 0 && (
-                      <span className="px-3 py-1 rounded-full bg-slate-700/40 text-slate-400 font-semibold">
-                        ⏰ {unansweredCount} sem resposta
+                    {unansweredCount > 0 ? (
+                      <span className="rounded-full bg-slate-700/40 px-3 py-1 font-semibold text-slate-400">
+                        {unansweredCount} sem resposta
                       </span>
-                    )}
+                    ) : null}
                   </div>
-
                   <button
                     onClick={() => setShowRankingOverlay(true)}
-                    className="text-xs text-slate-400 hover:text-white underline underline-offset-2 transition"
+                    className="text-xs text-slate-400 underline underline-offset-2 transition hover:text-white"
                   >
-                    📊 Ver resultados ({revealRows.length})
+                    Ver ranking da rodada ({revealRows.length})
                   </button>
                 </>
-              )}
+              ) : null}
             </>
           ) : null}
         </div>
 
-        {/* ── Ranking overlay — absolute inside the bounded column ──────────────────────── */}
-        {showRankingOverlay && effectiveStatus === 'showing-answer' && (
-          <div className="absolute inset-0 z-20 bg-slate-950/98 flex flex-col">
-            <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-slate-800">
+        {showRankingOverlay && effectiveStatus === 'REVEALED' ? (
+          <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/98">
+            <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-800 px-5 py-3">
               <div className="flex items-center gap-2">
-                <span className="text-white font-bold text-sm">Resultados da Rodada</span>
-                {answerLabel && (
-                  <span className="text-xs text-green-400 font-semibold">• ✅ {answerLabel}</span>
-                )}
+                <span className="text-sm font-bold text-white">Resultados da Rodada</span>
+                {answerLabel ? <span className="text-xs font-semibold text-green-400">{answerLabel}</span> : null}
               </div>
               <button
                 onClick={() => setShowRankingOverlay(false)}
-                className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-white text-sm flex items-center justify-center transition"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-sm text-white transition hover:bg-slate-700"
               >
-                ✕
+                X
               </button>
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1.5">
               {revealRows.map((row) => (
                 <div
                   key={row.pid}
-                  className={`flex items-center gap-3 px-4 py-2 rounded-xl border text-sm ${
+                  className={`flex items-center gap-3 rounded-xl border px-4 py-2 text-sm ${
                     row.isCorrect === true
-                      ? 'bg-green-500/10 border-green-500/25'
+                      ? 'border-green-500/25 bg-green-500/10'
                       : row.isCorrect === false
-                      ? 'bg-red-500/10 border-red-500/25'
-                      : 'bg-slate-800/60 border-slate-700/40'
+                        ? 'border-red-500/25 bg-red-500/10'
+                        : 'border-slate-700/40 bg-slate-800/60'
                   }`}
                 >
-                  <span className="text-base w-5 text-center">
-                    {row.isCorrect === true ? '✅' : row.isCorrect === false ? '❌' : '⏰'}
+                  <span className="w-8 text-center text-base font-bold text-white">
+                    {row.placement === 1 ? '🥇' : row.placement === 2 ? '🥈' : row.placement === 3 ? '🥉' : `#${row.placement}`}
                   </span>
-                  <BattleParticipantAvatar
-                    name={row.name}
-                    avatarId={row.avatarId}
-                    isBot={row.isBot}
-                    sizeClassName="h-7 w-7"
-                    showBotBadge
-                  />
-                  <span className="flex-1 text-white truncate">
+                  <span className="flex-1 truncate text-white">
                     {row.name}
-                    {row.pid === teacherUid && (
-                      <span className="ml-1 text-[10px] text-slate-500">(Prof)</span>
-                    )}
+                    {row.pid === teacherUid ? <span className="ml-1 text-[10px] text-slate-500">(Prof)</span> : null}
                   </span>
-                  {row.elapsedMs != null && (
+                  {row.elapsedMs != null ? (
                     <span className="text-xs text-slate-400">{(row.elapsedMs / 1000).toFixed(1)}s</span>
-                  )}
-                  {row.roundPoints > 0 ? (
-                    <span className="text-xs font-bold text-orange-400">+{row.roundPoints}</span>
                   ) : (
-                    <span className="text-xs text-slate-600">+0</span>
+                    <span className="text-xs text-slate-500">sem resposta</span>
                   )}
-                  <span className="text-xs text-slate-500 w-14 text-right">{row.totalScore.toLocaleString()}</span>
+                  <span className={`text-xs font-bold ${
+                    row.isCorrect === true ? 'text-green-400' : row.isCorrect === false ? 'text-red-400' : 'text-slate-500'
+                  }`}>
+                    {row.isCorrect === true ? 'Correta' : row.isCorrect === false ? 'Errada' : 'Tempo'}
+                  </span>
                 </div>
               ))}
             </div>
-            <div className="flex-shrink-0 flex justify-center px-5 py-3 border-t border-slate-800">
+            <div className="flex flex-shrink-0 justify-center border-t border-slate-800 px-5 py-3">
               <button
-                onClick={() => { setShowRankingOverlay(false); void handleNext(); }}
+                onClick={() => {
+                  setShowRankingOverlay(false);
+                  void handleNext();
+                }}
                 disabled={busy}
-                className="px-10 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-black text-base hover:opacity-90 transition disabled:opacity-50 shadow-lg shadow-orange-900/40"
+                className="rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-10 py-3 text-base font-black text-white transition hover:opacity-90 disabled:opacity-50"
               >
-                {questionIdx + 1 >= totalQ ? '🏆 Finalizar Batalha' : '▶ Próxima Pergunta'}
+                {questionIdx + 1 >= totalQuestions ? 'Finalizar Batalha' : 'Proxima Pergunta'}
               </button>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* ── Fixed footer — flex-shrink-0 ensures it never gets pushed out of view ── */}
-        <div className="flex-shrink-0 flex justify-center gap-3 px-5 py-3 border-t border-slate-800/50">
-          {session.status === 'active' && !allAnsweredLocally && (
+        {/* [BATTLE HOST TIMER] Moved "Iniciar Batalha" button to bottom bar */}
+        {session.status === 'WAITING' ? (
+          <div className="relative z-[9999] flex flex-shrink-0 justify-center gap-3 border-t border-slate-800/50 px-5 py-3 pointer-events-auto">
+            <button
+              onClick={() => {
+                console.log('[BATTLE START CLICK]');
+                handleStart();
+              }}
+              disabled={busy}
+              className="relative z-[9999] pointer-events-auto rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-10 py-3 text-base font-black text-white transition hover:opacity-90 disabled:opacity-50"
+            >
+              Iniciar Batalha
+            </button>
+          </div>
+        ) : null}
+        <div className="flex flex-shrink-0 justify-center gap-3 border-t border-slate-800/50 px-5 py-3">
+          {session.status === 'PLAYING' && !allAnsweredLocally ? (
             <button
               onClick={handleShowAnswer}
               disabled={busy}
-              className="px-6 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-semibold text-sm transition disabled:opacity-50"
+              className="rounded-xl bg-slate-700 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-600 disabled:opacity-50"
             >
-              👁 Revelar Resposta
+              Revelar Resposta
             </button>
-          )}
-          {effectiveStatus === 'showing-answer' && (
+          ) : null}
+          {effectiveStatus === 'REVEALED' ? (
             <button
               onClick={handleNext}
               disabled={busy}
-              className="px-10 py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-black text-base hover:opacity-90 transition disabled:opacity-50 shadow-lg shadow-orange-900/40 animate-pulse"
+              className="rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-10 py-3 text-base font-black text-white transition hover:opacity-90 disabled:opacity-50"
             >
-              {questionIdx + 1 >= totalQ ? '🏆 Finalizar Batalha' : '▶ Próxima Pergunta'}
+              {questionIdx + 1 >= totalQuestions ? 'Finalizar Batalha' : 'Proxima Pergunta'}
             </button>
-          )}
+          ) : null}
         </div>
 
-        {/* Compact leaderboard strip — mobile only (md+ uses the side panel) */}
-        {leaderboard.length > 0 && (
-          <div className="flex-shrink-0 md:hidden flex overflow-x-auto items-center gap-2 px-4 pb-2 border-t border-slate-800 pt-2">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wider flex-shrink-0">Placar</span>
+        {leaderboard.length > 0 ? (
+          <div className="flex flex-shrink-0 items-center gap-2 overflow-x-auto border-t border-slate-800 px-4 pb-2 pt-2 md:hidden">
+            <span className="flex-shrink-0 text-[10px] uppercase tracking-wider text-slate-500">Ranking</span>
             {leaderboard.slice(0, 3).map((player, index) => (
-              <div key={player.uid} className="flex items-center gap-1 bg-slate-800 rounded-full px-2 py-0.5 flex-shrink-0">
+              <div key={player.uid} className="flex flex-shrink-0 items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5">
                 <span className="text-xs">{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</span>
-                <BattleParticipantAvatar
-                  name={player.name}
-                  avatarId={player.avatarId}
-                  isBot={player.isBot}
-                  sizeClassName="h-5 w-5"
-                />
-                <span className="text-[11px] text-white truncate max-w-[64px]">{player.name}</span>
-                <span className="text-[11px] font-bold text-orange-400 ml-1">{player.score.toLocaleString()}</span>
+                <span className="max-w-[64px] truncate text-[11px] text-white">{player.name}</span>
               </div>
             ))}
           </div>
-        )}
-
+        ) : null}
       </div>
 
-      <div className="hidden md:flex md:flex-col w-52 bg-slate-900 border-l border-slate-800">
-        <div className="px-4 py-3 border-b border-slate-800">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Placar</p>
+      <div className="hidden w-52 flex-col border-l border-slate-800 bg-slate-900 md:flex">
+        <div className="border-b border-slate-800 px-4 py-3">
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Top 10</p>
         </div>
         <div className="flex-1 overflow-y-auto py-2">
-          {leaderboard.map((player, index) => (
-            <div key={player.uid} className="flex items-center gap-2 px-4 py-2">
-              <span className="text-sm w-5 text-center text-slate-500">
-                {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
-              </span>
-              <BattleParticipantAvatar
-                name={player.name}
-                avatarId={player.avatarId}
-                isBot={player.isBot}
-                sizeClassName="h-6 w-6"
-              />
-              <span className="flex-1 text-xs text-white truncate">{player.name}</span>
-              <span className="text-xs font-bold text-orange-400">{player.score.toLocaleString()}</span>
-            </div>
-          ))}
-          {leaderboard.length === 0 && (
-            <p className="text-center text-slate-600 text-xs mt-6">Nenhum participante ainda</p>
+          {leaderboard.length > 0 ? (
+            leaderboard.map((player, index) => (
+              <div key={player.uid} className="flex items-center gap-2 px-4 py-2">
+                <span className="w-5 text-center text-sm text-slate-500">
+                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                </span>
+                <span className="flex-1 truncate text-xs text-white">{player.name}</span>
+              </div>
+            ))
+          ) : (
+            <p className="mt-6 text-center text-xs text-slate-600">Nenhum participante ainda</p>
           )}
         </div>
       </div>

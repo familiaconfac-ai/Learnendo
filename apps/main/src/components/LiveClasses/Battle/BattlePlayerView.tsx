@@ -1,6 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { appLangToTts, speak } from '../../../services/ttsService';
-import type { BattleAnswer, BattleSession } from './battleTypes';
+import type {
+  BattleAnswer,
+  BattleSession,
+  BattleQuestion,
+  BattleQuestionKind,
+} from './battleTypes';
+import { BattleLabIndicators } from './BattleLabIndicators';
 import { joinBattle, submitBattleAnswer } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
@@ -45,6 +51,7 @@ interface Props {
 }
 
 export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name }) => {
+  const participantId = uid;
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -57,11 +64,24 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   const [musicMuted, setMusicMuted] = useState(true);
   const [isListening, setIsListening] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasJoinedRef = useRef(false);
+  const joinAttemptRef = useRef<string | null>(null);
+  const joinInFlightRef = useRef(false);
   const preRoundScoreRef = useRef(0);
   const musicRef = useRef<TensionLoop | null>(null);
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
+
+  function rollbackStudentSubmitLock() {
+    setSubmitted(false);
+    setLocalMyAnswer(null);
+    setFrozenTimeLeft(null);
+  }
+
+  function isCurrentRoundAnswer(answer?: BattleAnswer | null) {
+    if (!answer) return false;
+    if (session.questionStartedAt <= 0) return true;
+    return answer.answeredAt >= session.questionStartedAt;
+  }
 
   const questionIdx = Number.isInteger(session.currentQuestionIndex) ? session.currentQuestionIndex : 0;
   const hasCurrentQuestion =
@@ -74,33 +94,148 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     () => getBattleRegisteredParticipantIds(session),
     [session.participants, session.scores]
   );
+  const isRegisteredParticipant = registeredParticipantIds.includes(uid) || (session.roundParticipantIds ?? []).includes(uid);
   const canAnswerCurrentQuestion = useMemo(
     () => canBattleParticipantAnswerCurrentQuestion(session, uid),
     [session.roundParticipantIds, session.participants, session.scores, uid]
   );
-  const myScore = session.scores[uid]?.score ?? 0;
+  const currentRoundLocalAnswer = isCurrentRoundAnswer(localMyAnswer) ? localMyAnswer : null;
+  const visiblePlayerScores = useMemo(
+    () => {
+      if (!currentRoundLocalAnswer) return session.scores ?? {};
+      const previous = session.scores?.[uid];
+      const preRoundScore = preRoundScoreRef.current ?? previous?.score ?? 0;
+      return {
+        ...(session.scores ?? {}),
+        [uid]: {
+          uid,
+          name: previous?.name ?? currentRoundLocalAnswer.name ?? name,
+          score: Math.max(previous?.score ?? 0, preRoundScore + (currentRoundLocalAnswer.roundPoints ?? 0)),
+          streak: currentRoundLocalAnswer.isCorrect ? (previous?.streak ?? 0) + 1 : 0,
+          lastAnswerCorrect: currentRoundLocalAnswer.isCorrect,
+          avatarId: previous?.avatarId ?? session.participants?.[uid]?.avatarId,
+          isBot: previous?.isBot ?? session.participants?.[uid]?.isBot,
+        },
+      };
+    },
+    [currentRoundLocalAnswer, name, session.participants, session.scores, uid]
+  );
+  const myScore = visiblePlayerScores[uid]?.score ?? 0;
   // Use localMyAnswer as fallback so reveal shows correct/incorrect immediately
   // before Firestore echoes back the written answer.
-  const myAnswer = localMyAnswer ?? getMyBattleAnswer(session, uid);
+  const myAnswer = currentRoundLocalAnswer ?? getMyBattleAnswer(session, uid);
   const hasAnswered = submitted || !!myAnswer;
   const myTotalScore = hasAnswered
     ? Math.max(myScore, preRoundScoreRef.current + (myAnswer?.roundPoints ?? 0))
     : myScore;
-  const myStreak = session.scores[uid]?.streak ?? 0;
+  const myStreak = visiblePlayerScores[uid]?.streak ?? 0;
   const effectiveFrozenTimeLeft = frozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
-  const displayTimeLeft = hasAnswered && effectiveFrozenTimeLeft != null ? effectiveFrozenTimeLeft : timeLeft;
+  const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? session.config.timePerQuestion * 1000;
+  const roundStartedAt =
+    typeof session.roundStartedAt === 'number' && session.roundStartedAt > 0
+      ? session.roundStartedAt
+      : typeof session.questionStartedAt === 'number' && session.questionStartedAt > 0
+        ? session.questionStartedAt
+        : null;
+  const endsAt =
+    session.endsAt ?? (roundStartedAt != null && roundDurationMs > 0 ? roundStartedAt + roundDurationMs : null);
+  const remainingMs =
+    effectiveFrozenTimeLeft != null
+      ? effectiveFrozenTimeLeft * 1000
+      : endsAt != null
+        ? Math.max(0, endsAt - Date.now())
+        : roundDurationMs;
+  const timeUp = session.status === 'PLAYING' && effectiveFrozenTimeLeft == null && endsAt != null && remainingMs <= 0;
+  const displayTime = hasAnswered && effectiveFrozenTimeLeft != null ? effectiveFrozenTimeLeft : timeLeft;
   const battleLanguage = getBattleLanguage(session.config.courseId);
-  const timeRatio = displayTimeLeft / session.config.timePerQuestion;
+  const timeRatio = displayTime / session.config.timePerQuestion;
+  const interactionLocked = hasAnswered || timeUp || session.status !== 'PLAYING';
   const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
   const showMicButton = question?.kind === 'speaking';
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const roundAnswerCount = useMemo(
     () => {
-      const mergedAnswers = localMyAnswer ? { ...session.currentAnswers, [uid]: localMyAnswer } : session.currentAnswers;
+      const mergedAnswers = currentRoundLocalAnswer ? { ...session.currentAnswers, [uid]: currentRoundLocalAnswer } : session.currentAnswers;
       return (session.roundParticipantIds ?? []).filter((participantId) => participantId in mergedAnswers).length;
     },
-    [localMyAnswer, session.roundParticipantIds, session.currentAnswers, uid]
+    [currentRoundLocalAnswer, session.roundParticipantIds, session.currentAnswers, uid]
   );
+
+  useEffect(() => {
+    console.log('[BATTLE ROUND STATE DEBUG] render', {
+      sessionId: session?.id,
+      status: session?.status,
+      roundStatus: session?.roundStatus ?? null,
+      currentQuestionIndex: session?.currentQuestionIndex,
+      roundStartedAt: session?.roundStartedAt ?? null,
+      questionStartedAt: session?.questionStartedAt ?? null,
+      endsAt: session?.endsAt ?? endsAt,
+      durationMs: session?.durationMs ?? null,
+      roundDurationMs: session?.roundDurationMs ?? null,
+      isRevealed: session?.isRevealed ?? null,
+      showAnswer: session?.showAnswer ?? null,
+      timeUp,
+      now: Date.now(),
+      remainingMs,
+      answers: session?.answers ?? session?.currentAnswers,
+      participants: session?.participants,
+      roundParticipantIds: session?.roundParticipantIds,
+    });
+    console.log('[LIVE BATTLE SESSION] loaded', {
+      liveClassId: classId,
+      userId: uid,
+      role: 'student',
+      status: session?.status,
+      currentQuestionIndex: session?.currentQuestionIndex,
+      participants: session?.participants,
+      answers: session?.answers ?? session?.currentAnswers,
+    });
+    console.log('[BATTLE ANSWER DEBUG] render question', {
+      sessionId: session?.id,
+      status: session?.status,
+      roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+      currentQuestionIndex: session?.currentQuestionIndex,
+      currentQuestion: question,
+      userId: uid,
+      participantId,
+      isHost: false,
+      isTeacher: false,
+      participants: session?.participants,
+      roundParticipantIds: session?.roundParticipantIds,
+      answers: (session as BattleSession & { answers?: unknown }).answers ?? null,
+      responses: (session as BattleSession & { responses?: unknown }).responses ?? null,
+    });
+  }, [
+    participantId,
+    question,
+    endsAt,
+    remainingMs,
+    session?.currentQuestionIndex,
+    session?.durationMs,
+    session?.endsAt,
+    session?.id,
+    session?.isRevealed,
+    session?.participants,
+    session?.questionStartedAt,
+    session?.roundDurationMs,
+    session?.roundParticipantIds,
+    session?.roundStartedAt,
+    session?.roundStatus,
+    session?.showAnswer,
+    session?.status,
+    timeUp,
+    uid,
+  ]);
+
+  useEffect(() => {
+    console.log('[BATTLE DEBUG] BattlePlayerView mounted (Student)', {
+      sessionId: session.id,
+      classId,
+      uid,
+      status: session.status,
+      inRound: (session.roundParticipantIds ?? []).includes(uid)
+    });
+  }, [classId, session.id, uid]);
 
   useEffect(() => {
     musicRef.current = createBattleAudio();
@@ -108,7 +243,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }, []);
 
   useEffect(() => {
-    if (session.status === 'active') {
+    if (session.status === 'PLAYING') {
       if (!musicMuted) musicRef.current?.start();
     } else {
       musicRef.current?.stop();
@@ -120,66 +255,199 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }, [musicMuted]);
 
   useEffect(() => {
-    if (!hasJoinedRef.current && !session.scores[uid]) {
-      hasJoinedRef.current = true;
-      joinBattle(classId, uid, name, session.scores[uid] ?? null).catch((error) => {
-        hasJoinedRef.current = false;
-        console.warn(error);
+    const alreadyTrackedInScores = uid in (session.scores ?? {});
+    const alreadyTrackedInParticipants = uid in (session.participants ?? {});
+    const alreadyTrackedInRound = (session.roundParticipantIds ?? []).includes(uid);
+    const isJoinableStatus = session.status === 'WAITING' || session.status === 'PLAYING';
+    const needsMembershipSync =
+      !alreadyTrackedInScores ||
+      !alreadyTrackedInParticipants ||
+      (isJoinableStatus && !alreadyTrackedInRound);
+
+    console.info('[BATTLE STUDENT JOIN] sync check', {
+      component: 'BattlePlayerView',
+      classId,
+      sessionId: session.id,
+      uid,
+      status: session.status,
+      alreadyTrackedInScores,
+      alreadyTrackedInParticipants,
+      alreadyTrackedInRound,
+      isJoinableStatus,
+      needsMembershipSync,
+    });
+
+    if (!needsMembershipSync) {
+      console.info('[BATTLE STUDENT JOIN] already synced - no action needed', {
+        component: 'BattlePlayerView',
+        classId,
+        sessionId: session.id,
+        uid,
       });
+      joinAttemptRef.current = null;
+      return;
     }
-  }, [classId, uid, name, session.scores]);
+
+    const joinStateKey = [
+      classId,
+      session.id,
+      session.status,
+      session.currentQuestionId ?? session.currentQuestionIndex,
+      uid,
+      alreadyTrackedInScores ? 'score:1' : 'score:0',
+      alreadyTrackedInParticipants ? 'participant:1' : 'participant:0',
+      alreadyTrackedInRound ? 'round:1' : 'round:0',
+    ].join('|');
+
+    if (joinInFlightRef.current || joinAttemptRef.current === joinStateKey) {
+      return;
+    }
+
+    joinAttemptRef.current = joinStateKey;
+    joinInFlightRef.current = true;
+
+    console.log('[BATTLE DEBUG] Student calling joinBattle', {
+      classId,
+      uid,
+      name
+    });
+
+    joinBattle(classId, uid, name, session.scores[uid] ?? null)
+      .then(() => {
+        console.info('[BATTLE STUDENT JOIN] sync completed successfully', {
+          component: 'BattlePlayerView',
+          classId,
+          sessionId: session.id,
+          uid,
+          status: session.status,
+        });
+      })
+      .catch((error) => {
+        joinAttemptRef.current = null;
+        console.error('[BATTLE STUDENT JOIN] sync failed', {
+          component: 'BattlePlayerView',
+          classId,
+          sessionId: session.id,
+          uid,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        joinInFlightRef.current = false;
+      });
+  }, [
+    classId,
+    name,
+    session.currentQuestionIndex,
+    session.currentQuestionId,
+    session.id,
+    session.participants,
+    session.roundParticipantIds,
+    session.scores,
+    session.status,
+    uid,
+  ]);
 
   useEffect(() => {
+    console.log('[BATTLE QUESTION] mounted questionId:', currentQuestionId);
+    console.log('[BATTLE QUESTION] session status on mount:', session.status);
+    console.log('[BATTLE QUESTION] reveal state on mount:', session.status === 'REVEALED');
+    console.log('[BATTLE QUESTION] translation visible on mount:', Boolean(question?.hint));
+    console.log('[BATTLE QUESTION] correct option visible on mount:', session.status === 'REVEALED');
+    console.log('[BATTLE QUESTION] correct answer text visible on mount:', session.status === 'REVEALED' && Boolean(getBattleCorrectAnswerLabel(question)));
     preRoundScoreRef.current = session.scores[uid]?.score ?? 0;
     setSelectedOptions([]);
     setTypedAnswer('');
     setSubmitted(false);
-    setLocalMyAnswer(null); // clear local answer when question changes
+    setLocalMyAnswer(null);
     setFrozenTimeLeft(null);
     setTimeLeft(session.config.timePerQuestion);
+    console.log('[BATTLE QUESTION] reset state after question change:', {
+      questionId: currentQuestionId,
+      submitted: false,
+      selectedCount: 0,
+      typedAnswer: '',
+    });
+    console.log('[BATTLE STUDENT UI] render branch: next-question reset');
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
       recognitionRef.current = null;
       setIsListening(false);
     }
-  }, [questionIdx, session.questionStartedAt, session.config.timePerQuestion]);
+  }, [currentQuestionId, questionIdx, session.questionStartedAt, session.config.timePerQuestion, uid]);
 
   useEffect(() => {
-    if (session.status !== 'active') return;
+    if (session.status !== 'PLAYING') return;
     if (timerRef.current) clearInterval(timerRef.current);
 
-    const start = session.questionStartedAt;
+    if (roundStartedAt == null || roundDurationMs <= 0) {
+      setTimeLeft(session.config.timePerQuestion);
+      return;
+    }
+
+    const start = roundStartedAt;
     timerRef.current = setInterval(() => {
       const elapsed = Date.now() - start;
-      const remaining = Math.max(0, session.config.timePerQuestion - elapsed / 1000);
+      const remainingMs = Math.max(0, roundDurationMs - elapsed);
+      const remaining = remainingMs / 1000;
       setTimeLeft(remaining);
-      if (remaining <= 0 && timerRef.current) clearInterval(timerRef.current);
+      if (remaining <= 0 && timerRef.current) {
+        console.warn('[BATTLE ROUND STATE DEBUG] timer expired', {
+          now: Date.now(),
+          roundStartedAt: session?.roundStartedAt ?? roundStartedAt,
+          endsAt,
+          remainingMs,
+        });
+        clearInterval(timerRef.current);
+      }
     }, 200);
 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [session.status, session.questionStartedAt, session.config.timePerQuestion]);
+  }, [endsAt, roundDurationMs, roundStartedAt, session.status, session.questionStartedAt, session.roundStartedAt, session.config.timePerQuestion]);
 
   useEffect(() => {
-    if (session.status === 'finished') setShowResults(true);
+    if (session.status === 'FINISHED') setShowResults(true);
   }, [session.status]);
 
   useEffect(() => {
-    console.log('[BATTLE PLAYER] snapshot received', session);
-    console.log('[BATTLE PLAYER] status received:', session.status);
-    console.log('[BATTLE PLAYER] currentQuestionIndex received:', session.currentQuestionIndex);
+    console.info('[BATTLE INTEGRATION] student player snapshot', {
+      component: 'BattlePlayerView',
+      classId,
+      sessionId: session.id,
+      uid,
+      status: session.status,
+      currentQuestionIndex: session.currentQuestionIndex,
+      currentQuestionId,
+      canAnswerCurrentQuestion,
+      roundParticipantIds: session.roundParticipantIds ?? [],
+    });
+    console.info('[BATTLE PLAYER SESSION] student battle session snapshot', {
+      component: 'BattlePlayerView',
+      classId,
+      sessionId: session.id,
+      uid,
+      status: session.status,
+      currentQuestionId,
+      roundParticipantIds: session.roundParticipantIds ?? [],
+      canAnswerCurrentQuestion,
+    });
+    console.log('[BATTLE PLAYER] snapshot status:', session.status);
+    console.log('[BATTLE PLAYER] currentQuestionIndex:', session.currentQuestionIndex);
+    console.log('[BATTLE PLAYER] questionStartedAt:', session.questionStartedAt);
+    console.log('[BATTLE PLAYER] roundParticipantIds:', session.roundParticipantIds ?? []);
+    console.log('[BATTLE PLAYER] my uid in round:', (session.roundParticipantIds ?? []).includes(uid));
     console.log('[BATTLE PLAYER] currentQuestion resolved:', {
       battleId: session.id,
       roomId: classId,
       currentQuestionId,
       hasCurrentQuestion,
-      questionStartedAt: session.questionStartedAt,
-      roundParticipantIds: session.roundParticipantIds ?? [],
       currentAnswersForUid: session.currentAnswers?.[uid] ?? null,
       answeredAt: myAnswer?.answeredAt ?? null,
       frozenTimeLeft: effectiveFrozenTimeLeft,
       roundPoints: myAnswer?.roundPoints ?? null,
     });
   }, [
+    canAnswerCurrentQuestion,
     classId,
     effectiveFrozenTimeLeft,
     hasCurrentQuestion,
@@ -191,19 +459,72 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   ]);
 
   useEffect(() => {
+    console.log('[BATTLE STUDENT UI] status from snapshot:', session.status);
+    console.log('[BATTLE STUDENT UI] hasAnswered/local locked:', hasAnswered);
+    console.log('[BATTLE STUDENT UI] currentQuestionIndex:', session.currentQuestionIndex);
+    if (session.status === 'REVEALED') {
+      console.log('[BATTLE STUDENT UI] render branch: showing-answer');
+      return;
+    }
+    if (session.status === 'PLAYING' && hasAnswered) {
+      console.log('[BATTLE STUDENT UI] render branch: locked');
+      return;
+    }
+    if (session.status === 'PLAYING') {
+      console.log('[BATTLE STUDENT UI] render branch: active');
+    }
+  }, [hasAnswered, session.currentQuestionIndex, session.status]);
+
+  useEffect(() => {
+    console.log('[BATTLE SCORE] uid:', uid);
+    console.log('[BATTLE SCORE] role/player type:', 'student');
+    console.log('[BATTLE SCORE] delta awarded:', currentRoundLocalAnswer?.roundPoints ?? 0);
+    console.log('[BATTLE SCORE] total after merge:', myTotalScore);
+    console.log('[BATTLE SCORE] persisted scores snapshot:', Object.values(session.scores ?? {}).map((player) => ({
+      uid: player.uid,
+      score: player.score,
+      name: player.name,
+    })));
+    console.log('[BATTLE SCORE] sidebar entries before render:', Object.values(visiblePlayerScores ?? {}).map((player) => ({
+      uid: player.uid,
+      score: player.score,
+      name: player.name,
+    })));
+    console.log('[BATTLE SCORE] player uid present in scores:', uid in (visiblePlayerScores ?? {}));
+  }, [currentRoundLocalAnswer?.roundPoints, myTotalScore, session.scores, uid, visiblePlayerScores]);
+
+  useEffect(() => {
     if (!hasAnswered) return;
     if (effectiveFrozenTimeLeft == null) return;
     setFrozenTimeLeft((current) => current ?? effectiveFrozenTimeLeft);
   }, [effectiveFrozenTimeLeft, hasAnswered]);
 
   useEffect(() => {
-    if (!question || session.status !== 'active' || !question.playAudioOnce) return;
+    console.info('[BATTLE PLAYER FLOW] derived timer state', {
+      classId,
+      sessionId: session.id,
+      uid,
+      status: session.status,
+      hasAnswered,
+      timeLeft,
+      effectiveFrozenTimeLeft,
+      displayTime,
+    });
+  }, [classId, displayTime, effectiveFrozenTimeLeft, hasAnswered, session.id, session.status, timeLeft, uid]);
+
+  useEffect(() => {
+    if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) return;
     const promptKey = `${session.id}:${question.id}:${session.status}`;
     if (promptPlayedRef.current === promptKey) return;
 
     promptPlayedRef.current = promptKey;
+    const audioText = getBattlePromptAudioText(question);
+    console.log('[BATTLE AUDIO] questionId:', question.id);
+    console.log('[BATTLE AUDIO] question type:', question.kind);
+    console.log('[BATTLE AUDIO] source field used for audio:', question.promptAudioText ? 'promptAudioText' : 'text');
+    console.log('[BATTLE AUDIO] audio text resolved:', audioText);
     window.setTimeout(() => {
-      speak(getBattlePromptAudioText(question), battleLanguage);
+      speak(audioText, battleLanguage);
     }, 250);
   }, [session.id, session.status, question, battleLanguage]);
 
@@ -235,6 +556,15 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }
 
   async function submitChoiceAnswer(optionIndexes: number[]) {
+    console.log('[BATTLE ANSWER DEBUG] submit answer entered', {
+      sessionId: session.id,
+      userId: uid,
+      participantId,
+      optionIndex: optionIndexes[0] ?? null,
+    });
+    console.log('[BATTLE STUDENT SUBMIT] uid:', uid);
+    console.log('[BATTLE STUDENT SUBMIT] questionIndex:', session.currentQuestionIndex);
+    console.log('[BATTLE STUDENT SUBMIT] option selected:', optionIndexes);
     console.log('[Battle:Player] submitChoiceAnswer called', {
       uid,
       hasQuestion: !!question,
@@ -246,7 +576,42 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
       roundParticipantIds: session.roundParticipantIds,
       scoresKeys: Object.keys(session.scores ?? {}),
     });
-    if (!question || !isChoiceQuestion(question) || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active' || optionIndexes.length === 0) {
+    if (!question || !isChoiceQuestion(question) || hasAnswered || timeUp || session.status !== 'PLAYING' || optionIndexes.length === 0) {
+      console.warn('[LIVE BATTLE ANSWER] blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isChoiceQuestion(question)
+            ? 'question-is-not-choice'
+            : hasAnswered
+              ? 'already-answered'
+              : timeUp
+                ? 'time-up'
+                : session.status !== 'PLAYING'
+                  ? 'status-not-playing'
+                  : 'missing-option-index',
+        liveClassId: classId,
+        userId: uid,
+        role: 'student',
+        status: session?.status,
+        hasAnswered,
+      });
+      console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isChoiceQuestion(question)
+            ? 'question-is-not-choice'
+            : hasAnswered
+              ? 'already-answered'
+              : session.status !== 'PLAYING'
+                ? 'session-not-playing'
+                : 'missing-option-index',
+        sessionId: session.id,
+        userId: uid,
+        participantId,
+        status: session?.status,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        hasAnswered,
+      });
       console.log('[Battle:Player] submitChoiceAnswer BLOCKED by guard', { canAnswerCurrentQuestion, hasAnswered, sessionStatus: session.status });
       return;
     }
@@ -287,14 +652,107 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     setSubmitted(true);
     
     try {
-      await submitBattleAnswer(classId, session, uid, name, payload);
+      console.log('[LIVE BATTLE ANSWER] saving', {
+        liveClassId: classId,
+        userId: uid,
+        role: 'student',
+        optionIndex: payload.optionIndex ?? null,
+        currentQuestionIndex: session.currentQuestionIndex,
+      });
+      console.log('[BATTLE ANSWER DEBUG] saving answer payload', payload);
+      console.log('[BATTLE STUDENT SUBMIT] submit started');
+      const result = await submitBattleAnswer(classId, session, uid, name, payload, {
+        forceCurrentRoundParticipation: true,
+      });
+      if (result.status !== 'saved') {
+        console.warn('[LIVE BATTLE ANSWER] blocked', {
+          reason: result.reason,
+          liveClassId: classId,
+          userId: uid,
+          role: 'student',
+          status: session?.status,
+          hasAnswered,
+        });
+        console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+          reason: result.reason,
+          sessionId: session.id,
+          userId: uid,
+          participantId,
+          status: session?.status,
+          roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+          hasAnswered,
+        });
+        console.warn('[BATTLE STUDENT SUBMIT] submit failed:', result.reason);
+        rollbackStudentSubmitLock();
+        return;
+      }
+      console.log('[BATTLE ANSWER DEBUG] answer saved');
+      console.log('[BATTLE STUDENT SCORE] uid:', uid);
+      console.log('[BATTLE STUDENT SCORE] delta awarded:', result.answer.roundPoints ?? 0);
+      console.log('[BATTLE STUDENT SCORE] total after merge:', result.updatedParticipant.score);
+      console.log('[BATTLE STUDENT SCORE] scores keys after save:', Object.keys(session.scores ?? {}).concat(result.updatedParticipant.uid));
+      console.log('[BATTLE STUDENT SUBMIT] submit resolved');
     } catch (error) {
-      console.error('[Battle] submit answer failed', error);
+      console.error('[LIVE BATTLE ANSWER] failed', error);
+      console.error('[BATTLE ANSWER DEBUG] answer failed', error);
+      console.error('[BATTLE STUDENT SUBMIT] submit failed:', error);
+      rollbackStudentSubmitLock();
     }
   }
 
   function toggleChoiceSelection(optionIndex: number) {
-    if (!question || !isChoiceQuestion(question) || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active') return;
+    const option = question?.options?.[optionIndex] ?? null;
+    const disabled = interactionLocked;
+    console.log('[LIVE BATTLE ANSWER] option clicked', {
+      liveClassId: classId,
+      userId: uid,
+      role: 'student',
+      optionIndex,
+      status: session?.status,
+      currentQuestionIndex: session?.currentQuestionIndex,
+    });
+    console.log('[BATTLE ANSWER DEBUG] option clicked', {
+      optionIndex,
+      option,
+      userId: uid,
+      participantId,
+      disabled,
+      hasAnswered,
+    });
+    if (!question || !isChoiceQuestion(question) || hasAnswered || timeUp || session.status !== 'PLAYING') {
+      console.warn('[LIVE BATTLE ANSWER] blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isChoiceQuestion(question)
+            ? 'question-is-not-choice'
+            : hasAnswered
+              ? 'already-answered'
+              : timeUp
+                ? 'time-up'
+                : 'status-not-playing',
+        liveClassId: classId,
+        userId: uid,
+        role: 'student',
+        status: session?.status,
+        hasAnswered,
+      });
+      console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isChoiceQuestion(question)
+            ? 'question-is-not-choice'
+            : hasAnswered
+              ? 'already-answered'
+              : 'session-not-playing',
+        sessionId: session.id,
+        userId: uid,
+        participantId,
+        status: session?.status,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        hasAnswered,
+      });
+      return;
+    }
     if (!requiresChoiceConfirmation) {
       setSelectedOptions([optionIndex]);
       void submitChoiceAnswer([optionIndex]);
@@ -313,6 +771,15 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   }
 
   async function submitOpenAnswer() {
+    console.log('[BATTLE ANSWER DEBUG] submit answer entered', {
+      sessionId: session.id,
+      userId: uid,
+      participantId,
+      optionIndex: null,
+    });
+    console.log('[BATTLE STUDENT SUBMIT] uid:', uid);
+    console.log('[BATTLE STUDENT SUBMIT] questionIndex:', session.currentQuestionIndex);
+    console.log('[BATTLE STUDENT SUBMIT] option selected:', typedAnswer.trim());
     console.log('[Battle:Player] submitOpenAnswer called', {
       uid,
       canAnswerCurrentQuestion,
@@ -320,7 +787,42 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
       sessionStatus: session.status,
       typedAnswer: typedAnswer.trim(),
     });
-    if (!question || !isOpenQuestion || !canAnswerCurrentQuestion || hasAnswered || session.status !== 'active' || !typedAnswer.trim()) {
+    if (!question || !isOpenQuestion || hasAnswered || timeUp || session.status !== 'PLAYING' || !typedAnswer.trim()) {
+      console.warn('[LIVE BATTLE ANSWER] blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isOpenQuestion
+            ? 'question-is-choice'
+            : hasAnswered
+              ? 'already-answered'
+              : timeUp
+                ? 'time-up'
+                : session.status !== 'PLAYING'
+                  ? 'status-not-playing'
+                  : 'empty-response',
+        liveClassId: classId,
+        userId: uid,
+        role: 'student',
+        status: session?.status,
+        hasAnswered,
+      });
+      console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+        reason: !question
+          ? 'missing-question'
+          : !isOpenQuestion
+            ? 'question-is-choice'
+            : hasAnswered
+              ? 'already-answered'
+              : session.status !== 'PLAYING'
+                ? 'session-not-playing'
+                : 'empty-response',
+        sessionId: session.id,
+        userId: uid,
+        participantId,
+        status: session?.status,
+        roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+        hasAnswered,
+      });
       console.log('[Battle:Player] submitOpenAnswer BLOCKED by guard', { canAnswerCurrentQuestion, hasAnswered, sessionStatus: session.status });
       return;
     }
@@ -359,9 +861,51 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     setSubmitted(true);
     
     try {
-      await submitBattleAnswer(classId, session, uid, name, payload);
+      console.log('[LIVE BATTLE ANSWER] saving', {
+        liveClassId: classId,
+        userId: uid,
+        role: 'student',
+        optionIndex: null,
+        currentQuestionIndex: session.currentQuestionIndex,
+      });
+      console.log('[BATTLE ANSWER DEBUG] saving answer payload', payload);
+      console.log('[BATTLE STUDENT SUBMIT] submit started');
+      const result = await submitBattleAnswer(classId, session, uid, name, payload, {
+        forceCurrentRoundParticipation: true,
+      });
+      if (result.status !== 'saved') {
+        console.warn('[LIVE BATTLE ANSWER] blocked', {
+          reason: result.reason,
+          liveClassId: classId,
+          userId: uid,
+          role: 'student',
+          status: session?.status,
+          hasAnswered,
+        });
+        console.warn('[BATTLE ANSWER DEBUG] submit answer blocked', {
+          reason: result.reason,
+          sessionId: session.id,
+          userId: uid,
+          participantId,
+          status: session?.status,
+          roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+          hasAnswered,
+        });
+        console.warn('[BATTLE STUDENT SUBMIT] submit failed:', result.reason);
+        rollbackStudentSubmitLock();
+        return;
+      }
+      console.log('[BATTLE ANSWER DEBUG] answer saved');
+      console.log('[BATTLE STUDENT SCORE] uid:', uid);
+      console.log('[BATTLE STUDENT SCORE] delta awarded:', result.answer.roundPoints ?? 0);
+      console.log('[BATTLE STUDENT SCORE] total after merge:', result.updatedParticipant.score);
+      console.log('[BATTLE STUDENT SCORE] scores keys after save:', Object.keys(session.scores ?? {}).concat(result.updatedParticipant.uid));
+      console.log('[BATTLE STUDENT SUBMIT] submit resolved');
     } catch (error) {
-      console.error('[Battle] submit answer failed', error);
+      console.error('[LIVE BATTLE ANSWER] failed', error);
+      console.error('[BATTLE ANSWER DEBUG] answer failed', error);
+      console.error('[BATTLE STUDENT SUBMIT] submit failed:', error);
+      rollbackStudentSubmitLock();
     }
   }
 
@@ -376,25 +920,35 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   );
 
   if (showResults) {
-    console.log('[BATTLE PLAYER] rendering finished');
+    console.log('[BATTLE PLAYER] render branch: finished');
+    const validParticipantIds = (session.roundParticipantIds ?? []).length > 0
+      ? (session.roundParticipantIds ?? [])
+      : Object.keys(session.participants ?? {});
+    console.log('[BATTLE FINISH] roundParticipantIds:', session.roundParticipantIds);
+    console.log('[BATTLE FINISH] participants keys:', Object.keys(session.participants ?? {}));
+    console.log('[BATTLE FINISH] scores snapshot:', Object.keys(session.scores ?? {}));
+    console.log('[BATTLE FINISH] resolved validParticipantIds:', validParticipantIds);
     return (
       <BattleResultsScreen
-        scores={session.scores}
+        scores={visiblePlayerScores}
         myUid={uid}
         onClose={() => setShowResults(false)}
         isTeacher={false}
+        validParticipantIds={validParticipantIds}
       />
     );
   }
 
-  if (session.status === 'lobby') {
-    console.log('[BATTLE PLAYER] rendering waiting because:', {
+  if (session.status === 'WAITING') {
+    console.info('[BATTLE STUDENT WAITING] player waiting on teacher start', {
+      component: 'BattlePlayerView',
+      classId,
+      sessionId: session.id,
+      uid,
       status: session.status,
-      currentQuestionIndex: session.currentQuestionIndex,
       currentQuestionId,
-      hasCurrentQuestion,
-      questionStartedAt: session.questionStartedAt,
     });
+    console.log('[BATTLE PLAYER] render branch: waiting');
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
         <div className="text-center space-y-4 px-8">
@@ -410,8 +964,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     );
   }
 
-  if (session.status === 'showing-answer') {
-    console.log('[BATTLE PLAYER] rendering showing-answer');
+  if (session.status === 'REVEALED') {
+    console.log('[BATTLE PLAYER] render branch: showing-answer');
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
         <div className="w-full max-w-sm mx-4 text-center space-y-4">
@@ -429,8 +983,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
           <div className="bg-slate-800/60 rounded-xl px-6 py-3 inline-block">
             <p className="text-xs text-slate-400">Total score</p>
             <p className="text-3xl font-black text-orange-400">{myTotalScore.toLocaleString()}</p>
-            {localMyAnswer && localMyAnswer.roundPoints > 0 && (
-              <p className="text-xs text-green-400">+{localMyAnswer.roundPoints} nesta rodada</p>
+            {currentRoundLocalAnswer && currentRoundLocalAnswer.roundPoints > 0 && (
+              <p className="text-xs text-green-400">+{currentRoundLocalAnswer.roundPoints} nesta rodada</p>
             )}
             {myStreak >= 3 && <p className="text-xs text-orange-300">🔥 {myStreak} streak!</p>}
           </div>
@@ -448,18 +1002,42 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     );
   }
 
-  if (session.status === 'active' && !question) {
-    console.log('[BATTLE PLAYER] currentQuestion resolved:', {
+  if (session.status === 'PLAYING' && !question) {
+    console.warn('[BATTLE PLAYER] PLAYING without question', {
       battleId: session.id,
       roomId: classId,
+      status: session.status,
+      updatedAt: session.updatedAt,
       currentQuestionIndex: session.currentQuestionIndex,
       hasCurrentQuestion,
       totalQuestions: session.questions.length,
     });
-    return null;
+    return (
+      <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
+        <div className="w-full max-w-sm mx-4 text-center space-y-4">
+          <div className="text-5xl">⏳</div>
+          <h2 className="text-xl font-bold text-white">Preparando batalha</h2>
+          <p className="text-sm text-slate-300">
+            A sessao ja esta em andamento e o jogador recebeu o snapshot, mas a pergunta atual ainda nao chegou completa.
+          </p>
+          <p className="text-xs text-slate-500">
+            Aguardando o proximo snapshot do Firestore...
+          </p>
+        </div>
+      </div>
+    );
   }
 
-  if (session.status === 'active' && !canAnswerCurrentQuestion) {
+  if (session.status === 'PLAYING' && !canAnswerCurrentQuestion && question && !isRegisteredParticipant) {
+    console.info('[BATTLE PLAYER ACTIVATE] player locked out of current round', {
+      component: 'BattlePlayerView',
+      classId,
+      sessionId: session.id,
+      uid,
+      status: session.status,
+      currentQuestionId,
+      roundParticipantIds: session.roundParticipantIds ?? [],
+    });
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
         <div className="w-full max-w-sm mx-4 text-center space-y-4">
@@ -486,7 +1064,16 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     );
   }
 
-  console.log('[BATTLE PLAYER] rendering active question');
+  console.log('[BATTLE PLAYER] render branch: active');
+  console.info('[BATTLE PLAYER ACTIVATE] player entered active battle round', {
+    component: 'BattlePlayerView',
+    classId,
+    sessionId: session.id,
+    uid,
+    status: session.status,
+    currentQuestionId,
+    roundParticipantIds: session.roundParticipantIds ?? [],
+  });
   return (
     <div className="fixed inset-0 z-[9000] flex flex-col bg-slate-950 select-none">
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900/90 border-b border-slate-800">
@@ -519,9 +1106,13 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
         />
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-6 gap-6">
+      <div className="border-b border-slate-800 bg-slate-900/50 px-4 py-2">
+        <BattleLabIndicators />
+      </div>
+
+      <div key={session.currentQuestionId ?? currentQuestionId ?? questionIdx} className="flex-1 flex flex-col items-center justify-center px-4 py-6 gap-6">
         <div className="w-full max-w-md bg-slate-800/80 rounded-2xl p-6 text-center shadow-inner space-y-4">
-          <div className="text-3xl font-bold text-white leading-snug">{question.text}</div>
+          <div className="text-3xl font-bold text-white leading-snug">{(question.text as string) || ''}</div>
           {question.imageUrl && (
             <img
               src={question.imageUrl}
@@ -544,7 +1135,6 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
               Ouça o comando e responda falando uma frase completa.
             </p>
           )}
-          {question.hint && <p className="text-xs text-slate-400">{question.hint}</p>}
         </div>
 
         {isChoiceQuestion(question) ? (
@@ -552,15 +1142,43 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
             <div className="w-full max-w-sm grid grid-cols-2 gap-3">
               {(question.options ?? []).map((opt, index) => {
                 const isSelected = selectedOptions.includes(index);
+                const disabled = interactionLocked;
+                const reason =
+                  hasAnswered
+                    ? 'already-answered'
+                    : timeUp
+                      ? 'time-up'
+                      : session.status !== 'PLAYING'
+                        ? 'status-not-playing'
+                        : 'enabled';
+                console.log('[BATTLE ROUND STATE DEBUG] option disabled check', {
+                  optionIndex: index,
+                  disabled,
+                  reason,
+                  roundStatus: session?.roundStatus ?? null,
+                  isRevealed: session?.isRevealed ?? false,
+                  showAnswer: session?.showAnswer ?? false,
+                  timeUp,
+                  hasAnswered,
+                });
+                console.log('[BATTLE ANSWER DEBUG] option state', {
+                  optionIndex: index,
+                  option: opt,
+                  disabled,
+                  userId: uid,
+                  participantId,
+                  hasAnswered,
+                  roundStatus: (session as BattleSession & { roundStatus?: string }).roundStatus ?? null,
+                });
                 return (
                   <button
                     key={index}
                     onClick={() => toggleChoiceSelection(index)}
-                    disabled={hasAnswered}
+                    disabled={disabled}
                     className={`py-4 px-3 rounded-xl border-2 text-sm font-bold transition-all active:scale-95 ${
                       isSelected
                         ? 'border-orange-500 bg-orange-500/20 text-orange-300'
-                        : hasAnswered
+                        : disabled
                         ? 'border-slate-700 text-slate-600 cursor-not-allowed'
                         : 'border-slate-600 text-white hover:border-orange-400 hover:bg-orange-400/10'
                     }`}
@@ -573,7 +1191,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
             {requiresChoiceConfirmation && (
               <button
                 onClick={confirmChoiceAnswer}
-                disabled={hasAnswered || selectedOptions.length === 0}
+                disabled={interactionLocked || selectedOptions.length === 0}
                 className="w-full max-w-sm rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
               >
                 Confirmar resposta
@@ -585,15 +1203,15 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
             <textarea
               value={typedAnswer}
               onChange={(event) => setTypedAnswer(event.target.value)}
-              disabled={hasAnswered}
-              placeholder={question.kind === 'speaking' ? 'Sua resposta falada aparece aqui...' : 'Digite sua resposta...'}
+              disabled={interactionLocked}
+              placeholder={(question.kind as BattleQuestionKind) === 'speaking' ? 'Sua resposta falada aparece aqui...' : 'Digite sua resposta...'}
               className="w-full min-h-28 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
             />
             <div className="flex gap-3">
               {showMicButton && (
                 <button
                   onClick={startSpeechRecognition}
-                  disabled={hasAnswered || isListening}
+                  disabled={interactionLocked || isListening}
                   className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
                 >
                   {isListening ? 'Ouvindo...' : '🎤 Responder falando'}
@@ -601,7 +1219,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
               )}
               <button
                 onClick={submitOpenAnswer}
-                disabled={hasAnswered || !typedAnswer.trim()}
+                disabled={interactionLocked || !typedAnswer.trim()}
                 className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
               >
                 Confirmar resposta
@@ -610,17 +1228,20 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
           </div>
         )}
 
-        {hasAnswered && session.status === 'active' && (
+        {hasAnswered && session.status === 'PLAYING' && (
           <p className="text-sm text-slate-400 animate-pulse">Answer locked in!</p>
         )}
-        {timeLeft <= 0 && !hasAnswered && (
+        {!hasAnswered && !canAnswerCurrentQuestion && !isRegisteredParticipant && session.status === 'PLAYING' && (
+          <p className="text-sm text-slate-400">Waiting for the next round...</p>
+        )}
+        {timeUp && !hasAnswered && (
           <p className="text-sm text-red-400">Time&apos;s up!</p>
         )}
       </div>
 
       <div className="px-4 pb-4">
         <div className="flex justify-center gap-4 text-xs text-slate-500">
-          <span>⏱ {Math.ceil(displayTimeLeft)}s</span>
+          <span>⏱ {Math.ceil(displayTime)}s</span>
           <span>·</span>
           <span>{roundAnswerCount} / {(session.roundParticipantIds ?? []).length || registeredParticipantIds.length} answered</span>
         </div>
