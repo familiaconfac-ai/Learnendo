@@ -537,37 +537,39 @@ export const BattleSetupModal: React.FC<Props> = ({
   // STEP 1 — CONFIG
   // ────────────────────────────────────────────────────────────────────────
   async function handleSaveTemplate(titleOverride?: string, forceDuplicate = false) {
-    const finalQuestions = sanitizeBattleQuestions(
-      getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
-    );
-
-    if (finalQuestions.length === 0) {
-      setStartError('Selecione pelo menos uma pergunta valida para salvar o battle.');
-      return;
-    }
-
-    const title = titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle();
-    setTemplateTitle(title);
-
-    if (!onSaveTemplate) {
-      setSaveMessage('Salvar indisponivel neste modo.');
-      return;
-    }
-
-    const baseTemplate = buildSavedBattleTemplate(
-      buildConfig(finalQuestions.length),
-      finalQuestions,
-      title,
-    );
-    const template = initialTemplate && !forceDuplicate
-      ? {
-          ...baseTemplate,
-          id: initialTemplate.id,
-          createdAt: initialTemplate.createdAt,
-        }
-      : baseTemplate;
-
     try {
+      const finalQuestions = step === 'curate'
+        ? sanitizeBattleQuestions(
+            getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
+          )
+        : sanitizeBattleQuestions(resolveLaunchQuestions().generatedQuestions);
+
+      if (finalQuestions.length === 0) {
+        setStartError('Selecione pelo menos uma pergunta valida para salvar o battle.');
+        return;
+      }
+
+      const title = titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle();
+      setTemplateTitle(title);
+
+      if (!onSaveTemplate) {
+        setSaveMessage('Salvar indisponivel neste modo.');
+        return;
+      }
+
+      const baseTemplate = buildSavedBattleTemplate(
+        buildConfig(finalQuestions.length),
+        finalQuestions,
+        title,
+      );
+      const template = initialTemplate && !forceDuplicate
+        ? {
+            ...baseTemplate,
+            id: initialTemplate.id,
+            createdAt: initialTemplate.createdAt,
+          }
+        : baseTemplate;
+
       await onSaveTemplate(template);
       setSaveMessage(forceDuplicate ? 'Battle duplicado na sua biblioteca.' : 'Battle salvo na sua biblioteca.');
       setStartError(null);
@@ -590,12 +592,42 @@ export const BattleSetupModal: React.FC<Props> = ({
 
           {/* Header */}
           <div className="sticky top-0 z-10 flex items-center justify-between bg-gradient-to-r from-orange-600/80 to-red-700/80 px-6 py-4">
-            <div className="flex items-center gap-3">
+            <div className="min-w-0 flex-1 pr-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-100/80">
+                Nome da batalha
+              </p>
+              <input
+                value={templateTitle}
+                onChange={(event) => setTemplateTitle(event.target.value)}
+                placeholder="Digite o nome da batalha"
+                className="mt-1 mb-1 w-full rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-sm font-bold text-white outline-none placeholder:text-orange-100/60 focus:border-white/40"
+              />
+              <p className="text-xs text-orange-200">
+                {questionCount} perguntas · {timePerQuestion}s cada
+              </p>
+            </div>
+            <div className="hidden">
               <span className="text-2xl">⚔️</span>
               <div>
                 <h2 className="text-lg font-bold text-white">Learnendo Battle</h2>
                 <p className="text-xs text-orange-200">Configure a batalha</p>
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void handleSaveTemplate()}
+                title="Salvar battle na biblioteca"
+                className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
+              >
+                Salvar
+              </button>
+              <button
+                onClick={() => void handleDuplicateTemplate()}
+                title="Duplicar battle salvo"
+                className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
+              >
+                Duplicar
+              </button>
             </div>
             <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none" aria-label="Close">✕</button>
           </div>
