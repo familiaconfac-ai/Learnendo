@@ -12,6 +12,7 @@ import { getDefaultMainStageMode } from '../../services/liveClassStage';
 import { learnendoLogo } from '../../assets/branding';
 import { BattleHubPage } from '../BattleHub/BattleHubPage';
 import type { SavedBattleTemplate } from './Battle/battleTypes';
+import { deleteBattleSession } from './Battle/battleService';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
 
@@ -166,8 +167,14 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
   const handleOpenSavedBattleTemplate = useCallback((template: SavedBattleTemplate) => {
     setPendingBattleTemplate(template);
-    void handleUpdateSession({ mainStageMode: 'battle' });
-  }, [handleUpdateSession]);
+    void deleteBattleSession(liveClass.id)
+      .catch((error) => {
+        console.warn('[LiveClass] failed to clear previous battle session before opening saved template:', error);
+      })
+      .finally(() => {
+        void handleUpdateSession({ mainStageMode: 'battle' });
+      });
+  }, [handleUpdateSession, liveClass.id]);
 
   const handleReturnToWorkspace = useCallback(() => {
     void handleUpdateSession({ mainStageMode: 'workspace' });

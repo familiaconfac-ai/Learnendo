@@ -530,7 +530,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   // ────────────────────────────────────────────────────────────────────────
   // STEP 1 — CONFIG
   // ────────────────────────────────────────────────────────────────────────
-  async function handleSaveTemplate() {
+  async function handleSaveTemplate(titleOverride?: string) {
     const finalQuestions = sanitizeBattleQuestions(
       getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
     );
@@ -540,7 +540,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       return;
     }
 
-    const suggestedTitle = initialTemplate?.title || `Battle ${new Date().toLocaleDateString('pt-BR')}`;
+    const suggestedTitle = titleOverride?.trim() || initialTemplate?.title || `Battle ${new Date().toLocaleDateString('pt-BR')}`;
     const titleInput = window.prompt('Nome do battle salvo:', suggestedTitle);
     const title = titleInput?.trim();
 
@@ -568,6 +568,11 @@ export const BattleSetupModal: React.FC<Props> = ({
       setSaveMessage(null);
       setStartError(error instanceof Error ? error.message : 'Falha ao salvar o battle.');
     }
+  }
+
+  async function handleDuplicateTemplate() {
+    const baseTitle = initialTemplate?.title?.trim() || `Battle ${new Date().toLocaleDateString('pt-BR')}`;
+    await handleSaveTemplate(`${baseTitle} (copia)`);
   }
 
   if (step === 'config') {
@@ -810,6 +815,15 @@ export const BattleSetupModal: React.FC<Props> = ({
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition">
               Salvar
             </button>
+            {initialTemplate ? (
+              <button
+                onClick={() => void handleDuplicateTemplate()}
+                title="Duplicar battle salvo"
+                className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
+              >
+                Duplicar
+              </button>
+            ) : null}
             <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none ml-1" aria-label="Close">✕</button>
           </div>
         </div>
