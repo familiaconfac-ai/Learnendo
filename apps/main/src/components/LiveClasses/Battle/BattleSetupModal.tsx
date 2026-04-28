@@ -10,9 +10,9 @@
 // preference survives page refreshes and future sessions.
 
 import React, { useState, useEffect, useMemo } from 'react';
-import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, BattleQuestion } from './battleTypes';
+import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, BattleQuestion, SavedBattleTemplate } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
-import { sanitizeBattleQuestion, sanitizeBattleQuestions } from './battleUtils';
+import { buildSavedBattleTemplate, sanitizeBattleQuestion, sanitizeBattleQuestions } from './battleUtils';
 import { BOT_AVATAR_OPTIONS, DEFAULT_BOT_AVATAR_ID } from './botAvatars';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
@@ -63,6 +63,7 @@ interface EditDraft {
 
 interface Props {
   onStart: (config: BattleConfig, questions: BattleQuestion[]) => void | Promise<void>;
+  onSaveTemplate?: (template: SavedBattleTemplate) => void | Promise<void>;
   onClose: () => void;
   defaultLessonId?: string;
   defaultWorkbookId?: number;
@@ -70,6 +71,7 @@ interface Props {
   liveClassId?: string;
   currentUserUid?: string;
   selectedStudents?: Array<{ uid: string; name: string }>;
+  initialTemplate?: SavedBattleTemplate | null;
 }
 
 const SCOPES: { value: BattleScope; label: string; desc: string }[] = [
@@ -97,6 +99,7 @@ const QUESTION_KINDS: { value: BattleQuestionKind; label: string }[] = [
 // ── Component ─────────────────────────────────────────────────────────────────
 export const BattleSetupModal: React.FC<Props> = ({
   onStart,
+  onSaveTemplate,
   onClose,
   defaultLessonId,
   defaultWorkbookId,
@@ -104,6 +107,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   liveClassId,
   currentUserUid,
   selectedStudents = [],
+  initialTemplate = null,
 }) => {
 
   useEffect(() => {
@@ -133,6 +137,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [editDraft,    setEditDraft]    = useState<EditDraft | null>(null);
   const [startError,   setStartError]   = useState<string | null>(null);
   const [startingNow,  setStartingNow]  = useState(false);
+  const [saveMessage,  setSaveMessage]  = useState<string | null>(null);
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
       courseId: defaultCourseId,
@@ -152,6 +157,38 @@ export const BattleSetupModal: React.FC<Props> = ({
   useEffect(() => {
     persistExcluded(exclusionStorageKey, excludedIds);
   }, [excludedIds, exclusionStorageKey]);
+
+  useEffect(() => {
+    if (!initialTemplate) return;
+
+    setScope(initialTemplate.config.scope ?? 'current-lesson');
+    setDifficulty(initialTemplate.config.difficulty ?? 'normal');
+    setQuestionCount(
+      initialTemplate.config.questionCount === 5
+        ? 5
+        : initialTemplate.config.questionCount === 20
+          ? 20
+          : 10
+    );
+    setTimePerQuestion(
+      initialTemplate.config.timePerQuestion === 5
+        ? 5
+        : initialTemplate.config.timePerQuestion === 15
+          ? 15
+          : 10
+    );
+    setIncludeTeacher(Boolean(initialTemplate.config.includeTeacher));
+    setBotEnabled(Boolean(initialTemplate.config.botEnabled));
+    setBotAvatarId(initialTemplate.config.botAvatarId || DEFAULT_BOT_AVATAR_ID);
+    setBotName(initialTemplate.config.botName?.trim() || 'Bot');
+    setQuestions(sanitizeBattleQuestions(initialTemplate.questions));
+    setExcludedIds(new Set());
+    setEditingIdx(null);
+    setEditDraft(null);
+    setStartError(null);
+    setSaveMessage(null);
+    setStep('curate');
+  }, [initialTemplate]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   function generateQuestions(selectedScope: BattleScope = scope): BattleQuestion[] {
@@ -369,12 +406,6 @@ export const BattleSetupModal: React.FC<Props> = ({
     }
   }
 
-  function handleReshuffle() {
-    setQuestions(generateQuestions());
-    setEditingIdx(null);
-    setEditDraft(null);
-  }
-
   function toggleExclude(id: string) {
     setExcludedIds(prev => {
       const next = new Set(prev);
@@ -499,6 +530,46 @@ export const BattleSetupModal: React.FC<Props> = ({
   // ────────────────────────────────────────────────────────────────────────
   // STEP 1 — CONFIG
   // ────────────────────────────────────────────────────────────────────────
+  async function handleSaveTemplate() {
+    const finalQuestions = sanitizeBattleQuestions(
+      getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
+    );
+
+    if (finalQuestions.length === 0) {
+      setStartError('Selecione pelo menos uma pergunta valida para salvar o battle.');
+      return;
+    }
+
+    const suggestedTitle = initialTemplate?.title || `Battle ${new Date().toLocaleDateString('pt-BR')}`;
+    const titleInput = window.prompt('Nome do battle salvo:', suggestedTitle);
+    const title = titleInput?.trim();
+
+    if (!title) {
+      return;
+    }
+
+    if (!onSaveTemplate) {
+      setSaveMessage('Salvar indisponivel neste modo.');
+      return;
+    }
+
+    const template = buildSavedBattleTemplate(
+      buildConfig(finalQuestions.length),
+      finalQuestions,
+      title,
+    );
+
+    try {
+      await onSaveTemplate(template);
+      setSaveMessage('Battle salvo na sua biblioteca.');
+      setStartError(null);
+    } catch (error) {
+      console.error('[BATTLE SAVE DEBUG] save failed:', error);
+      setSaveMessage(null);
+      setStartError(error instanceof Error ? error.message : 'Falha ao salvar o battle.');
+    }
+  }
+
   if (step === 'config') {
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -520,6 +591,11 @@ export const BattleSetupModal: React.FC<Props> = ({
             {startError ? (
               <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
                 {startError}
+              </div>
+            ) : null}
+            {saveMessage ? (
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+                {saveMessage}
               </div>
             ) : null}
 
@@ -730,9 +806,9 @@ export const BattleSetupModal: React.FC<Props> = ({
             >
               + Nova pergunta
             </button>
-            <button onClick={handleReshuffle} title="Novo sorteio de perguntas"
+            <button onClick={() => void handleSaveTemplate()} title="Salvar battle na biblioteca"
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition">
-              🔀 Novo sorteio
+              Salvar
             </button>
             <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none ml-1" aria-label="Close">✕</button>
           </div>
@@ -743,6 +819,11 @@ export const BattleSetupModal: React.FC<Props> = ({
           {startError ? (
             <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
               {startError}
+            </div>
+          ) : null}
+          {saveMessage ? (
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+              {saveMessage}
             </div>
           ) : null}
           {questions.map((q, idx) => {

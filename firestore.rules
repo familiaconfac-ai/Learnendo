@@ -333,6 +333,14 @@ service cloud.firestore {
         && resource.data.createdBy == request.auth.uid;
     }
 
+    match /battleTemplates/{templateId} {
+      allow create: if request.auth != null
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow read, update, delete: if request.auth != null
+        && resource.data.createdBy == request.auth.uid;
+    }
+
     match /debug_test/{uid} {
       allow read, create, update, delete: if isOwner(uid) || isAdmin();
     }

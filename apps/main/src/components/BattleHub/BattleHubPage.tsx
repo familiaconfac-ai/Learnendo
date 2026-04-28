@@ -5,6 +5,12 @@ import { BattleSetupModal } from '../LiveClasses/Battle/BattleSetupModal';
 import type { SavedBattleTemplate, BattleConfig, BattleQuestion, BattleSession } from '../LiveClasses/Battle/battleTypes';
 import { createBattleSession, deleteBattleSession, subscribeBattleSession } from '../LiveClasses/Battle/battleService';
 import { buildSavedBattleTemplate } from '../LiveClasses/Battle/battleUtils';
+import { appendLiveClassBattleTemplate } from '../../services/liveClassesService';
+import {
+  listBattleTemplatesByOwner,
+  saveBattleTemplateToLibrary,
+  type StoredBattleTemplate,
+} from '../../services/battleTemplateLibraryService';
 import type { LiveClass } from '../../types';
 
 type UILang = 'en' | 'pt' | 'es';
@@ -117,6 +123,10 @@ export const BattleHubPage: React.FC<Props> = ({
   const [lastTemplate, setLastTemplate] = useState<SavedBattleTemplate | null>(null);
   const [activeTemplate, setActiveTemplate] = useState<SavedBattleTemplate | null>(null);
   const [liveSession, setLiveSession] = useState<BattleSession | null>(null);
+  const [setupTemplate, setSetupTemplate] = useState<SavedBattleTemplate | null>(null);
+  const [libraryTemplates, setLibraryTemplates] = useState<StoredBattleTemplate[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
 
   useEffect(() => {
     try {
@@ -126,6 +136,35 @@ export const BattleHubPage: React.FC<Props> = ({
       setLastTemplate(null);
     }
   }, [storageKey]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLibrary = async () => {
+      setLibraryLoading(true);
+      setLibraryError(null);
+      try {
+        const templates = await listBattleTemplatesByOwner(uid);
+        if (isMounted) {
+          setLibraryTemplates(templates);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setLibraryError(error instanceof Error ? error.message : 'Falha ao carregar battles salvos.');
+        }
+      } finally {
+        if (isMounted) {
+          setLibraryLoading(false);
+        }
+      }
+    };
+
+    void loadLibrary();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [uid]);
 
   useEffect(() => {
     if (!activeLiveClass?.id) return;
@@ -160,6 +199,18 @@ export const BattleHubPage: React.FC<Props> = ({
       answers: liveSession?.answers ?? liveSession?.currentAnswers ?? null,
     });
   }, [activeLiveClass?.id, liveSession, uid]);
+
+  async function handleSaveTemplate(template: SavedBattleTemplate) {
+    const storedTemplate = await saveBattleTemplateToLibrary(uid, template);
+    setLibraryTemplates((current) => {
+      const withoutSameId = current.filter((entry) => entry.id !== storedTemplate.id);
+      return [storedTemplate, ...withoutSameId].sort((left, right) => right.updatedAt - left.updatedAt);
+    });
+
+    if (activeLiveClass?.id) {
+      await appendLiveClassBattleTemplate(activeLiveClass.id, template);
+    }
+  }
 
   async function handleTemplateReady(config: BattleConfig, questions: BattleQuestion[]) {
     console.log('[BATTLE START DEBUG] handler entered');
@@ -230,19 +281,8 @@ export const BattleHubPage: React.FC<Props> = ({
       }
     }
 
-    const template = buildSavedBattleTemplate(
-      config,
-      questions,
-      `${copy.title} • ${new Date().toLocaleDateString(uiLanguage === 'pt' ? 'pt-BR' : uiLanguage === 'es' ? 'es-ES' : 'en-US')}`,
-    );
     setShowSetup(false);
-    setLastTemplate(template);
-    setActiveTemplate(template);
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(template));
-    } catch {
-      // Ignore storage quota issues and keep the in-memory template.
-    }
+    setActiveTemplate(savedTemplate);
   }
 
   const liveParticipants = useMemo(() => {
@@ -272,7 +312,10 @@ export const BattleHubPage: React.FC<Props> = ({
               <p className="mt-2 text-sm leading-6 text-slate-300">{copy.subtitle}</p>
               <div className="mt-4 flex flex-wrap gap-3">
                 <button
-                  onClick={() => setShowSetup(true)}
+                  onClick={() => {
+                    setSetupTemplate(null);
+                    setShowSetup(true);
+                  }}
                   className="rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 px-5 py-3 text-sm font-black text-white shadow-[0_6px_20px_rgba(234,88,12,0.35)]"
                 >
                   {copy.configure}
@@ -364,6 +407,62 @@ export const BattleHubPage: React.FC<Props> = ({
             ) : null}
           </article>
         </section>
+
+        <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-wide text-emerald-300">Biblioteca de Battles</h2>
+              <p className="mt-1 text-sm text-slate-300">
+                Salve temas como "greetings 1", "greetings 2" e reabra para outras turmas.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-black uppercase tracking-wide text-slate-300">
+              {libraryTemplates.length} salvos
+            </span>
+          </div>
+
+          {libraryLoading ? (
+            <p className="mt-4 text-sm text-slate-400">Carregando biblioteca...</p>
+          ) : libraryError ? (
+            <p className="mt-4 text-sm text-rose-300">{libraryError}</p>
+          ) : libraryTemplates.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-400">
+              Ainda nao ha battles salvos. Abra "Preparar Aula", monte suas perguntas e clique em "Salvar".
+            </p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {libraryTemplates.slice(0, 12).map((template) => (
+                <article key={template.id} className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-sm font-black text-white">{template.title}</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {template.questions.length} perguntas • {template.config.timePerQuestion}s • {template.config.botEnabled ? 'bot' : 'sem bot'}
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setSetupTemplate(template);
+                          setShowSetup(true);
+                        }}
+                        className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300"
+                      >
+                        Editar e usar
+                      </button>
+                      <button
+                        onClick={() => setActiveTemplate(template)}
+                        className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+                      >
+                        Jogar solo
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
 
       {showSetup ? (
@@ -378,13 +477,18 @@ export const BattleHubPage: React.FC<Props> = ({
           return (
             <BattleSetupModal
               onStart={handleTemplateReady}
-              onClose={() => setShowSetup(false)}
+              onSaveTemplate={handleSaveTemplate}
+              onClose={() => {
+                setShowSetup(false);
+                setSetupTemplate(null);
+              }}
               defaultCourseId={effectiveCourseId ?? undefined}
               defaultWorkbookId={effectiveWorkbookId ?? undefined}
               defaultLessonId={effectiveLessonId ?? undefined}
               liveClassId={activeLiveClass?.id}
               currentUserUid={uid}
               selectedStudents={liveParticipants}
+              initialTemplate={setupTemplate}
             />
           );
         })()
