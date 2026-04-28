@@ -16,6 +16,7 @@ import {
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
   getBattleLanguage,
+  getBattleQuestionDuration,
   getBattlePromptAudioText,
   getBattleRegisteredParticipantIds,
   getMyBattleAnswer,
@@ -75,6 +76,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     setSubmitted(false);
     setLocalMyAnswer(null);
     setFrozenTimeLeft(null);
+    const fallbackRemainingSeconds =
+      endsAt != null
+        ? Math.max(0, (endsAt - Date.now()) / 1000)
+        : getBattleQuestionDuration(session.questions[session.currentQuestionIndex] ?? null, session.config);
+    setTimeLeft(fallbackRemainingSeconds);
   }
 
   function isCurrentRoundAnswer(answer?: BattleAnswer | null) {
@@ -88,6 +94,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     questionIdx >= 0 &&
     questionIdx < session.questions.length;
   const question = hasCurrentQuestion ? session.questions[questionIdx] : null;
+  const currentQuestionDuration = getBattleQuestionDuration(question, session.config);
   const currentQuestionId = question?.id ?? null;
   const totalQ = session.questions.length;
   const registeredParticipantIds = useMemo(
@@ -130,7 +137,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     : myScore;
   const myStreak = visiblePlayerScores[uid]?.streak ?? 0;
   const effectiveFrozenTimeLeft = frozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
-  const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? session.config.timePerQuestion * 1000;
+  const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
   const roundStartedAt =
     typeof session.roundStartedAt === 'number' && session.roundStartedAt > 0
       ? session.roundStartedAt
@@ -148,7 +155,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
   const timeUp = session.status === 'PLAYING' && effectiveFrozenTimeLeft == null && endsAt != null && remainingMs <= 0;
   const displayTime = hasAnswered && effectiveFrozenTimeLeft != null ? effectiveFrozenTimeLeft : timeLeft;
   const battleLanguage = getBattleLanguage(session.config.courseId);
-  const timeRatio = displayTime / session.config.timePerQuestion;
+  const timeRatio = displayTime / currentQuestionDuration;
   const interactionLocked = hasAnswered || timeUp || session.status !== 'PLAYING';
   const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
   const showMicButton = question?.kind === 'speaking';
@@ -361,7 +368,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     setSubmitted(false);
     setLocalMyAnswer(null);
     setFrozenTimeLeft(null);
-    setTimeLeft(session.config.timePerQuestion);
+    setTimeLeft(currentQuestionDuration);
     console.log('[BATTLE QUESTION] reset state after question change:', {
       questionId: currentQuestionId,
       submitted: false,
@@ -374,14 +381,14 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
       recognitionRef.current = null;
       setIsListening(false);
     }
-  }, [currentQuestionId, questionIdx, session.questionStartedAt, session.config.timePerQuestion, uid]);
+  }, [currentQuestionDuration, currentQuestionId, questionIdx, session.questionStartedAt, uid]);
 
   useEffect(() => {
     if (session.status !== 'PLAYING') return;
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (roundStartedAt == null || roundDurationMs <= 0) {
-      setTimeLeft(session.config.timePerQuestion);
+      setTimeLeft(currentQuestionDuration);
       return;
     }
 
@@ -403,7 +410,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     }, 200);
 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [endsAt, roundDurationMs, roundStartedAt, session.status, session.questionStartedAt, session.roundStartedAt, session.config.timePerQuestion]);
+  }, [currentQuestionDuration, endsAt, roundDurationMs, roundStartedAt, session.status, session.questionStartedAt, session.roundStartedAt]);
 
   useEffect(() => {
     if (session.status === 'FINISHED') setShowResults(true);
@@ -624,10 +631,10 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     const { elapsedMs, roundPoints } = calculateBattleRoundScore({
       answeredAt,
       questionStartedAt: session.questionStartedAt,
-      timePerQuestion: session.config.timePerQuestion,
+      timePerQuestion: currentQuestionDuration,
       isCorrect,
     });
-    const nextFrozenTimeLeft = Math.max(0, session.config.timePerQuestion - elapsedMs / 1000);
+    const nextFrozenTimeLeft = Math.max(0, currentQuestionDuration - elapsedMs / 1000);
     console.info('[BATTLE ANSWER]', {
       uid,
       answeredAt,
@@ -649,6 +656,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
       frozenTimeLeft: nextFrozenTimeLeft,
     });
     setFrozenTimeLeft(nextFrozenTimeLeft);
+    setTimeLeft(nextFrozenTimeLeft);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     setSubmitted(true);
     
     try {
@@ -834,10 +846,10 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
     const { elapsedMs, roundPoints } = calculateBattleRoundScore({
       answeredAt,
       questionStartedAt: session.questionStartedAt,
-      timePerQuestion: session.config.timePerQuestion,
+      timePerQuestion: currentQuestionDuration,
       isCorrect,
     });
-    const nextFrozenTimeLeft = Math.max(0, session.config.timePerQuestion - elapsedMs / 1000);
+    const nextFrozenTimeLeft = Math.max(0, currentQuestionDuration - elapsedMs / 1000);
     console.info('[BATTLE ANSWER]', {
       uid,
       answeredAt,
@@ -858,6 +870,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name 
       frozenTimeLeft: nextFrozenTimeLeft,
     });
     setFrozenTimeLeft(nextFrozenTimeLeft);
+    setTimeLeft(nextFrozenTimeLeft);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
     setSubmitted(true);
     
     try {

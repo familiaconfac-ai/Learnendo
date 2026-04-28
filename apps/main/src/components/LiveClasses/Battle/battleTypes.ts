@@ -9,7 +9,7 @@ export interface BattleConfig {
   scope: BattleScope;
   difficulty: BattleDifficulty;
   questionCount: number;           // UI offers 5/10/20 but editor can trim to any count
-  timePerQuestion: 5 | 10 | 15; // seconds
+  timePerQuestion: number; // default seconds for questions without custom timing
   includeTeacher?: boolean;
   botEnabled?: boolean;
   botAvatarId?: string;
@@ -32,6 +32,7 @@ export interface BattleQuestion {
   imageUrl?: string;      // optional image thumbnail shown in editor & question card
   promptAudioText?: string; // text spoken via TTS when the question starts
   playAudioOnce?: boolean;  // audio prompt can only be heard once in battle
+  durationSeconds?: number; // optional custom timer for this specific question
 }
 
 export interface SavedBattleTemplate {

@@ -32,6 +32,7 @@ import {
   canBattleParticipantAnswerCurrentQuestion,
   compareBattleParticipantsByRanking,
   evaluateBattleAnswer,
+  getBattleQuestionDuration,
   isReservedFirestoreFieldKey,
   sanitizeBattleQuestions,
 } from './battleUtils';
@@ -98,10 +99,13 @@ function buildBattleSessionSnapshot(
     ?? (data.currentAnswers as Record<string, BattleAnswer> | undefined)
     ?? {};
   const config = (data.config as BattleConfig | undefined);
+  const questions = Array.isArray(data.questions) ? data.questions as BattleQuestion[] : [];
+  const currentQuestionIndex = typeof data.currentQuestionIndex === 'number' ? data.currentQuestionIndex : 0;
+  const currentQuestion = questions[currentQuestionIndex] ?? null;
   const roundDurationMs =
     (data.roundDurationMs as number | null | undefined) ??
     (data.durationMs as number | null | undefined) ??
-    (config?.timePerQuestion ? config.timePerQuestion * 1000 : null);
+    (config?.timePerQuestion ? getBattleQuestionDuration(currentQuestion, config) * 1000 : null);
   const rawRoundStart =
     (data.roundStartedAt as number | null | undefined) ??
     (typeof data.questionStartedAt === 'number' ? data.questionStartedAt : null);
@@ -133,7 +137,7 @@ function buildBattleSessionSnapshot(
     roundStatus: (data.roundStatus as BattleSession['roundStatus'] | undefined) ?? roundStatus,
     currentQuestionId:
       (data.currentQuestionId as string | undefined) ??
-      ((data.questions as BattleQuestion[] | undefined)?.[(data.currentQuestionIndex as number | undefined) ?? 0]?.id ?? null) ??
+      (questions[currentQuestionIndex]?.id ?? null) ??
       undefined,
     participants: (data.participants as Record<string, BattleRosterParticipant> | undefined) ?? {},
     roundParticipantIds: Array.isArray(data.roundParticipantIds) ? data.roundParticipantIds as string[] : [],
@@ -310,6 +314,8 @@ export async function createBattleSession(
     });
 
   const questions = sanitizeBattleQuestions(generatedQuestions);
+  const firstQuestion = questions[0] ?? null;
+  const firstQuestionDuration = getBattleQuestionDuration(firstQuestion, config);
 
   if (questions.length === 0) {
     throw new Error('Nenhuma pergunta valida foi encontrada para iniciar o Battle.');
@@ -355,11 +361,11 @@ export async function createBattleSession(
     config,
     questions,
     currentQuestionIndex: 0,
-    currentQuestionId: questions[0]?.id ?? null,
+    currentQuestionId: firstQuestion?.id ?? null,
     startedAt: null,
     roundStartedAt: null,
-    roundDurationMs: config.timePerQuestion * 1000,
-    durationMs: config.timePerQuestion * 1000,
+    roundDurationMs: firstQuestionDuration * 1000,
+    durationMs: firstQuestionDuration * 1000,
     endsAt: null,
     isRevealed: false,
     showAnswer: false,
@@ -451,6 +457,8 @@ export async function startBattle(
     : session.questions;
   const config = beforeData?.config ?? session.config;
   const createdAt = beforeData?.createdAt ?? session.createdAt ?? now;
+  const firstQuestion = questions[0] ?? null;
+  const firstQuestionDuration = getBattleQuestionDuration(firstQuestion, config);
   if (config.includeTeacher && requestedByUid) {
     canonicalParticipantIds.add(requestedByUid);
   }
@@ -517,12 +525,12 @@ export async function startBattle(
     status: 'PLAYING',
     roundStatus: 'active',
     currentQuestionIndex: 0,
-    currentQuestionId: questions[0]?.id ?? session.currentQuestionId ?? null,
+    currentQuestionId: firstQuestion?.id ?? session.currentQuestionId ?? null,
     startedAt: (beforeData?.startedAt as number | undefined) ?? now,
     roundStartedAt: now,
-    roundDurationMs: config.timePerQuestion * 1000,
-    durationMs: config.timePerQuestion * 1000,
-    endsAt: now + config.timePerQuestion * 1000,
+    roundDurationMs: firstQuestionDuration * 1000,
+    durationMs: firstQuestionDuration * 1000,
+    endsAt: now + firstQuestionDuration * 1000,
     isRevealed: false,
     showAnswer: false,
     questionStartedAt: now,
@@ -600,7 +608,9 @@ export async function advanceBattleQuestion(
     const currentIndex = typeof data.currentQuestionIndex === 'number' ? data.currentQuestionIndex : 0;
     const computedNextIndex = Math.min(nextIndex, currentIndex + 1);
     const isLast = computedNextIndex >= totalQuestions || computedNextIndex >= questions.length;
-    const nextQuestionId = isLast ? null : questions[computedNextIndex]?.id ?? null;
+    const nextQuestion = isLast ? null : questions[computedNextIndex] ?? null;
+    const nextQuestionId = nextQuestion?.id ?? null;
+    const nextQuestionDurationMs = nextQuestion ? getBattleQuestionDuration(nextQuestion, data.config as BattleConfig | undefined) * 1000 : null;
     const liveScores = data.scores ?? existingScores ?? {};
 
     const uniqueParticipants = Array.from(
@@ -617,12 +627,9 @@ export async function advanceBattleQuestion(
       currentQuestionIndex: isLast ? currentIndex : computedNextIndex,
       currentQuestionId: nextQuestionId,
       roundStartedAt: isLast ? null : now,
-      roundDurationMs: typeof data.config?.timePerQuestion === 'number' ? data.config.timePerQuestion * 1000 : null,
-      durationMs: typeof data.config?.timePerQuestion === 'number' ? data.config.timePerQuestion * 1000 : null,
-      endsAt:
-        !isLast && typeof data.config?.timePerQuestion === 'number'
-          ? now + data.config.timePerQuestion * 1000
-          : null,
+      roundDurationMs: isLast ? null : nextQuestionDurationMs,
+      durationMs: isLast ? null : nextQuestionDurationMs,
+      endsAt: !isLast && nextQuestionDurationMs != null ? now + nextQuestionDurationMs : null,
       isRevealed: false,
       showAnswer: false,
       questionStartedAt: isLast ? 0 : now,
@@ -861,11 +868,12 @@ export async function submitBattleAnswer(
 
     const isCorrect = evaluateBattleAnswer(question, payload);
     const previous = liveSession.scores?.[uid];
+    const currentQuestionDuration = getBattleQuestionDuration(question, liveSession.config);
 
     const { elapsedMs, roundPoints } = calculateBattleRoundScore({
       answeredAt,
       questionStartedAt: liveSession.questionStartedAt ?? 0,
-      timePerQuestion: liveSession.config.timePerQuestion,
+      timePerQuestion: currentQuestionDuration,
       isCorrect,
     });
 
@@ -879,7 +887,7 @@ export async function submitBattleAnswer(
       answeredAt,
       elapsedMs,
       roundPoints,
-      frozenTimeLeft: Math.max(0, liveSession.config.timePerQuestion - elapsedMs / 1000),
+      frozenTimeLeft: Math.max(0, currentQuestionDuration - elapsedMs / 1000),
     }) as BattleAnswer;
 
     const nextParticipant = omitUndefinedFields<BattleRosterParticipant>({

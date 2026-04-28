@@ -12,7 +12,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, BattleQuestion, SavedBattleTemplate } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
-import { buildSavedBattleTemplate, sanitizeBattleQuestion, sanitizeBattleQuestions } from './battleUtils';
+import {
+  buildSavedBattleTemplate,
+  getBattleQuestionDuration,
+  normalizeBattleDuration,
+  sanitizeBattleQuestion,
+  sanitizeBattleQuestions,
+} from './battleUtils';
 import { BOT_AVATAR_OPTIONS, DEFAULT_BOT_AVATAR_ID } from './botAvatars';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
@@ -59,6 +65,7 @@ interface EditDraft {
   acceptedAnswersText: string;
   promptAudioText: string;
   imageUrl: string;
+  durationSeconds: string;
 }
 
 interface Props {
@@ -91,7 +98,7 @@ const DIFFICULTIES: { value: BattleDifficulty; label: string; emoji: string }[] 
 ];
 
 const QUESTION_COUNTS = [5, 10, 20] as const;
-const TIME_OPTIONS    = [5, 10, 15]  as const;
+const TIME_OPTIONS    = [5, 10, 15, 20]  as const;
 const QUESTION_KINDS: { value: BattleQuestionKind; label: string }[] = [
   { value: 'multiple-choice', label: 'Objetiva' },
   { value: 'image-choice', label: 'Com imagem' },
@@ -128,7 +135,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [scope,           setScope]           = useState<BattleScope>('current-lesson');
   const [difficulty,      setDifficulty]      = useState<BattleDifficulty>('normal');
   const [questionCount,   setQuestionCount]   = useState<5 | 10 | 20>(10);
-  const [timePerQuestion, setTimePerQuestion] = useState<5 | 10 | 15>(10);
+  const [timePerQuestion, setTimePerQuestion] = useState<number>(10);
   const [includeTeacher,  setIncludeTeacher]  = useState(false);
   const [botEnabled,      setBotEnabled]      = useState(false);
   const [botAvatarId,     setBotAvatarId]     = useState(DEFAULT_BOT_AVATAR_ID);
@@ -175,13 +182,7 @@ export const BattleSetupModal: React.FC<Props> = ({
           ? 20
           : 10
     );
-    setTimePerQuestion(
-      initialTemplate.config.timePerQuestion === 5
-        ? 5
-        : initialTemplate.config.timePerQuestion === 15
-          ? 15
-          : 10
-    );
+    setTimePerQuestion(normalizeBattleDuration(initialTemplate.config.timePerQuestion, 10));
     setIncludeTeacher(Boolean(initialTemplate.config.includeTeacher));
     setBotEnabled(Boolean(initialTemplate.config.botEnabled));
     setBotAvatarId(initialTemplate.config.botAvatarId || DEFAULT_BOT_AVATAR_ID);
@@ -212,7 +213,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       scope: selectedScope,
       difficulty,
       questionCount: count,
-      timePerQuestion,
+      timePerQuestion: normalizeBattleDuration(timePerQuestion, 10),
       includeTeacher,
       botEnabled,
       botAvatarId,
@@ -297,6 +298,9 @@ export const BattleSetupModal: React.FC<Props> = ({
             correctText: editDraft.correctText,
             acceptedAnswers,
           }
+        : {}),
+      ...(editDraft.durationSeconds.trim()
+        ? { durationSeconds: normalizeBattleDuration(editDraft.durationSeconds) }
         : {}),
       ...(editDraft.imageUrl.trim() ? { imageUrl: editDraft.imageUrl.trim() } : {}),
     };
@@ -454,6 +458,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       acceptedAnswersText: (q.acceptedAnswers ?? []).join(', '),
       promptAudioText: q.promptAudioText ?? '',
       imageUrl: q.imageUrl ?? '',
+      durationSeconds: q.durationSeconds != null ? String(q.durationSeconds) : '',
     });
   }
 
@@ -499,6 +504,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       acceptedAnswersText: '',
       promptAudioText: '',
       imageUrl: '',
+      durationSeconds: '',
     });
   }
 
@@ -741,6 +747,29 @@ export const BattleSetupModal: React.FC<Props> = ({
                   </button>
                 ))}
               </div>
+              <div className="mt-3">
+                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+                  Tempo personalizado
+                </label>
+                <input
+                  type="number"
+                  min={5}
+                  max={180}
+                  step={1}
+                  value={timePerQuestion}
+                  onChange={(event) => {
+                    const nextValue = Number(event.target.value);
+                    if (Number.isFinite(nextValue)) {
+                      setTimePerQuestion(nextValue);
+                    }
+                  }}
+                  onBlur={() => setTimePerQuestion((current) => normalizeBattleDuration(current, 10))}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-orange-500"
+                />
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Use este valor como tempo padrÃ£o. Na ediÃ§Ã£o de cada pergunta vocÃª pode colocar um tempo maior.
+                </p>
+              </div>
             </div>
 
             <div className="rounded-2xl border border-slate-700 bg-slate-800/40 px-4 py-3">
@@ -945,7 +974,13 @@ export const BattleSetupModal: React.FC<Props> = ({
                   )}
 
                   {/* Question text */}
-                  <p className="flex-1 text-sm text-white leading-snug">{q.text}</p>
+                  <div className="flex-1">
+                    <p className="text-sm text-white leading-snug">{q.text}</p>
+                    <p className="mt-1 text-[11px] text-slate-400">
+                      Tempo: {getBattleQuestionDuration(q, timePerQuestion)}s
+                      {q.durationSeconds != null ? ' (personalizado)' : ' (padrÃ£o)'}
+                    </p>
+                  </div>
 
                   {/* Action buttons */}
                   {!excluded && (
@@ -1016,6 +1051,25 @@ export const BattleSetupModal: React.FC<Props> = ({
                           <option key={kind.value} value={kind.value}>{kind.label}</option>
                         ))}
                       </select>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">
+                        Tempo desta pergunta (segundos)
+                      </label>
+                      <input
+                        type="number"
+                        min={5}
+                        max={180}
+                        step={1}
+                        value={editDraft.durationSeconds}
+                        onChange={e => setEditDraft(d => d ? { ...d, durationSeconds: e.target.value } : d)}
+                        placeholder={`PadrÃ£o da batalha: ${timePerQuestion}s`}
+                        className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
+                      />
+                      <p className="mt-1 text-[11px] text-slate-400">
+                        Deixe em branco para usar o tempo padrÃ£o da batalha.
+                      </p>
                     </div>
 
                     {/* Image URL field */}

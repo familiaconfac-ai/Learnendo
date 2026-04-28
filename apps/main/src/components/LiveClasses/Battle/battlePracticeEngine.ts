@@ -7,6 +7,7 @@ import {
   getBattleBotAvatarId,
   getBattleBotName,
   getBattleCorrectIndexes,
+  getBattleQuestionDuration,
   isChoiceQuestion,
 } from './battleUtils';
 
@@ -74,7 +75,7 @@ function buildBotPayload(
   question: BattleQuestion,
   config: BattleConfig,
 ): { payload: PracticeBattleAnswerPayload; elapsedMs: number; isCorrect: boolean } {
-  const totalMs = config.timePerQuestion * 1000;
+  const totalMs = getBattleQuestionDuration(question, config) * 1000;
   const shouldAnswerCorrectly = Math.random() < BOT_ACCURACY_BY_DIFFICULTY[config.difficulty];
   const minDelay = Math.min(totalMs - 250, 1200);
   const maxDelay = Math.min(totalMs - 150, Math.max(minDelay, totalMs * 0.82));
@@ -124,10 +125,11 @@ function buildRoundResult(params: {
   forceIncorrect?: boolean;
 }): PracticeBattleRoundResult {
   const { question, config, player, answeredAt, questionStartedAt, payload, forceIncorrect = false } = params;
+  const questionDuration = getBattleQuestionDuration(question, config);
   const { elapsedMs, roundPoints } = calculateBattleRoundScore({
     answeredAt,
     questionStartedAt,
-    timePerQuestion: config.timePerQuestion,
+    timePerQuestion: questionDuration,
     isCorrect: forceIncorrect ? false : evaluateBattleAnswer(question, payload),
   });
   const optionIndexes = Array.from(new Set([
@@ -143,7 +145,7 @@ function buildRoundResult(params: {
     isCorrect: forceIncorrect ? false : evaluateBattleAnswer(question, payload),
     responseTimeMs: elapsedMs,
     pointsEarned: roundPoints,
-    frozenTimeLeft: Math.max(0, config.timePerQuestion - elapsedMs / 1000),
+    frozenTimeLeft: Math.max(0, questionDuration - elapsedMs / 1000),
     ...(optionIndexes.length > 0 ? { optionIndexes } : {}),
     ...(payload.responseText?.trim() ? { responseText: payload.responseText.trim() } : {}),
   };
@@ -176,22 +178,23 @@ export function usePracticeBattleEngine(params: {
 
     lockRef.current = false;
     startedAtRef.current = Date.now();
-    setTimeLeft(config.timePerQuestion);
+    const currentQuestion = questions[questionIndex];
+    const questionDuration = getBattleQuestionDuration(currentQuestion, config);
+    setTimeLeft(questionDuration);
 
     const timer = window.setInterval(() => {
       const elapsedMs = Date.now() - startedAtRef.current;
-      const remaining = Math.max(0, config.timePerQuestion - elapsedMs / 1000);
+      const remaining = Math.max(0, questionDuration - elapsedMs / 1000);
       setTimeLeft(remaining);
       if (remaining <= 0 && !lockRef.current) {
         lockRef.current = true;
-        const currentQuestion = questions[questionIndex];
         if (!currentQuestion) {
           setPhase('done');
           window.clearInterval(timer);
           return;
         }
 
-        const timeoutAnsweredAt = startedAtRef.current + config.timePerQuestion * 1000;
+        const timeoutAnsweredAt = startedAtRef.current + questionDuration * 1000;
         const humanResult = buildRoundResult({
           question: currentQuestion,
           config,

@@ -28,6 +28,7 @@ import {
   getBattleCorrectIndexes,
   getBattleLanguage,
   getBattleParticipantName,
+  getBattleQuestionDuration,
   getBattlePromptAudioText,
   getMyBattleAnswer,
   isChoiceQuestion,
@@ -77,6 +78,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
 
   const questionIdx = session.currentQuestionIndex;
   const question = session.questions[questionIdx] ?? null;
+  const currentQuestionDuration = getBattleQuestionDuration(question, session.config);
   const totalQuestions = session.questions.length;
   const battleLanguage = getBattleLanguage(session.config.courseId);
   const roundParticipantIds = useMemo(
@@ -100,7 +102,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const teacherHasAnswered = Boolean(myAnswer) || teacherSubmitting;
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const effectiveFrozenTimeLeft = teacherFrozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
-  const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? session.config.timePerQuestion * 1000;
+  const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
   const roundStartedAt =
     typeof session.roundStartedAt === 'number' && session.roundStartedAt > 0
       ? session.roundStartedAt
@@ -117,7 +119,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         : roundDurationMs;
   const timeUp = effectiveStatus === 'PLAYING' && effectiveFrozenTimeLeft == null && endsAt != null && liveRemainingMs <= 0;
   const displayTimeLeft = effectiveFrozenTimeLeft ?? timeLeft;
-  const timeRatio = displayTimeLeft / session.config.timePerQuestion;
+  const timeRatio = displayTimeLeft / currentQuestionDuration;
 
   useEffect(() => {
     console.log('[BATTLE ROUND STATE DEBUG] render', {
@@ -319,7 +321,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     setTypedAnswer('');
     setTeacherSubmitting(false);
     setTeacherFrozenTimeLeft(null);
-    setTimeLeft(session.config.timePerQuestion);
+    setTimeLeft(currentQuestionDuration);
     setLocalCurrentAnswers({});
     setShowRankingOverlay(false);
 
@@ -344,7 +346,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     }
 
     if (roundStartedAt == null || roundDurationMs <= 0) {
-      setTimeLeft(session.config.timePerQuestion);
+      setTimeLeft(currentQuestionDuration);
       return;
     }
 
@@ -386,7 +388,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         timerRef.current = null;
       }
     };
-  }, [endsAt, roundDurationMs, roundStartedAt, session.config.timePerQuestion, session.questionStartedAt, session.roundStartedAt, session.status]);
+  }, [currentQuestionDuration, endsAt, roundDurationMs, roundStartedAt, session.questionStartedAt, session.roundStartedAt, session.status]);
 
   useEffect(() => {
     if (!teacherHasAnswered) return;
@@ -549,7 +551,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     const { elapsedMs, roundPoints } = calculateBattleRoundScore({
       answeredAt,
       questionStartedAt: session.questionStartedAt,
-      timePerQuestion: session.config.timePerQuestion,
+      timePerQuestion: currentQuestionDuration,
       isCorrect,
     });
 
@@ -563,7 +565,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       answeredAt,
       elapsedMs,
       roundPoints,
-      frozenTimeLeft: Math.max(0, session.config.timePerQuestion - elapsedMs / 1000),
+      frozenTimeLeft: Math.max(0, currentQuestionDuration - elapsedMs / 1000),
     };
     const nextFrozenTimeLeft = localAnswer.frozenTimeLeft ?? 0;
 

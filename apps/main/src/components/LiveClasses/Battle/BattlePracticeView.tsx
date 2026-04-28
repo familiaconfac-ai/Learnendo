@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { appLangToTts, speak } from '../../../services/ttsService';
 import { BattleParticipantAvatar } from './BattleParticipantAvatar';
+import { BattleLabIndicators } from './BattleLabIndicators';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import { usePracticeBattleEngine } from './battlePracticeEngine';
 import type { SavedBattleTemplate } from './battleTypes';
@@ -12,6 +13,7 @@ import {
   getBattleCorrectIndexes,
   getBattleLanguage,
   getBattlePromptAudioText,
+  getBattleQuestionDuration,
   isChoiceQuestion,
 } from './battleUtils';
 
@@ -74,6 +76,7 @@ export const BattlePracticeView: React.FC<Props> = ({
   const battleLanguage = getBattleLanguage(template.config.courseId);
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
+  const currentQuestionDuration = getBattleQuestionDuration(question, template.config);
   const myScore = scores[uid];
 
   useEffect(() => {
@@ -232,6 +235,7 @@ export const BattlePracticeView: React.FC<Props> = ({
                 <div className="mt-1">{template.config.botEnabled ? 'Bot ativo' : 'Solo'}</div>
               </div>
             </div>
+            <BattleLabIndicators className="pt-1" />
             <button
               onClick={start}
               className="w-full rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 px-5 py-4 text-base font-black text-white"
@@ -246,8 +250,8 @@ export const BattlePracticeView: React.FC<Props> = ({
             <div
               className="h-full transition-all duration-150"
               style={{
-                width: `${(timeLeft / template.config.timePerQuestion) * 100}%`,
-                backgroundColor: timeLeft > template.config.timePerQuestion * 0.5 ? '#22c55e' : timeLeft > template.config.timePerQuestion * 0.25 ? '#f97316' : '#ef4444',
+                width: `${(timeLeft / currentQuestionDuration) * 100}%`,
+                backgroundColor: timeLeft > currentQuestionDuration * 0.5 ? '#22c55e' : timeLeft > currentQuestionDuration * 0.25 ? '#f97316' : '#ef4444',
               }}
             />
           </div>
@@ -276,6 +280,9 @@ export const BattlePracticeView: React.FC<Props> = ({
             <div className="w-full max-w-md space-y-4 rounded-2xl bg-slate-800/80 p-6 text-center">
               <div className="text-xs uppercase tracking-wider text-slate-500">
                 Pergunta {questionIndex + 1} / {totalQuestions}
+              </div>
+              <div className="text-xs font-semibold text-orange-300">
+                Tempo desta pergunta: {currentQuestionDuration}s
               </div>
               <div className="text-3xl font-bold leading-snug text-white">{question.text}</div>
               {question.imageUrl ? (

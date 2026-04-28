@@ -28,6 +28,21 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+export function normalizeBattleDuration(value: unknown, fallback = 10): number {
+  const numericValue =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(value.trim())
+        : NaN;
+
+  if (!Number.isFinite(numericValue)) {
+    return clamp(Math.round(fallback), 5, 180);
+  }
+
+  return clamp(Math.round(numericValue), 5, 180);
+}
+
 function stripUndefinedFields<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined)
@@ -80,6 +95,17 @@ export function getBattleCorrectAnswerLabel(question: BattleQuestion): string {
   return question.correctText?.trim() || question.acceptedAnswers?.[0]?.trim() || '';
 }
 
+export function getBattleQuestionDuration(
+  question: BattleQuestion | null | undefined,
+  configOrFallback?: BattleConfig | number | null,
+): number {
+  const fallback =
+    typeof configOrFallback === 'number'
+      ? configOrFallback
+      : configOrFallback?.timePerQuestion ?? 10;
+  return normalizeBattleDuration(question?.durationSeconds, fallback);
+}
+
 function normalizeBattleText(value: string): string {
   return value
     .toLowerCase()
@@ -102,6 +128,10 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
   const id = normalizeOptionalText(question.id) ?? `battle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const text = normalizeOptionalText(question.text);
   const kind = question.kind ?? 'multiple-choice';
+  const normalizedDuration =
+    question.durationSeconds == null
+      ? undefined
+      : normalizeBattleDuration(question.durationSeconds);
   if (!text) return null;
 
   if (isChoiceQuestion(question)) {
@@ -131,6 +161,7 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
       options,
       correctIndex: correctIndexes[0],
       correctIndexes,
+      ...(normalizedDuration ? { durationSeconds: normalizedDuration } : {}),
       ...(normalizeOptionalText(question.hint) ? { hint: normalizeOptionalText(question.hint) } : {}),
       ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
       ...(normalizeOptionalText(question.promptAudioText) ? { promptAudioText: normalizeOptionalText(question.promptAudioText) } : {}),
@@ -153,6 +184,7 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
     correctText,
     acceptedAnswers,
     playAudioOnce: question.playAudioOnce !== false,
+    ...(normalizedDuration ? { durationSeconds: normalizedDuration } : {}),
     ...(normalizeOptionalText(question.hint) ? { hint: normalizeOptionalText(question.hint) } : {}),
     ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
     ...(normalizeOptionalText(question.promptAudioText) ? { promptAudioText: normalizeOptionalText(question.promptAudioText) } : {}),
@@ -508,7 +540,7 @@ export function buildBotBattlePayload(
   delayMs: number;
   payload: { optionIndex?: number; optionIndexes?: number[]; responseText?: string };
 } {
-  const totalMs = session.config.timePerQuestion * 1000;
+  const totalMs = getBattleQuestionDuration(question, session.config) * 1000;
   const accuracyByDifficulty: Record<BattleConfig['difficulty'], number> = {
     easy: 0.82,
     normal: 0.67,
