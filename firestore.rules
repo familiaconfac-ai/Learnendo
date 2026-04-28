@@ -243,7 +243,26 @@ service cloud.firestore {
             docId == 'battle'
             && canAccessLiveClassRoom(classId)
             && request.resource.data.diff(resource.data).affectedKeys()
-                .hasOnly(['currentAnswers', 'scores', 'updatedAt'])
+                .hasOnly([
+                  'participants',
+                  'answers',
+                  'currentAnswers',
+                  'scores',
+                  'answeredCount',
+                  'updatedAt',
+                  'lastChange',
+                  'roundParticipantIds',
+                ])
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['participants'])
+              || request.resource.data.participants.diff(resource.data.participants).affectedKeys()
+                  .hasOnly([request.auth.uid])
+            )
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['answers'])
+              || request.resource.data.answers.diff(resource.data.answers).affectedKeys()
+                  .hasOnly([request.auth.uid])
+            )
             && (
               !request.resource.data.diff(resource.data).affectedKeys().hasAny(['currentAnswers'])
               || request.resource.data.currentAnswers.diff(resource.data.currentAnswers).affectedKeys()
@@ -253,6 +272,10 @@ service cloud.firestore {
               !request.resource.data.diff(resource.data).affectedKeys().hasAny(['scores'])
               || request.resource.data.scores.diff(resource.data.scores).affectedKeys()
                   .hasOnly([request.auth.uid])
+            )
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny(['roundParticipantIds'])
+              || request.auth.uid in request.resource.data.roundParticipantIds
             )
           );
         allow delete: if isTeacherForClass(classId);

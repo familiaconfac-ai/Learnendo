@@ -882,13 +882,6 @@ export async function submitBattleAnswer(
       frozenTimeLeft: Math.max(0, liveSession.config.timePerQuestion - elapsedMs / 1000),
     }) as BattleAnswer;
 
-    const answeredCount = (liveSession.answeredCount ?? 0) + 1;
-    const expectedCount = effectiveRoundParticipantIds.length;
-    const shouldReveal = expectedCount > 0 && answeredCount >= expectedCount;
-    const nextCurrentAnswers = {
-      ...(liveSession.currentAnswers ?? {}),
-      [uid]: answer,
-    };
     const nextParticipant = omitUndefinedFields<BattleRosterParticipant>({
       uid,
       name,
@@ -904,36 +897,13 @@ export async function submitBattleAnswer(
     }, {
       lastAnswerCorrect: isCorrect,
     });
-    const nextScores = shouldReveal
-      ? applyBattleRoundRankingToScores({
-          currentScores: {
-            ...(liveSession.scores ?? {}),
-            [uid]: updatedParticipant,
-          },
-          currentAnswers: nextCurrentAnswers,
-          roundParticipantIds: effectiveRoundParticipantIds,
-          participants: {
-            ...(liveSession.participants ?? {}),
-            [uid]: nextParticipant,
-          },
-          questionStartedAt: liveSession.questionStartedAt ?? 0,
-        })
-      : {
-          ...(liveSession.scores ?? {}),
-          [uid]: updatedParticipant,
-        };
 
     transaction.update(docRef, {
       [`participants.${uid}`]: nextParticipant,
       [`answers.${uid}`]: answer,
       [`currentAnswers.${uid}`]: answer,
       [`scores.${uid}`]: updatedParticipant,
-      scores: nextScores,
       answeredCount: increment(1),
-      status: shouldReveal ? 'REVEALED' : 'PLAYING',
-      roundStatus: shouldReveal ? 'revealed' : 'active',
-      isRevealed: shouldReveal,
-      showAnswer: shouldReveal,
       updatedAt: answeredAt,
       lastChange: serverTimestamp(),
       ...(shouldForceCurrentRoundParticipation ? { roundParticipantIds: arrayUnion(uid) } : {}),
