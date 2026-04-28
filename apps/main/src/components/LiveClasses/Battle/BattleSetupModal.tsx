@@ -312,6 +312,27 @@ export const BattleSetupModal: React.FC<Props> = ({
     );
   }
 
+  function getPreparedQuestionsForCurrentFlow() {
+    const existingQuestions = sanitizeBattleQuestions(
+      getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
+    );
+
+    if (existingQuestions.length > 0) {
+      return {
+        preparedQuestions: existingQuestions,
+        resolvedScope: scope,
+        source: 'existing' as const,
+      };
+    }
+
+    const { generatedQuestions, resolvedScope } = resolveLaunchQuestions();
+    return {
+      preparedQuestions: generatedQuestions,
+      resolvedScope,
+      source: 'generated' as const,
+    };
+  }
+
   // ── Actions ─────────────────────────────────────────────────────────────
 
   async function runStartFlow(generatedQuestions: BattleQuestion[], config: BattleConfig, source: 'quick' | 'curated') {
@@ -374,10 +395,11 @@ export const BattleSetupModal: React.FC<Props> = ({
         })),
       });
 
-      const { generatedQuestions, resolvedScope } = resolveLaunchQuestions();
-      const config = buildConfig(generatedQuestions.length, resolvedScope);
+      const { preparedQuestions, resolvedScope, source } = getPreparedQuestionsForCurrentFlow();
+      const config = buildConfig(preparedQuestions.length, resolvedScope);
 
       console.log('[BATTLE DEBUG] Quick Battle triggering onStart', {
+        questionSource: source,
         scope: config.scope,
         courseId: config.courseId,
         lessonId: config.lessonId,
@@ -386,7 +408,7 @@ export const BattleSetupModal: React.FC<Props> = ({
         botEnabled: config.botEnabled,
         includeTeacher: config.includeTeacher,
       });
-      await runStartFlow(generatedQuestions, config, 'quick');
+      await runStartFlow(preparedQuestions, config, source === 'existing' ? 'curated' : 'quick');
     } catch (error) {
       console.error('[BATTLE START DEBUG] start failed:', error);
       setStartError(error instanceof Error ? error.message : 'Falha ao preparar as perguntas da batalha.');
@@ -396,13 +418,13 @@ export const BattleSetupModal: React.FC<Props> = ({
   /** 📋 Preparar Aula — generate and open the curation screen */
   function handleOpenCuration() {
     try {
-      const { generatedQuestions } = resolveLaunchQuestions();
-      if (generatedQuestions.length === 0) {
+      const { preparedQuestions } = getPreparedQuestionsForCurrentFlow();
+      if (preparedQuestions.length === 0) {
         setStartError('Nenhuma pergunta válida foi encontrada para preparar a aula.');
         return;
       }
       setStartError(null);
-      setQuestions(generatedQuestions);
+      setQuestions(preparedQuestions);
       setEditingIdx(null);
       setEditDraft(null);
       setStep('curate');
@@ -542,7 +564,7 @@ export const BattleSetupModal: React.FC<Props> = ({
         ? sanitizeBattleQuestions(
             getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
           )
-        : sanitizeBattleQuestions(resolveLaunchQuestions().generatedQuestions);
+        : getPreparedQuestionsForCurrentFlow().preparedQuestions;
 
       if (finalQuestions.length === 0) {
         setStartError('Selecione pelo menos uma pergunta valida para salvar o battle.');
