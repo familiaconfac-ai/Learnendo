@@ -133,11 +133,6 @@ export const BattleHubPage: React.FC<Props> = ({
   }, [activeLiveClass?.id]);
 
   useEffect(() => {
-    if (!liveSession) return;
-    setShowSetup(false);
-  }, [liveSession]);
-
-  useEffect(() => {
     if (!activeLiveClass?.id) {
       setLiveSession(null);
       return;
@@ -168,6 +163,21 @@ export const BattleHubPage: React.FC<Props> = ({
 
   async function handleTemplateReady(config: BattleConfig, questions: BattleQuestion[]) {
     console.log('[BATTLE START DEBUG] handler entered');
+    const savedTemplate = buildSavedBattleTemplate(
+      config,
+      questions,
+      `${copy.title} • ${new Date().toLocaleDateString(
+        uiLanguage === 'pt' ? 'pt-BR' : uiLanguage === 'es' ? 'es-ES' : 'en-US'
+      )}`,
+    );
+
+    setLastTemplate(savedTemplate);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(savedTemplate));
+    } catch {
+      // Ignore storage quota issues and keep the in-memory template.
+    }
+
     if (activeLiveClass?.id) {
       const normalizedConfig = {
         ...config,
