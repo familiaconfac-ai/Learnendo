@@ -22,6 +22,7 @@ import React, {
 import {
   subscribeWorkspace,
   saveWorkspace,
+  saveWorkspaceItem,
   saveDocContent,
   saveScrollRatio,
   savePageSwitch,
@@ -1398,6 +1399,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const docRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
   const saveItemsDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveSingleItemDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveDocDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingItemsSaveRef = useRef<{
@@ -1405,12 +1407,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pages: WorkspacePage[];
     currentPageId: string;
   } | null>(null);
+  const pendingSingleItemSaveRef = useRef<Record<string, {
+    item: WorkspaceItem;
+    currentPageId: string;
+    forceSave?: boolean;
+  }>>({});
   const pendingDocSaveRef = useRef<{
     html: string;
     pages: WorkspacePage[];
     currentPageId: string;
   } | null>(null);
   const lastItemsSaveAtRef = useRef<number>(0);
+  const lastSingleItemSaveAtRef = useRef<number>(0);
   const lastDocSaveAtRef = useRef<number>(0);
   // Tracks which floating block's contentEditable is currently focused so the
   // toolbar can route formatting commands to the right target.
@@ -1584,9 +1592,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => () => {
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    if (saveSingleItemDebounce.current) clearTimeout(saveSingleItemDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
     pendingItemsSaveRef.current = null;
+    pendingSingleItemSaveRef.current = {};
     pendingDocSaveRef.current = null;
   }, []);
 
@@ -1603,6 +1613,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       pending.currentPageId,
       pending.pages,
     ).catch(console.error);
+  }, [classId, userId, userName]);
+
+  const flushPendingSingleItemSaves = useCallback(() => {
+    const pendingEntries = Object.values(pendingSingleItemSaveRef.current);
+    if (pendingEntries.length === 0) return;
+    pendingSingleItemSaveRef.current = {};
+    lastSingleItemSaveAtRef.current = Date.now();
+    pendingEntries.forEach(({ item, currentPageId }) => {
+      saveWorkspaceItem(
+        classId,
+        item,
+        userId,
+        userName,
+        currentPageId,
+      ).catch(console.error);
+    });
   }, [classId, userId, userName]);
 
   const flushPendingDocSave = useCallback(() => {
@@ -1651,6 +1677,37 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       flushPendingItemsSave,
       normalizeItemScope,
       syncActivePageItemsRef,
+    ],
+  );
+
+  const scheduleSingleItemSave = useCallback(
+    (item: WorkspaceItem, options?: { forceSave?: boolean }) => {
+      if (effectiveReadOnly && !options?.forceSave) return;
+      lastItemEditRef.current = Date.now();
+      const scopedItem = normalizeItemScope(item);
+      pendingSingleItemSaveRef.current[scopedItem.id] = {
+        item: scopedItem,
+        currentPageId: activePageIdRef.current,
+        forceSave: options?.forceSave,
+      };
+
+      if (saveSingleItemDebounce.current) return;
+
+      const elapsedMs = Date.now() - lastSingleItemSaveAtRef.current;
+      if (elapsedMs >= WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS) {
+        flushPendingSingleItemSaves();
+        return;
+      }
+
+      saveSingleItemDebounce.current = setTimeout(() => {
+        saveSingleItemDebounce.current = null;
+        flushPendingSingleItemSaves();
+      }, WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS - elapsedMs);
+    },
+    [
+      effectiveReadOnly,
+      flushPendingSingleItemSaves,
+      normalizeItemScope,
     ],
   );
 
@@ -1802,22 +1859,26 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const updateItem = useCallback(
     (id: string, patch: Partial<WorkspaceItem>, options?: { forceSave?: boolean }) => {
       setItems((prev) => {
-        const next = prev.map((it) =>
-          it.id === id
-            ? normalizeItemScope({
-                ...it,
-                ...patch,
-                updatedAt: Date.now(),
-                updatedBy: userId,
-                updatedByName: userName,
-              })
-            : it,
-        );
-        scheduleItemsSave(next, options);
+        let updatedItem: WorkspaceItem | null = null;
+        const next = prev.map((it) => {
+          if (it.id !== id) return it;
+          updatedItem = normalizeItemScope({
+            ...it,
+            ...patch,
+            updatedAt: Date.now(),
+            updatedBy: userId,
+            updatedByName: userName,
+          });
+          return updatedItem;
+        });
+        syncActivePageItemsRef(next);
+        if (updatedItem) {
+          scheduleSingleItemSave(updatedItem, options);
+        }
         return next;
       });
     },
-    [normalizeItemScope, scheduleItemsSave, userId, userName],
+    [normalizeItemScope, scheduleSingleItemSave, syncActivePageItemsRef, userId, userName],
   );
 
   const deleteItem = useCallback(

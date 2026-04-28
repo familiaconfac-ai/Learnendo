@@ -70,6 +70,25 @@ export interface WorkspaceDoc {
   updatedByName: string;
 }
 
+function upsertWorkspaceItemByFreshness(
+  items: WorkspaceItem[],
+  incomingItem: WorkspaceItem,
+): WorkspaceItem[] {
+  const existingIndex = items.findIndex((item) => item.id === incomingItem.id);
+  if (existingIndex === -1) {
+    return [...items, incomingItem];
+  }
+
+  const existingItem = items[existingIndex];
+  if ((existingItem.updatedAt ?? 0) > (incomingItem.updatedAt ?? 0)) {
+    return items;
+  }
+
+  const nextItems = [...items];
+  nextItems[existingIndex] = incomingItem;
+  return nextItems;
+}
+
 /**
  * Normalize a raw pages array coming from Firestore.
  * Handles pre-Fase-2 data that may be missing the `id` field.
@@ -204,6 +223,84 @@ export async function saveWorkspace(
       { merge: true },
     );
     console.log('[WS] saveWorkspace setDoc ✅');
+  }
+}
+
+/** Persist a single floating item without overwriting sibling boxes edited by other users. */
+export async function saveWorkspaceItem(
+  classId: string,
+  item: WorkspaceItem,
+  uid: string,
+  name: string,
+  currentPageId?: string,
+): Promise<void> {
+  if (!db) return;
+  console.log(`[WS] saveWorkspaceItem by ${name} (${uid.slice(0, 6)}) — ${item.id}`);
+  const { runTransaction, setDoc, getDoc } = await import('firebase/firestore');
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const ref = workspaceRef(classId);
+      const snapshot = await transaction.get(ref);
+      const currentData = snapshot.exists() ? (snapshot.data() as WorkspaceDoc) : null;
+      const currentItems = currentData?.items ?? [];
+      const nextItems = upsertWorkspaceItemByFreshness(currentItems, item);
+      const currentPages = currentData?.pages
+        ? normalizeWorkspacePages(currentData.pages as Partial<WorkspacePage>[])
+        : [];
+      const nextPages =
+        currentPageId && currentPages.length > 0
+          ? currentPages.map((page) =>
+              page.id === currentPageId
+                ? { ...page, items: upsertWorkspaceItemByFreshness(page.items ?? [], item) }
+                : page,
+            )
+          : currentPages;
+
+      transaction.set(
+        ref,
+        {
+          items: nextItems,
+          itemsUpdatedBy: uid,
+          updatedAt: Date.now(),
+          updatedBy: uid,
+          updatedByName: name,
+          ...(nextPages.length > 0 ? { pages: nextPages } : {}),
+        },
+        { merge: true },
+      );
+    });
+    console.log('[WS] saveWorkspaceItem ✅');
+  } catch (err) {
+    console.warn('[WS] saveWorkspaceItem transaction failed — falling back to setDoc:', err);
+    const currentSnapshot = await getDoc(workspaceRef(classId));
+    const currentData = currentSnapshot.exists() ? (currentSnapshot.data() as WorkspaceDoc) : null;
+    const currentItems = currentData?.items ?? [];
+    const nextItems = upsertWorkspaceItemByFreshness(currentItems, item);
+    const currentPages = currentData?.pages
+      ? normalizeWorkspacePages(currentData.pages as Partial<WorkspacePage>[])
+      : [];
+    const nextPages =
+      currentPageId && currentPages.length > 0
+        ? currentPages.map((page) =>
+            page.id === currentPageId
+              ? { ...page, items: upsertWorkspaceItemByFreshness(page.items ?? [], item) }
+              : page,
+          )
+        : currentPages;
+    await setDoc(
+      workspaceRef(classId),
+      {
+        items: nextItems,
+        itemsUpdatedBy: uid,
+        updatedAt: Date.now(),
+        updatedBy: uid,
+        updatedByName: name,
+        ...(nextPages.length > 0 ? { pages: nextPages } : {}),
+      },
+      { merge: true },
+    );
+    console.log('[WS] saveWorkspaceItem setDoc ✅');
   }
 }
 
