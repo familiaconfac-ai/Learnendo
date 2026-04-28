@@ -25,6 +25,22 @@ interface LiveClassRoomPageProps {
   onExit: () => void;
 }
 
+function buildInitialSession(liveClass: LiveClass): LiveClassSession {
+  return {
+    sessionStatus: 'idle',
+    activeWorkbookId: liveClass.workbookId ?? null,
+    activeLessonId: liveClass.lessonId ?? null,
+    liveAudioTransport: 'not-configured',
+    teacherLiveMicEnabled: false,
+    teacherCameraEnabled: false,
+    allowStudentLiveMic: false,
+    studentCameraMode: 'off',
+    allowStudentWhiteboardEdit: false,
+    audioNotesEnabled: true,
+    mainStageMode: getDefaultMainStageMode(),
+  };
+}
+
 export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   liveClass,
   user,
@@ -37,19 +53,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   const [showExerciseSession, setShowExerciseSession] = useState(false);
   const [pendingBattleTemplate, setPendingBattleTemplate] = useState<SavedBattleTemplate | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
-  const [session, setSession] = useState<LiveClassSession>({
-    sessionStatus: 'idle',
-    activeWorkbookId: liveClass.workbookId ?? null,
-    activeLessonId: liveClass.lessonId ?? null,
-    liveAudioTransport: 'not-configured',
-    teacherLiveMicEnabled: false,
-    teacherCameraEnabled: false,
-    allowStudentLiveMic: false,
-    studentCameraMode: 'off',
-    allowStudentWhiteboardEdit: false,
-    audioNotesEnabled: true,
-    mainStageMode: getDefaultMainStageMode(),
-  });
+  const [session, setSession] = useState<LiveClassSession>(() => buildInitialSession(liveClass));
 
   const role = isTeacher ? 'teacher' : 'student';
   const isBattleStage = session.mainStageMode === 'battle';
@@ -78,6 +82,14 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
     return unsubscribe;
   }, [liveClass.id]);
+
+  useEffect(() => {
+    setSessionLoaded(false);
+    setSession(buildInitialSession(liveClass));
+    setPendingBattleTemplate(null);
+    setShowWhiteboard(false);
+    setShowExerciseSession(false);
+  }, [liveClass.id, liveClass.lessonId, liveClass.workbookId]);
 
   useEffect(() => {
     const unsubscribe = subscribeLiveSession(
