@@ -1381,6 +1381,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [battleTemplatesList, setBattleTemplatesList] = useState<StoredBattleTemplate[]>([]);
   const [loadingBattleTemplates, setLoadingBattleTemplates] = useState(false);
   const [saveSinglePageId, setSaveSinglePageId] = useState<string | null>(null);
+  const [openLibraryTab, setOpenLibraryTab] = useState<'materials' | 'battles'>('materials');
 
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
@@ -2157,6 +2158,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const handleOpenMaterialsList = async () => {
     console.log('[WorkspaceCanvas] Open Materials clicked');
+    setOpenLibraryTab('materials');
     setShowOpenModal(true);
     setLoadingMaterials(true);
     setLoadingBattleTemplates(true);
@@ -2910,13 +2912,35 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8"/></svg>
               </button>
             </div>
+            <div className="mb-4 grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setOpenLibraryTab('materials')}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                  openLibraryTab === 'materials'
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {wsl.materialsSection}
+              </button>
+              <button
+                onClick={() => setOpenLibraryTab('battles')}
+                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                  openLibraryTab === 'battles'
+                    ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                }`}
+              >
+                {wsl.battlesSection}
+              </button>
+            </div>
             {loadingMaterials || loadingBattleTemplates ? (
               <p className="text-sm text-slate-400 text-center py-6">{wsl.loading}</p>
             ) : materialsList.length === 0 && battleTemplatesList.length === 0 ? (
               <p className="text-sm text-slate-400 text-center py-6">{wsl.noSavedFiles}</p>
             ) : (
               <div className="overflow-y-auto flex-1 space-y-5">
-                <section>
+                <section className={openLibraryTab === 'materials' ? '' : 'hidden'}>
                   <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">{wsl.materialsSection}</h3>
                   {materialsList.length === 0 ? (
                     <p className="py-2 text-sm text-slate-400">{wsl.noMaterials}</p>
@@ -2933,13 +2957,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                       disabled={loadingMaterialId === m.id}
                       className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
                     >
-                      {loadingMaterialId === m.id ? '�' : wsl.open}
+                      {loadingMaterialId === m.id ? '...' : wsl.open}
                     </button>
                   </li>
                 ))}
               </ul>
                 </section>
-                <section>
+                <section className={openLibraryTab === 'battles' ? '' : 'hidden'}>
                   <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-600">{wsl.battlesSection}</h3>
                   {battleTemplatesList.length === 0 ? (
                     <p className="py-2 text-sm text-slate-400">{wsl.noBattles}</p>

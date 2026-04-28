@@ -30,7 +30,6 @@ import {
   getDocs,
   query,
   where,
-  orderBy,
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
 import type { WorkspaceItem, WorkspacePage } from './workspaceService';
@@ -284,11 +283,16 @@ export async function getMaterialsByUser(ownerUid?: string): Promise<WorkspaceMa
     const q = query(
       materialsCollection(),
       where('createdBy', '==', uid),
-      orderBy('updatedAt', 'desc'),
     );
 
     const snapshot = await getDocs(q);
-    const materials = snapshot.docs.map((d) => ({ id: d.id, ...d.data() } as WorkspaceMaterial));
+    const materials = snapshot.docs
+      .map((d) => ({ id: d.id, ...d.data() } as WorkspaceMaterial))
+      .sort((left, right) => {
+        const leftStamp = typeof left.updatedAt === 'number' ? left.updatedAt : left.createdAt ?? 0;
+        const rightStamp = typeof right.updatedAt === 'number' ? right.updatedAt : right.createdAt ?? 0;
+        return rightStamp - leftStamp;
+      });
     console.log(`[Materials] LOAD SUCCESS ✅ — found ${materials.length} materials for user=${uid.slice(0, 8)}`);
     if (materials.length === 0) {
       console.log('[Materials] No materials found (empty list is OK)');
