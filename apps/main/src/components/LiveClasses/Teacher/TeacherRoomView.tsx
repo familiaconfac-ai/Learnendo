@@ -15,6 +15,7 @@ import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavigation';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
+import type { SavedBattleTemplate } from '../Battle/battleTypes';
 import type { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
 
 interface TeacherRoomViewProps {
@@ -29,6 +30,7 @@ interface TeacherRoomViewProps {
   setShowExerciseSession: (show: boolean) => void;
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
   onOpenBattleHub: () => void;
+  onOpenBattleTemplate: (template: SavedBattleTemplate) => void;
   onExit: () => void;
 }
 
@@ -41,6 +43,7 @@ const TeacherStage: React.FC<{
   teacherName: string;
   teacherEmail?: string | null;
   onOpenBattleHub: () => void;
+  onOpenBattleTemplate: (template: SavedBattleTemplate) => void;
   onExit: () => void;
 }> = ({
   liveClass,
@@ -51,6 +54,7 @@ const TeacherStage: React.FC<{
   teacherName,
   teacherEmail,
   onOpenBattleHub,
+  onOpenBattleTemplate,
   onExit,
 }) => {
   const participants = useParticipants();
@@ -316,6 +320,7 @@ const TeacherStage: React.FC<{
                   studentEditingEnabled={studentEditingEnabled}
                   classTeacherUserId={liveClass.teacherUid ?? teacherUid}
                   assignedRoster={assignedRoster}
+                  onOpenBattleTemplate={onOpenBattleTemplate}
                 />
               </div>
             ) : null}
@@ -494,7 +499,7 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onExit } = props;
+  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onExit } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
 
@@ -537,6 +542,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
         teacherName={user.displayName || 'Professor'}
         teacherEmail={user.email}
         onOpenBattleHub={onOpenBattleHub}
+        onOpenBattleTemplate={onOpenBattleTemplate}
         onExit={onExit}
       />
     </LiveKitRoom>

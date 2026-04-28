@@ -36,6 +36,11 @@ import {
   getMaterialsByUser,
   WorkspaceMaterial,
 } from '../../../services/materialsService';
+import {
+  listBattleTemplatesByOwner,
+  type StoredBattleTemplate,
+} from '../../../services/battleTemplateLibraryService';
+import type { SavedBattleTemplate } from '../Battle/battleTypes';
 import { speak } from '../../../services/ttsService';
 import { translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
 import { subscribeUserAccounts, type UserAccountProfile } from '../../../services/userRoles';
@@ -132,8 +137,13 @@ interface WsLabels {
   save: string;
   saving: string;
   noMaterials: string;
+  noBattles: string;
+  noSavedFiles: string;
   loading: string;
   open: string;
+  openBattle: string;
+  materialsSection: string;
+  battlesSection: string;
   exportPopupError: string;
   pageName: (n: number) => string;
   pageNameTip: (name: string) => string;
@@ -169,7 +179,12 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     materialPlaceholder: 'Ex: Vocabul�rio � Cores',
     cancel: 'Cancelar', save: 'Salvar', saving: 'Salvando�',
     noMaterials: 'Nenhum material salvo ainda.',
+    noBattles: 'Nenhum battle salvo ainda.',
+    noSavedFiles: 'Nenhum arquivo salvo ainda.',
     loading: 'Carregando�', open: 'Abrir',
+    openBattle: 'Abrir battle',
+    materialsSection: 'Aulas e materiais',
+    battlesSection: 'Battles salvos',
     exportPopupError: 'Permita popups para exportar o PDF.',
     pageName: (n) => `P�gina ${n}`,
     pageNameTip: (name) => `${name} � duplo clique para renomear`,
@@ -203,7 +218,12 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     materialPlaceholder: 'E.g.: Vocabulary � Colors',
     cancel: 'Cancel', save: 'Save', saving: 'Saving�',
     noMaterials: 'No saved materials yet.',
+    noBattles: 'No saved battles yet.',
+    noSavedFiles: 'No saved files yet.',
     loading: 'Loading�', open: 'Open',
+    openBattle: 'Open battle',
+    materialsSection: 'Saved lessons and materials',
+    battlesSection: 'Saved battles',
     exportPopupError: 'Allow popups to export the PDF.',
     pageName: (n) => `Page ${n}`,
     pageNameTip: (name) => `${name} � double-click to rename`,
@@ -237,7 +257,12 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     materialPlaceholder: 'Ej: Vocabulario � Colores',
     cancel: 'Cancelar', save: 'Guardar', saving: 'Guardando�',
     noMaterials: 'No hay materiales guardados.',
+    noBattles: 'No hay battles guardados.',
+    noSavedFiles: 'No hay archivos guardados.',
     loading: 'Cargando�', open: 'Abrir',
+    openBattle: 'Abrir battle',
+    materialsSection: 'Clases y materiales',
+    battlesSection: 'Battles guardados',
     exportPopupError: 'Permite las ventanas emergentes para exportar el PDF.',
     pageName: (n) => `P�gina ${n}`,
     pageNameTip: (name) => `${name} � doble clic para renombrar`,
@@ -391,6 +416,7 @@ export interface WorkspaceCanvasProps {
   classTeacherUserId?: string | null;
   assignedRoster?: Array<{ uid: string; label: string; isOnline: boolean }>;
   toolbarLeading?: React.ReactNode;
+  onOpenBattleTemplate?: (template: SavedBattleTemplate) => void;
 }
 
 // -- UnifiedColorSwatch --------------------------------------------------------
@@ -1279,6 +1305,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   classTeacherUserId,
   assignedRoster = [],
   toolbarLeading,
+  onOpenBattleTemplate,
 }) => {
   console.log('[WorkspaceCanvas] INITIALIZED with userId:', userId, 'classId:', classId, 'userName:', userName);
 
@@ -1351,6 +1378,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [materialsList, setMaterialsList] = useState<WorkspaceMaterial[]>([]);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [loadingMaterialId, setLoadingMaterialId] = useState<string | null>(null);
+  const [battleTemplatesList, setBattleTemplatesList] = useState<StoredBattleTemplate[]>([]);
+  const [loadingBattleTemplates, setLoadingBattleTemplates] = useState(false);
   const [saveSinglePageId, setSaveSinglePageId] = useState<string | null>(null);
 
   // -- Vocabulary popup state --------------------------------------------------
@@ -2129,16 +2158,24 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     console.log('[WorkspaceCanvas] Open Materials clicked');
     setShowOpenModal(true);
     setLoadingMaterials(true);
+    setLoadingBattleTemplates(true);
     try {
-      console.log('[WorkspaceCanvas] Calling getMaterialsByUser');
-      const list = await getMaterialsByUser();
-      console.log('[WorkspaceCanvas] getMaterialsByUser returned:', list.length, 'materials');
-      setMaterialsList(list);
+      console.log('[WorkspaceCanvas] Calling getMaterialsByUser and listBattleTemplatesByOwner');
+      const [materials, battles] = await Promise.all([
+        getMaterialsByUser(),
+        listBattleTemplatesByOwner(userId),
+      ]);
+      console.log('[WorkspaceCanvas] getMaterialsByUser returned:', materials.length, 'materials');
+      console.log('[WorkspaceCanvas] listBattleTemplatesByOwner returned:', battles.length, 'battles');
+      setMaterialsList(materials);
+      setBattleTemplatesList(battles);
     } catch (err) {
       console.error('[WorkspaceCanvas] list failed', err);
       setMaterialsList([]);
+      setBattleTemplatesList([]);
     } finally {
       setLoadingMaterials(false);
+      setLoadingBattleTemplates(false);
     }
   };
 
@@ -2169,6 +2206,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     } finally {
       setLoadingMaterialId(null);
     }
+  };
+
+  const handleLoadBattleTemplate = (template: StoredBattleTemplate) => {
+    if (!onOpenBattleTemplate) {
+      alert('Abertura de battle indisponivel nesta sala.');
+      return;
+    }
+
+    setShowOpenModal(false);
+    onOpenBattleTemplate(template);
   };
 
   // -- Vocabulary selection detection -----------------------------------------
@@ -2862,11 +2909,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8"/></svg>
               </button>
             </div>
-            {loadingMaterials ? (
+            {loadingMaterials || loadingBattleTemplates ? (
               <p className="text-sm text-slate-400 text-center py-6">{wsl.loading}</p>
-            ) : materialsList.length === 0 ? (
-              <p className="text-sm text-slate-400 text-center py-6">{wsl.noMaterials}</p>
+            ) : materialsList.length === 0 && battleTemplatesList.length === 0 ? (
+              <p className="text-sm text-slate-400 text-center py-6">{wsl.noSavedFiles}</p>
             ) : (
+              <div className="overflow-y-auto flex-1 space-y-5">
+                <section>
+                  <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-slate-500">{wsl.materialsSection}</h3>
+                  {materialsList.length === 0 ? (
+                    <p className="py-2 text-sm text-slate-400">{wsl.noMaterials}</p>
+                  ) : null}
               <ul className="overflow-y-auto flex-1 divide-y divide-slate-100">
                 {materialsList.map((m) => (
                   <li key={m.id} className="py-2.5 flex items-center justify-between gap-2">
@@ -2884,6 +2937,33 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   </li>
                 ))}
               </ul>
+                </section>
+                <section>
+                  <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-600">{wsl.battlesSection}</h3>
+                  {battleTemplatesList.length === 0 ? (
+                    <p className="py-2 text-sm text-slate-400">{wsl.noBattles}</p>
+                  ) : (
+                    <ul className="divide-y divide-slate-100">
+                      {battleTemplatesList.map((template) => (
+                        <li key={template.id} className="py-2.5 flex items-center justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{template.title}</p>
+                            <p className="text-xs text-slate-400">
+                              {template.questions.length} perguntas • {new Date(template.updatedAt).toLocaleDateString('pt-BR')}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleLoadBattleTemplate(template)}
+                            className="flex-shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white transition hover:bg-emerald-700"
+                          >
+                            {wsl.openBattle}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              </div>
             )}
           </div>
         </div>

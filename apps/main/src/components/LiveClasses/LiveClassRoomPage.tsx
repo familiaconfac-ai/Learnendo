@@ -11,6 +11,7 @@ import {
 import { getDefaultMainStageMode } from '../../services/liveClassStage';
 import { learnendoLogo } from '../../assets/branding';
 import { BattleHubPage } from '../BattleHub/BattleHubPage';
+import type { SavedBattleTemplate } from './Battle/battleTypes';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
 
@@ -34,6 +35,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [showExerciseSession, setShowExerciseSession] = useState(false);
+  const [pendingBattleTemplate, setPendingBattleTemplate] = useState<SavedBattleTemplate | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
@@ -135,6 +137,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   );
 
   const handleOpenBattleHub = useCallback(() => {
+    setPendingBattleTemplate(null);
     console.log('[BATTLE DEBUG] open battle from live class', {
       liveClassId: liveClass?.id,
       teacherUid: user?.uid,
@@ -148,6 +151,11 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
     void handleUpdateSession({ mainStageMode: 'battle' });
   }, [handleUpdateSession, liveClass?.id, onlinePresence, user?.uid]);
+
+  const handleOpenSavedBattleTemplate = useCallback((template: SavedBattleTemplate) => {
+    setPendingBattleTemplate(template);
+    void handleUpdateSession({ mainStageMode: 'battle' });
+  }, [handleUpdateSession]);
 
   const handleReturnToWorkspace = useCallback(() => {
     void handleUpdateSession({ mainStageMode: 'workspace' });
@@ -177,6 +185,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           setShowExerciseSession={setShowExerciseSession}
           handleUpdateSession={handleUpdateSession}
           onOpenBattleHub={handleOpenBattleHub}
+          onOpenBattleTemplate={handleOpenSavedBattleTemplate}
           onExit={onExit}
         />
         {isBattleStage ? (
@@ -195,6 +204,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
             onlineParticipants={battleOnlineParticipants}
             onOpenLiveClasses={handleReturnToWorkspace}
             onDismiss={handleReturnToWorkspace}
+            initialSetupTemplate={pendingBattleTemplate}
           />
         ) : null}
       </>

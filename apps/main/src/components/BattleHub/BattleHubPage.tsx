@@ -30,6 +30,7 @@ interface Props {
   activeLiveClass?: LiveClass | null;
   onlineParticipants?: Array<{ uid: string; name: string }>;
   onDismiss?: () => void;
+  initialSetupTemplate?: SavedBattleTemplate | null;
 }
 
 const COPY: Record<UILang, {
@@ -113,6 +114,7 @@ export const BattleHubPage: React.FC<Props> = ({
   activeLiveClass,
   onlineParticipants,
   onDismiss,
+  initialSetupTemplate = null,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
   const effectiveCourseId = activeLiveClass?.courseId ?? courseId;
@@ -170,6 +172,12 @@ export const BattleHubPage: React.FC<Props> = ({
     if (!activeLiveClass?.id) return;
     setShowSetup(true);
   }, [activeLiveClass?.id]);
+
+  useEffect(() => {
+    if (!initialSetupTemplate) return;
+    setSetupTemplate(initialSetupTemplate);
+    setShowSetup(true);
+  }, [initialSetupTemplate]);
 
   useEffect(() => {
     if (!activeLiveClass?.id) {
