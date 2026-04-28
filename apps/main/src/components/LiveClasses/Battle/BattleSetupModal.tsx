@@ -74,6 +74,10 @@ interface Props {
   initialTemplate?: SavedBattleTemplate | null;
 }
 
+function buildSuggestedBattleTitle() {
+  return `Battle ${new Date().toLocaleDateString('pt-BR')}`;
+}
+
 const SCOPES: { value: BattleScope; label: string; desc: string }[] = [
   { value: 'current-lesson', label: 'Esta Lição',    desc: 'Só desta lição' },
   { value: 'current-book',   label: 'Livro Inteiro', desc: 'Todas as lições' },
@@ -138,6 +142,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [startError,   setStartError]   = useState<string | null>(null);
   const [startingNow,  setStartingNow]  = useState(false);
   const [saveMessage,  setSaveMessage]  = useState<string | null>(null);
+  const [templateTitle, setTemplateTitle] = useState(() => initialTemplate?.title?.trim() || buildSuggestedBattleTitle());
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
       courseId: defaultCourseId,
@@ -187,6 +192,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     setEditDraft(null);
     setStartError(null);
     setSaveMessage(null);
+    setTemplateTitle(initialTemplate.title?.trim() || buildSuggestedBattleTitle());
     setStep('curate');
   }, [initialTemplate]);
 
@@ -530,7 +536,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   // ────────────────────────────────────────────────────────────────────────
   // STEP 1 — CONFIG
   // ────────────────────────────────────────────────────────────────────────
-  async function handleSaveTemplate(titleOverride?: string) {
+  async function handleSaveTemplate(titleOverride?: string, forceDuplicate = false) {
     const finalQuestions = sanitizeBattleQuestions(
       getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
     );
@@ -540,28 +546,30 @@ export const BattleSetupModal: React.FC<Props> = ({
       return;
     }
 
-    const suggestedTitle = titleOverride?.trim() || initialTemplate?.title || `Battle ${new Date().toLocaleDateString('pt-BR')}`;
-    const titleInput = window.prompt('Nome do battle salvo:', suggestedTitle);
-    const title = titleInput?.trim();
-
-    if (!title) {
-      return;
-    }
+    const title = titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle();
+    setTemplateTitle(title);
 
     if (!onSaveTemplate) {
       setSaveMessage('Salvar indisponivel neste modo.');
       return;
     }
 
-    const template = buildSavedBattleTemplate(
+    const baseTemplate = buildSavedBattleTemplate(
       buildConfig(finalQuestions.length),
       finalQuestions,
       title,
     );
+    const template = initialTemplate && !forceDuplicate
+      ? {
+          ...baseTemplate,
+          id: initialTemplate.id,
+          createdAt: initialTemplate.createdAt,
+        }
+      : baseTemplate;
 
     try {
       await onSaveTemplate(template);
-      setSaveMessage('Battle salvo na sua biblioteca.');
+      setSaveMessage(forceDuplicate ? 'Battle duplicado na sua biblioteca.' : 'Battle salvo na sua biblioteca.');
       setStartError(null);
     } catch (error) {
       console.error('[BATTLE SAVE DEBUG] save failed:', error);
@@ -571,8 +579,8 @@ export const BattleSetupModal: React.FC<Props> = ({
   }
 
   async function handleDuplicateTemplate() {
-    const baseTitle = initialTemplate?.title?.trim() || `Battle ${new Date().toLocaleDateString('pt-BR')}`;
-    await handleSaveTemplate(`${baseTitle} (copia)`);
+    const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle();
+    await handleSaveTemplate(`${baseTitle} (copia)`, true);
   }
 
   if (step === 'config') {
@@ -797,8 +805,16 @@ export const BattleSetupModal: React.FC<Props> = ({
 
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-orange-600/80 to-red-700/80 shrink-0">
-          <div>
-            <h2 className="text-base font-bold text-white">📋 Preparar Aula</h2>
+          <div className="min-w-0 flex-1 pr-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-100/80">
+              Nome da batalha
+            </p>
+            <input
+              value={templateTitle}
+              onChange={(event) => setTemplateTitle(event.target.value)}
+              placeholder="Digite o nome da batalha"
+              className="mt-1 mb-1 w-full rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-sm font-bold text-white outline-none placeholder:text-orange-100/60 focus:border-white/40"
+            />
             <p className="text-xs text-orange-200">
               {selectedCount} de {questions.length} selecionadas · {timePerQuestion}s cada
             </p>
@@ -815,15 +831,13 @@ export const BattleSetupModal: React.FC<Props> = ({
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition">
               Salvar
             </button>
-            {initialTemplate ? (
-              <button
-                onClick={() => void handleDuplicateTemplate()}
-                title="Duplicar battle salvo"
-                className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
-              >
-                Duplicar
-              </button>
-            ) : null}
+            <button
+              onClick={() => void handleDuplicateTemplate()}
+              title="Duplicar battle salvo"
+              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
+            >
+              Duplicar
+            </button>
             <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none ml-1" aria-label="Close">✕</button>
           </div>
         </div>
