@@ -1123,7 +1123,10 @@ const App: React.FC = () => {
     // change triggers this workbook reload.  Using a ref avoids adding currentSection
     // as a reactive dependency (which would cause the effect to re-run on every nav).
     const navigateToWorkbook = () => {
-      if (currentSectionRef.current !== SectionType.LIVE_CLASSES) {
+      if (
+        currentSectionRef.current !== SectionType.LIVE_CLASSES &&
+        currentSectionRef.current !== SectionType.BATTLE
+      ) {
         setCurrentSection(SectionType.WORKBOOK);
       }
     };
