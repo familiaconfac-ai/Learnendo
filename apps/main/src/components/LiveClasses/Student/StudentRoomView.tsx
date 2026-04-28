@@ -65,9 +65,7 @@ const StudentStage: React.FC<{
 
   const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const isBattleStage = stageMode === 'battle';
-  const shouldRenderBattleOverlay =
-    Boolean(battleSession) &&
-    (isBattleStage || (battleSession ? isActiveBattleStatus(battleSession.status) : false));
+  const shouldRenderBattleOverlay = Boolean(battleSession) && isBattleStage;
 
 
   useEffect(() => {
