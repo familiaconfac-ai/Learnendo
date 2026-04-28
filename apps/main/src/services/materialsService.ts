@@ -28,6 +28,7 @@ import {
   setDoc,
   getDoc,
   getDocs,
+  deleteDoc,
   query,
   where,
 } from 'firebase/firestore';
@@ -262,6 +263,14 @@ export async function duplicateMaterial(
  * Returns all materials created by a user, ordered by updatedAt descending.
  * Firestore rules restrict read access to documents where createdBy == request.auth.uid.
  */
+export async function deleteMaterialFromLibrary(materialId: string): Promise<void> {
+  if (!db) throw new Error('Firestore not initialized');
+  if (!materialId) return;
+
+  await deleteDoc(materialDocRef(materialId));
+  console.log(`[Materials] deleteMaterialFromLibrary âœ… â€” materialId=${materialId}`);
+}
+
 export async function getMaterialsByUser(ownerUid?: string): Promise<WorkspaceMaterial[]> {
   console.log('[Materials] getMaterialsByUser CALLED');
   console.log('[Materials] Auth currentUser:', auth.currentUser?.uid, 'isAnonymous:', auth.currentUser?.isAnonymous);

@@ -34,9 +34,11 @@ import {
   saveWorkspaceAsMaterial,
   loadMaterialToWorkspace,
   getMaterialsByUser,
+  deleteMaterialFromLibrary,
   WorkspaceMaterial,
 } from '../../../services/materialsService';
 import {
+  deleteBattleTemplateFromLibrary,
   listBattleTemplatesByOwner,
   type StoredBattleTemplate,
 } from '../../../services/battleTemplateLibraryService';
@@ -1378,8 +1380,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [materialsList, setMaterialsList] = useState<WorkspaceMaterial[]>([]);
   const [loadingMaterials, setLoadingMaterials] = useState(false);
   const [loadingMaterialId, setLoadingMaterialId] = useState<string | null>(null);
+  const [deletingMaterialId, setDeletingMaterialId] = useState<string | null>(null);
   const [battleTemplatesList, setBattleTemplatesList] = useState<StoredBattleTemplate[]>([]);
   const [loadingBattleTemplates, setLoadingBattleTemplates] = useState(false);
+  const [deletingBattleTemplateId, setDeletingBattleTemplateId] = useState<string | null>(null);
   const [saveSinglePageId, setSaveSinglePageId] = useState<string | null>(null);
   const [openLibraryTab, setOpenLibraryTab] = useState<'materials' | 'battles'>('materials');
 
@@ -2156,6 +2160,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     }
   };
 
+  const reloadSavedLibraries = async () => {
+    const [materials, battles] = await Promise.all([
+      getMaterialsByUser(userId),
+      listBattleTemplatesByOwner(userId),
+    ]);
+    setMaterialsList(materials);
+    setBattleTemplatesList(battles);
+  };
+
   const handleOpenMaterialsList = async () => {
     console.log('[WorkspaceCanvas] Open Materials clicked');
     setOpenLibraryTab('materials');
@@ -2164,14 +2177,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setLoadingBattleTemplates(true);
     try {
       console.log('[WorkspaceCanvas] Calling getMaterialsByUser and listBattleTemplatesByOwner');
-      const [materials, battles] = await Promise.all([
-        getMaterialsByUser(userId),
-        listBattleTemplatesByOwner(userId),
-      ]);
-      console.log('[WorkspaceCanvas] getMaterialsByUser returned:', materials.length, 'materials');
-      console.log('[WorkspaceCanvas] listBattleTemplatesByOwner returned:', battles.length, 'battles');
-      setMaterialsList(materials);
-      setBattleTemplatesList(battles);
+      await reloadSavedLibraries();
     } catch (err) {
       console.error('[WorkspaceCanvas] list failed', err);
       setMaterialsList([]);
@@ -2219,6 +2225,36 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
     setShowOpenModal(false);
     onOpenBattleTemplate(template);
+  };
+
+  const handleDeleteMaterial = async (materialId: string) => {
+    if (!window.confirm('Delete this saved material?')) return;
+
+    setDeletingMaterialId(materialId);
+    try {
+      await deleteMaterialFromLibrary(materialId);
+      await reloadSavedLibraries();
+    } catch (err) {
+      console.error('[WorkspaceCanvas] delete material failed:', err);
+      alert('Failed to delete saved material.');
+    } finally {
+      setDeletingMaterialId(null);
+    }
+  };
+
+  const handleDeleteBattleTemplate = async (templateId: string) => {
+    if (!window.confirm('Delete this saved battle?')) return;
+
+    setDeletingBattleTemplateId(templateId);
+    try {
+      await deleteBattleTemplateFromLibrary(templateId);
+      await reloadSavedLibraries();
+    } catch (err) {
+      console.error('[WorkspaceCanvas] delete battle failed:', err);
+      alert('Failed to delete saved battle.');
+    } finally {
+      setDeletingBattleTemplateId(null);
+    }
   };
 
   // -- Vocabulary selection detection -----------------------------------------
@@ -2952,13 +2988,22 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                       <p className="text-sm font-medium text-slate-800 truncate">{m.title}</p>
                       <p className="text-xs text-slate-400">{new Date(m.updatedAt).toLocaleDateString('pt-BR')}</p>
                     </div>
-                    <button
-                      onClick={() => handleLoadMaterial(m.id)}
-                      disabled={loadingMaterialId === m.id}
-                      className="flex-shrink-0 px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
-                    >
-                      {loadingMaterialId === m.id ? '...' : wsl.open}
-                    </button>
+                    <div className="flex flex-shrink-0 items-center gap-2">
+                      <button
+                        onClick={() => handleDeleteMaterial(m.id)}
+                        disabled={deletingMaterialId === m.id}
+                        className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {deletingMaterialId === m.id ? '...' : 'Delete'}
+                      </button>
+                      <button
+                        onClick={() => handleLoadMaterial(m.id)}
+                        disabled={loadingMaterialId === m.id}
+                        className="px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
+                      >
+                        {loadingMaterialId === m.id ? '...' : wsl.open}
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -2977,12 +3022,21 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                               {template.questions.length} perguntas • {new Date(template.updatedAt).toLocaleDateString('pt-BR')}
                             </p>
                           </div>
-                          <button
-                            onClick={() => handleLoadBattleTemplate(template)}
-                            className="flex-shrink-0 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white transition hover:bg-emerald-700"
-                          >
-                            {wsl.openBattle}
-                          </button>
+                          <div className="flex flex-shrink-0 items-center gap-2">
+                            <button
+                              onClick={() => handleDeleteBattleTemplate(template.id)}
+                              disabled={deletingBattleTemplateId === template.id}
+                              className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                            >
+                              {deletingBattleTemplateId === template.id ? '...' : 'Delete'}
+                            </button>
+                            <button
+                              onClick={() => handleLoadBattleTemplate(template)}
+                              className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white transition hover:bg-emerald-700"
+                            >
+                              {wsl.openBattle}
+                            </button>
+                          </div>
                         </li>
                       ))}
                     </ul>
