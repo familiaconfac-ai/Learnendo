@@ -130,6 +130,15 @@ export const BattleHubPage: React.FC<Props> = ({
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
 
+  const handleCloseSetup = () => {
+    setShowSetup(false);
+    setSetupTemplate(null);
+
+    if (activeLiveClass?.id) {
+      onDismiss?.();
+    }
+  };
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(storageKey);
@@ -486,10 +495,7 @@ export const BattleHubPage: React.FC<Props> = ({
             <BattleSetupModal
               onStart={handleTemplateReady}
               onSaveTemplate={handleSaveTemplate}
-              onClose={() => {
-                setShowSetup(false);
-                setSetupTemplate(null);
-              }}
+              onClose={handleCloseSetup}
               defaultCourseId={effectiveCourseId ?? undefined}
               defaultWorkbookId={effectiveWorkbookId ?? undefined}
               defaultLessonId={effectiveLessonId ?? undefined}
