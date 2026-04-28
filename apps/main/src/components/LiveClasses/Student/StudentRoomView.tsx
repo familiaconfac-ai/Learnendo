@@ -19,10 +19,8 @@ import { BattleSession } from '../Battle/battleTypes';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import {
   BATTLE_STALE_THRESHOLD_MS,
-  getDefaultMainStageMode,
   isActiveBattleStatus,
   sanitizeMainStageMode,
-  type MainStageMode,
 } from '../../../services/liveClassStage';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
@@ -57,7 +55,6 @@ const StudentStage: React.FC<{
   );
   const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);
 
-  const [mainStageMode, setMainStageMode] = useState<MainStageMode>(getDefaultMainStageMode());
   const [chatOpen, setChatOpen] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
   const [expandedCameraId, setExpandedCameraId] = useState<string | null>(null);
@@ -66,10 +63,9 @@ const StudentStage: React.FC<{
   const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
   const [showTeacherMiniCamera, setShowTeacherMiniCamera] = useState(true);
 
-  useEffect(() => {
-    const nextMode = sanitizeMainStageMode(session.mainStageMode);
-    setMainStageMode(nextMode === 'camera' ? 'workspace' : nextMode);
-  }, [session.mainStageMode]);
+  const stageMode = sanitizeMainStageMode(session.mainStageMode);
+  const isBattleStage = stageMode === 'battle';
+
 
   useEffect(() => {
     console.log('[LIVECLASS PATH DEBUG] student room', {
@@ -448,7 +444,7 @@ const StudentStage: React.FC<{
                   <>
                     <button
                       type="button"
-                      onClick={() => setMainStageMode('workspace')}
+                      onClick={() => undefined}
                       className="flex h-7 w-7 items-center justify-center rounded border border-blue-600 bg-blue-600 text-sm text-white transition"
                       title={labels.workspace}
                       aria-label={labels.workspace}
@@ -646,7 +642,22 @@ const StudentStage: React.FC<{
               </div>
             </div>
           ) : null}
-          {battleSession ? (
+          {isBattleStage && !battleSession ? (
+            <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4">
+              <div className="max-w-sm rounded-2xl border border-orange-400/40 bg-slate-950/90 px-4 py-3 text-center shadow-2xl backdrop-blur-sm">
+                <div className="text-xs font-black uppercase tracking-[0.22em] text-orange-300">
+                  Batalha
+                </div>
+                <p className="mt-2 text-sm font-semibold text-white">
+                  Professor preparando o jogo
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  A lousa continua ativa enquanto a batalha conecta.
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {isBattleStage && battleSession ? (
             (() => {
               console.log('[LIVE BATTLE MAP]', {
                 role: 'student',
@@ -675,10 +686,11 @@ const StudentStage: React.FC<{
             })()
           ) : (
             (() => {
-              console.log('[BATTLE NEW FLOW] BattlePlayerView is NOT rendering because battleSession is null.');
+              console.log('[BATTLE NEW FLOW] BattlePlayerView is NOT rendering because battle stage is inactive or battleSession is null.');
               console.info('[BATTLE STUDENT RENDER] no battleSession - BattlePlayerView skipped', {
                 component: 'StudentRoomView',
                 classId: liveClass.id,
+                stageMode,
               });
               return null;
             })()

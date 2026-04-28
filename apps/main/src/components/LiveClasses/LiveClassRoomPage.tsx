@@ -34,7 +34,6 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [showExerciseSession, setShowExerciseSession] = useState(false);
-  const [showBattleHub, setShowBattleHub] = useState(false);
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
@@ -51,6 +50,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   });
 
   const role = isTeacher ? 'teacher' : 'student';
+  const isBattleStage = session.mainStageMode === 'battle';
 
   useEffect(() => {
     const displayName = user.displayName || user.email || 'Usuario';
@@ -146,8 +146,12 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       })),
     });
 
-    setShowBattleHub(true);
-  }, [liveClass?.id, onlinePresence, user?.uid]);
+    void handleUpdateSession({ mainStageMode: 'battle' });
+  }, [handleUpdateSession, liveClass?.id, onlinePresence, user?.uid]);
+
+  const handleReturnToWorkspace = useCallback(() => {
+    void handleUpdateSession({ mainStageMode: 'workspace' });
+  }, [handleUpdateSession]);
 
   if (!sessionLoaded) {
     return (
@@ -175,7 +179,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           onOpenBattleHub={handleOpenBattleHub}
           onExit={onExit}
         />
-        {showBattleHub ? (
+        {isBattleStage ? (
           <BattleHubPage
             uid={user.uid}
             name={user.displayName || user.email || 'Professor'}
@@ -189,8 +193,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
             diamonds={0}
             stars={0}
             onlineParticipants={battleOnlineParticipants}
-            onOpenLiveClasses={() => setShowBattleHub(false)}
-            onDismiss={() => setShowBattleHub(false)}
+            onOpenLiveClasses={handleReturnToWorkspace}
+            onDismiss={handleReturnToWorkspace}
           />
         ) : null}
       </>

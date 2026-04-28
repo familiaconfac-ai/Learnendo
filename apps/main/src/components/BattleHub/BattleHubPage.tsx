@@ -133,15 +133,9 @@ export const BattleHubPage: React.FC<Props> = ({
   }, [activeLiveClass?.id]);
 
   useEffect(() => {
-    if (!activeLiveClass?.id || !liveSession || !showSetup) return;
-
-    console.info('[BATTLE ANSWER DEBUG] live session available, closing setup modal', {
-      liveClassId: activeLiveClass.id,
-      sessionId: liveSession.id,
-      status: liveSession.status,
-    });
+    if (!liveSession) return;
     setShowSetup(false);
-  }, [activeLiveClass?.id, liveSession, showSetup]);
+  }, [liveSession]);
 
   useEffect(() => {
     if (!activeLiveClass?.id) {
@@ -402,9 +396,10 @@ export const BattleHubPage: React.FC<Props> = ({
               teacherUid={uid}
               activeParticipants={liveParticipants}
               onClose={() => {
-                void deleteBattleSession(activeLiveClass.id);
-                setLiveSession(null);
-                onDismiss?.();
+                void deleteBattleSession(activeLiveClass.id).finally(() => {
+                  setLiveSession(null);
+                  onDismiss?.();
+                });
               }}
               onNewBattle={() => {
                 void deleteBattleSession(activeLiveClass.id).then(() => {

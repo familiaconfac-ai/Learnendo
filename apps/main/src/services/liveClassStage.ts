@@ -14,10 +14,11 @@ const ACTIVE_BATTLE_STATUSES: readonly BattleStatus[] = ['WAITING', 'PLAYING', '
 export const BATTLE_STALE_THRESHOLD_MS = 5 * 60 * 1000;
 
 export function getDefaultMainStageMode(): MainStageMode {
-  return 'camera';
+  return 'workspace';
 }
 
 export function sanitizeMainStageMode(mode: unknown): MainStageMode {
+  if (mode === 'battle') return 'battle';
   if (mode === 'camera') return 'camera';
   return 'workspace';
 }

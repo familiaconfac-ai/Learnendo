@@ -51,6 +51,9 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
 
+const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
+const WORKSPACE_DOC_SYNC_DEBOUNCE_MS = 150;
+
 // -- Config ---------------------------------------------------------------------
 
 const FONT_FAMILIES = [
@@ -1363,6 +1366,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const saveItemsDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveDocDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingItemsSaveRef = useRef<{
+    items: WorkspaceItem[];
+    pages: WorkspacePage[];
+    currentPageId: string;
+  } | null>(null);
+  const pendingDocSaveRef = useRef<{
+    html: string;
+    pages: WorkspacePage[];
+    currentPageId: string;
+  } | null>(null);
+  const lastItemsSaveAtRef = useRef<number>(0);
+  const lastDocSaveAtRef = useRef<number>(0);
   // Tracks which floating block's contentEditable is currently focused so the
   // toolbar can route formatting commands to the right target.
   const activeFloatingIdRef = useRef<string | null>(null);
@@ -1533,6 +1548,44 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     viewerIsTeacher,
   ]);
 
+  useEffect(() => () => {
+    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
+    pendingItemsSaveRef.current = null;
+    pendingDocSaveRef.current = null;
+  }, []);
+
+  const flushPendingItemsSave = useCallback(() => {
+    const pending = pendingItemsSaveRef.current;
+    if (!pending) return;
+    pendingItemsSaveRef.current = null;
+    lastItemsSaveAtRef.current = Date.now();
+    saveWorkspace(
+      classId,
+      pending.items,
+      userId,
+      userName,
+      pending.currentPageId,
+      pending.pages,
+    ).catch(console.error);
+  }, [classId, userId, userName]);
+
+  const flushPendingDocSave = useCallback(() => {
+    const pending = pendingDocSaveRef.current;
+    if (!pending) return;
+    pendingDocSaveRef.current = null;
+    lastDocSaveAtRef.current = Date.now();
+    saveDocContent(
+      classId,
+      pending.html,
+      userId,
+      userName,
+      pending.currentPageId,
+      pending.pages,
+    ).catch(console.error);
+  }, [classId, userId, userName]);
+
   const scheduleItemsSave = useCallback(
     (nextItems: WorkspaceItem[], options?: { forceSave?: boolean }) => {
       if (effectiveReadOnly && !options?.forceSave) return;
@@ -1540,38 +1593,57 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       lastItemEditRef.current = Date.now();
       const scopedItems = nextItems.map(normalizeItemScope);
       const syncedPages = syncActivePageItemsRef(scopedItems);
-      if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+      pendingItemsSaveRef.current = {
+        items: scopedItems,
+        pages: syncedPages,
+        currentPageId: activePageIdRef.current,
+      };
+
+      if (saveItemsDebounce.current) return;
+
+      const elapsedMs = Date.now() - lastItemsSaveAtRef.current;
+      if (elapsedMs >= WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS) {
+        flushPendingItemsSave();
+        return;
+      }
+
       saveItemsDebounce.current = setTimeout(() => {
-        saveWorkspace(
-          classId,
-          scopedItems,
-          userId,
-          userName,
-          activePageIdRef.current,
-          syncedPages,
-        ).catch(console.error);
-      }, 500);
+        saveItemsDebounce.current = null;
+        flushPendingItemsSave();
+      }, WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS - elapsedMs);
     },
-    [classId, effectiveReadOnly, normalizeItemScope, syncActivePageItemsRef, userId, userName],
+    [
+      effectiveReadOnly,
+      flushPendingItemsSave,
+      normalizeItemScope,
+      syncActivePageItemsRef,
+    ],
   );
 
   const scheduleDocSave = useCallback(
     (html: string) => {
       if (effectiveReadOnly) return;
       const syncedPages = syncActivePageDocRef(html);
-      if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+      pendingDocSaveRef.current = {
+        html,
+        pages: syncedPages,
+        currentPageId: activePageIdRef.current,
+      };
+
+      if (saveDocDebounce.current) return;
+
+      const elapsedMs = Date.now() - lastDocSaveAtRef.current;
+      if (elapsedMs >= WORKSPACE_DOC_SYNC_DEBOUNCE_MS) {
+        flushPendingDocSave();
+        return;
+      }
+
       saveDocDebounce.current = setTimeout(() => {
-        saveDocContent(
-          classId,
-          html,
-          userId,
-          userName,
-          activePageIdRef.current,
-          syncedPages,
-        ).catch(console.error);
-      }, 600);
+        saveDocDebounce.current = null;
+        flushPendingDocSave();
+      }, WORKSPACE_DOC_SYNC_DEBOUNCE_MS - elapsedMs);
     },
-    [classId, effectiveReadOnly, syncActivePageDocRef, userId, userName],
+    [effectiveReadOnly, flushPendingDocSave, syncActivePageDocRef],
   );
 
   const onDocInput = () => {
