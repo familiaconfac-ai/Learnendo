@@ -101,6 +101,7 @@ function materialDocRef(materialId: string) {
 export async function saveWorkspaceAsMaterial(
   pages: WorkspacePage[],
   options: SaveMaterialOptions,
+  ownerUid?: string,
 ): Promise<string> {
   console.log('[Materials] saveWorkspaceAsMaterial CALLED with pages:', pages.length, 'title:', options.title);
   console.log('[Materials] Auth currentUser:', auth.currentUser?.uid, 'isAnonymous:', auth.currentUser?.isAnonymous);
@@ -110,7 +111,7 @@ export async function saveWorkspaceAsMaterial(
     throw new Error('Firestore not initialized');
   }
 
-  const uid = auth.currentUser?.uid;
+  const uid = ownerUid ?? auth.currentUser?.uid;
   if (!uid) {
     console.error('[Materials] No authenticated user when saving material');
     throw new Error('User must be authenticated to save materials');
@@ -262,11 +263,11 @@ export async function duplicateMaterial(
  * Returns all materials created by a user, ordered by updatedAt descending.
  * Firestore rules restrict read access to documents where createdBy == request.auth.uid.
  */
-export async function getMaterialsByUser(): Promise<WorkspaceMaterial[]> {
+export async function getMaterialsByUser(ownerUid?: string): Promise<WorkspaceMaterial[]> {
   console.log('[Materials] getMaterialsByUser CALLED');
   console.log('[Materials] Auth currentUser:', auth.currentUser?.uid, 'isAnonymous:', auth.currentUser?.isAnonymous);
 
-  const uid = auth.currentUser?.uid;
+  const uid = ownerUid ?? auth.currentUser?.uid;
   if (!uid) {
     console.error('[Materials] LOAD FAILED ❌ — No authenticated user');
     return [];
@@ -295,7 +296,7 @@ export async function getMaterialsByUser(): Promise<WorkspaceMaterial[]> {
     return materials;
   } catch (err) {
     console.error('[Materials] LOAD FAILED ❌ — query error:', err);
-    console.error('[Materials] Attempted query: userId=${userId.slice(0, 8)}');
+    console.error(`[Materials] Attempted query: userId=${uid.slice(0, 8)}`);
     return [];
   }
 }

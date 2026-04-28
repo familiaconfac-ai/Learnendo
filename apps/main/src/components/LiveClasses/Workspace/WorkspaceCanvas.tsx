@@ -2128,18 +2128,19 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       console.log('[WorkspaceCanvas] Flushed pages count:', allPages.length);
       if (saveSinglePageId) {
         const targetPage = allPages.find((p) => p.id === saveSinglePageId);
-        if (targetPage) {
-          console.log('[WorkspaceCanvas] Saving single page:', targetPage.name);
-          await saveWorkspaceAsMaterial([targetPage], { title });
+        if (!targetPage) {
+          throw new Error('Pï¿½gina selecionada nï¿½o foi encontrada para salvar.');
         }
+        console.log('[WorkspaceCanvas] Saving single page:', targetPage.name);
+        await saveWorkspaceAsMaterial([targetPage], { title }, userId);
       } else {
         console.log('[WorkspaceCanvas] Saving all pages');
-        await saveWorkspaceAsMaterial(allPages, { title });
+        await saveWorkspaceAsMaterial(allPages, { title }, userId);
       }
       console.log('[WorkspaceCanvas] Save completed successfully, closing modal');
       // Refresh the materials list if the open modal is currently shown
       if (showOpenModal) {
-        const list = await getMaterialsByUser();
+        const list = await getMaterialsByUser(userId);
         setMaterialsList(list);
       }
       setShowSaveModal(false);
@@ -2162,7 +2163,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     try {
       console.log('[WorkspaceCanvas] Calling getMaterialsByUser and listBattleTemplatesByOwner');
       const [materials, battles] = await Promise.all([
-        getMaterialsByUser(),
+        getMaterialsByUser(userId),
         listBattleTemplatesByOwner(userId),
       ]);
       console.log('[WorkspaceCanvas] getMaterialsByUser returned:', materials.length, 'materials');
