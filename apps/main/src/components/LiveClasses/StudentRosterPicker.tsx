@@ -31,7 +31,12 @@ export const StudentRosterPicker: React.FC<StudentRosterPickerProps> = ({
         <div className="max-h-48 space-y-2 overflow-y-auto pr-1">
           {students.map((student) => {
             const selected = selectedStudentIds.has(student.uid);
-            const roleLabel = student.role === 'teacher' ? 'Teacher' : 'Student';
+            const roleLabel =
+              student.role === 'admin'
+                ? 'Admin'
+                : student.role === 'teacher'
+                  ? 'Teacher'
+                  : 'Student';
             return (
               <button
                 key={student.uid}

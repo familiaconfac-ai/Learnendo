@@ -124,7 +124,7 @@ export async function getStudentActivityStats(uid: string): Promise<StudentActiv
 
 /**
  * getLiveClassAssignableUsers
- * Fetches all registered non-anonymous teacher/student accounts for live class assignment.
+ * Fetches all registered non-anonymous accounts for live class assignment.
  */
 export async function getLiveClassAssignableUsers(): Promise<StudentBasicInfo[]> {
   if (!db) {
@@ -150,7 +150,7 @@ export async function getLiveClassAssignableUsers(): Promise<StudentBasicInfo[]>
         lastActive: doc.data().lastActive,
         role: getEffectiveUserRole(doc.data().email || null, doc.data().role || null),
       }))
-      .filter((user) => !user.isAnonymous && user.role !== 'admin');
+      .filter((user) => !user.isAnonymous);
 
     console.log('[TeacherDash] Fetched', users.length, 'assignable users');
     return users;

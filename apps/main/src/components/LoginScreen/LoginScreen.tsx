@@ -146,6 +146,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               type="email"
               name="email"
               autoComplete="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder="Email"
               value={email}
               onChange={(e) => {
@@ -159,6 +162,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <input
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder="Password"
                 value={password}
                 onChange={(e) => {

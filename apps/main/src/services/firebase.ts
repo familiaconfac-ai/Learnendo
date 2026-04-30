@@ -1,5 +1,19 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, setPersistence, browserLocalPersistence, linkWithCredential, EmailAuthProvider, sendPasswordResetEmail } from "firebase/auth";
+import {
+  getAuth,
+  signInAnonymously,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  setPersistence,
+  browserLocalPersistence,
+  browserSessionPersistence,
+  inMemoryPersistence,
+  linkWithCredential,
+  EmailAuthProvider,
+  sendPasswordResetEmail,
+} from "firebase/auth";
 import { getFirestore, initializeFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
@@ -28,9 +42,29 @@ const db = (() => {
   }
 })();
 
-// Enable LOCAL persistence — users stay logged in across page reloads
-setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.warn('[Firebase] Could not set persistence:', error);
+async function initializeAuthPersistence() {
+  const persistenceOptions = [
+    browserLocalPersistence,
+    browserSessionPersistence,
+    inMemoryPersistence,
+  ];
+
+  for (const persistence of persistenceOptions) {
+    try {
+      await setPersistence(auth, persistence);
+      console.log('[Firebase] Auth persistence enabled:', persistence.type);
+      return persistence.type;
+    } catch (error) {
+      console.warn('[Firebase] Could not set persistence:', persistence.type, error);
+    }
+  }
+
+  throw new Error('Unable to configure Firebase Auth persistence.');
+}
+
+const authPersistenceReady = initializeAuthPersistence().catch((error) => {
+  console.error('[Firebase] Auth persistence initialization failed:', error);
+  return null;
 });
 
 // Initialize Analytics conditionally
@@ -45,8 +79,13 @@ if (typeof window !== 'undefined') {
 
 export { app, auth, db, analytics };
 
+export async function ensureAuthPersistenceReady() {
+  await authPersistenceReady;
+}
+
 export async function loginWithEmail(email: string, pass: string) {
   try {
+    await ensureAuthPersistenceReady();
     const result = await signInWithEmailAndPassword(auth, email, pass);
     return result.user;
   } catch (error) {
@@ -57,6 +96,7 @@ export async function loginWithEmail(email: string, pass: string) {
 
 export async function registerWithEmail(email: string, pass: string, fullName: string) {
   try {
+    await ensureAuthPersistenceReady();
     const result = await createUserWithEmailAndPassword(auth, email, pass);
     await updateProfile(result.user, { displayName: fullName });
     return result.user;
@@ -76,6 +116,7 @@ export async function sendPasswordReset(email: string): Promise<void> {
 }
 
 export async function ensureAnonAuth(): Promise<{ uid: string; isAnonymous: boolean }> {
+  await ensureAuthPersistenceReady();
   // If already authenticated, return immediately
   if (auth.currentUser) {
     console.log('[Firebase] User already authenticated:', auth.currentUser.uid);
