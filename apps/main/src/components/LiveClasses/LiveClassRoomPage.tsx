@@ -13,6 +13,7 @@ import { learnendoLogo } from '../../assets/branding';
 import { BattleHubPage } from '../BattleHub/BattleHubPage';
 import type { SavedBattleTemplate } from './Battle/battleTypes';
 import { deleteBattleSession } from './Battle/battleService';
+import { getBattleLanguage } from './Battle/battleUtils';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
 
@@ -58,6 +59,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
   const role = isTeacher ? 'teacher' : 'student';
   const isBattleStage = session.mainStageMode === 'battle';
+  const battleUiLanguage = getBattleLanguage(liveClass.courseId ?? undefined) as 'en' | 'pt' | 'es' | 'el' | 'he';
 
   useEffect(() => {
     const displayName = user.displayName || user.email || 'Usuario';
@@ -212,10 +214,10 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
             uid={user.uid}
             name={user.displayName || user.email || 'Professor'}
             courseId={liveClass.courseId ?? null}
-            workbookId={liveClass.workbookId ?? null}
-            lessonId={liveClass.lessonId?.toString() ?? null}
+            workbookId={session.activeWorkbookId ?? liveClass.workbookId ?? null}
+            lessonId={session.activeLessonId?.toString() ?? liveClass.lessonId?.toString() ?? null}
             activeLiveClass={liveClass}
-            uiLanguage="pt"
+            uiLanguage={battleUiLanguage}
             fire={0}
             ice={0}
             diamonds={0}

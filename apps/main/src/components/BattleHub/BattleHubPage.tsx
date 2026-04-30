@@ -13,7 +13,7 @@ import {
 } from '../../services/battleTemplateLibraryService';
 import type { LiveClass } from '../../types';
 
-type UILang = 'en' | 'pt' | 'es';
+type UILang = 'en' | 'pt' | 'es' | 'el' | 'he';
 
 interface Props {
   uid: string;
@@ -93,6 +93,36 @@ const COPY: Record<UILang, {
     diamonds: 'Diamantes',
     stars: 'Estrellas',
   },
+  el: {
+    title: 'Battle Arena',
+    subtitle: 'Keep the current Learnendo battle setup, then run the match with the more stable standalone battle engine.',
+    configure: 'Configure Battle',
+    replay: 'Replay Last Battle',
+    replayHint: 'The last battle you configured stays here for quick replay.',
+    liveTitle: 'Multiplayer',
+    liveBody: 'Teacher-versus-student battles still live inside Live Classes so we preserve the existing classroom flow.',
+    liveCta: 'Open Live Classes',
+    empty: 'No saved local battle yet. Configure one and start practicing against the bot.',
+    fire: 'Fire',
+    ice: 'Ice',
+    diamonds: 'Diamonds',
+    stars: 'Stars',
+  },
+  he: {
+    title: 'Battle Arena',
+    subtitle: 'Keep the current Learnendo battle setup, then run the match with the more stable standalone battle engine.',
+    configure: 'Configure Battle',
+    replay: 'Replay Last Battle',
+    replayHint: 'The last battle you configured stays here for quick replay.',
+    liveTitle: 'Multiplayer',
+    liveBody: 'Teacher-versus-student battles still live inside Live Classes so we preserve the existing classroom flow.',
+    liveCta: 'Open Live Classes',
+    empty: 'No saved local battle yet. Configure one and start practicing against the bot.',
+    fire: 'Fire',
+    ice: 'Ice',
+    diamonds: 'Diamonds',
+    stars: 'Stars',
+  },
 };
 
 function buildStorageKey(uid: string, courseId?: string | null) {
@@ -117,9 +147,9 @@ export const BattleHubPage: React.FC<Props> = ({
   initialSetupTemplate = null,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
-  const effectiveCourseId = activeLiveClass?.courseId ?? courseId;
-  const effectiveWorkbookId = activeLiveClass?.workbookId ?? workbookId;
-  const effectiveLessonId = activeLiveClass?.lessonId?.toString() ?? lessonId;
+  const effectiveCourseId = courseId ?? activeLiveClass?.courseId;
+  const effectiveWorkbookId = workbookId ?? activeLiveClass?.workbookId;
+  const effectiveLessonId = lessonId ?? activeLiveClass?.lessonId?.toString();
   const storageKey = useMemo(() => buildStorageKey(uid, effectiveCourseId), [effectiveCourseId, uid]);
   const [showSetup, setShowSetup] = useState(() => Boolean(activeLiveClass?.id));
   const [lastTemplate, setLastTemplate] = useState<SavedBattleTemplate | null>(null);
@@ -503,6 +533,7 @@ export const BattleHubPage: React.FC<Props> = ({
               currentUserUid={uid}
               selectedStudents={liveParticipants}
               initialTemplate={setupTemplate}
+              uiLanguage={uiLanguage}
             />
           );
         })()

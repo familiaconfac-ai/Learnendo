@@ -305,9 +305,10 @@ export async function createBattleSession(
   });
   const generatedQuestions: BattleQuestion[] =
     precomputedQuestions ??
-    getBattleQuestions({
+    await getBattleQuestions({
       questionCount: config.questionCount,
       scope: config.scope,
+      difficulty: config.difficulty,
       courseId: config.courseId,
       lessonId: config.lessonId,
       workbookId: config.workbookId,

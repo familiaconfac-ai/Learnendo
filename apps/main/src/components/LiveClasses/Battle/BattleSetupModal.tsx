@@ -14,6 +14,7 @@ import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, B
 import { getBattleQuestions } from './battleQuestions';
 import {
   buildSavedBattleTemplate,
+  getBattleLanguage,
   getBattleQuestionDuration,
   normalizeBattleDuration,
   sanitizeBattleQuestion,
@@ -79,10 +80,32 @@ interface Props {
   currentUserUid?: string;
   selectedStudents?: Array<{ uid: string; name: string }>;
   initialTemplate?: SavedBattleTemplate | null;
+  uiLanguage?: 'en' | 'pt' | 'es' | 'el' | 'he';
 }
 
-function buildSuggestedBattleTitle() {
-  return `Battle ${new Date().toLocaleDateString('pt-BR')}`;
+type BattleUILanguage = 'en' | 'pt' | 'es' | 'el' | 'he';
+
+function normalizeBattleUiLanguage(value?: string): BattleUILanguage {
+  if (value === 'pt' || value === 'es' || value === 'el' || value === 'he') return value;
+  return 'en';
+}
+
+function buildSuggestedBattleTitle(language: BattleUILanguage) {
+  const localeByLanguage: Record<BattleUILanguage, string> = {
+    en: 'en-US',
+    pt: 'pt-BR',
+    es: 'es-ES',
+    el: 'el-GR',
+    he: 'he-IL',
+  };
+  const prefixByLanguage: Record<BattleUILanguage, string> = {
+    en: 'Battle',
+    pt: 'Battle',
+    es: 'Batalla',
+    el: 'Μάχη',
+    he: 'קרב',
+  };
+  return `${prefixByLanguage[language]} ${new Date().toLocaleDateString(localeByLanguage[language])}`;
 }
 
 const SCOPES: { value: BattleScope; label: string; desc: string }[] = [
@@ -119,7 +142,434 @@ export const BattleSetupModal: React.FC<Props> = ({
   currentUserUid,
   selectedStudents = [],
   initialTemplate = null,
+  uiLanguage,
 }) => {
+  const effectiveUiLanguage = normalizeBattleUiLanguage(uiLanguage ?? getBattleLanguage(defaultCourseId));
+  const copy = useMemo(() => {
+    switch (effectiveUiLanguage) {
+      case 'pt':
+        return {
+          battleName: 'Nome da batalha',
+          battleNamePlaceholder: 'Digite o nome da batalha',
+          questions: 'perguntas',
+          selected: 'selecionadas',
+          each: 'cada',
+          save: 'Salvar',
+          duplicate: 'Duplicar',
+          addQuestion: '+ Nova pergunta',
+          source: 'Fonte das Perguntas',
+          difficulty: 'Dificuldade',
+          count: 'Numero de Perguntas',
+          seconds: 'Segundos por Pergunta',
+          customTime: 'Tempo personalizado',
+          customTimeHelp: 'Use este valor como tempo padrao. Na edicao de cada pergunta voce pode colocar um tempo maior.',
+          teacherLabel: 'Professor participa da batalha',
+          teacherHelp: 'Ative para o professor responder junto com os alunos e entrar no placar.',
+          botLabel: 'Ativar Bot',
+          botHelp: 'Inclui um participante artificial na batalha com avatar e pontuacao normal.',
+          botAvatar: 'Avatar do Bot',
+          botName: 'Nome do Bot',
+          prepare: 'Preparar Aula -> (ver e editar perguntas)',
+          startNow: 'Iniciar Agora',
+          back: 'Voltar',
+          confirm: 'Confirmar Lista Final',
+          noQuestionsStart: 'Nenhuma pergunta valida foi gerada para iniciar a batalha.',
+          noQuestionsPrepare: 'Nenhuma pergunta valida foi encontrada para preparar a aula.',
+          noQuestionsSelect: 'Selecione pelo menos uma pergunta valida para iniciar a batalha.',
+          noQuestionsSave: 'Selecione pelo menos uma pergunta valida para salvar o battle.',
+          saveUnavailable: 'Salvar indisponivel neste modo.',
+          saveSuccess: 'Battle salvo na sua biblioteca.',
+          duplicateSuccess: 'Battle duplicado na sua biblioteca.',
+          saveFailure: 'Falha ao salvar o battle.',
+          prepareFailure: 'Falha ao preparar as perguntas da batalha.',
+          startFailure: 'Falha ao iniciar a batalha.',
+          timeLabel: 'Tempo',
+          customLabel: 'personalizado',
+          defaultLabel: 'padrao',
+          expectedAnswer: 'Resposta esperada',
+          questionText: 'Texto da pergunta',
+          questionType: 'Tipo de pergunta',
+          questionTime: 'Tempo desta pergunta (segundos)',
+          questionTimePlaceholder: 'Padrao da batalha',
+          questionTimeHelp: 'Deixe em branco para usar o tempo padrao da batalha.',
+          imageUrl: 'URL da imagem (opcional)',
+          imagePlaceholder: 'https://... ou deixe em branco',
+          audioText: 'Texto do audio',
+          audioPlaceholder: 'Ex.: What is two plus two?',
+          correctAnswer: 'Resposta correta principal',
+          acceptedAnswers: 'Variacoes aceitas',
+          acceptedAnswersPlaceholder: 'Resposta 1, resposta 2, resposta 3',
+          optionsLabel: 'Alternativas - marque uma ou mais corretas',
+          optionsHelp: 'Uma correta responde no clique. Varias corretas exigem marcar tudo e confirmar.',
+          saveQuestion: 'Salvar',
+          cancel: 'Cancelar',
+          includeQuestion: 'Incluir esta pergunta',
+          excludeQuestion: 'Excluir esta pergunta',
+          duplicateQuestion: 'Duplicar pergunta',
+          editQuestion: 'Editar pergunta',
+          closeEditor: 'Fechar editor',
+          addQuestionTitle: 'Adicionar pergunta personalizada',
+          saveBattleTitle: 'Salvar battle na biblioteca',
+          duplicateBattleTitle: 'Duplicar battle salvo',
+          choice: 'Objetiva',
+          imageChoice: 'Com imagem',
+          audioChoice: 'Escuta + alternativas',
+          audioOpen: 'Escuta + escrita',
+          speaking: 'Speaking',
+          currentLesson: 'Esta Licao',
+          currentLessonDesc: 'So desta licao',
+          currentBook: 'Livro Inteiro',
+          currentBookDesc: 'Todas as licoes deste livro',
+          review: 'Revisao',
+          reviewDesc: 'Licoes ja estudadas neste livro',
+          easy: 'Facil',
+          normal: 'Normal',
+          hard: 'Dificil',
+        };
+      case 'es':
+        return {
+          battleName: 'Nombre de la batalla',
+          battleNamePlaceholder: 'Escribe el nombre de la batalla',
+          questions: 'preguntas',
+          selected: 'seleccionadas',
+          each: 'cada una',
+          save: 'Guardar',
+          duplicate: 'Duplicar',
+          addQuestion: '+ Nueva pregunta',
+          source: 'Fuente de las preguntas',
+          difficulty: 'Dificultad',
+          count: 'Numero de preguntas',
+          seconds: 'Segundos por pregunta',
+          customTime: 'Tiempo personalizado',
+          customTimeHelp: 'Usa este valor como tiempo predeterminado. En cada pregunta puedes poner un tiempo mayor.',
+          teacherLabel: 'El profesor participa en la batalla',
+          teacherHelp: 'Activa esto para que el profesor responda con los alumnos y entre en la clasificacion.',
+          botLabel: 'Activar Bot',
+          botHelp: 'Incluye un participante artificial en la batalla con avatar y puntuacion normal.',
+          botAvatar: 'Avatar del Bot',
+          botName: 'Nombre del Bot',
+          prepare: 'Preparar clase -> (ver y editar preguntas)',
+          startNow: 'Iniciar ahora',
+          back: 'Volver',
+          confirm: 'Confirmar lista final',
+          noQuestionsStart: 'No se genero ninguna pregunta valida para iniciar la batalla.',
+          noQuestionsPrepare: 'No se encontro ninguna pregunta valida para preparar la clase.',
+          noQuestionsSelect: 'Selecciona al menos una pregunta valida para iniciar la batalla.',
+          noQuestionsSave: 'Selecciona al menos una pregunta valida para guardar la batalla.',
+          saveUnavailable: 'Guardar no esta disponible en este modo.',
+          saveSuccess: 'Batalla guardada en tu biblioteca.',
+          duplicateSuccess: 'Batalla duplicada en tu biblioteca.',
+          saveFailure: 'No se pudo guardar la batalla.',
+          prepareFailure: 'No se pudieron preparar las preguntas de la batalla.',
+          startFailure: 'No se pudo iniciar la batalla.',
+          timeLabel: 'Tiempo',
+          customLabel: 'personalizado',
+          defaultLabel: 'predeterminado',
+          expectedAnswer: 'Respuesta esperada',
+          questionText: 'Texto de la pregunta',
+          questionType: 'Tipo de pregunta',
+          questionTime: 'Tiempo de esta pregunta (segundos)',
+          questionTimePlaceholder: 'Predeterminado de la batalla',
+          questionTimeHelp: 'Dejalo vacio para usar el tiempo predeterminado de la batalla.',
+          imageUrl: 'URL de la imagen (opcional)',
+          imagePlaceholder: 'https://... o dejalo vacio',
+          audioText: 'Texto del audio',
+          audioPlaceholder: 'Ej.: What is two plus two?',
+          correctAnswer: 'Respuesta correcta principal',
+          acceptedAnswers: 'Variaciones aceptadas',
+          acceptedAnswersPlaceholder: 'Respuesta 1, respuesta 2, respuesta 3',
+          optionsLabel: 'Alternativas - marca una o mas correctas',
+          optionsHelp: 'Una correcta responde al hacer clic. Varias correctas requieren marcarlas todas y confirmar.',
+          saveQuestion: 'Guardar',
+          cancel: 'Cancelar',
+          includeQuestion: 'Incluir esta pregunta',
+          excludeQuestion: 'Excluir esta pregunta',
+          duplicateQuestion: 'Duplicar pregunta',
+          editQuestion: 'Editar pregunta',
+          closeEditor: 'Cerrar editor',
+          addQuestionTitle: 'Agregar pregunta personalizada',
+          saveBattleTitle: 'Guardar batalla en la biblioteca',
+          duplicateBattleTitle: 'Duplicar batalla guardada',
+          choice: 'Opcion multiple',
+          imageChoice: 'Con imagen',
+          audioChoice: 'Escucha + opciones',
+          audioOpen: 'Escucha + escritura',
+          speaking: 'Speaking',
+          currentLesson: 'Esta leccion',
+          currentLessonDesc: 'Solo esta leccion',
+          currentBook: 'Libro completo',
+          currentBookDesc: 'Todas las lecciones de este libro',
+          review: 'Revision',
+          reviewDesc: 'Lecciones ya estudiadas en este libro',
+          easy: 'Facil',
+          normal: 'Normal',
+          hard: 'Dificil',
+        };
+      case 'el':
+        return {
+          battleName: 'Ονομα μαχης',
+          battleNamePlaceholder: 'Πληκτρολογησε το ονομα της μαχης',
+          questions: 'ερωτησεις',
+          selected: 'επιλεγμενες',
+          each: 'καθε μια',
+          save: 'Αποθηκευση',
+          duplicate: 'Αντιγραφη',
+          addQuestion: '+ Νεα ερωτηση',
+          source: 'Πηγη ερωτησεων',
+          difficulty: 'Δυσκολια',
+          count: 'Αριθμος ερωτησεων',
+          seconds: 'Δευτερολεπτα ανα ερωτηση',
+          customTime: 'Προσαρμοσμενος χρονος',
+          customTimeHelp: 'Χρησιμοποίησε αυτη την τιμη ως προεπιλογη. Σε καθε ερωτηση μπορεις να ορισεις μεγαλυτερο χρονο.',
+          teacherLabel: 'Ο καθηγητης συμμετεχει στη μαχη',
+          teacherHelp: 'Ενεργοποιησε το για να απαντα ο καθηγητης μαζι με τους μαθητες και να μπαινει στον πινακα.',
+          botLabel: 'Ενεργοποιηση Bot',
+          botHelp: 'Προσθετει εναν τεχνητο συμμετεχοντα στη μαχη με avatar και κανονικη βαθμολογια.',
+          botAvatar: 'Avatar του Bot',
+          botName: 'Ονομα Bot',
+          prepare: 'Προετοιμασια μαθηματος -> (προβολη και επεξεργασια ερωτησεων)',
+          startNow: 'Εναρξη τωρα',
+          back: 'Πισω',
+          confirm: 'Επιβεβαιωση τελικης λιστας',
+          noQuestionsStart: 'Δεν δημιουργηθηκε εγκυρη ερωτηση για να ξεκινησει η μαχη.',
+          noQuestionsPrepare: 'Δεν βρεθηκε εγκυρη ερωτηση για την προετοιμασια του μαθηματος.',
+          noQuestionsSelect: 'Επιλεξε τουλαχιστον μια εγκυρη ερωτηση για να ξεκινησει η μαχη.',
+          noQuestionsSave: 'Επιλεξε τουλαχιστον μια εγκυρη ερωτηση για να αποθηκευσεις τη μαχη.',
+          saveUnavailable: 'Η αποθηκευση δεν ειναι διαθεσιμη σε αυτη τη λειτουργια.',
+          saveSuccess: 'Η μαχη αποθηκευτηκε στη βιβλιοθηκη σου.',
+          duplicateSuccess: 'Η μαχη αντιγραφηκε στη βιβλιοθηκη σου.',
+          saveFailure: 'Αποτυχια αποθηκευσης της μαχης.',
+          prepareFailure: 'Αποτυχια προετοιμασιας των ερωτησεων της μαχης.',
+          startFailure: 'Αποτυχια εκκινησης της μαχης.',
+          timeLabel: 'Χρονος',
+          customLabel: 'προσαρμοσμενο',
+          defaultLabel: 'προεπιλογη',
+          expectedAnswer: 'Αναμενομενη απαντηση',
+          questionText: 'Κειμενο ερωτησης',
+          questionType: 'Τυπος ερωτησης',
+          questionTime: 'Χρονος για αυτη την ερωτηση (δευτερολεπτα)',
+          questionTimePlaceholder: 'Προεπιλογη μαχης',
+          questionTimeHelp: 'Αφησε το κενο για να χρησιμοποιησεις τον προεπιλεγμενο χρονο της μαχης.',
+          imageUrl: 'URL εικονας (προαιρετικο)',
+          imagePlaceholder: 'https://... ή αφησε το κενο',
+          audioText: 'Κειμενο ηχου',
+          audioPlaceholder: 'Π.χ.: What is two plus two?',
+          correctAnswer: 'Κυρια σωστη απαντηση',
+          acceptedAnswers: 'Αποδεκτες παραλλαγες',
+          acceptedAnswersPlaceholder: 'Απαντηση 1, απαντηση 2, απαντηση 3',
+          optionsLabel: 'Επιλογες - σημειωσε μια ή περισσοτερες σωστες',
+          optionsHelp: 'Μια σωστη απαντηση λυνεται με κλικ. Πολλες σωστες απαιτουν ολες τις επιλογες και επιβεβαιωση.',
+          saveQuestion: 'Αποθηκευση',
+          cancel: 'Ακυρωση',
+          includeQuestion: 'Συμπεριλαβε αυτη την ερωτηση',
+          excludeQuestion: 'Αποκλεισε αυτη την ερωτηση',
+          duplicateQuestion: 'Αντιγραφη ερωτησης',
+          editQuestion: 'Επεξεργασια ερωτησης',
+          closeEditor: 'Κλεισιμο επεξεργασιας',
+          addQuestionTitle: 'Προσθηκη προσαρμοσμενης ερωτησης',
+          saveBattleTitle: 'Αποθηκευση μαχης στη βιβλιοθηκη',
+          duplicateBattleTitle: 'Αντιγραφη αποθηκευμενης μαχης',
+          choice: 'Πολλαπλης επιλογης',
+          imageChoice: 'Με εικονα',
+          audioChoice: 'Ακροαση + επιλογες',
+          audioOpen: 'Ακροαση + γραφη',
+          speaking: 'Speaking',
+          currentLesson: 'Αυτο το μαθημα',
+          currentLessonDesc: 'Μονο αυτο το μαθημα',
+          currentBook: 'Ολο το βιβλιο',
+          currentBookDesc: 'Ολα τα μαθηματα αυτου του βιβλιου',
+          review: 'Επαναληψη',
+          reviewDesc: 'Μαθηματα που εχουν ηδη διδαχθει σε αυτο το βιβλιο',
+          easy: 'Ευκολο',
+          normal: 'Κανονικο',
+          hard: 'Δυσκολο',
+        };
+      case 'he':
+        return {
+          battleName: 'שם הקרב',
+          battleNamePlaceholder: 'הקלד את שם הקרב',
+          questions: 'שאלות',
+          selected: 'נבחרו',
+          each: 'לכל שאלה',
+          save: 'שמירה',
+          duplicate: 'שכפול',
+          addQuestion: '+ שאלה חדשה',
+          source: 'מקור השאלות',
+          difficulty: 'רמת קושי',
+          count: 'מספר שאלות',
+          seconds: 'שניות לכל שאלה',
+          customTime: 'זמן מותאם',
+          customTimeHelp: 'השתמש בערך זה כברירת מחדל. בתוך כל שאלה אפשר להגדיר זמן ארוך יותר.',
+          teacherLabel: 'המורה משתתף בקרב',
+          teacherHelp: 'הפעל כדי שהמורה יענה יחד עם התלמידים ויופיע בלוח הניקוד.',
+          botLabel: 'הפעל Bot',
+          botHelp: 'מוסיף משתתף מלאכותי לקרב עם אווטאר וניקוד רגיל.',
+          botAvatar: 'אווטאר של ה-Bot',
+          botName: 'שם ה-Bot',
+          prepare: 'הכנת שיעור -> (צפיה ועריכת שאלות)',
+          startNow: 'התחל עכשיו',
+          back: 'חזרה',
+          confirm: 'אישור הרשימה הסופית',
+          noQuestionsStart: 'לא נוצרה שאלה תקינה כדי להתחיל את הקרב.',
+          noQuestionsPrepare: 'לא נמצאה שאלה תקינה להכנת השיעור.',
+          noQuestionsSelect: 'בחר לפחות שאלה תקינה אחת כדי להתחיל את הקרב.',
+          noQuestionsSave: 'בחר לפחות שאלה תקינה אחת כדי לשמור את הקרב.',
+          saveUnavailable: 'השמירה לא זמינה במצב הזה.',
+          saveSuccess: 'הקרב נשמר בספריה שלך.',
+          duplicateSuccess: 'הקרב שוכפל בספריה שלך.',
+          saveFailure: 'שמירת הקרב נכשלה.',
+          prepareFailure: 'הכנת שאלות הקרב נכשלה.',
+          startFailure: 'הפעלת הקרב נכשלה.',
+          timeLabel: 'זמן',
+          customLabel: 'מותאם',
+          defaultLabel: 'ברירת מחדל',
+          expectedAnswer: 'תשובה צפויה',
+          questionText: 'טקסט השאלה',
+          questionType: 'סוג השאלה',
+          questionTime: 'זמן לשאלה זו (שניות)',
+          questionTimePlaceholder: 'ברירת מחדל של הקרב',
+          questionTimeHelp: 'השאר ריק כדי להשתמש בזמן ברירת המחדל של הקרב.',
+          imageUrl: 'קישור לתמונה (אופציונלי)',
+          imagePlaceholder: 'https://... או השאר ריק',
+          audioText: 'טקסט האודיו',
+          audioPlaceholder: 'לדוגמה: What is two plus two?',
+          correctAnswer: 'תשובה נכונה ראשית',
+          acceptedAnswers: 'וריאציות מתקבלות',
+          acceptedAnswersPlaceholder: 'תשובה 1, תשובה 2, תשובה 3',
+          optionsLabel: 'אפשרויות - סמן תשובה נכונה אחת או יותר',
+          optionsHelp: 'תשובה נכונה אחת נענית בלחיצה. כמה תשובות נכונות דורשות סימון של כולן ואישור.',
+          saveQuestion: 'שמירה',
+          cancel: 'ביטול',
+          includeQuestion: 'כלול את השאלה הזאת',
+          excludeQuestion: 'אל תכלול את השאלה הזאת',
+          duplicateQuestion: 'שכפל שאלה',
+          editQuestion: 'ערוך שאלה',
+          closeEditor: 'סגור עריכה',
+          addQuestionTitle: 'הוסף שאלה מותאמת',
+          saveBattleTitle: 'שמור קרב לספריה',
+          duplicateBattleTitle: 'שכפל קרב שמור',
+          choice: 'בחירה מרובה',
+          imageChoice: 'עם תמונה',
+          audioChoice: 'האזנה + אפשרויות',
+          audioOpen: 'האזנה + כתיבה',
+          speaking: 'Speaking',
+          currentLesson: 'השיעור הזה',
+          currentLessonDesc: 'רק מהשיעור הזה',
+          currentBook: 'כל הספר',
+          currentBookDesc: 'כל השיעורים בספר הזה',
+          review: 'חזרה',
+          reviewDesc: 'שיעורים שכבר נלמדו בספר הזה',
+          easy: 'קל',
+          normal: 'רגיל',
+          hard: 'קשה',
+        };
+      default:
+        return {
+          battleName: 'Battle Name',
+          battleNamePlaceholder: 'Type the battle name',
+          questions: 'questions',
+          selected: 'selected',
+          each: 'each',
+          save: 'Save',
+          duplicate: 'Duplicate',
+          addQuestion: '+ New question',
+          source: 'Question Source',
+          difficulty: 'Difficulty',
+          count: 'Number of Questions',
+          seconds: 'Seconds per Question',
+          customTime: 'Custom time',
+          customTimeHelp: 'Use this as the default time. Inside each question you can set a longer time.',
+          teacherLabel: 'Teacher joins the battle',
+          teacherHelp: 'Enable this so the teacher answers with the students and appears on the scoreboard.',
+          botLabel: 'Enable Bot',
+          botHelp: 'Adds an AI participant to the battle with avatar and normal scoring.',
+          botAvatar: 'Bot Avatar',
+          botName: 'Bot Name',
+          prepare: 'Prepare Lesson -> (view and edit questions)',
+          startNow: 'Start Now',
+          back: 'Back',
+          confirm: 'Confirm Final List',
+          noQuestionsStart: 'No valid question was generated to start the battle.',
+          noQuestionsPrepare: 'No valid question was found to prepare the lesson.',
+          noQuestionsSelect: 'Select at least one valid question to start the battle.',
+          noQuestionsSave: 'Select at least one valid question to save the battle.',
+          saveUnavailable: 'Save is unavailable in this mode.',
+          saveSuccess: 'Battle saved to your library.',
+          duplicateSuccess: 'Battle duplicated in your library.',
+          saveFailure: 'Failed to save the battle.',
+          prepareFailure: 'Failed to prepare the battle questions.',
+          startFailure: 'Failed to start the battle.',
+          timeLabel: 'Time',
+          customLabel: 'custom',
+          defaultLabel: 'default',
+          expectedAnswer: 'Expected answer',
+          questionText: 'Question text',
+          questionType: 'Question type',
+          questionTime: 'Time for this question (seconds)',
+          questionTimePlaceholder: 'Battle default',
+          questionTimeHelp: 'Leave blank to use the battle default time.',
+          imageUrl: 'Image URL (optional)',
+          imagePlaceholder: 'https://... or leave blank',
+          audioText: 'Audio text',
+          audioPlaceholder: 'Ex.: What is two plus two?',
+          correctAnswer: 'Main correct answer',
+          acceptedAnswers: 'Accepted variations',
+          acceptedAnswersPlaceholder: 'Answer 1, answer 2, answer 3',
+          optionsLabel: 'Options - mark one or more correct answers',
+          optionsHelp: 'One correct answer resolves on click. Multiple correct answers require selecting all and confirming.',
+          saveQuestion: 'Save',
+          cancel: 'Cancel',
+          includeQuestion: 'Include this question',
+          excludeQuestion: 'Exclude this question',
+          duplicateQuestion: 'Duplicate question',
+          editQuestion: 'Edit question',
+          closeEditor: 'Close editor',
+          addQuestionTitle: 'Add custom question',
+          saveBattleTitle: 'Save battle to library',
+          duplicateBattleTitle: 'Duplicate saved battle',
+          choice: 'Multiple choice',
+          imageChoice: 'With image',
+          audioChoice: 'Listening + options',
+          audioOpen: 'Listening + writing',
+          speaking: 'Speaking',
+          currentLesson: 'This Lesson',
+          currentLessonDesc: 'Only this lesson',
+          currentBook: 'Whole Book',
+          currentBookDesc: 'All lessons in this workbook',
+          review: 'Review',
+          reviewDesc: 'Lessons already studied in this workbook',
+          easy: 'Easy',
+          normal: 'Normal',
+          hard: 'Hard',
+        };
+    }
+  }, [effectiveUiLanguage]);
+  const scopeOptions = useMemo(
+    () => [
+      { value: 'current-lesson' as BattleScope, label: copy.currentLesson, desc: copy.currentLessonDesc },
+      { value: 'current-book' as BattleScope, label: copy.currentBook, desc: copy.currentBookDesc },
+      { value: 'review' as BattleScope, label: copy.review, desc: copy.reviewDesc },
+    ],
+    [copy],
+  );
+  const difficultyOptions = useMemo(
+    () => [
+      { value: 'easy' as BattleDifficulty, label: copy.easy, emoji: '😊' },
+      { value: 'normal' as BattleDifficulty, label: copy.normal, emoji: '🎯' },
+      { value: 'hard' as BattleDifficulty, label: copy.hard, emoji: '🔥' },
+    ],
+    [copy],
+  );
+  const questionKindOptions = useMemo(
+    () => [
+      { value: 'multiple-choice' as BattleQuestionKind, label: copy.choice },
+      { value: 'image-choice' as BattleQuestionKind, label: copy.imageChoice },
+      { value: 'audio-choice' as BattleQuestionKind, label: copy.audioChoice },
+      { value: 'audio-open' as BattleQuestionKind, label: copy.audioOpen },
+      { value: 'speaking' as BattleQuestionKind, label: copy.speaking },
+    ],
+    [copy],
+  );
 
   useEffect(() => {
     console.log('[BATTLE DEBUG] BattleSetupModal mounted', {
@@ -149,7 +599,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [startError,   setStartError]   = useState<string | null>(null);
   const [startingNow,  setStartingNow]  = useState(false);
   const [saveMessage,  setSaveMessage]  = useState<string | null>(null);
-  const [templateTitle, setTemplateTitle] = useState(() => initialTemplate?.title?.trim() || buildSuggestedBattleTitle());
+  const [templateTitle, setTemplateTitle] = useState(() => initialTemplate?.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
       courseId: defaultCourseId,
@@ -193,15 +643,16 @@ export const BattleSetupModal: React.FC<Props> = ({
     setEditDraft(null);
     setStartError(null);
     setSaveMessage(null);
-    setTemplateTitle(initialTemplate.title?.trim() || buildSuggestedBattleTitle());
+    setTemplateTitle(initialTemplate.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
     setStep('curate');
-  }, [initialTemplate]);
+  }, [effectiveUiLanguage, initialTemplate]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
-  function generateQuestions(selectedScope: BattleScope = scope): BattleQuestion[] {
+  async function generateQuestions(selectedScope: BattleScope = scope): Promise<BattleQuestion[]> {
     return getBattleQuestions({
       questionCount,
       scope: selectedScope,
+      difficulty,
       courseId: defaultCourseId,
       lessonId: defaultLessonId,
       workbookId: defaultWorkbookId,
@@ -224,39 +675,17 @@ export const BattleSetupModal: React.FC<Props> = ({
     };
   }
 
-  function resolveLaunchQuestions() {
-    const scopeFallbackOrder: BattleScope[] =
-      scope === 'current-lesson'
-        ? ['current-lesson', 'current-book', 'review']
-        : scope === 'current-book'
-          ? ['current-book', 'review']
-          : ['review'];
-
-    let lastError: unknown = null;
-
-    for (const candidateScope of scopeFallbackOrder) {
-      try {
-        const generatedQuestions = sanitizeBattleQuestions(generateQuestions(candidateScope));
-        if (generatedQuestions.length > 0) {
-          return {
-            generatedQuestions,
-            resolvedScope: candidateScope,
-          };
-        }
-      } catch (error) {
-        lastError = error;
-        console.error('[BATTLE START DEBUG] start failed:', error);
-      }
+  async function resolveLaunchQuestions() {
+    try {
+      const generatedQuestions = sanitizeBattleQuestions(await generateQuestions(scope));
+      return {
+        generatedQuestions,
+        resolvedScope: scope,
+      };
+    } catch (error) {
+      console.error('[BATTLE START DEBUG] start failed:', error);
+      throw error;
     }
-
-    if (lastError) {
-      throw lastError;
-    }
-
-    return {
-      generatedQuestions: [],
-      resolvedScope: scope,
-    };
   }
 
   function draftToQuestion(baseId: string): BattleQuestion {
@@ -316,7 +745,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     );
   }
 
-  function getPreparedQuestionsForCurrentFlow() {
+  async function getPreparedQuestionsForCurrentFlow() {
     const existingQuestions = sanitizeBattleQuestions(
       getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
     );
@@ -329,7 +758,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       };
     }
 
-    const { generatedQuestions, resolvedScope } = resolveLaunchQuestions();
+    const { generatedQuestions, resolvedScope } = await resolveLaunchQuestions();
     return {
       preparedQuestions: generatedQuestions,
       resolvedScope,
@@ -399,7 +828,7 @@ export const BattleSetupModal: React.FC<Props> = ({
         })),
       });
 
-      const { preparedQuestions, resolvedScope, source } = getPreparedQuestionsForCurrentFlow();
+      const { preparedQuestions, resolvedScope, source } = await getPreparedQuestionsForCurrentFlow();
       const config = buildConfig(preparedQuestions.length, resolvedScope);
 
       console.log('[BATTLE DEBUG] Quick Battle triggering onStart', {
@@ -415,14 +844,14 @@ export const BattleSetupModal: React.FC<Props> = ({
       await runStartFlow(preparedQuestions, config, source === 'existing' ? 'curated' : 'quick');
     } catch (error) {
       console.error('[BATTLE START DEBUG] start failed:', error);
-      setStartError(error instanceof Error ? error.message : 'Falha ao preparar as perguntas da batalha.');
+      setStartError(error instanceof Error ? error.message : copy.prepareFailure);
     }
   }
 
   /** 📋 Preparar Aula — generate and open the curation screen */
-  function handleOpenCuration() {
+  async function handleOpenCuration() {
     try {
-      const { preparedQuestions } = getPreparedQuestionsForCurrentFlow();
+      const { preparedQuestions } = await getPreparedQuestionsForCurrentFlow();
       if (preparedQuestions.length === 0) {
         setStartError('Nenhuma pergunta válida foi encontrada para preparar a aula.');
         return;
@@ -570,18 +999,18 @@ export const BattleSetupModal: React.FC<Props> = ({
         ? sanitizeBattleQuestions(
             getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
           )
-        : getPreparedQuestionsForCurrentFlow().preparedQuestions;
+        : (await getPreparedQuestionsForCurrentFlow()).preparedQuestions;
 
       if (finalQuestions.length === 0) {
-        setStartError('Selecione pelo menos uma pergunta valida para salvar o battle.');
+        setStartError(copy.noQuestionsSave);
         return;
       }
 
-      const title = titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle();
+      const title = titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(effectiveUiLanguage);
       setTemplateTitle(title);
 
       if (!onSaveTemplate) {
-        setSaveMessage('Salvar indisponivel neste modo.');
+        setSaveMessage(copy.saveUnavailable);
         return;
       }
 
@@ -599,17 +1028,17 @@ export const BattleSetupModal: React.FC<Props> = ({
         : baseTemplate;
 
       await onSaveTemplate(template);
-      setSaveMessage(forceDuplicate ? 'Battle duplicado na sua biblioteca.' : 'Battle salvo na sua biblioteca.');
+      setSaveMessage(forceDuplicate ? copy.duplicateSuccess : copy.saveSuccess);
       setStartError(null);
     } catch (error) {
       console.error('[BATTLE SAVE DEBUG] save failed:', error);
       setSaveMessage(null);
-      setStartError(error instanceof Error ? error.message : 'Falha ao salvar o battle.');
+      setStartError(error instanceof Error ? error.message : copy.saveFailure);
     }
   }
 
   async function handleDuplicateTemplate() {
-    const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle();
+    const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage);
     await handleSaveTemplate(`${baseTitle} (copia)`, true);
   }
 
@@ -622,12 +1051,12 @@ export const BattleSetupModal: React.FC<Props> = ({
           <div className="sticky top-0 z-10 flex items-center justify-between bg-gradient-to-r from-orange-600/80 to-red-700/80 px-6 py-4">
             <div className="min-w-0 flex-1 pr-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-100/80">
-                Nome da batalha
+                {copy.battleName}
               </p>
               <input
                 value={templateTitle}
                 onChange={(event) => setTemplateTitle(event.target.value)}
-                placeholder="Digite o nome da batalha"
+                placeholder={copy.battleNamePlaceholder}
                 className="mt-1 mb-1 w-full rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-sm font-bold text-white outline-none placeholder:text-orange-100/60 focus:border-white/40"
               />
               <p className="text-xs text-orange-200">
@@ -644,17 +1073,17 @@ export const BattleSetupModal: React.FC<Props> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={() => void handleSaveTemplate()}
-                title="Salvar battle na biblioteca"
+                title={copy.saveBattleTitle}
                 className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
               >
-                Salvar
+                {copy.save}
               </button>
               <button
                 onClick={() => void handleDuplicateTemplate()}
-                title="Duplicar battle salvo"
+                title={copy.duplicateBattleTitle}
                 className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
               >
-                Duplicar
+                {copy.duplicate}
               </button>
             </div>
             <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none" aria-label="Close">✕</button>
@@ -675,10 +1104,10 @@ export const BattleSetupModal: React.FC<Props> = ({
             {/* Scope */}
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Fonte das Perguntas
+                {copy.source}
               </label>
               <div className="grid grid-cols-3 gap-2">
-                {SCOPES.map(s => (
+                {scopeOptions.map(s => (
                   <button key={s.value} onClick={() => setScope(s.value)}
                     className={`p-2 rounded-xl border text-center transition-colors ${
                       scope === s.value
@@ -695,10 +1124,10 @@ export const BattleSetupModal: React.FC<Props> = ({
             {/* Difficulty */}
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Dificuldade
+                {copy.difficulty}
               </label>
               <div className="flex gap-2">
-                {DIFFICULTIES.map(d => (
+                {difficultyOptions.map(d => (
                   <button key={d.value} onClick={() => setDifficulty(d.value)}
                     className={`flex-1 py-2 rounded-xl border text-sm font-semibold transition-colors ${
                       difficulty === d.value
@@ -890,12 +1319,12 @@ export const BattleSetupModal: React.FC<Props> = ({
         <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-orange-600/80 to-red-700/80 shrink-0">
           <div className="min-w-0 flex-1 pr-3">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-100/80">
-              Nome da batalha
+              {copy.battleName}
             </p>
             <input
               value={templateTitle}
               onChange={(event) => setTemplateTitle(event.target.value)}
-              placeholder="Digite o nome da batalha"
+              placeholder={copy.battleNamePlaceholder}
               className="mt-1 mb-1 w-full rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-sm font-bold text-white outline-none placeholder:text-orange-100/60 focus:border-white/40"
             />
             <p className="text-xs text-orange-200">
@@ -905,21 +1334,21 @@ export const BattleSetupModal: React.FC<Props> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={addCustomQuestion}
-              title="Adicionar pergunta personalizada"
+              title={copy.addQuestionTitle}
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
             >
-              + Nova pergunta
+              {copy.addQuestion}
             </button>
-            <button onClick={() => void handleSaveTemplate()} title="Salvar battle na biblioteca"
+            <button onClick={() => void handleSaveTemplate()} title={copy.saveBattleTitle}
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition">
-              Salvar
+              {copy.save}
             </button>
             <button
               onClick={() => void handleDuplicateTemplate()}
-              title="Duplicar battle salvo"
+              title={copy.duplicateBattleTitle}
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
             >
-              Duplicar
+              {copy.duplicate}
             </button>
             <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none ml-1" aria-label="Close">✕</button>
           </div>
@@ -955,7 +1384,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                     type="checkbox"
                     checked={!excluded}
                     onChange={() => toggleExclude(q.id)}
-                    title={excluded ? 'Incluir esta pergunta' : 'Excluir esta pergunta'}
+                    title={excluded ? copy.includeQuestion : copy.excludeQuestion}
                     className="mt-1 w-4 h-4 accent-orange-500 cursor-pointer shrink-0"
                   />
                   {/* Number badge */}
@@ -987,7 +1416,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                     <div className="flex items-center gap-1 shrink-0">
                       <button
                         onClick={() => duplicateQuestion(idx)}
-                        title="Duplicar pergunta"
+                        title={copy.duplicateQuestion}
                         className="text-xs px-1.5 py-0.5 rounded border border-slate-600 text-slate-500 hover:border-blue-400 hover:text-blue-400 transition"
                       >⧉</button>
                       <button
@@ -1032,7 +1461,7 @@ export const BattleSetupModal: React.FC<Props> = ({
 
                     {/* Question text field */}
                     <div>
-                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">Texto da pergunta</label>
+                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">{copy.questionText}</label>
                       <input
                         value={editDraft.text}
                         onChange={e => setEditDraft(d => d ? { ...d, text: e.target.value } : d)}
@@ -1041,13 +1470,13 @@ export const BattleSetupModal: React.FC<Props> = ({
                     </div>
 
                     <div>
-                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">Tipo de pergunta</label>
+                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">{copy.questionType}</label>
                       <select
                         value={editDraft.kind}
                         onChange={e => setEditDraft(d => d ? { ...d, kind: e.target.value as BattleQuestionKind } : d)}
                         className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500"
                       >
-                        {QUESTION_KINDS.map(kind => (
+                        {questionKindOptions.map(kind => (
                           <option key={kind.value} value={kind.value}>{kind.label}</option>
                         ))}
                       </select>
@@ -1109,7 +1538,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                         {(editDraft.kind === 'audio-open' || editDraft.kind === 'speaking') && (
                           <>
                         <div>
-                          <label className="text-[10px] text-slate-500 uppercase tracking-wide">Resposta correta principal</label>
+                          <label className="text-[10px] text-slate-500 uppercase tracking-wide">{copy.correctAnswer}</label>
                           <input
                             value={editDraft.correctText}
                             onChange={e => setEditDraft(d => d ? { ...d, correctText: e.target.value } : d)}
@@ -1122,7 +1551,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                           <input
                             value={editDraft.acceptedAnswersText}
                             onChange={e => setEditDraft(d => d ? { ...d, acceptedAnswersText: e.target.value } : d)}
-                            placeholder="Resposta 1, resposta 2, resposta 3"
+                            placeholder={copy.acceptedAnswersPlaceholder}
                             className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
                           />
                         </div>
