@@ -1331,6 +1331,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     alert('Erro: userId n�o fornecido. A funcionalidade de salvar/carregar materiais n�o funcionar�.');
   }
 
+  const uiLang: 'en' | 'pt' | 'es' = (() => {
+    try {
+      const stored = localStorage.getItem('learnendo_base_ui_lang');
+      return stored === 'en' || stored === 'es' ? stored : 'pt';
+    } catch {
+      return 'pt';
+    }
+  })();
   const wsl = getWsl();
   const boxFlowLabels = getWorkspaceBoxFlowLabels();
   const [items, setItems] = useState<WorkspaceItem[]>([]);
