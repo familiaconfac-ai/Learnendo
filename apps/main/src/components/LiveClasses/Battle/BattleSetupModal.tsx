@@ -1060,7 +1060,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                 className="mt-1 mb-1 w-full rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-sm font-bold text-white outline-none placeholder:text-orange-100/60 focus:border-white/40"
               />
               <p className="text-xs text-orange-200">
-                {questionCount} perguntas · {timePerQuestion}s cada
+                {questionCount} {copy.questions} · {timePerQuestion}s {copy.each}
               </p>
             </div>
             <div className="hidden">
@@ -1143,7 +1143,7 @@ export const BattleSetupModal: React.FC<Props> = ({
             {/* Question count */}
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Nº de Perguntas
+                {copy.count}
               </label>
               <div className="flex gap-2">
                 {QUESTION_COUNTS.map(n => (
@@ -1162,7 +1162,7 @@ export const BattleSetupModal: React.FC<Props> = ({
             {/* Time */}
             <div>
               <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                Segundos por Pergunta
+                {copy.seconds}
               </label>
               <div className="flex gap-2">
                 {TIME_OPTIONS.map(t => (
@@ -1178,7 +1178,7 @@ export const BattleSetupModal: React.FC<Props> = ({
               </div>
               <div className="mt-3">
                 <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
-                  Tempo personalizado
+                  {copy.customTime}
                 </label>
                 <input
                   type="number"
@@ -1196,7 +1196,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                   className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-orange-500"
                 />
                 <p className="mt-1 text-[11px] text-slate-500">
-                  Use este valor como tempo padrÃ£o. Na ediÃ§Ã£o de cada pergunta vocÃª pode colocar um tempo maior.
+                  {copy.customTimeHelp}
                 </p>
               </div>
             </div>
@@ -1217,9 +1217,9 @@ export const BattleSetupModal: React.FC<Props> = ({
                   className="mt-1 h-4 w-4 accent-orange-500"
                 />
                 <div>
-                  <div className="text-sm font-semibold text-white">Professor participa da batalha</div>
+                  <div className="text-sm font-semibold text-white">{copy.teacherLabel}</div>
                   <div className="text-xs text-slate-400">
-                    Ative para o professor responder junto com os alunos e entrar no placar.
+                    {copy.teacherHelp}
                   </div>
                 </div>
               </label>
@@ -1234,9 +1234,9 @@ export const BattleSetupModal: React.FC<Props> = ({
                   className="mt-1 h-4 w-4 accent-orange-500"
                 />
                 <div>
-                  <div className="text-sm font-semibold text-white">Ativar Bot</div>
+                  <div className="text-sm font-semibold text-white">{copy.botLabel}</div>
                   <div className="text-xs text-slate-400">
-                    Inclui um participante artificial na batalha com avatar e pontuação normal.
+                    {copy.botHelp}
                   </div>
                 </div>
               </label>
@@ -1245,7 +1245,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                 <div className="space-y-3">
                   <div>
                     <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                      Avatar do Bot
+                      {copy.botAvatar}
                     </label>
                     <div className="grid grid-cols-4 gap-2">
                       {BOT_AVATAR_OPTIONS.map((avatar) => (
@@ -1269,12 +1269,12 @@ export const BattleSetupModal: React.FC<Props> = ({
 
                   <div>
                     <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
-                      Nome do Bot
+                      {copy.botName}
                     </label>
                     <input
                       value={botName}
                       onChange={(event) => setBotName(event.target.value)}
-                      placeholder="Bot"
+                      placeholder={copy.botName}
                       className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-orange-500"
                     />
                   </div>
@@ -1290,7 +1290,7 @@ export const BattleSetupModal: React.FC<Props> = ({
               disabled={startingNow}
               className="w-full py-3 rounded-xl bg-slate-700 hover:bg-slate-600 border border-slate-600 text-white font-semibold text-sm transition"
             >
-              📋 Preparar Aula → (ver e editar perguntas)
+              {copy.prepare}
             </button>
             <button
               onClick={() => {
@@ -1300,7 +1300,7 @@ export const BattleSetupModal: React.FC<Props> = ({
               disabled={startingNow}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-base hover:from-orange-400 hover:to-red-500 transition-all shadow-lg"
             >
-              ⚡ Iniciar Agora ({questionCount} perguntas)
+              {copy.startNow} ({questionCount} {copy.questions})
             </button>
           </div>
         </div>

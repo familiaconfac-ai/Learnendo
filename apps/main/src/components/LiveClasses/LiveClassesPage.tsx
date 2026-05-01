@@ -27,8 +27,10 @@ interface LiveClassesPageProps {
   viewMode: UserViewMode;
   canManageClasses: boolean;
   currentCourseId: string;
+  uiLanguage?: 'en' | 'pt' | 'es';
   onOpenClassContent: (liveClass: LiveClass) => void;
   onRoomContextChange: (liveClass: LiveClass | null) => void;
+  onOpenBattleHub: () => void;
   onBack: () => void;
 }
 
@@ -128,8 +130,17 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   viewMode,
   canManageClasses,
   currentCourseId,
+  uiLanguage = (() => {
+    try {
+      const stored = localStorage.getItem('learnendo_base_ui_lang');
+      return stored === 'pt' || stored === 'es' ? stored : 'en';
+    } catch {
+      return 'en';
+    }
+  })(),
   onOpenClassContent,
   onRoomContextChange,
+  onOpenBattleHub,
   onBack,
 }) => {
   const [classes, setClasses] = useState<LiveClass[]>([]);
@@ -400,8 +411,10 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
         liveClass={activeRoomClass}
         user={user}
         isTeacher={canManageClasses}
+        uiLanguage={uiLanguage}
         onOpenClassContent={onOpenClassContent}
         onEditClass={openEditFromRoom}
+        onOpenBattleHub={onOpenBattleHub}
         onExit={leaveRoom}
       />
     );

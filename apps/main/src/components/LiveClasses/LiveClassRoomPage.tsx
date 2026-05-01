@@ -13,7 +13,6 @@ import { learnendoLogo } from '../../assets/branding';
 import { BattleHubPage } from '../BattleHub/BattleHubPage';
 import type { SavedBattleTemplate } from './Battle/battleTypes';
 import { deleteBattleSession } from './Battle/battleService';
-import { getBattleLanguage } from './Battle/battleUtils';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
 
@@ -21,6 +20,7 @@ interface LiveClassRoomPageProps {
   liveClass: LiveClass;
   user: User;
   isTeacher: boolean;
+  uiLanguage?: 'en' | 'pt' | 'es';
   onOpenClassContent: (liveClass: LiveClass) => void;
   onEditClass: (liveClass: LiveClass) => void;
   onOpenBattleHub: () => void;
@@ -47,6 +47,14 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   liveClass,
   user,
   isTeacher,
+  uiLanguage = (() => {
+    try {
+      const stored = localStorage.getItem('learnendo_base_ui_lang');
+      return stored === 'pt' || stored === 'es' ? stored : 'en';
+    } catch {
+      return 'en';
+    }
+  })(),
   onOpenBattleHub,
   onExit,
 }) => {
@@ -59,7 +67,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
   const role = isTeacher ? 'teacher' : 'student';
   const isBattleStage = session.mainStageMode === 'battle';
-  const battleUiLanguage = getBattleLanguage(liveClass.courseId ?? undefined) as 'en' | 'pt' | 'es' | 'el' | 'he';
+  const battleUiLanguage = uiLanguage;
 
   useEffect(() => {
     const displayName = user.displayName || user.email || 'Usuario';
