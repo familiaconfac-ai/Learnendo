@@ -682,6 +682,7 @@ const StudentStage: React.FC<{
                   classId={liveClass.id}
                   uid={user.uid}
                   name={user.displayName || user.email || 'Aluno'}
+                  uiLanguage={uiLang}
                 />
               );
             })()

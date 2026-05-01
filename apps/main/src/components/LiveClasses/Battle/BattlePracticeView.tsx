@@ -22,16 +22,121 @@ interface Props {
   uid: string;
   name: string;
   isTeacher?: boolean;
+  uiLanguage?: 'en' | 'pt' | 'es';
   onClose: () => void;
 }
+
+const PRACTICE_COPY = {
+  en: {
+    againstBot: 'Battle against bot',
+    soloTraining: 'Solo training',
+    enableMusic: 'Enable music',
+    muteMusic: 'Mute music',
+    close: 'Close',
+    title: 'Learnendo Battle',
+    questions: 'questions',
+    secondsEach: 'seconds each',
+    difficulty: 'Difficulty',
+    mode: 'Mode',
+    botEnabled: 'Bot enabled',
+    solo: 'Solo',
+    startBattle: 'Start battle',
+    question: 'Question',
+    questionTime: 'Time for this question',
+    audioChoiceHint: 'Listen and choose the correct answer.',
+    audioOpenHint: 'Listen and answer by typing.',
+    speakingHint: 'Answer by speaking or typing.',
+    confirmAnswer: 'Confirm answer',
+    speechPlaceholder: 'Your spoken answer appears here...',
+    typedPlaceholder: 'Type your answer...',
+    listening: 'Listening...',
+    answerByVoice: 'Answer by voice',
+    speechUnavailable: 'Voice recognition is not available in this browser.',
+    timeUp: 'Time up',
+    correct: 'Correct!',
+    revealed: 'Answer revealed',
+    correctAnswer: 'Correct answer',
+    otherPlayers: 'Other players',
+    finalResult: 'See final result',
+    nextQuestion: 'Next question',
+  },
+  pt: {
+    againstBot: 'Batalha contra bot',
+    soloTraining: 'Treino solo',
+    enableMusic: 'Ativar musica',
+    muteMusic: 'Silenciar musica',
+    close: 'Fechar',
+    title: 'Learnendo Battle',
+    questions: 'perguntas',
+    secondsEach: 'seg cada',
+    difficulty: 'Dificuldade',
+    mode: 'Modo',
+    botEnabled: 'Bot ativo',
+    solo: 'Solo',
+    startBattle: 'Comecar batalha',
+    question: 'Pergunta',
+    questionTime: 'Tempo desta pergunta',
+    audioChoiceHint: 'Escute e escolha a alternativa correta.',
+    audioOpenHint: 'Escute e responda digitando.',
+    speakingHint: 'Responda falando ou digitando.',
+    confirmAnswer: 'Confirmar resposta',
+    speechPlaceholder: 'Sua resposta falada aparece aqui...',
+    typedPlaceholder: 'Digite sua resposta...',
+    listening: 'Ouvindo...',
+    answerByVoice: 'Responder falando',
+    speechUnavailable: 'Reconhecimento de voz nao esta disponivel neste navegador.',
+    timeUp: 'Tempo esgotado',
+    correct: 'Correto!',
+    revealed: 'Resposta revelada',
+    correctAnswer: 'Resposta correta',
+    otherPlayers: 'Outros jogadores',
+    finalResult: 'Ver resultado final',
+    nextQuestion: 'Proxima pergunta',
+  },
+  es: {
+    againstBot: 'Batalla contra bot',
+    soloTraining: 'Entrenamiento individual',
+    enableMusic: 'Activar musica',
+    muteMusic: 'Silenciar musica',
+    close: 'Cerrar',
+    title: 'Batalla Learnendo',
+    questions: 'preguntas',
+    secondsEach: 'seg cada una',
+    difficulty: 'Dificultad',
+    mode: 'Modo',
+    botEnabled: 'Bot activo',
+    solo: 'Solo',
+    startBattle: 'Iniciar batalla',
+    question: 'Pregunta',
+    questionTime: 'Tiempo de esta pregunta',
+    audioChoiceHint: 'Escucha y elige la respuesta correcta.',
+    audioOpenHint: 'Escucha y responde escribiendo.',
+    speakingHint: 'Responde hablando o escribiendo.',
+    confirmAnswer: 'Confirmar respuesta',
+    speechPlaceholder: 'Tu respuesta hablada aparece aqui...',
+    typedPlaceholder: 'Escribe tu respuesta...',
+    listening: 'Escuchando...',
+    answerByVoice: 'Responder hablando',
+    speechUnavailable: 'El reconocimiento de voz no esta disponible en este navegador.',
+    timeUp: 'Se acabo el tiempo',
+    correct: 'Correcto!',
+    revealed: 'Respuesta revelada',
+    correctAnswer: 'Respuesta correcta',
+    otherPlayers: 'Otros jugadores',
+    finalResult: 'Ver resultado final',
+    nextQuestion: 'Siguiente pregunta',
+  },
+} as const;
 
 export const BattlePracticeView: React.FC<Props> = ({
   template,
   uid,
   name,
   isTeacher = false,
+  uiLanguage = 'en',
   onClose,
 }) => {
+  const copy = PRACTICE_COPY[uiLanguage] ?? PRACTICE_COPY.en;
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -128,7 +233,7 @@ export const BattlePracticeView: React.FC<Props> = ({
   function startSpeechRecognition() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      window.alert('Reconhecimento de voz nao esta disponivel neste navegador.');
+      window.alert(copy.speechUnavailable);
       return;
     }
 
@@ -187,6 +292,7 @@ export const BattlePracticeView: React.FC<Props> = ({
         myUid={uid}
         onClose={onClose}
         isTeacher={isTeacher}
+        uiLanguage={uiLanguage}
       />
     );
   }
@@ -197,14 +303,14 @@ export const BattlePracticeView: React.FC<Props> = ({
         <div>
           <div className="text-sm font-black text-white">{template.title}</div>
           <div className="text-xs text-slate-400">
-            {template.config.botEnabled ? 'Batalha contra bot' : 'Treino solo'} • {name}
+            {template.config.botEnabled ? copy.againstBot : copy.soloTraining} • {name}
           </div>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setMusicMuted((value) => !value)}
             className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-xs transition hover:bg-slate-700"
-            title={musicMuted ? 'Ativar musica' : 'Silenciar musica'}
+            title={musicMuted ? copy.enableMusic : copy.muteMusic}
           >
             {musicMuted ? '🔇' : '🔉'}
           </button>
@@ -212,7 +318,7 @@ export const BattlePracticeView: React.FC<Props> = ({
             onClick={onClose}
             className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200"
           >
-            Fechar
+            {copy.close}
           </button>
         </div>
       </div>
@@ -221,18 +327,18 @@ export const BattlePracticeView: React.FC<Props> = ({
         <div className="flex flex-1 items-center justify-center px-6">
           <div className="w-full max-w-md space-y-4 rounded-3xl border border-slate-800 bg-slate-900/80 p-8 text-center">
             <div className="text-5xl">⚔️</div>
-            <h2 className="text-2xl font-black text-white">Learnendo Battle</h2>
+            <h2 className="text-2xl font-black text-white">{copy.title}</h2>
             <p className="text-sm text-slate-300">
-              {template.questions.length} perguntas • {template.config.timePerQuestion}s por pergunta
+              {template.questions.length} {copy.questions} • {template.config.timePerQuestion}s {copy.secondsEach}
             </p>
             <div className="grid grid-cols-2 gap-2 text-xs text-slate-300">
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3">
-                <div className="font-black text-orange-300">Dificuldade</div>
+                <div className="font-black text-orange-300">{copy.difficulty}</div>
                 <div className="mt-1 capitalize">{template.config.difficulty}</div>
               </div>
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-3 py-3">
-                <div className="font-black text-cyan-300">Modo</div>
-                <div className="mt-1">{template.config.botEnabled ? 'Bot ativo' : 'Solo'}</div>
+                <div className="font-black text-cyan-300">{copy.mode}</div>
+                <div className="mt-1">{template.config.botEnabled ? copy.botEnabled : copy.solo}</div>
               </div>
             </div>
             <BattleLabIndicators className="pt-1" />
@@ -240,7 +346,7 @@ export const BattlePracticeView: React.FC<Props> = ({
               onClick={start}
               className="w-full rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 px-5 py-4 text-base font-black text-white"
             >
-              Começar batalha
+              {copy.startBattle}
             </button>
           </div>
         </div>
@@ -279,10 +385,10 @@ export const BattlePracticeView: React.FC<Props> = ({
           <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4 py-6">
             <div className="w-full max-w-md space-y-4 rounded-2xl bg-slate-800/80 p-6 text-center">
               <div className="text-xs uppercase tracking-wider text-slate-500">
-                Pergunta {questionIndex + 1} / {totalQuestions}
+                {copy.question} {questionIndex + 1} / {totalQuestions}
               </div>
               <div className="text-xs font-semibold text-orange-300">
-                Tempo desta pergunta: {currentQuestionDuration}s
+                {copy.questionTime}: {currentQuestionDuration}s
               </div>
               <div className="text-3xl font-bold leading-snug text-white">{question.text}</div>
               {question.imageUrl ? (
@@ -292,9 +398,9 @@ export const BattlePracticeView: React.FC<Props> = ({
                   className="mx-auto max-h-48 w-auto rounded-xl border border-slate-700 bg-slate-900 object-contain"
                 />
               ) : null}
-              {question.kind === 'audio-choice' ? <p className="text-xs text-amber-300">Escute e escolha a alternativa correta.</p> : null}
-              {question.kind === 'audio-open' ? <p className="text-xs text-amber-300">Escute e responda digitando.</p> : null}
-              {question.kind === 'speaking' ? <p className="text-xs text-amber-300">Responda falando ou digitando.</p> : null}
+              {question.kind === 'audio-choice' ? <p className="text-xs text-amber-300">{copy.audioChoiceHint}</p> : null}
+              {question.kind === 'audio-open' ? <p className="text-xs text-amber-300">{copy.audioOpenHint}</p> : null}
+              {question.kind === 'speaking' ? <p className="text-xs text-amber-300">{copy.speakingHint}</p> : null}
             </div>
 
             {phase === 'question' && isChoiceQuestion(question) ? (
@@ -320,7 +426,7 @@ export const BattlePracticeView: React.FC<Props> = ({
                     disabled={selectedOptions.length === 0}
                     className="w-full max-w-sm rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                   >
-                    Confirmar resposta
+                    {copy.confirmAnswer}
                   </button>
                 ) : null}
               </>
@@ -329,7 +435,7 @@ export const BattlePracticeView: React.FC<Props> = ({
                 <textarea
                   value={typedAnswer}
                   onChange={(event) => setTypedAnswer(event.target.value)}
-                  placeholder={question.kind === 'speaking' ? 'Sua resposta falada aparece aqui...' : 'Digite sua resposta...'}
+                  placeholder={question.kind === 'speaking' ? copy.speechPlaceholder : copy.typedPlaceholder}
                   className="min-h-28 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400"
                 />
                 <div className="flex gap-3">
@@ -339,7 +445,7 @@ export const BattlePracticeView: React.FC<Props> = ({
                       disabled={isListening}
                       className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
                     >
-                      {isListening ? 'Ouvindo...' : '🎤 Responder falando'}
+                      {isListening ? copy.listening : `🎤 ${copy.answerByVoice}`}
                     </button>
                   ) : null}
                   <button
@@ -347,7 +453,7 @@ export const BattlePracticeView: React.FC<Props> = ({
                     disabled={!typedAnswer.trim()}
                     className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                   >
-                    Confirmar resposta
+                    {copy.confirmAnswer}
                   </button>
                 </div>
               </div>
@@ -358,10 +464,10 @@ export const BattlePracticeView: React.FC<Props> = ({
                     {feedback.isTimeout ? '⏱️' : feedback.humanResult.isCorrect ? '✅' : '❌'}
                   </div>
                   <div className="mt-2 text-lg font-black text-white">
-                    {feedback.isTimeout ? 'Tempo esgotado' : feedback.humanResult.isCorrect ? 'Correto!' : 'Resposta revelada'}
+                    {feedback.isTimeout ? copy.timeUp : feedback.humanResult.isCorrect ? copy.correct : copy.revealed}
                   </div>
                   <div className="mt-1 text-sm text-slate-300">
-                    Resposta correta: <span className="font-bold text-green-400">{answerLabel || '—'}</span>
+                    {copy.correctAnswer}: <span className="font-bold text-green-400">{answerLabel || '—'}</span>
                   </div>
                   <div className="mt-2 text-sm font-semibold text-orange-300">
                     {feedback.humanResult.isCorrect ? `+${feedback.humanResult.pointsEarned} pts` : '+0 pts'}
@@ -373,7 +479,7 @@ export const BattlePracticeView: React.FC<Props> = ({
 
                 {feedback.botResults.length > 0 ? (
                   <div className="space-y-2">
-                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">Outros jogadores</p>
+                    <p className="text-xs font-black uppercase tracking-wide text-slate-500">{copy.otherPlayers}</p>
                     {feedback.botResults.map((result) => (
                       <div
                         key={`${feedback.question.id}_${result.uid}`}
@@ -402,7 +508,7 @@ export const BattlePracticeView: React.FC<Props> = ({
                   onClick={next}
                   className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-black text-white"
                 >
-                  {questionIndex + 1 >= totalQuestions ? 'Ver resultado final' : 'Próxima pergunta'}
+                  {questionIndex + 1 >= totalQuestions ? copy.finalResult : copy.nextQuestion}
                 </button>
               </div>
             ) : null}

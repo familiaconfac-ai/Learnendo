@@ -15,6 +15,21 @@ import type { LiveClass } from '../../types';
 
 type UILang = 'en' | 'pt' | 'es' | 'el' | 'he';
 
+function getBattleCourseIdFromUiLanguage(uiLanguage: UILang): string {
+  switch (uiLanguage) {
+    case 'pt':
+      return 'portuguese_foreigners';
+    case 'es':
+      return 'spanish';
+    case 'el':
+      return 'greek_koine';
+    case 'he':
+      return 'hebrew_biblical';
+    default:
+      return 'english';
+  }
+}
+
 interface Props {
   uid: string;
   name: string;
@@ -47,6 +62,22 @@ const COPY: Record<UILang, {
   ice: string;
   diamonds: string;
   stars: string;
+  currentSetup: string;
+  course: string;
+  workbook: string;
+  lesson: string;
+  currentLesson: string;
+  questionsWord: string;
+  solo: string;
+  botEnabled: string;
+  libraryTitle: string;
+  libraryBody: string;
+  savedCount: (count: number) => string;
+  libraryLoading: string;
+  libraryEmpty: string;
+  editAndUse: string;
+  open: string;
+  loadLibraryError: string;
 }> = {
   en: {
     title: 'Battle Arena',
@@ -62,6 +93,22 @@ const COPY: Record<UILang, {
     ice: 'Ice',
     diamonds: 'Diamonds',
     stars: 'Stars',
+    currentSetup: 'Current setup',
+    course: 'Course',
+    workbook: 'Workbook',
+    lesson: 'Lesson',
+    currentLesson: 'current lesson',
+    questionsWord: 'questions',
+    solo: 'Solo',
+    botEnabled: 'Bot enabled',
+    libraryTitle: 'Battle Library',
+    libraryBody: 'Save themes like "greetings 1", "greetings 2" and reopen them for other classes.',
+    savedCount: (count: number) => `${count} saved`,
+    libraryLoading: 'Loading library...',
+    libraryEmpty: 'There are no saved battles yet. Open "Prepare Class", build your questions and click "Save".',
+    editAndUse: 'Edit and use',
+    open: 'Open',
+    loadLibraryError: 'Failed to load saved battles.',
   },
   pt: {
     title: 'Arena Battle',
@@ -77,6 +124,22 @@ const COPY: Record<UILang, {
     ice: 'Gelo',
     diamonds: 'Diamantes',
     stars: 'Estrelas',
+    currentSetup: 'Configuracao atual',
+    course: 'Curso',
+    workbook: 'Workbook',
+    lesson: 'Licao',
+    currentLesson: 'licao atual',
+    questionsWord: 'perguntas',
+    solo: 'Solo',
+    botEnabled: 'Bot ativo',
+    libraryTitle: 'Biblioteca de Battles',
+    libraryBody: 'Salve temas como "greetings 1", "greetings 2" e reabra para outras turmas.',
+    savedCount: (count: number) => `${count} salvos`,
+    libraryLoading: 'Carregando biblioteca...',
+    libraryEmpty: 'Ainda nao ha battles salvos. Abra "Preparar Aula", monte suas perguntas e clique em "Salvar".',
+    editAndUse: 'Editar e usar',
+    open: 'Abrir',
+    loadLibraryError: 'Falha ao carregar battles salvos.',
   },
   es: {
     title: 'Arena Battle',
@@ -92,6 +155,22 @@ const COPY: Record<UILang, {
     ice: 'Hielo',
     diamonds: 'Diamantes',
     stars: 'Estrellas',
+    currentSetup: 'Configuracion actual',
+    course: 'Curso',
+    workbook: 'Libro',
+    lesson: 'Leccion',
+    currentLesson: 'leccion actual',
+    questionsWord: 'preguntas',
+    solo: 'Solo',
+    botEnabled: 'Bot activo',
+    libraryTitle: 'Biblioteca de Batallas',
+    libraryBody: 'Guarda temas como "greetings 1", "greetings 2" y vuelvelos a abrir para otras clases.',
+    savedCount: (count: number) => `${count} guardadas`,
+    libraryLoading: 'Cargando biblioteca...',
+    libraryEmpty: 'Todavia no hay batallas guardadas. Abre "Preparar clase", arma tus preguntas y pulsa "Guardar".',
+    editAndUse: 'Editar y usar',
+    open: 'Abrir',
+    loadLibraryError: 'No se pudieron cargar las batallas guardadas.',
   },
   el: {
     title: 'Battle Arena',
@@ -107,6 +186,22 @@ const COPY: Record<UILang, {
     ice: 'Ice',
     diamonds: 'Diamonds',
     stars: 'Stars',
+    currentSetup: 'Current setup',
+    course: 'Course',
+    workbook: 'Workbook',
+    lesson: 'Lesson',
+    currentLesson: 'current lesson',
+    questionsWord: 'questions',
+    solo: 'Solo',
+    botEnabled: 'Bot enabled',
+    libraryTitle: 'Battle Library',
+    libraryBody: 'Save themes like "greetings 1", "greetings 2" and reopen them for other classes.',
+    savedCount: (count: number) => `${count} saved`,
+    libraryLoading: 'Loading library...',
+    libraryEmpty: 'There are no saved battles yet. Open "Prepare Class", build your questions and click "Save".',
+    editAndUse: 'Edit and use',
+    open: 'Open',
+    loadLibraryError: 'Failed to load saved battles.',
   },
   he: {
     title: 'Battle Arena',
@@ -122,6 +217,22 @@ const COPY: Record<UILang, {
     ice: 'Ice',
     diamonds: 'Diamonds',
     stars: 'Stars',
+    currentSetup: 'Current setup',
+    course: 'Course',
+    workbook: 'Workbook',
+    lesson: 'Lesson',
+    currentLesson: 'current lesson',
+    questionsWord: 'questions',
+    solo: 'Solo',
+    botEnabled: 'Bot enabled',
+    libraryTitle: 'Battle Library',
+    libraryBody: 'Save themes like "greetings 1", "greetings 2" and reopen them for other classes.',
+    savedCount: (count: number) => `${count} saved`,
+    libraryLoading: 'Loading library...',
+    libraryEmpty: 'There are no saved battles yet. Open "Prepare Class", build your questions and click "Save".',
+    editAndUse: 'Edit and use',
+    open: 'Open',
+    loadLibraryError: 'Failed to load saved battles.',
   },
 };
 
@@ -147,7 +258,7 @@ export const BattleHubPage: React.FC<Props> = ({
   initialSetupTemplate = null,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
-  const effectiveCourseId = courseId ?? activeLiveClass?.courseId;
+  const effectiveCourseId = getBattleCourseIdFromUiLanguage(uiLanguage) ?? courseId ?? activeLiveClass?.courseId;
   const effectiveWorkbookId = workbookId ?? activeLiveClass?.workbookId;
   const effectiveLessonId = lessonId ?? activeLiveClass?.lessonId?.toString();
   const storageKey = useMemo(() => buildStorageKey(uid, effectiveCourseId), [effectiveCourseId, uid]);
@@ -191,7 +302,7 @@ export const BattleHubPage: React.FC<Props> = ({
         }
       } catch (error) {
         if (isMounted) {
-          setLibraryError(error instanceof Error ? error.message : 'Falha ao carregar battles salvos.');
+          setLibraryError(error instanceof Error ? error.message : copy.loadLibraryError);
         }
       } finally {
         if (isMounted) {
@@ -205,7 +316,7 @@ export const BattleHubPage: React.FC<Props> = ({
     return () => {
       isMounted = false;
     };
-  }, [uid]);
+  }, [copy.loadLibraryError, uid]);
 
   useEffect(() => {
     if (!activeLiveClass?.id) return;
@@ -402,19 +513,19 @@ export const BattleHubPage: React.FC<Props> = ({
 
         <section className="grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
           <article className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
-            <h2 className="text-sm font-black uppercase tracking-wide text-orange-300">Current setup</h2>
+            <h2 className="text-sm font-black uppercase tracking-wide text-orange-300">{copy.currentSetup}</h2>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
-                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Course</div>
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{copy.course}</div>
                 <div className="mt-2 text-sm font-semibold text-white">{effectiveCourseId ?? 'english'}</div>
               </div>
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
-                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Workbook</div>
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{copy.workbook}</div>
                   <div className="mt-2 text-sm font-semibold text-white">{effectiveWorkbookId ?? 1}</div>
               </div>
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
-                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Lesson</div>
-                  <div className="mt-2 text-sm font-semibold text-white">{effectiveLessonId ?? 'current lesson'}</div>
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">{copy.lesson}</div>
+                  <div className="mt-2 text-sm font-semibold text-white">{effectiveLessonId ?? copy.currentLesson}</div>
               </div>
             </div>
             {lastTemplate ? (
@@ -423,7 +534,7 @@ export const BattleHubPage: React.FC<Props> = ({
                   <div>
                     <p className="text-sm font-black text-white">{lastTemplate.title}</p>
                     <p className="mt-1 text-xs text-slate-400">
-                      {lastTemplate.questions.length} perguntas • {lastTemplate.config.timePerQuestion}s • {lastTemplate.config.botEnabled ? 'bot' : 'solo'}
+                      {lastTemplate.questions.length} {copy.questionsWord} • {lastTemplate.config.timePerQuestion}s • {lastTemplate.config.botEnabled ? copy.botEnabled : copy.solo}
                     </p>
                   </div>
                   <button
@@ -458,24 +569,22 @@ export const BattleHubPage: React.FC<Props> = ({
         <section className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-sm font-black uppercase tracking-wide text-emerald-300">Biblioteca de Battles</h2>
+              <h2 className="text-sm font-black uppercase tracking-wide text-emerald-300">{copy.libraryTitle}</h2>
               <p className="mt-1 text-sm text-slate-300">
-                Salve temas como "greetings 1", "greetings 2" e reabra para outras turmas.
+                {copy.libraryBody}
               </p>
             </div>
             <span className="rounded-full bg-slate-950 px-3 py-1 text-xs font-black uppercase tracking-wide text-slate-300">
-              {libraryTemplates.length} salvos
+              {copy.savedCount(libraryTemplates.length)}
             </span>
           </div>
 
           {libraryLoading ? (
-            <p className="mt-4 text-sm text-slate-400">Carregando biblioteca...</p>
+            <p className="mt-4 text-sm text-slate-400">{copy.libraryLoading}</p>
           ) : libraryError ? (
             <p className="mt-4 text-sm text-rose-300">{libraryError}</p>
           ) : libraryTemplates.length === 0 ? (
-            <p className="mt-4 text-sm text-slate-400">
-              Ainda nao ha battles salvos. Abra "Preparar Aula", monte suas perguntas e clique em "Salvar".
-            </p>
+            <p className="mt-4 text-sm text-slate-400">{copy.libraryEmpty}</p>
           ) : (
             <div className="mt-4 space-y-3">
               {libraryTemplates.slice(0, 12).map((template) => (
@@ -484,7 +593,7 @@ export const BattleHubPage: React.FC<Props> = ({
                     <div className="min-w-0">
                       <p className="text-sm font-black text-white">{template.title}</p>
                       <p className="mt-1 text-xs text-slate-400">
-                        {template.questions.length} perguntas • {template.config.timePerQuestion}s • {template.config.botEnabled ? 'bot' : 'sem bot'}
+                        {template.questions.length} {copy.questionsWord} • {template.config.timePerQuestion}s • {template.config.botEnabled ? copy.botEnabled : copy.solo}
                       </p>
                     </div>
                     <div className="flex gap-2">
@@ -495,13 +604,13 @@ export const BattleHubPage: React.FC<Props> = ({
                         }}
                         className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300"
                       >
-                        Editar e usar
+                        {copy.editAndUse}
                       </button>
                       <button
                         onClick={() => setActiveTemplate(template)}
                         className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
                       >
-                        Jogar solo
+                        {copy.open}
                       </button>
                     </div>
                   </div>
@@ -554,6 +663,7 @@ export const BattleHubPage: React.FC<Props> = ({
               classId={activeLiveClass.id}
               teacherUid={uid}
               activeParticipants={liveParticipants}
+              uiLanguage={uiLanguage}
               onClose={() => {
                 void deleteBattleSession(activeLiveClass.id).finally(() => {
                   setLiveSession(null);
@@ -576,6 +686,7 @@ export const BattleHubPage: React.FC<Props> = ({
           template={activeTemplate}
           uid={uid}
           name={name}
+          uiLanguage={uiLanguage}
           onClose={() => setActiveTemplate(null)}
         />
       ) : null}

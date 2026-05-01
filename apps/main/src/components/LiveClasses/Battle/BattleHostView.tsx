@@ -41,7 +41,119 @@ interface BattleHostViewProps {
   activeParticipants: Array<{ uid: string; name: string }>;
   onClose: () => void;
   onNewBattle: () => void;
+  uiLanguage?: 'en' | 'pt' | 'es';
 }
+
+const HOST_COPY = {
+  en: {
+    brandTitle: 'Learnendo Battle',
+    endGame: 'End Game',
+    activateMusic: 'Enable music',
+    muteMusic: 'Mute music',
+    battleRoom: 'Battle Room',
+    participantsOnline: (count: number) => `${count} participant(s) online`,
+    waitingStudents: 'Waiting for students to join...',
+    questionsWord: 'questions',
+    each: 'each',
+    question: 'Question',
+    confirmTeacherAnswer: 'Confirm teacher answer',
+    teacherSpeakingPlaceholder: 'Teacher answer...',
+    teacherTypingPlaceholder: 'Type the teacher answer...',
+    listening: 'Listening...',
+    answerByVoice: 'Answer by voice',
+    answered: 'answered',
+    correctAnswer: 'Correct answer',
+    correct: 'correct',
+    wrong: 'wrong',
+    noAnswer: 'no answer',
+    seeRoundRanking: (count: number) => `See round ranking (${count})`,
+    roundResults: 'Round Results',
+    noResponse: 'no answer',
+    rightLabel: 'Correct',
+    wrongLabel: 'Wrong',
+    timeLabel: 'Time',
+    finishBattle: 'Finish Battle',
+    nextQuestion: 'Next Question',
+    startBattle: 'Start Battle',
+    revealAnswer: 'Reveal Answer',
+    ranking: 'Ranking',
+    top10: 'Top 10',
+    noParticipantsYet: 'No participants yet',
+    teacherShort: 'Teacher',
+  },
+  pt: {
+    brandTitle: 'Learnendo Battle',
+    endGame: 'Encerrar',
+    activateMusic: 'Ativar musica',
+    muteMusic: 'Silenciar musica',
+    battleRoom: 'Sala de Batalha',
+    participantsOnline: (count: number) => `${count} participante(s) online`,
+    waitingStudents: 'Aguardando alunos entrarem...',
+    questionsWord: 'perguntas',
+    each: 'cada',
+    question: 'Pergunta',
+    confirmTeacherAnswer: 'Confirmar resposta do professor',
+    teacherSpeakingPlaceholder: 'Resposta do professor...',
+    teacherTypingPlaceholder: 'Digite a resposta do professor...',
+    listening: 'Ouvindo...',
+    answerByVoice: 'Responder falando',
+    answered: 'responderam',
+    correctAnswer: 'Resposta correta',
+    correct: 'certo(s)',
+    wrong: 'errado(s)',
+    noAnswer: 'sem resposta',
+    seeRoundRanking: (count: number) => `Ver ranking da rodada (${count})`,
+    roundResults: 'Resultados da Rodada',
+    noResponse: 'sem resposta',
+    rightLabel: 'Correta',
+    wrongLabel: 'Errada',
+    timeLabel: 'Tempo',
+    finishBattle: 'Finalizar Batalha',
+    nextQuestion: 'Proxima Pergunta',
+    startBattle: 'Iniciar Batalha',
+    revealAnswer: 'Revelar Resposta',
+    ranking: 'Ranking',
+    top10: 'Top 10',
+    noParticipantsYet: 'Nenhum participante ainda',
+    teacherShort: 'Prof',
+  },
+  es: {
+    brandTitle: 'Batalla Learnendo',
+    endGame: 'Terminar',
+    activateMusic: 'Activar musica',
+    muteMusic: 'Silenciar musica',
+    battleRoom: 'Sala de Batalla',
+    participantsOnline: (count: number) => `${count} participante(s) conectados`,
+    waitingStudents: 'Esperando a que entren los alumnos...',
+    questionsWord: 'preguntas',
+    each: 'cada una',
+    question: 'Pregunta',
+    confirmTeacherAnswer: 'Confirmar respuesta del profesor',
+    teacherSpeakingPlaceholder: 'Respuesta del profesor...',
+    teacherTypingPlaceholder: 'Escribe la respuesta del profesor...',
+    listening: 'Escuchando...',
+    answerByVoice: 'Responder hablando',
+    answered: 'respondieron',
+    correctAnswer: 'Respuesta correcta',
+    correct: 'correcta(s)',
+    wrong: 'incorrecta(s)',
+    noAnswer: 'sin respuesta',
+    seeRoundRanking: (count: number) => `Ver ranking de la ronda (${count})`,
+    roundResults: 'Resultados de la Ronda',
+    noResponse: 'sin respuesta',
+    rightLabel: 'Correcta',
+    wrongLabel: 'Incorrecta',
+    timeLabel: 'Tiempo',
+    finishBattle: 'Finalizar Batalla',
+    nextQuestion: 'Siguiente Pregunta',
+    startBattle: 'Iniciar Batalla',
+    revealAnswer: 'Mostrar Respuesta',
+    ranking: 'Ranking',
+    top10: 'Top 10',
+    noParticipantsYet: 'Todavia no hay participantes',
+    teacherShort: 'Prof',
+  },
+} as const;
 
 interface RevealRow {
   pid: string;
@@ -58,7 +170,9 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   activeParticipants,
   onClose,
   onNewBattle,
+  uiLanguage = 'en',
 }) => {
+  const copy = HOST_COPY[uiLanguage] ?? HOST_COPY.en;
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
   const [busy, setBusy] = useState(false);
   const [showResults, setShowResults] = useState(false);
@@ -1030,6 +1144,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         onClose={onClose}
         isTeacher={true}
         validParticipantIds={roundParticipantIds}
+        uiLanguage={uiLanguage}
       />
     );
   }
@@ -1044,7 +1159,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       <div className="relative flex h-full flex-1 flex-col overflow-hidden">
         <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-5 py-3">
           <div className="flex items-center gap-3">
-            <span className="text-white font-bold text-sm">Learnendo Battle</span>
+            <span className="text-white font-bold text-sm">{copy.brandTitle}</span>
             <span className="rounded-full bg-slate-700 px-2 py-0.5 text-xs text-slate-300">
               Q {Math.min(questionIdx + 1, totalQuestions)} / {totalQuestions}
             </span>
@@ -1052,13 +1167,13 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setMusicMuted((value) => !value)}
-              title={musicMuted ? 'Ativar musica' : 'Silenciar musica'}
+              title={musicMuted ? copy.activateMusic : copy.muteMusic}
               className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-xs transition hover:bg-slate-700"
             >
               {musicMuted ? 'M' : 'S'}
             </button>
             <button onClick={handleEnd} className="text-xs text-slate-500 transition hover:text-red-400">
-              End Game
+              {copy.endGame}
             </button>
           </div>
         </div>
@@ -1086,14 +1201,14 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                 return null;
               })()}
               <div className="text-center space-y-4">
-                <h2 className="text-4xl font-black text-white">Sala de Batalha</h2>
+                <h2 className="text-4xl font-black text-white">{copy.battleRoom}</h2>
                 <p className="text-sm text-slate-400">
                   {activeParticipants.length > 0
-                    ? `${activeParticipants.length} participante(s) online`
-                    : 'Aguardando alunos entrarem...'}
+                    ? copy.participantsOnline(activeParticipants.length)
+                    : copy.waitingStudents}
                 </p>
                 <p className="text-xs text-slate-500 mt-4">
-                  {totalQuestions} perguntas | {session.config.timePerQuestion}s cada | {session.config.difficulty}
+                  {totalQuestions} {copy.questionsWord} | {session.config.timePerQuestion}s {copy.each} | {session.config.difficulty}
                 </p>
               </div>
             </div>
@@ -1110,7 +1225,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                 return null;
               })()}
               <div className="w-full max-w-2xl space-y-4 rounded-2xl bg-slate-800/80 p-6 text-center shadow-lg">
-                <p className="text-xs uppercase tracking-wider text-slate-500">Question {questionIdx + 1}</p>
+                <p className="text-xs uppercase tracking-wider text-slate-500">{copy.question} {questionIdx + 1}</p>
                 <div className="text-3xl font-bold leading-snug text-white">{(question.text as string) || ''}</div>
                 {question.imageUrl ? (
                   <img
@@ -1185,7 +1300,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                       disabled={teacherHasAnswered || selectedOptions.length === 0 || effectiveStatus !== 'PLAYING'}
                       className="w-full max-w-lg rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                     >
-                      Confirmar resposta do professor
+                      {copy.confirmTeacherAnswer}
                     </button>
                   ) : null}
                 </>
@@ -1195,7 +1310,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                     value={typedAnswer}
                     onChange={(event) => setTypedAnswer(event.target.value)}
                     disabled={!teacherCanPlay || teacherHasAnswered || effectiveStatus !== 'PLAYING'}
-                    placeholder={(question.kind as BattleQuestionKind) === 'speaking' ? 'Resposta do professor...' : 'Digite a resposta do professor...'}
+                    placeholder={(question.kind as BattleQuestionKind) === 'speaking' ? copy.teacherSpeakingPlaceholder : copy.teacherTypingPlaceholder}
                     className="min-h-28 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
                   />
                   {teacherCanPlay ? (
@@ -1206,7 +1321,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                           disabled={teacherHasAnswered || isListening || effectiveStatus !== 'PLAYING'}
                           className="flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 py-3 text-sm font-semibold text-white transition hover:bg-slate-700 disabled:opacity-50"
                         >
-                          {isListening ? 'Ouvindo...' : 'Responder falando'}
+                          {isListening ? copy.listening : copy.answerByVoice}
                         </button>
                       ) : null}
                       <button
@@ -1214,7 +1329,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                         disabled={!typedAnswer.trim() || teacherHasAnswered || effectiveStatus !== 'PLAYING'}
                         className="flex-1 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                       >
-                        Confirmar resposta do professor
+                        {copy.confirmTeacherAnswer}
                       </button>
                     </div>
                   ) : null}
@@ -1224,24 +1339,24 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               <div className="flex items-center gap-3 text-sm text-slate-400">
                 <span>{Math.ceil(displayTimeLeft)}s</span>
                 <span>|</span>
-                <span>{answerCount} / {roundParticipantIds.length} responderam</span>
+                <span>{answerCount} / {roundParticipantIds.length} {copy.answered}</span>
               </div>
 
               {effectiveStatus === 'REVEALED' ? (
                 <>
                   <p className="text-center text-sm font-semibold text-green-300">
-                    Resposta correta: <span className="font-bold text-green-200">{answerLabel || '-'}</span>
+                    {copy.correctAnswer}: <span className="font-bold text-green-200">{answerLabel || '-'}</span>
                   </p>
                   <div className="flex flex-wrap justify-center gap-2 text-xs">
                     <span className="rounded-full bg-green-500/15 px-3 py-1 font-semibold text-green-400">
-                      {correctCount} certo(s)
+                      {correctCount} {copy.correct}
                     </span>
                     <span className="rounded-full bg-red-500/15 px-3 py-1 font-semibold text-red-400">
-                      {wrongCount} errado(s)
+                      {wrongCount} {copy.wrong}
                     </span>
                     {unansweredCount > 0 ? (
                       <span className="rounded-full bg-slate-700/40 px-3 py-1 font-semibold text-slate-400">
-                        {unansweredCount} sem resposta
+                        {unansweredCount} {copy.noAnswer}
                       </span>
                     ) : null}
                   </div>
@@ -1249,7 +1364,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                     onClick={() => setShowRankingOverlay(true)}
                     className="text-xs text-slate-400 underline underline-offset-2 transition hover:text-white"
                   >
-                    Ver ranking da rodada ({revealRows.length})
+                    {copy.seeRoundRanking(revealRows.length)}
                   </button>
                 </>
               ) : null}
@@ -1261,7 +1376,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
           <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/98">
             <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-800 px-5 py-3">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-white">Resultados da Rodada</span>
+                <span className="text-sm font-bold text-white">{copy.roundResults}</span>
                 {answerLabel ? <span className="text-xs font-semibold text-green-400">{answerLabel}</span> : null}
               </div>
               <button
@@ -1288,17 +1403,17 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                   </span>
                   <span className="flex-1 truncate text-white">
                     {row.name}
-                    {row.pid === teacherUid ? <span className="ml-1 text-[10px] text-slate-500">(Prof)</span> : null}
+                    {row.pid === teacherUid ? <span className="ml-1 text-[10px] text-slate-500">({copy.teacherShort})</span> : null}
                   </span>
                   {row.elapsedMs != null ? (
                     <span className="text-xs text-slate-400">{(row.elapsedMs / 1000).toFixed(1)}s</span>
                   ) : (
-                    <span className="text-xs text-slate-500">sem resposta</span>
+                    <span className="text-xs text-slate-500">{copy.noResponse}</span>
                   )}
                   <span className={`text-xs font-bold ${
                     row.isCorrect === true ? 'text-green-400' : row.isCorrect === false ? 'text-red-400' : 'text-slate-500'
                   }`}>
-                    {row.isCorrect === true ? 'Correta' : row.isCorrect === false ? 'Errada' : 'Tempo'}
+                    {row.isCorrect === true ? copy.rightLabel : row.isCorrect === false ? copy.wrongLabel : copy.timeLabel}
                   </span>
                 </div>
               ))}
@@ -1312,7 +1427,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                 disabled={busy}
                 className="rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-10 py-3 text-base font-black text-white transition hover:opacity-90 disabled:opacity-50"
               >
-                {questionIdx + 1 >= totalQuestions ? 'Finalizar Batalha' : 'Proxima Pergunta'}
+                {questionIdx + 1 >= totalQuestions ? copy.finishBattle : copy.nextQuestion}
               </button>
             </div>
           </div>
@@ -1329,7 +1444,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               disabled={busy}
               className="relative z-[9999] pointer-events-auto rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-10 py-3 text-base font-black text-white transition hover:opacity-90 disabled:opacity-50"
             >
-              Iniciar Batalha
+              {copy.startBattle}
             </button>
           </div>
         ) : null}
@@ -1340,7 +1455,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               disabled={busy}
               className="rounded-xl bg-slate-700 px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-600 disabled:opacity-50"
             >
-              Revelar Resposta
+              {copy.revealAnswer}
             </button>
           ) : null}
           {effectiveStatus === 'REVEALED' ? (
@@ -1349,14 +1464,14 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               disabled={busy}
               className="rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-10 py-3 text-base font-black text-white transition hover:opacity-90 disabled:opacity-50"
             >
-              {questionIdx + 1 >= totalQuestions ? 'Finalizar Batalha' : 'Proxima Pergunta'}
+              {questionIdx + 1 >= totalQuestions ? copy.finishBattle : copy.nextQuestion}
             </button>
           ) : null}
         </div>
 
         {leaderboard.length > 0 ? (
           <div className="flex flex-shrink-0 items-center gap-2 overflow-x-auto border-t border-slate-800 px-4 pb-2 pt-2 md:hidden">
-            <span className="flex-shrink-0 text-[10px] uppercase tracking-wider text-slate-500">Ranking</span>
+            <span className="flex-shrink-0 text-[10px] uppercase tracking-wider text-slate-500">{copy.ranking}</span>
             {leaderboard.slice(0, 3).map((player, index) => (
               <div key={player.uid} className="flex flex-shrink-0 items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5">
                 <span className="text-xs">{index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}</span>
@@ -1369,7 +1484,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
 
       <div className="hidden w-52 flex-col border-l border-slate-800 bg-slate-900 md:flex">
         <div className="border-b border-slate-800 px-4 py-3">
-            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Top 10</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{copy.top10}</p>
         </div>
         <div className="flex-1 overflow-y-auto py-2">
           {leaderboard.length > 0 ? (
@@ -1382,7 +1497,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               </div>
             ))
           ) : (
-            <p className="mt-6 text-center text-xs text-slate-600">Nenhum participante ainda</p>
+            <p className="mt-6 text-center text-xs text-slate-600">{copy.noParticipantsYet}</p>
           )}
         </div>
       </div>
