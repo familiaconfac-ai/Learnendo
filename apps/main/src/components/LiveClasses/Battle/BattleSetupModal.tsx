@@ -122,60 +122,42 @@ const BATTLE_LANGUAGE_OPTIONS: Array<{ value: BattleUILanguage; label: string; d
 const BATTLE_ACTION_COPY: Record<BattleUILanguage, {
   saving: string;
   saved: string;
-  translate: string;
-  translating: string;
   duplicateLanguageLabel: string;
-  translateBattleTitle: string;
   translatedSuccess: string;
   copySuffix: string;
 }> = {
   en: {
     saving: 'Saving...',
     saved: 'Saved',
-    translate: 'Translate',
-    translating: 'Translating...',
     duplicateLanguageLabel: 'Duplicate language',
-    translateBattleTitle: 'Translate battle to another language',
     translatedSuccess: 'Battle translated and duplicated in your library.',
     copySuffix: 'copy',
   },
   pt: {
     saving: 'Salvando...',
     saved: 'Salvo',
-    translate: 'Traduzir',
-    translating: 'Traduzindo...',
     duplicateLanguageLabel: 'Idioma da duplicacao',
-    translateBattleTitle: 'Traduzir battle para outro idioma',
     translatedSuccess: 'Battle traduzido e duplicado na sua biblioteca.',
     copySuffix: 'copia',
   },
   es: {
     saving: 'Guardando...',
     saved: 'Guardada',
-    translate: 'Traducir',
-    translating: 'Traduciendo...',
     duplicateLanguageLabel: 'Idioma de la duplicacion',
-    translateBattleTitle: 'Traducir batalla a otro idioma',
     translatedSuccess: 'Batalla traducida y duplicada en tu biblioteca.',
     copySuffix: 'copia',
   },
   el: {
     saving: 'Αποθηκεύεται...',
     saved: 'Αποθηκεύτηκε',
-    translate: 'Μετάφραση',
-    translating: 'Μετάφραση...',
     duplicateLanguageLabel: 'Γλώσσα αντιγραφής',
-    translateBattleTitle: 'Μετάφραση μάχης σε άλλη γλώσσα',
     translatedSuccess: 'Η μάχη μεταφράστηκε και αντιγράφηκε στη βιβλιοθήκη σου.',
     copySuffix: 'αντίγραφο',
   },
   he: {
     saving: 'שומר...',
     saved: 'נשמר',
-    translate: 'תרגום',
-    translating: 'מתרגם...',
     duplicateLanguageLabel: 'שפת השכפול',
-    translateBattleTitle: 'תרגם קרב לשפה אחרת',
     translatedSuccess: 'הקרב תורגם ושוכפל בספריה שלך.',
     copySuffix: 'עותק',
   },
@@ -252,6 +234,11 @@ async function translateBattleQuestions(
 
   return sanitizeBattleQuestions(translated);
 }
+
+const SELECT_OPTION_STYLE: React.CSSProperties = {
+  color: '#0f172a',
+  backgroundColor: '#ffffff',
+};
 
 const SCOPES: { value: BattleScope; label: string; desc: string }[] = [
   { value: 'current-lesson', label: 'Esta Lição',    desc: 'Só desta lição' },
@@ -756,7 +743,6 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [templateTitle, setTemplateTitle] = useState(() => initialTemplate?.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
   const [duplicateLanguage, setDuplicateLanguage] = useState<BattleUILanguage>(templateLanguage);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [isTranslatingTemplate, setIsTranslatingTemplate] = useState(false);
   const hasTrackedChangesRef = useRef(false);
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
@@ -1257,24 +1243,10 @@ export const BattleSetupModal: React.FC<Props> = ({
   async function handleDuplicateTemplate() {
     const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(templateLanguage);
     await handleSaveTemplate({
-      titleOverride: `${baseTitle} (${actionCopy.copySuffix})`,
+      titleOverride: duplicateLanguage === templateLanguage ? `${baseTitle} (${actionCopy.copySuffix})` : undefined,
       forceDuplicate: true,
-      targetLanguage: templateLanguage,
+      targetLanguage: duplicateLanguage,
     });
-  }
-
-  async function handleTranslateTemplate() {
-    setIsTranslatingTemplate(true);
-    try {
-      const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(templateLanguage);
-      await handleSaveTemplate({
-        titleOverride: duplicateLanguage === templateLanguage ? `${baseTitle} (${actionCopy.copySuffix})` : undefined,
-        forceDuplicate: true,
-        targetLanguage: duplicateLanguage,
-      });
-    } finally {
-      setIsTranslatingTemplate(false);
-    }
   }
 
   if (step === 'config') {
@@ -1553,8 +1525,9 @@ export const BattleSetupModal: React.FC<Props> = ({
       <div className="relative w-full max-w-lg mx-4 rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl flex flex-col max-h-[92vh]">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 bg-gradient-to-r from-orange-600/80 to-red-700/80 shrink-0">
-          <div className="min-w-0 flex-1 pr-3">
+        <div className="bg-gradient-to-r from-orange-600/80 to-red-700/80 px-5 py-4 shrink-0">
+          <div className="space-y-3">
+            <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-100/80">
               {copy.battleName}
             </p>
@@ -1562,51 +1535,55 @@ export const BattleSetupModal: React.FC<Props> = ({
               value={templateTitle}
               onChange={(event) => setTemplateTitle(event.target.value)}
               placeholder={copy.battleNamePlaceholder}
-              className="mt-1 mb-1 w-full rounded-lg border border-white/15 bg-white/10 px-2.5 py-1.5 text-sm font-bold text-white outline-none placeholder:text-orange-100/60 focus:border-white/40"
+              className="mt-1 w-full rounded-lg border border-white/15 bg-white/10 px-2.5 py-2 text-sm font-bold text-white outline-none placeholder:text-orange-100/60 focus:border-white/40"
             />
-            <p className="text-xs text-orange-200">
+            <p className="hidden">
               {selectedCount} de {questions.length} selecionadas · {timePerQuestion}s cada
             </p>
+            <p className="mt-3 text-xs text-orange-200">
+              {selectedCount}/{questions.length} {copy.selected} - {timePerQuestion}s {copy.each}
+            </p>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="hidden text-[10px] font-semibold uppercase tracking-wide text-orange-100/80 sm:block">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="sr-only">
               {actionCopy.duplicateLanguageLabel}
             </label>
             <select
               value={duplicateLanguage}
               onChange={(event) => setDuplicateLanguage(normalizeBattleUiLanguage(event.target.value))}
-              className="rounded-lg border border-orange-400/40 bg-white/10 px-2 py-1 text-xs font-semibold text-white outline-none focus:border-white/40"
+              className="min-w-[148px] rounded-lg border border-orange-400/40 bg-white/10 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-white/40"
               title={actionCopy.duplicateLanguageLabel}
             >
               {BATTLE_LANGUAGE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value} dir={option.dir}>
+                <option key={option.value} value={option.value} dir={option.dir} style={SELECT_OPTION_STYLE}>
                   {option.label}
                 </option>
               ))}
             </select>
             <button
-              onClick={() => void handleTranslateTemplate()}
-              title={actionCopy.translateBattleTitle}
-              disabled={isTranslatingTemplate || saveState === 'saving'}
-              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
+              type="button"
+              title=""
+              disabled
+              className="hidden"
             >
-              {isTranslatingTemplate ? actionCopy.translating : actionCopy.translate}
+              hidden
             </button>
             <button onClick={() => void handleSaveTemplate()} title={copy.saveBattleTitle}
-              disabled={saveState === 'saving' || isTranslatingTemplate}
-              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition">
+              disabled={saveState === 'saving'}
+              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-3 py-2 transition">
               {saveState === 'saving' ? actionCopy.saving : saveState === 'saved' ? actionCopy.saved : copy.save}
             </button>
             <button
               onClick={() => void handleDuplicateTemplate()}
               title={copy.duplicateBattleTitle}
-              disabled={saveState === 'saving' || isTranslatingTemplate}
-              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
+              disabled={saveState === 'saving'}
+              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-3 py-2 transition"
             >
               {copy.duplicate}
             </button>
-            <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none ml-1" aria-label="Close">✕</button>
+            <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none" aria-label="Close">✕</button>
           </div>
+        </div>
         </div>
 
         {/* Curation list */}
@@ -1629,6 +1606,39 @@ export const BattleSetupModal: React.FC<Props> = ({
             >
               {copy.addQuestion}
             </button>
+          </div>
+          <div className="mt-3 flex items-start justify-between gap-3">
+            <div />
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <select
+                value={duplicateLanguage}
+                onChange={(event) => setDuplicateLanguage(normalizeBattleUiLanguage(event.target.value))}
+                className="min-w-[148px] rounded-lg border border-orange-400/40 bg-white/10 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-white/40"
+                title={actionCopy.duplicateLanguageLabel}
+              >
+                {BATTLE_LANGUAGE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value} dir={option.dir} style={SELECT_OPTION_STYLE}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => void handleSaveTemplate()}
+                title={copy.saveBattleTitle}
+                disabled={saveState === 'saving'}
+                className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-3 py-2 transition"
+              >
+                {saveState === 'saving' ? actionCopy.saving : saveState === 'saved' ? actionCopy.saved : copy.save}
+              </button>
+              <button
+                onClick={() => void handleDuplicateTemplate()}
+                title={copy.duplicateBattleTitle}
+                disabled={saveState === 'saving'}
+                className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-3 py-2 transition"
+              >
+                {copy.duplicate}
+              </button>
+            </div>
           </div>
           {questions.map((q, idx) => {
             const excluded  = excludedIds.has(q.id);
