@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BattlePracticeView } from '../LiveClasses/Battle/BattlePracticeView';
 import { BattleHostView } from '../LiveClasses/Battle/BattleHostView';
 import { BattleSetupModal } from '../LiveClasses/Battle/BattleSetupModal';
-import type { SavedBattleTemplate, BattleConfig, BattleQuestion, BattleSession } from '../LiveClasses/Battle/battleTypes';
+import type { SavedBattleTemplate, BattleConfig, BattleQuestion, BattleSession, BattleTemplateLanguage } from '../LiveClasses/Battle/battleTypes';
 import { createBattleSession, deleteBattleSession, subscribeBattleSession } from '../LiveClasses/Battle/battleService';
-import { buildSavedBattleTemplate } from '../LiveClasses/Battle/battleUtils';
+import { buildSavedBattleTemplate, getBattleCourseIdForLanguage, getSavedBattleTemplateLanguage } from '../LiveClasses/Battle/battleUtils';
 import { appendLiveClassBattleTemplate } from '../../services/liveClassesService';
 import {
   listBattleTemplatesByOwner,
@@ -21,20 +21,13 @@ function getSupportedBattleUiLanguage(uiLanguage?: UILang): SupportedBattleUiLan
   return 'en';
 }
 
-function getBattleCourseIdFromUiLanguage(uiLanguage: UILang): string {
-  switch (uiLanguage) {
-    case 'pt':
-      return 'portuguese_foreigners';
-    case 'es':
-      return 'spanish';
-    case 'el':
-      return 'greek_koine';
-    case 'he':
-      return 'hebrew_biblical';
-    default:
-      return 'english';
-  }
-}
+const BATTLE_LANGUAGE_GROUPS: Array<{ value: BattleTemplateLanguage; label: string; dir?: 'ltr' | 'rtl' }> = [
+  { value: 'en', label: 'English' },
+  { value: 'pt', label: 'português' },
+  { value: 'es', label: 'español' },
+  { value: 'el', label: 'Ελληνικά' },
+  { value: 'he', label: 'עברית', dir: 'rtl' },
+];
 
 interface Props {
   uid: string;
@@ -265,7 +258,7 @@ export const BattleHubPage: React.FC<Props> = ({
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
   const supportedBattleUiLanguage = getSupportedBattleUiLanguage(uiLanguage);
-  const effectiveCourseId = getBattleCourseIdFromUiLanguage(uiLanguage) ?? courseId ?? activeLiveClass?.courseId;
+  const effectiveCourseId = getBattleCourseIdForLanguage(uiLanguage) ?? courseId ?? activeLiveClass?.courseId;
   const effectiveWorkbookId = workbookId ?? activeLiveClass?.workbookId;
   const effectiveLessonId = lessonId ?? activeLiveClass?.lessonId?.toString();
   const storageKey = useMemo(() => buildStorageKey(uid, effectiveCourseId), [effectiveCourseId, uid]);
@@ -277,6 +270,30 @@ export const BattleHubPage: React.FC<Props> = ({
   const [libraryTemplates, setLibraryTemplates] = useState<StoredBattleTemplate[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  const groupedLibraryTemplates = useMemo(() => {
+    const groups = BATTLE_LANGUAGE_GROUPS.reduce<Record<BattleTemplateLanguage, StoredBattleTemplate[]>>(
+      (accumulator, group) => ({
+        ...accumulator,
+        [group.value]: [],
+      }),
+      {
+        en: [],
+        pt: [],
+        es: [],
+        el: [],
+        he: [],
+      },
+    );
+
+    for (const template of libraryTemplates) {
+      groups[getSavedBattleTemplateLanguage(template)].push(template);
+    }
+
+    return groups;
+  }, [libraryTemplates]);
+  const setupCourseId = setupTemplate?.config.courseId ?? effectiveCourseId ?? undefined;
+  const setupWorkbookId = setupTemplate?.config.workbookId ?? effectiveWorkbookId ?? undefined;
+  const setupLessonId = setupTemplate?.config.lessonId?.toString() ?? effectiveLessonId ?? undefined;
 
   const handleCloseSetup = () => {
     setShowSetup(false);
@@ -593,7 +610,63 @@ export const BattleHubPage: React.FC<Props> = ({
           ) : libraryTemplates.length === 0 ? (
             <p className="mt-4 text-sm text-slate-400">{copy.libraryEmpty}</p>
           ) : (
-            <div className="mt-4 space-y-3">
+            <>
+            <div className="mt-4 space-y-4">
+              {BATTLE_LANGUAGE_GROUPS.map((group) => {
+                const templates = groupedLibraryTemplates[group.value];
+
+                return (
+                  <article key={group.value} className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-emerald-200" dir={group.dir}>{group.label}</p>
+                        <p className="mt-1 text-xs text-slate-500">{copy.savedCount(templates.length)}</p>
+                      </div>
+                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-emerald-200">
+                        {templates.length}
+                      </div>
+                    </div>
+
+                    {templates.length === 0 ? (
+                      <p className="mt-3 text-sm text-slate-500">{copy.libraryEmpty}</p>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        {templates.slice(0, 12).map((template) => (
+                          <article key={template.id} className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="min-w-0">
+                                <p className="text-sm font-black text-white">{template.title}</p>
+                                <p className="mt-1 text-xs text-slate-400">
+                                  {template.questions.length} {copy.questionsWord} - {template.config.timePerQuestion}s - {template.config.botEnabled ? copy.botEnabled : copy.solo}
+                                </p>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => {
+                                    setSetupTemplate(template);
+                                    setShowSetup(true);
+                                  }}
+                                  className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300"
+                                >
+                                  {copy.editAndUse}
+                                </button>
+                                <button
+                                  onClick={() => setActiveTemplate(template)}
+                                  className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+                                >
+                                  {copy.open}
+                                </button>
+                              </div>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+            {false && <div className="mt-4 space-y-3">
               {libraryTemplates.slice(0, 12).map((template) => (
                 <article key={template.id} className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -623,7 +696,8 @@ export const BattleHubPage: React.FC<Props> = ({
                   </div>
                 </article>
               ))}
-            </div>
+            </div>}
+            </>
           )}
         </section>
       </div>
@@ -642,9 +716,9 @@ export const BattleHubPage: React.FC<Props> = ({
               onStart={handleTemplateReady}
               onSaveTemplate={handleSaveTemplate}
               onClose={handleCloseSetup}
-              defaultCourseId={effectiveCourseId ?? undefined}
-              defaultWorkbookId={effectiveWorkbookId ?? undefined}
-              defaultLessonId={effectiveLessonId ?? undefined}
+              defaultCourseId={setupCourseId}
+              defaultWorkbookId={setupWorkbookId}
+              defaultLessonId={setupLessonId}
               liveClassId={activeLiveClass?.id}
               currentUserUid={uid}
               selectedStudents={liveParticipants}

@@ -9,18 +9,21 @@
 // Excluded question IDs are persisted in localStorage so the teacher's
 // preference survives page refreshes and future sessions.
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, BattleQuestion, SavedBattleTemplate } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
 import {
   buildSavedBattleTemplate,
+  getBattleCourseIdForLanguage,
   getBattleLanguage,
   getBattleQuestionDuration,
+  getSavedBattleTemplateLanguage,
   normalizeBattleDuration,
   sanitizeBattleQuestion,
   sanitizeBattleQuestions,
 } from './battleUtils';
 import { BOT_AVATAR_OPTIONS, DEFAULT_BOT_AVATAR_ID, normalizeBotAvatarId } from './botAvatars';
+import { translateText } from '../../../services/vocabularyService';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 function buildExcludedKey(params: {
@@ -108,6 +111,148 @@ function buildSuggestedBattleTitle(language: BattleUILanguage) {
   return `${prefixByLanguage[language]} ${new Date().toLocaleDateString(localeByLanguage[language])}`;
 }
 
+const BATTLE_LANGUAGE_OPTIONS: Array<{ value: BattleUILanguage; label: string; dir?: 'ltr' | 'rtl' }> = [
+  { value: 'en', label: 'English' },
+  { value: 'pt', label: 'português' },
+  { value: 'es', label: 'español' },
+  { value: 'el', label: 'Ελληνικά' },
+  { value: 'he', label: 'עברית', dir: 'rtl' },
+];
+
+const BATTLE_ACTION_COPY: Record<BattleUILanguage, {
+  saving: string;
+  saved: string;
+  translate: string;
+  translating: string;
+  duplicateLanguageLabel: string;
+  translateBattleTitle: string;
+  translatedSuccess: string;
+  copySuffix: string;
+}> = {
+  en: {
+    saving: 'Saving...',
+    saved: 'Saved',
+    translate: 'Translate',
+    translating: 'Translating...',
+    duplicateLanguageLabel: 'Duplicate language',
+    translateBattleTitle: 'Translate battle to another language',
+    translatedSuccess: 'Battle translated and duplicated in your library.',
+    copySuffix: 'copy',
+  },
+  pt: {
+    saving: 'Salvando...',
+    saved: 'Salvo',
+    translate: 'Traduzir',
+    translating: 'Traduzindo...',
+    duplicateLanguageLabel: 'Idioma da duplicacao',
+    translateBattleTitle: 'Traduzir battle para outro idioma',
+    translatedSuccess: 'Battle traduzido e duplicado na sua biblioteca.',
+    copySuffix: 'copia',
+  },
+  es: {
+    saving: 'Guardando...',
+    saved: 'Guardada',
+    translate: 'Traducir',
+    translating: 'Traduciendo...',
+    duplicateLanguageLabel: 'Idioma de la duplicacion',
+    translateBattleTitle: 'Traducir batalla a otro idioma',
+    translatedSuccess: 'Batalla traducida y duplicada en tu biblioteca.',
+    copySuffix: 'copia',
+  },
+  el: {
+    saving: 'Αποθηκεύεται...',
+    saved: 'Αποθηκεύτηκε',
+    translate: 'Μετάφραση',
+    translating: 'Μετάφραση...',
+    duplicateLanguageLabel: 'Γλώσσα αντιγραφής',
+    translateBattleTitle: 'Μετάφραση μάχης σε άλλη γλώσσα',
+    translatedSuccess: 'Η μάχη μεταφράστηκε και αντιγράφηκε στη βιβλιοθήκη σου.',
+    copySuffix: 'αντίγραφο',
+  },
+  he: {
+    saving: 'שומר...',
+    saved: 'נשמר',
+    translate: 'תרגום',
+    translating: 'מתרגם...',
+    duplicateLanguageLabel: 'שפת השכפול',
+    translateBattleTitle: 'תרגם קרב לשפה אחרת',
+    translatedSuccess: 'הקרב תורגם ושוכפל בספריה שלך.',
+    copySuffix: 'עותק',
+  },
+};
+
+async function translateBattleQuestions(
+  questions: BattleQuestion[],
+  sourceLanguage: BattleUILanguage,
+  targetLanguage: BattleUILanguage,
+): Promise<BattleQuestion[]> {
+  if (sourceLanguage === targetLanguage) {
+    return sanitizeBattleQuestions(questions);
+  }
+
+  const cache = new Map<string, Promise<string>>();
+  const translateCached = (value?: string | null): Promise<string> => {
+    const normalized = value?.trim();
+    if (!normalized) {
+      return Promise.resolve('');
+    }
+
+    const cacheKey = `${sourceLanguage}:${targetLanguage}:${normalized}`;
+    const existing = cache.get(cacheKey);
+    if (existing) {
+      return existing;
+    }
+
+    const pending = translateText(normalized, sourceLanguage, targetLanguage)
+      .then((translated) => translated.trim() || normalized)
+      .catch(() => normalized);
+    cache.set(cacheKey, pending);
+    return pending;
+  };
+
+  const translated = await Promise.all(
+    questions.map(async (question) => {
+      const translatedText = await translateCached(question.text);
+      const translatedHint = question.hint ? await translateCached(question.hint) : undefined;
+      const translatedPromptAudioText = question.promptAudioText
+        ? await translateCached(question.promptAudioText)
+        : undefined;
+
+      if (question.kind === 'multiple-choice' || question.kind === 'image-choice' || question.kind === 'audio-choice') {
+        const translatedOptions = await Promise.all((question.options ?? []).map((option) => translateCached(option)));
+        return sanitizeBattleQuestion({
+          ...question,
+          text: translatedText,
+          options: translatedOptions,
+          hint: translatedHint,
+          promptAudioText: translatedPromptAudioText,
+        }) ?? question;
+      }
+
+      const translatedAnswers = await Promise.all(
+        [
+          question.correctText ?? '',
+          ...(question.acceptedAnswers ?? []),
+        ]
+          .map((answer) => answer.trim())
+          .filter(Boolean)
+          .map((answer) => translateCached(answer)),
+      );
+
+      return sanitizeBattleQuestion({
+        ...question,
+        text: translatedText,
+        correctText: translatedAnswers[0] ?? '',
+        acceptedAnswers: translatedAnswers,
+        hint: translatedHint,
+        promptAudioText: translatedPromptAudioText,
+      }) ?? question;
+    }),
+  );
+
+  return sanitizeBattleQuestions(translated);
+}
+
 const SCOPES: { value: BattleScope; label: string; desc: string }[] = [
   { value: 'current-lesson', label: 'Esta Lição',    desc: 'Só desta lição' },
   { value: 'current-book',   label: 'Livro Inteiro', desc: 'Todas as lições' },
@@ -145,6 +290,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   uiLanguage,
 }) => {
   const effectiveUiLanguage = normalizeBattleUiLanguage(uiLanguage ?? getBattleLanguage(defaultCourseId));
+  const actionCopy = BATTLE_ACTION_COPY[effectiveUiLanguage] ?? BATTLE_ACTION_COPY.en;
   const copy = useMemo(() => {
     switch (effectiveUiLanguage) {
       case 'pt':
@@ -544,6 +690,14 @@ export const BattleSetupModal: React.FC<Props> = ({
         };
     }
   }, [effectiveUiLanguage]);
+  const templateLanguage = useMemo(
+    () => (
+      initialTemplate
+        ? getSavedBattleTemplateLanguage(initialTemplate)
+        : normalizeBattleUiLanguage(getBattleLanguage(defaultCourseId) ?? effectiveUiLanguage)
+    ),
+    [defaultCourseId, effectiveUiLanguage, initialTemplate],
+  );
   const scopeOptions = useMemo(
     () => [
       { value: 'current-lesson' as BattleScope, label: copy.currentLesson, desc: copy.currentLessonDesc },
@@ -600,6 +754,10 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [startingNow,  setStartingNow]  = useState(false);
   const [saveMessage,  setSaveMessage]  = useState<string | null>(null);
   const [templateTitle, setTemplateTitle] = useState(() => initialTemplate?.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
+  const [duplicateLanguage, setDuplicateLanguage] = useState<BattleUILanguage>(templateLanguage);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [isTranslatingTemplate, setIsTranslatingTemplate] = useState(false);
+  const hasTrackedChangesRef = useRef(false);
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
       courseId: defaultCourseId,
@@ -643,9 +801,38 @@ export const BattleSetupModal: React.FC<Props> = ({
     setEditDraft(null);
     setStartError(null);
     setSaveMessage(null);
+    setSaveState('idle');
     setTemplateTitle(initialTemplate.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
+    setDuplicateLanguage(getSavedBattleTemplateLanguage(initialTemplate));
     setStep('curate');
   }, [effectiveUiLanguage, initialTemplate]);
+
+  useEffect(() => {
+    setDuplicateLanguage(templateLanguage);
+  }, [templateLanguage]);
+
+  useEffect(() => {
+    if (!hasTrackedChangesRef.current) {
+      hasTrackedChangesRef.current = true;
+      return;
+    }
+
+    setSaveState('idle');
+    setSaveMessage(null);
+  }, [
+    templateTitle,
+    scope,
+    difficulty,
+    questionCount,
+    timePerQuestion,
+    includeTeacher,
+    botEnabled,
+    botAvatarId,
+    botName,
+    questions,
+    excludedIds,
+    duplicateLanguage,
+  ]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   async function generateQuestions(selectedScope: BattleScope = scope): Promise<BattleQuestion[]> {
@@ -993,8 +1180,14 @@ export const BattleSetupModal: React.FC<Props> = ({
   // ────────────────────────────────────────────────────────────────────────
   // STEP 1 — CONFIG
   // ────────────────────────────────────────────────────────────────────────
-  async function handleSaveTemplate(titleOverride?: string, forceDuplicate = false) {
+  async function handleSaveTemplate(options?: {
+    titleOverride?: string;
+    forceDuplicate?: boolean;
+    targetLanguage?: BattleUILanguage;
+  }) {
     try {
+      const forceDuplicate = Boolean(options?.forceDuplicate);
+      const targetLanguage = options?.targetLanguage ?? templateLanguage;
       const finalQuestions = step === 'curate'
         ? sanitizeBattleQuestions(
             getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
@@ -1006,40 +1199,82 @@ export const BattleSetupModal: React.FC<Props> = ({
         return;
       }
 
-      const title = titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(effectiveUiLanguage);
+      const title = options?.titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(templateLanguage);
       setTemplateTitle(title);
 
       if (!onSaveTemplate) {
         setSaveMessage(copy.saveUnavailable);
+        setSaveState('idle');
         return;
       }
 
+      if (!forceDuplicate) {
+        setSaveState('saving');
+      }
+
+      const shouldTranslate = forceDuplicate && targetLanguage !== templateLanguage;
+      const resolvedQuestions = shouldTranslate
+        ? await translateBattleQuestions(finalQuestions, templateLanguage, targetLanguage)
+        : finalQuestions;
+      const resolvedTitle = shouldTranslate
+        ? await translateText(title, templateLanguage, targetLanguage)
+        : title;
       const baseTemplate = buildSavedBattleTemplate(
-        buildConfig(finalQuestions.length),
-        finalQuestions,
-        title,
+        {
+          ...buildConfig(resolvedQuestions.length),
+          courseId: getBattleCourseIdForLanguage(targetLanguage),
+        },
+        resolvedQuestions,
+        resolvedTitle,
       );
       const template = initialTemplate && !forceDuplicate
         ? {
             ...baseTemplate,
             id: initialTemplate.id,
             createdAt: initialTemplate.createdAt,
+            language: templateLanguage,
           }
         : baseTemplate;
 
       await onSaveTemplate(template);
-      setSaveMessage(forceDuplicate ? copy.duplicateSuccess : copy.saveSuccess);
+      setSaveState(forceDuplicate ? 'idle' : 'saved');
+      setSaveMessage(
+        forceDuplicate
+          ? shouldTranslate
+            ? actionCopy.translatedSuccess
+            : copy.duplicateSuccess
+          : copy.saveSuccess,
+      );
       setStartError(null);
     } catch (error) {
       console.error('[BATTLE SAVE DEBUG] save failed:', error);
+      setSaveState('idle');
       setSaveMessage(null);
       setStartError(error instanceof Error ? error.message : copy.saveFailure);
     }
   }
 
   async function handleDuplicateTemplate() {
-    const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage);
-    await handleSaveTemplate(`${baseTitle} (copia)`, true);
+    const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(templateLanguage);
+    await handleSaveTemplate({
+      titleOverride: `${baseTitle} (${actionCopy.copySuffix})`,
+      forceDuplicate: true,
+      targetLanguage: templateLanguage,
+    });
+  }
+
+  async function handleTranslateTemplate() {
+    setIsTranslatingTemplate(true);
+    try {
+      const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(templateLanguage);
+      await handleSaveTemplate({
+        titleOverride: duplicateLanguage === templateLanguage ? `${baseTitle} (${actionCopy.copySuffix})` : undefined,
+        forceDuplicate: true,
+        targetLanguage: duplicateLanguage,
+      });
+    } finally {
+      setIsTranslatingTemplate(false);
+    }
   }
 
   if (step === 'config') {
@@ -1074,13 +1309,15 @@ export const BattleSetupModal: React.FC<Props> = ({
               <button
                 onClick={() => void handleSaveTemplate()}
                 title={copy.saveBattleTitle}
+                disabled={saveState === 'saving'}
                 className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
               >
-                {copy.save}
+                {saveState === 'saving' ? actionCopy.saving : saveState === 'saved' ? actionCopy.saved : copy.save}
               </button>
               <button
                 onClick={() => void handleDuplicateTemplate()}
                 title={copy.duplicateBattleTitle}
+                disabled={saveState === 'saving'}
                 className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
               >
                 {copy.duplicate}
@@ -1332,20 +1569,38 @@ export const BattleSetupModal: React.FC<Props> = ({
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <label className="hidden text-[10px] font-semibold uppercase tracking-wide text-orange-100/80 sm:block">
+              {actionCopy.duplicateLanguageLabel}
+            </label>
+            <select
+              value={duplicateLanguage}
+              onChange={(event) => setDuplicateLanguage(normalizeBattleUiLanguage(event.target.value))}
+              className="rounded-lg border border-orange-400/40 bg-white/10 px-2 py-1 text-xs font-semibold text-white outline-none focus:border-white/40"
+              title={actionCopy.duplicateLanguageLabel}
+            >
+              {BATTLE_LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value} dir={option.dir}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <button
-              onClick={addCustomQuestion}
-              title={copy.addQuestionTitle}
+              onClick={() => void handleTranslateTemplate()}
+              title={actionCopy.translateBattleTitle}
+              disabled={isTranslatingTemplate || saveState === 'saving'}
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
             >
-              {copy.addQuestion}
+              {isTranslatingTemplate ? actionCopy.translating : actionCopy.translate}
             </button>
             <button onClick={() => void handleSaveTemplate()} title={copy.saveBattleTitle}
+              disabled={saveState === 'saving' || isTranslatingTemplate}
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition">
-              {copy.save}
+              {saveState === 'saving' ? actionCopy.saving : saveState === 'saved' ? actionCopy.saved : copy.save}
             </button>
             <button
               onClick={() => void handleDuplicateTemplate()}
               title={copy.duplicateBattleTitle}
+              disabled={saveState === 'saving' || isTranslatingTemplate}
               className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
             >
               {copy.duplicate}
@@ -1366,6 +1621,15 @@ export const BattleSetupModal: React.FC<Props> = ({
               {saveMessage}
             </div>
           ) : null}
+          <div className="flex justify-end">
+            <button
+              onClick={addCustomQuestion}
+              title={copy.addQuestionTitle}
+              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
+            >
+              {copy.addQuestion}
+            </button>
+          </div>
           {questions.map((q, idx) => {
             const excluded  = excludedIds.has(q.id);
             const isEditing = editingIdx === idx;

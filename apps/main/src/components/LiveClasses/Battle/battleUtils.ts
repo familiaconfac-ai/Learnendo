@@ -6,6 +6,7 @@ import type {
   BattleRosterParticipant,
   BattleSession,
   SavedBattleTemplate,
+  BattleTemplateLanguage,
 } from './battleTypes';
 import { DEFAULT_BOT_AVATAR_ID } from './botAvatars';
 
@@ -41,6 +42,14 @@ export function normalizeBattleDuration(value: unknown, fallback = 10): number {
   }
 
   return clamp(Math.round(numericValue), 5, 180);
+}
+
+export function normalizeBattleTemplateLanguage(value?: string): BattleTemplateLanguage {
+  if (value === 'pt' || value === 'es' || value === 'el' || value === 'he') {
+    return value;
+  }
+
+  return 'en';
 }
 
 const BATTLE_MOJIBAKE_PATTERN = /[ÃƒÃ‚Ã¢Ã°ÃÃ‘ÃŽÃï¿½]/;
@@ -87,12 +96,33 @@ function stripUndefinedFields<T extends Record<string, unknown>>(value: T): T {
   ) as T;
 }
 
-export function getBattleLanguage(courseId?: string): string {
+export function getBattleLanguage(courseId?: string): BattleTemplateLanguage {
   if (courseId === 'portuguese_foreigners') return 'pt';
   if (courseId === 'spanish') return 'es';
   if (courseId === 'greek_koine') return 'el';
   if (courseId === 'hebrew_biblical') return 'he';
   return 'en';
+}
+
+export function getBattleCourseIdForLanguage(language: BattleTemplateLanguage): string {
+  switch (language) {
+    case 'pt':
+      return 'portuguese_foreigners';
+    case 'es':
+      return 'spanish';
+    case 'el':
+      return 'greek_koine';
+    case 'he':
+      return 'hebrew_biblical';
+    default:
+      return 'english';
+  }
+}
+
+export function getSavedBattleTemplateLanguage(
+  template?: Pick<SavedBattleTemplate, 'language' | 'config'> | null,
+): BattleTemplateLanguage {
+  return normalizeBattleTemplateLanguage(template?.language ?? getBattleLanguage(template?.config?.courseId));
 }
 
 export function isChoiceQuestion(question: BattleQuestion): boolean {
@@ -667,6 +697,7 @@ export function buildSavedBattleTemplate(
     id: `battle_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     title: fallbackTitle?.trim() || `Learnendo Battle ${formattedDate}`,
     createdAt,
+    language: getBattleLanguage(config.courseId),
     config,
     questions: sanitizeBattleQuestions(questions),
   };

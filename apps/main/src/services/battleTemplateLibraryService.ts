@@ -9,10 +9,18 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { SavedBattleTemplate } from '../components/LiveClasses/Battle/battleTypes';
+import { getSavedBattleTemplateLanguage } from '../components/LiveClasses/Battle/battleUtils';
 
 export interface StoredBattleTemplate extends SavedBattleTemplate {
   createdBy: string;
   updatedAt: number;
+}
+
+function normalizeStoredTemplateLanguage(template: StoredBattleTemplate): StoredBattleTemplate {
+  return {
+    ...template,
+    language: getSavedBattleTemplateLanguage(template),
+  };
 }
 
 function battleTemplatesCollection() {
@@ -41,12 +49,13 @@ export async function saveBattleTemplateToLibrary(
 
   const storedTemplate: StoredBattleTemplate = {
     ...template,
+    language: getSavedBattleTemplateLanguage(template),
     createdBy: ownerUid,
     updatedAt: Date.now(),
   };
 
   await setDoc(battleTemplateDoc(template.id), storedTemplate);
-  return storedTemplate;
+  return normalizeStoredTemplateLanguage(storedTemplate);
 }
 
 export async function listBattleTemplatesByOwner(ownerUid: string): Promise<StoredBattleTemplate[]> {
@@ -62,7 +71,7 @@ export async function listBattleTemplatesByOwner(ownerUid: string): Promise<Stor
   );
 
   return snapshot.docs
-    .map((entry) => entry.data() as StoredBattleTemplate)
+    .map((entry) => normalizeStoredTemplateLanguage(entry.data() as StoredBattleTemplate))
     .sort((left, right) => {
       const leftStamp = typeof left.updatedAt === 'number' ? left.updatedAt : Date.parse(left.createdAt);
       const rightStamp = typeof right.updatedAt === 'number' ? right.updatedAt : Date.parse(right.createdAt);

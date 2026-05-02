@@ -4,6 +4,7 @@ export type BattleDifficulty = 'easy' | 'normal' | 'hard';
 export type BattleScope = 'current-lesson' | 'current-book' | 'review';
 export type BattleStatus = 'WAITING' | 'PLAYING' | 'REVEALED' | 'FINISHED';
 export type BattleQuestionKind = 'multiple-choice' | 'image-choice' | 'audio-choice' | 'audio-open' | 'speaking';
+export type BattleTemplateLanguage = 'en' | 'pt' | 'es' | 'el' | 'he';
 
 export interface BattleConfig {
   scope: BattleScope;
@@ -39,6 +40,7 @@ export interface SavedBattleTemplate {
   id: string;
   title: string;
   createdAt: string;
+  language?: BattleTemplateLanguage;
   config: BattleConfig;
   questions: BattleQuestion[];
 }
