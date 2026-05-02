@@ -15,6 +15,7 @@
 import React, {
   useState,
   useEffect,
+  useMemo,
   useRef,
   useCallback,
   PointerEvent as ReactPointerEvent,
@@ -43,7 +44,8 @@ import {
   listBattleTemplatesByOwner,
   type StoredBattleTemplate,
 } from '../../../services/battleTemplateLibraryService';
-import type { SavedBattleTemplate } from '../Battle/battleTypes';
+import { getSavedBattleTemplateLanguage } from '../Battle/battleUtils';
+import type { BattleTemplateLanguage, SavedBattleTemplate } from '../Battle/battleTypes';
 import { speak } from '../../../services/ttsService';
 import { translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
 import { subscribeUserAccounts, type UserAccountProfile } from '../../../services/userRoles';
@@ -154,6 +156,14 @@ interface WsLabels {
   errorOpen: string;
   vocab: string;
 }
+
+const BATTLE_LIBRARY_LANGUAGE_TABS: Array<{ value: BattleTemplateLanguage; label: string; dir?: 'ltr' | 'rtl' }> = [
+  { value: 'pt', label: 'Battles salvos', dir: 'ltr' },
+  { value: 'es', label: 'Battles guardados', dir: 'ltr' },
+  { value: 'en', label: 'Saved battles', dir: 'ltr' },
+  { value: 'el', label: 'Αποθηκευμένες μάχες', dir: 'ltr' },
+  { value: 'he', label: 'קרבות שמורים', dir: 'rtl' },
+];
 
 const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
   pt: {
@@ -1394,7 +1404,24 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [loadingBattleTemplates, setLoadingBattleTemplates] = useState(false);
   const [deletingBattleTemplateId, setDeletingBattleTemplateId] = useState<string | null>(null);
   const [saveSinglePageId, setSaveSinglePageId] = useState<string | null>(null);
-  const [openLibraryTab, setOpenLibraryTab] = useState<'materials' | 'battles'>('materials');
+  const [openLibraryTab, setOpenLibraryTab] = useState<'materials' | BattleTemplateLanguage>('materials');
+  const battleTemplatesByLanguage = useMemo(() => {
+    return BATTLE_LIBRARY_LANGUAGE_TABS.reduce<Record<BattleTemplateLanguage, StoredBattleTemplate[]>>(
+      (accumulator, languageTab) => {
+        accumulator[languageTab.value] = battleTemplatesList.filter(
+          (template) => getSavedBattleTemplateLanguage(template) === languageTab.value,
+        );
+        return accumulator;
+      },
+      {
+        pt: [],
+        es: [],
+        en: [],
+        el: [],
+        he: [],
+      },
+    );
+  }, [battleTemplatesList]);
 
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
@@ -3154,16 +3181,20 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               >
                 {wsl.materialsSection}
               </button>
-              <button
-                onClick={() => setOpenLibraryTab('battles')}
-                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                  openLibraryTab === 'battles'
-                    ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
-                    : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-                }`}
-              >
-                {wsl.battlesSection}
-              </button>
+              {BATTLE_LIBRARY_LANGUAGE_TABS.map((languageTab) => (
+                <button
+                  key={languageTab.value}
+                  onClick={() => setOpenLibraryTab(languageTab.value)}
+                  dir={languageTab.dir}
+                  className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                    openLibraryTab === languageTab.value
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
+                      : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                  }`}
+                >
+                  {languageTab.label}
+                </button>
+              ))}
             </div>
             {loadingMaterials || loadingBattleTemplates ? (
               <p className="text-sm text-slate-400 text-center py-6">{wsl.loading}</p>
@@ -3176,67 +3207,75 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   {materialsList.length === 0 ? (
                     <p className="py-2 text-sm text-slate-400">{wsl.noMaterials}</p>
                   ) : null}
-              <ul className="overflow-y-auto flex-1 divide-y divide-slate-100">
-                {materialsList.map((m) => (
-                  <li key={m.id} className="py-2.5 flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-800 truncate">{m.title}</p>
-                      <p className="text-xs text-slate-400">{new Date(m.updatedAt).toLocaleDateString('pt-BR')}</p>
-                    </div>
-                    <div className="flex flex-shrink-0 items-center gap-2">
-                      <button
-                        onClick={() => handleDeleteMaterial(m.id)}
-                        disabled={deletingMaterialId === m.id}
-                        className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                      >
-                        {deletingMaterialId === m.id ? '...' : 'Delete'}
-                      </button>
-                      <button
-                        onClick={() => handleLoadMaterial(m.id)}
-                        disabled={loadingMaterialId === m.id}
-                        className="px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
-                      >
-                        {loadingMaterialId === m.id ? '...' : wsl.open}
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                  <ul className="overflow-y-auto flex-1 divide-y divide-slate-100">
+                    {materialsList.map((m) => (
+                      <li key={m.id} className="py-2.5 flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-slate-800 truncate">{m.title}</p>
+                          <p className="text-xs text-slate-400">{new Date(m.updatedAt).toLocaleDateString('pt-BR')}</p>
+                        </div>
+                        <div className="flex flex-shrink-0 items-center gap-2">
+                          <button
+                            onClick={() => handleDeleteMaterial(m.id)}
+                            disabled={deletingMaterialId === m.id}
+                            className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                          >
+                            {deletingMaterialId === m.id ? '...' : 'Delete'}
+                          </button>
+                          <button
+                            onClick={() => handleLoadMaterial(m.id)}
+                            disabled={loadingMaterialId === m.id}
+                            className="px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
+                          >
+                            {loadingMaterialId === m.id ? '...' : wsl.open}
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
                 </section>
-                <section className={openLibraryTab === 'battles' ? '' : 'hidden'}>
-                  <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-600">{wsl.battlesSection}</h3>
-                  {battleTemplatesList.length === 0 ? (
-                    <p className="py-2 text-sm text-slate-400">{wsl.noBattles}</p>
-                  ) : (
-                    <ul className="divide-y divide-slate-100">
-                      {battleTemplatesList.map((template) => (
-                        <li key={template.id} className="py-2.5 flex items-center justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-slate-800 truncate">{template.title}</p>
-                            <p className="text-xs text-slate-400">
-                              {template.questions.length} perguntas • {new Date(template.updatedAt).toLocaleDateString('pt-BR')}
-                            </p>
-                          </div>
-                          <div className="flex flex-shrink-0 items-center gap-2">
-                            <button
-                              onClick={() => handleDeleteBattleTemplate(template.id)}
-                              disabled={deletingBattleTemplateId === template.id}
-                              className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                            >
-                              {deletingBattleTemplateId === template.id ? '...' : 'Delete'}
-                            </button>
-                            <button
-                              onClick={() => handleLoadBattleTemplate(template)}
-                              className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white transition hover:bg-emerald-700"
-                            >
-                              {wsl.openBattle}
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </section>
+                {BATTLE_LIBRARY_LANGUAGE_TABS.map((languageTab) => {
+                  const templates = battleTemplatesByLanguage[languageTab.value];
+
+                  return (
+                    <section key={languageTab.value} className={openLibraryTab === languageTab.value ? '' : 'hidden'}>
+                      <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-600" dir={languageTab.dir}>
+                        {languageTab.label}
+                      </h3>
+                      {templates.length === 0 ? (
+                        <p className="py-2 text-sm text-slate-400">{wsl.noBattles}</p>
+                      ) : (
+                        <ul className="divide-y divide-slate-100">
+                          {templates.map((template) => (
+                            <li key={template.id} className="py-2.5 flex items-center justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-800 truncate">{template.title}</p>
+                                <p className="text-xs text-slate-400">
+                                  {template.questions.length} perguntas - {new Date(template.updatedAt).toLocaleDateString('pt-BR')}
+                                </p>
+                              </div>
+                              <div className="flex flex-shrink-0 items-center gap-2">
+                                <button
+                                  onClick={() => handleDeleteBattleTemplate(template.id)}
+                                  disabled={deletingBattleTemplateId === template.id}
+                                  className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                                >
+                                  {deletingBattleTemplateId === template.id ? '...' : 'Delete'}
+                                </button>
+                                <button
+                                  onClick={() => handleLoadBattleTemplate(template)}
+                                  className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white transition hover:bg-emerald-700"
+                                >
+                                  {wsl.openBattle}
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  );
+                })}
               </div>
             )}
           </div>
