@@ -43,6 +43,44 @@ export function normalizeBattleDuration(value: unknown, fallback = 10): number {
   return clamp(Math.round(numericValue), 5, 180);
 }
 
+const BATTLE_MOJIBAKE_PATTERN = /[ÃƒÃ‚Ã¢Ã°ÃÃ‘ÃŽÃï¿½]/;
+
+function looksLikeMojibake(value: string): boolean {
+  return BATTLE_MOJIBAKE_PATTERN.test(value);
+}
+
+function countMojibakeMarkers(value: string): number {
+  return (value.match(/[ÃƒÃ‚Ã¢Ã°ÃÃ‘ÃŽÃï¿½]/g) ?? []).length;
+}
+
+function decodeLatin1AsUtf8(value: string): string {
+  const bytes = Uint8Array.from(Array.from(value, (char) => char.charCodeAt(0) & 0xff));
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+}
+
+export function repairBattleTextEncoding(value?: string): string | undefined {
+  const original = value?.trim();
+  if (!original) return undefined;
+
+  let current = original;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (!looksLikeMojibake(current)) break;
+
+    let decoded: string;
+    try {
+      decoded = decodeLatin1AsUtf8(current);
+    } catch {
+      break;
+    }
+
+    if (decoded === current) break;
+    if (countMojibakeMarkers(decoded) > countMojibakeMarkers(current)) break;
+    current = decoded;
+  }
+
+  return current;
+}
+
 function stripUndefinedFields<T extends Record<string, unknown>>(value: T): T {
   return Object.fromEntries(
     Object.entries(value).filter(([, entryValue]) => entryValue !== undefined)
@@ -80,19 +118,23 @@ export function getBattleCorrectIndexes(question: BattleQuestion): number[] {
 }
 
 export function getBattlePromptAudioText(question: BattleQuestion): string {
-  return question.promptAudioText?.trim() || (question.text || '');
+  return repairBattleTextEncoding(question.promptAudioText)
+    || repairBattleTextEncoding(question.text)
+    || '';
 }
 
 export function getBattleCorrectAnswerLabel(question: BattleQuestion): string {
   if (isChoiceQuestion(question)) {
     if (!question.options) return '';
     return getBattleCorrectIndexes(question)
-      .map((index) => question.options?.[index] ?? '')
+      .map((index) => repairBattleTextEncoding(question.options?.[index]) ?? '')
       .filter(Boolean)
       .join(' • ');
   }
 
-  return question.correctText?.trim() || question.acceptedAnswers?.[0]?.trim() || '';
+  return repairBattleTextEncoding(question.correctText)
+    || repairBattleTextEncoding(question.acceptedAnswers?.[0])
+    || '';
 }
 
 export function getBattleQuestionDuration(
@@ -107,7 +149,7 @@ export function getBattleQuestionDuration(
 }
 
 function normalizeBattleText(value: string): string {
-  return value
+  return (repairBattleTextEncoding(value) ?? value)
     .toLowerCase()
     .trim()
     .replace(/[\u2018\u2019\u02bc\u2032]/g, "'")
@@ -116,7 +158,7 @@ function normalizeBattleText(value: string): string {
 }
 
 function normalizeOptionalText(value?: string): string | undefined {
-  const trimmed = value?.trim();
+  const trimmed = repairBattleTextEncoding(value);
   return trimmed ? trimmed : undefined;
 }
 
@@ -135,7 +177,11 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
   if (!text) return null;
 
   if (isChoiceQuestion(question)) {
-    const options = uniqueValues((question.options ?? []).map((option) => option.trim()));
+    const options = uniqueValues(
+      (question.options ?? [])
+        .map((option) => repairBattleTextEncoding(option) ?? option.trim())
+        .map((option) => option.trim())
+    );
     if (options.length < 2 && kind !== 'speaking' && kind !== 'audio-open') return null;
 
     const fallbackCorrectOption = normalizeOptionalText(question.correctText);
@@ -171,7 +217,9 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
 
   const acceptedAnswers = uniqueValues([
     normalizeOptionalText(question.correctText) ?? '',
-    ...((question.acceptedAnswers ?? []).map((answer) => answer.trim())),
+    ...((question.acceptedAnswers ?? [])
+      .map((answer) => repairBattleTextEncoding(answer) ?? answer.trim())
+      .map((answer) => answer.trim())),
   ]);
   if (acceptedAnswers.length === 0) return null;
 
@@ -267,7 +315,7 @@ export function getExpectedBattleParticipantIds(
   // Teacher is always a participant (always seeded in scores at session creation).
   // Students appear in scores after calling joinBattle().
   // Using a Set ensures no duplicates and handles legacy documents where
-  // scores may be empty — teacher is still included via explicit add.
+  // scores may be empty - teacher is still included via explicit add.
   const ids = new Set(getBattleRegisteredParticipantIds(session));
   if (session.config.includeTeacher) {
     ids.add(teacherUid);

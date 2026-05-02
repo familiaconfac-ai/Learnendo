@@ -14,6 +14,12 @@ import {
 import type { LiveClass } from '../../types';
 
 type UILang = 'en' | 'pt' | 'es' | 'el' | 'he';
+type SupportedBattleUiLanguage = 'en' | 'pt' | 'es';
+
+function getSupportedBattleUiLanguage(uiLanguage?: UILang): SupportedBattleUiLanguage {
+  if (uiLanguage === 'pt' || uiLanguage === 'es') return uiLanguage;
+  return 'en';
+}
 
 function getBattleCourseIdFromUiLanguage(uiLanguage: UILang): string {
   switch (uiLanguage) {
@@ -258,6 +264,7 @@ export const BattleHubPage: React.FC<Props> = ({
   initialSetupTemplate = null,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
+  const supportedBattleUiLanguage = getSupportedBattleUiLanguage(uiLanguage);
   const effectiveCourseId = getBattleCourseIdFromUiLanguage(uiLanguage) ?? courseId ?? activeLiveClass?.courseId;
   const effectiveWorkbookId = workbookId ?? activeLiveClass?.workbookId;
   const effectiveLessonId = lessonId ?? activeLiveClass?.lessonId?.toString();
@@ -663,7 +670,7 @@ export const BattleHubPage: React.FC<Props> = ({
               classId={activeLiveClass.id}
               teacherUid={uid}
               activeParticipants={liveParticipants}
-              uiLanguage={uiLanguage}
+              uiLanguage={supportedBattleUiLanguage}
               onClose={() => {
                 void deleteBattleSession(activeLiveClass.id).finally(() => {
                   setLiveSession(null);
@@ -686,7 +693,7 @@ export const BattleHubPage: React.FC<Props> = ({
           template={activeTemplate}
           uid={uid}
           name={name}
-          uiLanguage={uiLanguage}
+          uiLanguage={supportedBattleUiLanguage}
           onClose={() => setActiveTemplate(null)}
         />
       ) : null}

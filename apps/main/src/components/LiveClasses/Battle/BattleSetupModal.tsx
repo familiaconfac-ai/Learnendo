@@ -20,7 +20,7 @@ import {
   sanitizeBattleQuestion,
   sanitizeBattleQuestions,
 } from './battleUtils';
-import { BOT_AVATAR_OPTIONS, DEFAULT_BOT_AVATAR_ID } from './botAvatars';
+import { BOT_AVATAR_OPTIONS, DEFAULT_BOT_AVATAR_ID, normalizeBotAvatarId } from './botAvatars';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 function buildExcludedKey(params: {
@@ -635,7 +635,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     setTimePerQuestion(normalizeBattleDuration(initialTemplate.config.timePerQuestion, 10));
     setIncludeTeacher(Boolean(initialTemplate.config.includeTeacher));
     setBotEnabled(Boolean(initialTemplate.config.botEnabled));
-    setBotAvatarId(initialTemplate.config.botAvatarId || DEFAULT_BOT_AVATAR_ID);
+    setBotAvatarId(normalizeBotAvatarId(initialTemplate.config.botAvatarId));
     setBotName(initialTemplate.config.botName?.trim() || 'Bot');
     setQuestions(sanitizeBattleQuestions(initialTemplate.questions));
     setExcludedIds(new Set());
@@ -1407,7 +1407,7 @@ export const BattleSetupModal: React.FC<Props> = ({
                     <p className="text-sm text-white leading-snug">{q.text}</p>
                     <p className="mt-1 text-[11px] text-slate-400">
                       Tempo: {getBattleQuestionDuration(q, timePerQuestion)}s
-                      {q.durationSeconds != null ? ' (personalizado)' : ' (padrÃ£o)'}
+                      {q.durationSeconds != null ? ' (personalizado)' : ' (padrão)'}
                     </p>
                   </div>
 
@@ -1493,11 +1493,11 @@ export const BattleSetupModal: React.FC<Props> = ({
                         step={1}
                         value={editDraft.durationSeconds}
                         onChange={e => setEditDraft(d => d ? { ...d, durationSeconds: e.target.value } : d)}
-                        placeholder={`PadrÃ£o da batalha: ${timePerQuestion}s`}
+                        placeholder={`Padrão da batalha: ${timePerQuestion}s`}
                         className="w-full mt-0.5 bg-slate-700 border border-slate-600 rounded-lg px-3 py-1.5 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
                       />
                       <p className="mt-1 text-[11px] text-slate-400">
-                        Deixe em branco para usar o tempo padrÃ£o da batalha.
+                        Deixe em branco para usar o tempo padrão da batalha.
                       </p>
                     </div>
 

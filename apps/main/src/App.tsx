@@ -2310,6 +2310,7 @@ const App: React.FC = () => {
             currentCourseId={currentCourseId ?? DEFAULT_COURSE_ID}
             onOpenClassContent={openLiveClassContent}
             onRoomContextChange={setActiveOnlineClass}
+            onOpenBattleHub={() => handleNavigate(SectionType.BATTLE)}
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
         );

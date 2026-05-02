@@ -41,6 +41,10 @@ export function getBotAvatarOption(avatarId?: string): BotAvatarOption {
   return BOT_AVATAR_MAP[avatarId ?? ''] ?? BOT_AVATAR_MAP[DEFAULT_BOT_AVATAR_ID];
 }
 
+export function normalizeBotAvatarId(avatarId?: string): BotAvatarId {
+  return getBotAvatarOption(avatarId).id;
+}
+
 export function renderBotAvatarIcon(avatarId?: string): React.ReactNode {
   return getBotAvatarOption(avatarId).icon;
 }
