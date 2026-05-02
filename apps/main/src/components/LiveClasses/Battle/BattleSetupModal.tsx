@@ -119,6 +119,16 @@ const BATTLE_LANGUAGE_OPTIONS: Array<{ value: BattleUILanguage; label: string; d
   { value: 'he', label: 'עברית', dir: 'rtl' },
 ];
 
+function getBattleLanguageLabel(language: BattleUILanguage): string {
+  return BATTLE_LANGUAGE_OPTIONS.find((option) => option.value === language)?.label ?? language;
+}
+
+function stripBattleDuplicateSuffixes(title: string): string {
+  return title
+    .replace(/\s*\((copy|copia|αντίγραφο|עותק)\)\s*$/gi, '')
+    .trim();
+}
+
 const BATTLE_ACTION_COPY: Record<BattleUILanguage, {
   saving: string;
   saved: string;
@@ -1191,7 +1201,9 @@ export const BattleSetupModal: React.FC<Props> = ({
       }
 
       const title = options?.titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(editorLanguage);
-      setTemplateTitle(title);
+      if (!forceDuplicate) {
+        setTemplateTitle(title);
+      }
 
       if (!onSaveTemplate) {
         setSaveMessage(copy.saveUnavailable);
@@ -1229,17 +1241,9 @@ export const BattleSetupModal: React.FC<Props> = ({
 
       await onSaveTemplate(template);
       setSaveState(forceDuplicate ? 'idle' : 'saved');
-      if (forceDuplicate) {
-        setQuestions(resolvedQuestions);
-        setTemplateTitle(resolvedTitle);
-        setEditorLanguage(targetLanguage);
-        setDuplicateLanguage(targetLanguage);
-      }
       setSaveMessage(
         forceDuplicate
-          ? shouldTranslate
-            ? actionCopy.translatedSuccess
-            : copy.duplicateSuccess
+          ? `${shouldTranslate ? actionCopy.translatedSuccess : copy.duplicateSuccess} ${resolvedTitle} -> ${getBattleLanguageLabel(targetLanguage)}.`
           : copy.saveSuccess,
       );
       setStartError(null);
@@ -1252,7 +1256,8 @@ export const BattleSetupModal: React.FC<Props> = ({
   }
 
   async function handleDuplicateTemplate() {
-    const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(editorLanguage);
+    const rawTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(editorLanguage);
+    const baseTitle = stripBattleDuplicateSuffixes(rawTitle);
     await handleSaveTemplate({
       titleOverride: duplicateLanguage === editorLanguage ? `${baseTitle} (${actionCopy.copySuffix})` : undefined,
       forceDuplicate: true,

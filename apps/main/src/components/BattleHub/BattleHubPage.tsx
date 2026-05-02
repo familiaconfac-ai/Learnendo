@@ -7,7 +7,7 @@ import { createBattleSession, deleteBattleSession, subscribeBattleSession } from
 import { buildSavedBattleTemplate, getBattleCourseIdForLanguage, getSavedBattleTemplateLanguage } from '../LiveClasses/Battle/battleUtils';
 import { appendLiveClassBattleTemplate } from '../../services/liveClassesService';
 import {
-  listBattleTemplatesByOwner,
+  listBattleTemplatesForTeachersLibrary,
   saveBattleTemplateToLibrary,
   type StoredBattleTemplate,
 } from '../../services/battleTemplateLibraryService';
@@ -291,6 +291,32 @@ export const BattleHubPage: React.FC<Props> = ({
 
     return groups;
   }, [libraryTemplates]);
+  const groupedLibraryTeachers = useMemo(() => {
+    return BATTLE_LANGUAGE_GROUPS.reduce<Record<BattleTemplateLanguage, Array<{ teacherName: string; templates: StoredBattleTemplate[] }>>>(
+      (accumulator, group) => {
+        const byTeacher = new Map<string, StoredBattleTemplate[]>();
+
+        for (const template of groupedLibraryTemplates[group.value]) {
+          const teacherName = template.createdByName?.trim() || 'Professor';
+          const existing = byTeacher.get(teacherName) ?? [];
+          existing.push(template);
+          byTeacher.set(teacherName, existing);
+        }
+
+        accumulator[group.value] = Array.from(byTeacher.entries())
+          .map(([teacherName, templates]) => ({ teacherName, templates }))
+          .sort((left, right) => left.teacherName.localeCompare(right.teacherName, 'pt-BR'));
+        return accumulator;
+      },
+      {
+        en: [],
+        pt: [],
+        es: [],
+        el: [],
+        he: [],
+      },
+    );
+  }, [groupedLibraryTemplates]);
   const setupCourseId = setupTemplate?.config.courseId ?? effectiveCourseId ?? undefined;
   const setupWorkbookId = setupTemplate?.config.workbookId ?? effectiveWorkbookId ?? undefined;
   const setupLessonId = setupTemplate?.config.lessonId?.toString() ?? effectiveLessonId ?? undefined;
@@ -320,7 +346,7 @@ export const BattleHubPage: React.FC<Props> = ({
       setLibraryLoading(true);
       setLibraryError(null);
       try {
-        const templates = await listBattleTemplatesByOwner(uid);
+        const templates = await listBattleTemplatesForTeachersLibrary(uid);
         if (isMounted) {
           setLibraryTemplates(templates);
         }
@@ -383,7 +409,7 @@ export const BattleHubPage: React.FC<Props> = ({
   }, [activeLiveClass?.id, liveSession, uid]);
 
   async function handleSaveTemplate(template: SavedBattleTemplate) {
-    const storedTemplate = await saveBattleTemplateToLibrary(uid, template);
+    const storedTemplate = await saveBattleTemplateToLibrary(uid, name, template);
     setLibraryTemplates((current) => {
       const withoutSameId = current.filter((entry) => entry.id !== storedTemplate.id);
       return [storedTemplate, ...withoutSameId].sort((left, right) => right.updatedAt - left.updatedAt);
@@ -614,6 +640,7 @@ export const BattleHubPage: React.FC<Props> = ({
             <div className="mt-4 space-y-4">
               {BATTLE_LANGUAGE_GROUPS.map((group) => {
                 const templates = groupedLibraryTemplates[group.value];
+                const teachers = groupedLibraryTeachers[group.value];
 
                 return (
                   <article key={group.value} className="rounded-2xl border border-slate-800 bg-slate-950/50 px-4 py-4">
@@ -631,34 +658,50 @@ export const BattleHubPage: React.FC<Props> = ({
                       <p className="mt-3 text-sm text-slate-500">{copy.libraryEmpty}</p>
                     ) : (
                       <div className="mt-3 space-y-3">
-                        {templates.slice(0, 12).map((template) => (
-                          <article key={template.id} className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-4">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                              <div className="min-w-0">
-                                <p className="text-sm font-black text-white">{template.title}</p>
-                                <p className="mt-1 text-xs text-slate-400">
-                                  {template.questions.length} {copy.questionsWord} - {template.config.timePerQuestion}s - {template.config.botEnabled ? copy.botEnabled : copy.solo}
-                                </p>
+                        {teachers.map(({ teacherName, templates: teacherTemplates }) => (
+                          <section key={`${group.value}-${teacherName}`} className="rounded-2xl border border-slate-800/80 bg-slate-950/60 px-4 py-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-black uppercase tracking-wide text-slate-400">Professor</p>
+                                <p className="mt-1 text-sm font-black text-white">{teacherName}</p>
                               </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => {
-                                    setSetupTemplate(template);
-                                    setShowSetup(true);
-                                  }}
-                                  className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300"
-                                >
-                                  {copy.editAndUse}
-                                </button>
-                                <button
-                                  onClick={() => setActiveTemplate(template)}
-                                  className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
-                                >
-                                  {copy.open}
-                                </button>
+                              <div className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-1 text-[11px] font-black uppercase tracking-wide text-slate-300">
+                                {teacherTemplates.length}
                               </div>
                             </div>
-                          </article>
+
+                            <div className="mt-3 space-y-3">
+                              {teacherTemplates.slice(0, 12).map((template) => (
+                                <article key={template.id} className="rounded-2xl border border-slate-800 bg-slate-950/80 px-4 py-4">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-black text-white">{template.title}</p>
+                                      <p className="mt-1 text-xs text-slate-400">
+                                        {template.questions.length} {copy.questionsWord} - {template.config.timePerQuestion}s - {template.config.botEnabled ? copy.botEnabled : copy.solo}
+                                      </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={() => {
+                                          setSetupTemplate(template);
+                                          setShowSetup(true);
+                                        }}
+                                        className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm font-bold text-emerald-300"
+                                      >
+                                        {copy.editAndUse}
+                                      </button>
+                                      <button
+                                        onClick={() => setActiveTemplate(template)}
+                                        className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+                                      >
+                                        {copy.open}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </article>
+                              ))}
+                            </div>
+                          </section>
                         ))}
                       </div>
                     )}
