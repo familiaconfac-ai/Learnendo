@@ -1425,6 +1425,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pages: WorkspacePage[];
     currentPageId: string;
   } | null>(null);
+  const itemsRef = useRef<WorkspaceItem[]>([]);
   const lastItemsSaveAtRef = useRef<number>(0);
   const lastSingleItemSaveAtRef = useRef<number>(0);
   const lastDocSaveAtRef = useRef<number>(0);
@@ -1442,6 +1443,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // Also checked against dragRef.current so a snapshot never fires mid-drag.
   const lastItemEditRef = useRef<number>(0);
   const ITEM_GUARD_MS = 1500;
+  const dirtyItemTimestampsRef = useRef<Record<string, number>>({});
+  const deletedItemTimestampsRef = useRef<Record<string, number>>({});
   const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
 
   const normalizeItemScope = useCallback(
@@ -1491,9 +1494,101 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     };
   }, []);
 
+  const pruneItemSyncGuards = useCallback((now = Date.now()) => {
+    const maxAgeMs = ITEM_GUARD_MS * 4;
+
+    Object.entries(dirtyItemTimestampsRef.current).forEach(([itemId, timestamp]) => {
+      if (now - timestamp > maxAgeMs) {
+        delete dirtyItemTimestampsRef.current[itemId];
+      }
+    });
+
+    Object.entries(deletedItemTimestampsRef.current).forEach(([itemId, timestamp]) => {
+      if (now - timestamp > maxAgeMs) {
+        delete deletedItemTimestampsRef.current[itemId];
+      }
+    });
+  }, [ITEM_GUARD_MS]);
+
+  const markItemDirty = useCallback((itemId: string, timestamp = Date.now()) => {
+    dirtyItemTimestampsRef.current[itemId] = timestamp;
+    delete deletedItemTimestampsRef.current[itemId];
+    lastItemEditRef.current = timestamp;
+    pruneItemSyncGuards(timestamp);
+  }, [pruneItemSyncGuards]);
+
+  const markItemsDirty = useCallback((itemIds: string[], timestamp = Date.now()) => {
+    itemIds.forEach((itemId) => {
+      dirtyItemTimestampsRef.current[itemId] = timestamp;
+      delete deletedItemTimestampsRef.current[itemId];
+    });
+    lastItemEditRef.current = timestamp;
+    pruneItemSyncGuards(timestamp);
+  }, [pruneItemSyncGuards]);
+
+  const markItemDeleted = useCallback((itemId: string, timestamp = Date.now()) => {
+    deletedItemTimestampsRef.current[itemId] = timestamp;
+    delete dirtyItemTimestampsRef.current[itemId];
+    lastItemEditRef.current = timestamp;
+    pruneItemSyncGuards(timestamp);
+  }, [pruneItemSyncGuards]);
+
+  const mergeRemoteItemsWithLocal = useCallback((remoteItems: WorkspaceItem[]) => {
+    const now = Date.now();
+    pruneItemSyncGuards(now);
+
+    const localItems = itemsRef.current;
+    const localById = new Map(localItems.map((item) => [item.id, item]));
+    const remoteById = new Map(remoteItems.map((item) => [item.id, item]));
+    const mergedItems: WorkspaceItem[] = [];
+
+    remoteItems.forEach((remoteItem) => {
+      const localItem = localById.get(remoteItem.id);
+      const localDirtyAt = dirtyItemTimestampsRef.current[remoteItem.id] ?? 0;
+      const deletedAt = deletedItemTimestampsRef.current[remoteItem.id] ?? 0;
+      const isLocallyDirty = now - localDirtyAt < ITEM_GUARD_MS;
+      const wasDeletedLocally = now - deletedAt < ITEM_GUARD_MS;
+
+      if (wasDeletedLocally && (!localItem || (localItem.updatedAt ?? 0) <= deletedAt)) {
+        return;
+      }
+
+      if (localItem && isLocallyDirty && (localItem.updatedAt ?? 0) >= (remoteItem.updatedAt ?? 0)) {
+        mergedItems.push(localItem);
+        return;
+      }
+
+      if (localItem && (localItem.updatedAt ?? 0) > (remoteItem.updatedAt ?? 0)) {
+        mergedItems.push(localItem);
+        return;
+      }
+
+      mergedItems.push(remoteItem);
+    });
+
+    localItems.forEach((localItem) => {
+      if (remoteById.has(localItem.id)) return;
+      const localDirtyAt = dirtyItemTimestampsRef.current[localItem.id] ?? 0;
+      const deletedAt = deletedItemTimestampsRef.current[localItem.id] ?? 0;
+      const isLocallyDirty = now - localDirtyAt < ITEM_GUARD_MS;
+      const wasDeletedLocally = now - deletedAt < ITEM_GUARD_MS;
+
+      if (isLocallyDirty && !wasDeletedLocally) {
+        mergedItems.push(localItem);
+      }
+    });
+
+    return mergedItems;
+  }, [ITEM_GUARD_MS, pruneItemSyncGuards]);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
       const normalizedItems = (data?.items ?? []).map(normalizeItemScope);
+      const mergedItems = mergeRemoteItemsWithLocal(normalizedItems);
       console.log('[LIVECLASS WORKSPACE] snapshot', {
         role: viewerIsTeacher ? 'teacher' : viewerIsStudent ? 'student' : 'viewer',
         liveClassId: classId,
@@ -1542,7 +1637,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             // Update pages metadata; keep active page�s live content.
             const merged = normalized.map((rp) =>
               rp.id === activePageIdRef.current
-                ? { ...rp, docContent: data.docContent ?? rp.docContent, items: normalizedItems.length > 0 ? normalizedItems : rp.items }
+                ? { ...rp, docContent: data.docContent ?? rp.docContent, items: mergedItems.length > 0 ? mergedItems : rp.items }
                 : rp,
             );
             pagesRef.current = merged;
@@ -1559,19 +1654,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         `[WS] snap from "${data?.updatedByName ?? '?'}" docBy=${data?.docUpdatedBy?.slice(0,6) ?? '?'} itemsBy=${data?.itemsUpdatedBy?.slice(0,6) ?? '?'} docSelf=${isDocSelfEcho} itemsSelf=${isItemsSelfEcho}`,
       );
 
-      // Items: block during active drag, or during self-echo window.
-      const isLocallyEditingItems =
-        dragRef.current !== null ||
-        (isItemsSelfEcho && Date.now() - lastItemEditRef.current < ITEM_GUARD_MS);
-      if (!isLocallyEditingItems) {
-        setItems(normalizedItems);
-        syncActivePageItemsRef(normalizedItems, true);
+      // Items: merge per item so a remote save never clobbers a newer local edit.
+      if (dragRef.current === null) {
+        itemsRef.current = mergedItems;
+        setItems(mergedItems);
+        syncActivePageItemsRef(mergedItems, true);
       }
 
-      // Doc: only suppress our own echo while actively typing.
+      // Doc: suppress remote DOM writes while there is active local typing.
       const nextDoc = data?.docContent ?? '';
-      const isLocallyTyping =
-        isDocSelfEcho && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
+      const isLocallyTyping = Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
       if (!isLocallyTyping) {
         setDocHtml(nextDoc);
         if (docRef.current && docRef.current.innerHTML !== nextDoc) {
@@ -1596,6 +1688,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     userId,
     viewerIsStudent,
     viewerIsTeacher,
+    mergeRemoteItemsWithLocal,
   ]);
 
   useEffect(() => () => {
@@ -1655,10 +1748,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [classId, userId, userName]);
 
   const scheduleItemsSave = useCallback(
-    (nextItems: WorkspaceItem[], options?: { forceSave?: boolean }) => {
+    (
+      nextItems: WorkspaceItem[],
+      options?: { forceSave?: boolean; dirtyItemIds?: string[]; deletedItemIds?: string[] }
+    ) => {
       if (effectiveReadOnly && !options?.forceSave) return;
-      // Stamp the edit time so the snapshot guard stays active through the debounce.
-      lastItemEditRef.current = Date.now();
+      const editTimestamp = Date.now();
+      if (options?.dirtyItemIds?.length) {
+        markItemsDirty(options.dirtyItemIds, editTimestamp);
+      } else if (nextItems.length > 0) {
+        lastItemEditRef.current = editTimestamp;
+      }
+      options?.deletedItemIds?.forEach((itemId) => markItemDeleted(itemId, editTimestamp));
       const scopedItems = nextItems.map(normalizeItemScope);
       const syncedPages = syncActivePageItemsRef(scopedItems);
       pendingItemsSaveRef.current = {
@@ -1683,6 +1784,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     [
       effectiveReadOnly,
       flushPendingItemsSave,
+      markItemDeleted,
+      markItemsDirty,
       normalizeItemScope,
       syncActivePageItemsRef,
     ],
@@ -1691,7 +1794,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const scheduleSingleItemSave = useCallback(
     (item: WorkspaceItem, options?: { forceSave?: boolean }) => {
       if (effectiveReadOnly && !options?.forceSave) return;
-      lastItemEditRef.current = Date.now();
+      markItemDirty(item.id);
       const scopedItem = normalizeItemScope(item);
       pendingSingleItemSaveRef.current[scopedItem.id] = {
         item: scopedItem,
@@ -1715,6 +1818,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     [
       effectiveReadOnly,
       flushPendingSingleItemSaves,
+      markItemDirty,
       normalizeItemScope,
     ],
   );
@@ -1758,6 +1862,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     const html = docRef.current.innerHTML;
     setDocHtml(html);
     scheduleDocSave(html);
+    if (saveDocDebounce.current) {
+      clearTimeout(saveDocDebounce.current);
+      saveDocDebounce.current = null;
+    }
+    flushPendingDocSave();
   };
 
   const onScrollSync = () => {
@@ -1799,7 +1908,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             ? { ...it, content: html, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName }
             : it,
         );
-        scheduleItemsSave(next);
+        scheduleItemsSave(next, { dirtyItemIds: [floatingId] });
         return next;
       });
     } else {
@@ -1832,7 +1941,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
               ? { ...it, content: html, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName }
               : it,
           );
-          scheduleItemsSave(next);
+          scheduleItemsSave(next, { dirtyItemIds: [floatingId] });
           return next;
         });
         return;
@@ -1891,7 +2000,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const deleteItem = useCallback(
     (id: string) => {
-      setItems((prev) => { const next = prev.filter((it) => it.id !== id); scheduleItemsSave(next); return next; });
+      setItems((prev) => {
+        const next = prev.filter((it) => it.id !== id);
+        scheduleItemsSave(next, { deletedItemIds: [id] });
+        return next;
+      });
       setSelectedId(null);
     },
     [scheduleItemsSave],
@@ -1953,6 +2066,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     activeFloatingIdRef.current = null;
     activeFloatingElRef.current = null;
     releaseItemLock(itemId);
+    if (saveSingleItemDebounce.current) {
+      clearTimeout(saveSingleItemDebounce.current);
+      saveSingleItemDebounce.current = null;
+    }
+    flushPendingSingleItemSaves();
   };
 
   const addTextBox = () => {
@@ -1968,7 +2086,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       styles: { color: '#1e293b', fontSize: 16, bgColor: '#ffffff' },
       updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
     });
-    setItems((prev) => { const next = [...prev, newItem]; scheduleItemsSave(next); return next; });
+    setItems((prev) => {
+      const next = [...prev, newItem];
+      scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
+      return next;
+    });
     setSelectedId(newItem.id);
   };
 
@@ -1990,7 +2112,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         imageUrl: dataUrl,
         updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
       });
-      setItems((prev) => { const next = [...prev, newItem]; scheduleItemsSave(next); return next; });
+      setItems((prev) => {
+        const next = [...prev, newItem];
+        scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
+        return next;
+      });
       setSelectedId(newItem.id);
       setPendingImageUpload(false);
     };
@@ -2057,7 +2183,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     setItems((prev) => {
       const next = prev.map((it) =>
         it.id === itemId ? { ...it, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName } : it);
-      scheduleItemsSave(next, { forceSave });
+      scheduleItemsSave(next, { forceSave, dirtyItemIds: [itemId] });
       return next;
     });
   };
