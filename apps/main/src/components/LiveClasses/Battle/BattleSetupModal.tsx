@@ -741,6 +741,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [startingNow,  setStartingNow]  = useState(false);
   const [saveMessage,  setSaveMessage]  = useState<string | null>(null);
   const [templateTitle, setTemplateTitle] = useState(() => initialTemplate?.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
+  const [editorLanguage, setEditorLanguage] = useState<BattleUILanguage>(templateLanguage);
   const [duplicateLanguage, setDuplicateLanguage] = useState<BattleUILanguage>(templateLanguage);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const hasTrackedChangesRef = useRef(false);
@@ -789,11 +790,14 @@ export const BattleSetupModal: React.FC<Props> = ({
     setSaveMessage(null);
     setSaveState('idle');
     setTemplateTitle(initialTemplate.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
-    setDuplicateLanguage(getSavedBattleTemplateLanguage(initialTemplate));
+    const nextLanguage = getSavedBattleTemplateLanguage(initialTemplate);
+    setEditorLanguage(nextLanguage);
+    setDuplicateLanguage(nextLanguage);
     setStep('curate');
   }, [effectiveUiLanguage, initialTemplate]);
 
   useEffect(() => {
+    setEditorLanguage(templateLanguage);
     setDuplicateLanguage(templateLanguage);
   }, [templateLanguage]);
 
@@ -817,6 +821,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     botName,
     questions,
     excludedIds,
+    editorLanguage,
     duplicateLanguage,
   ]);
 
@@ -842,7 +847,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       botEnabled,
       botAvatarId,
       botName: botName.trim() || 'Bot',
-      courseId:    defaultCourseId,
+      courseId:    getBattleCourseIdForLanguage(editorLanguage),
       workbookId:  defaultWorkbookId,
       lessonId:    defaultLessonId,
     };
@@ -1173,7 +1178,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   }) {
     try {
       const forceDuplicate = Boolean(options?.forceDuplicate);
-      const targetLanguage = options?.targetLanguage ?? templateLanguage;
+      const targetLanguage = options?.targetLanguage ?? editorLanguage;
       const finalQuestions = step === 'curate'
         ? sanitizeBattleQuestions(
             getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
@@ -1185,7 +1190,7 @@ export const BattleSetupModal: React.FC<Props> = ({
         return;
       }
 
-      const title = options?.titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(templateLanguage);
+      const title = options?.titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(editorLanguage);
       setTemplateTitle(title);
 
       if (!onSaveTemplate) {
@@ -1198,12 +1203,12 @@ export const BattleSetupModal: React.FC<Props> = ({
         setSaveState('saving');
       }
 
-      const shouldTranslate = forceDuplicate && targetLanguage !== templateLanguage;
+      const shouldTranslate = forceDuplicate && targetLanguage !== editorLanguage;
       const resolvedQuestions = shouldTranslate
-        ? await translateBattleQuestions(finalQuestions, templateLanguage, targetLanguage)
+        ? await translateBattleQuestions(finalQuestions, editorLanguage, targetLanguage)
         : finalQuestions;
       const resolvedTitle = shouldTranslate
-        ? await translateText(title, templateLanguage, targetLanguage)
+        ? await translateText(title, editorLanguage, targetLanguage)
         : title;
       const baseTemplate = buildSavedBattleTemplate(
         {
@@ -1218,12 +1223,18 @@ export const BattleSetupModal: React.FC<Props> = ({
             ...baseTemplate,
             id: initialTemplate.id,
             createdAt: initialTemplate.createdAt,
-            language: templateLanguage,
+            language: editorLanguage,
           }
         : baseTemplate;
 
       await onSaveTemplate(template);
       setSaveState(forceDuplicate ? 'idle' : 'saved');
+      if (forceDuplicate) {
+        setQuestions(resolvedQuestions);
+        setTemplateTitle(resolvedTitle);
+        setEditorLanguage(targetLanguage);
+        setDuplicateLanguage(targetLanguage);
+      }
       setSaveMessage(
         forceDuplicate
           ? shouldTranslate
@@ -1241,9 +1252,9 @@ export const BattleSetupModal: React.FC<Props> = ({
   }
 
   async function handleDuplicateTemplate() {
-    const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(templateLanguage);
+    const baseTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(editorLanguage);
     await handleSaveTemplate({
-      titleOverride: duplicateLanguage === templateLanguage ? `${baseTitle} (${actionCopy.copySuffix})` : undefined,
+      titleOverride: duplicateLanguage === editorLanguage ? `${baseTitle} (${actionCopy.copySuffix})` : undefined,
       forceDuplicate: true,
       targetLanguage: duplicateLanguage,
     });
@@ -1544,7 +1555,7 @@ export const BattleSetupModal: React.FC<Props> = ({
               {selectedCount}/{questions.length} {copy.selected} - {timePerQuestion}s {copy.each}
             </p>
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="hidden">
             <label className="sr-only">
               {actionCopy.duplicateLanguageLabel}
             </label>
@@ -1583,6 +1594,9 @@ export const BattleSetupModal: React.FC<Props> = ({
             </button>
             <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none" aria-label="Close">✕</button>
           </div>
+          <div className="flex justify-end">
+            <button onClick={onClose} className="text-white/60 hover:text-white text-xl leading-none" aria-label="Close">✕</button>
+          </div>
         </div>
         </div>
 
@@ -1598,17 +1612,7 @@ export const BattleSetupModal: React.FC<Props> = ({
               {saveMessage}
             </div>
           ) : null}
-          <div className="flex justify-end">
-            <button
-              onClick={addCustomQuestion}
-              title={copy.addQuestionTitle}
-              className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-2 py-1 transition"
-            >
-              {copy.addQuestion}
-            </button>
-          </div>
-          <div className="mt-3 flex items-start justify-between gap-3">
-            <div />
+          <div className="mt-1 flex items-start justify-end gap-2">
             <div className="flex flex-wrap items-center justify-end gap-2">
               <select
                 value={duplicateLanguage}
