@@ -4,7 +4,7 @@ import { BattleHostView } from '../LiveClasses/Battle/BattleHostView';
 import { BattleSetupModal } from '../LiveClasses/Battle/BattleSetupModal';
 import type { SavedBattleTemplate, BattleConfig, BattleQuestion, BattleSession, BattleTemplateLanguage } from '../LiveClasses/Battle/battleTypes';
 import { createBattleSession, deleteBattleSession, subscribeBattleSession } from '../LiveClasses/Battle/battleService';
-import { buildSavedBattleTemplate, getBattleCourseIdForLanguage, getSavedBattleTemplateLanguage } from '../LiveClasses/Battle/battleUtils';
+import { buildSavedBattleTemplate, getBattleCorrectIndexes, getBattleCourseIdForLanguage, getSavedBattleTemplateLanguage, repairBattleTextEncoding, sanitizeBattleQuestions } from '../LiveClasses/Battle/battleUtils';
 import { appendLiveClassBattleTemplate } from '../../services/liveClassesService';
 import {
   listBattleTemplatesForTeachersLibrary,
@@ -12,6 +12,7 @@ import {
   type StoredBattleTemplate,
 } from '../../services/battleTemplateLibraryService';
 import type { LiveClass } from '../../types';
+import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from './LiveBattleSimple';
 
 type UILang = 'en' | 'pt' | 'es' | 'el' | 'he';
 type SupportedBattleUiLanguage = 'en' | 'pt' | 'es';
@@ -239,6 +240,31 @@ function buildStorageKey(uid: string, courseId?: string | null) {
   return `learnendo_battle_hub_last_template:${uid}:${courseId ?? 'default'}`;
 }
 
+type SimpleLiveBattleQuestion = NonNullable<React.ComponentProps<typeof LiveBattleSimple>['questions']>[number];
+
+function buildSimpleLiveBattleQuestions(questions: BattleQuestion[]): SimpleLiveBattleQuestion[] {
+  return sanitizeBattleQuestions(questions).flatMap((question, index) => {
+    const prompt = repairBattleTextEncoding(question.text)?.trim();
+    const options = (question.options ?? [])
+      .map((option) => repairBattleTextEncoding(option)?.trim() ?? '')
+      .filter(Boolean);
+    const correctIndexes = getBattleCorrectIndexes(question).filter((correctIndex) => (
+      correctIndex >= 0 && correctIndex < options.length
+    ));
+
+    if (!prompt || options.length < 2 || correctIndexes.length === 0) {
+      return [];
+    }
+
+    return [{
+      id: question.id?.trim() || `simple-live-battle-${index + 1}`,
+      question: prompt,
+      options,
+      correctIndex: correctIndexes[0],
+    }];
+  });
+}
+
 export const BattleHubPage: React.FC<Props> = ({
   uid,
   name,
@@ -267,6 +293,7 @@ export const BattleHubPage: React.FC<Props> = ({
   const [activeTemplate, setActiveTemplate] = useState<SavedBattleTemplate | null>(null);
   const [liveSession, setLiveSession] = useState<BattleSession | null>(null);
   const [setupTemplate, setSetupTemplate] = useState<SavedBattleTemplate | null>(null);
+  const [simpleLiveTemplate, setSimpleLiveTemplate] = useState<SavedBattleTemplate | null>(null);
   const [libraryTemplates, setLibraryTemplates] = useState<StoredBattleTemplate[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
@@ -320,6 +347,10 @@ export const BattleHubPage: React.FC<Props> = ({
   const setupCourseId = setupTemplate?.config.courseId ?? effectiveCourseId ?? undefined;
   const setupWorkbookId = setupTemplate?.config.workbookId ?? effectiveWorkbookId ?? undefined;
   const setupLessonId = setupTemplate?.config.lessonId?.toString() ?? effectiveLessonId ?? undefined;
+  const simpleLiveQuestions = useMemo(
+    () => buildSimpleLiveBattleQuestions(simpleLiveTemplate?.questions ?? []),
+    [simpleLiveTemplate],
+  );
 
   const handleCloseSetup = () => {
     setShowSetup(false);
@@ -385,6 +416,11 @@ export const BattleHubPage: React.FC<Props> = ({
       return;
     }
 
+    if (USE_SIMPLE_LIVE_BATTLE) {
+      setLiveSession(null);
+      return;
+    }
+
     console.info('[BATTLE FIREBASE] teacher listener attach', {
       classId: activeLiveClass.id,
       docPath: `liveClasses/${activeLiveClass.id}/session/battle`,
@@ -395,6 +431,10 @@ export const BattleHubPage: React.FC<Props> = ({
   }, [activeLiveClass?.id, uid]);
 
   useEffect(() => {
+    if (USE_SIMPLE_LIVE_BATTLE) {
+      return;
+    }
+
     if (!activeLiveClass?.id) return;
 
     console.log('[LIVE BATTLE SESSION] loaded', {
@@ -444,6 +484,15 @@ export const BattleHubPage: React.FC<Props> = ({
         workbookId: effectiveWorkbookId ?? config.workbookId,
         lessonId: effectiveLessonId ?? config.lessonId,
       };
+
+      if (USE_SIMPLE_LIVE_BATTLE) {
+        setSimpleLiveTemplate({
+          ...savedTemplate,
+          config: normalizedConfig,
+        });
+        setShowSetup(false);
+        return;
+      }
 
       console.info('[BATTLE FIREBASE] handleTemplateReady:start', {
         liveClassId: activeLiveClass.id,
@@ -772,7 +821,30 @@ export const BattleHubPage: React.FC<Props> = ({
         })()
       ) : null}
 
-      {!showSetup && activeLiveClass?.id && liveSession ? (
+      {!showSetup && activeLiveClass?.id && USE_SIMPLE_LIVE_BATTLE && simpleLiveTemplate ? (
+        <LiveBattleSimple
+          liveClassId={activeLiveClass.id}
+          userId={uid}
+          userName={name}
+          role="teacher"
+          questions={simpleLiveQuestions}
+          onClose={() => {
+            void deleteBattleSession(activeLiveClass.id).finally(() => {
+              setSimpleLiveTemplate(null);
+              onDismiss?.();
+            });
+          }}
+          onNewBattle={() => {
+            void deleteBattleSession(activeLiveClass.id).finally(() => {
+              setSimpleLiveTemplate(null);
+              setSetupTemplate(simpleLiveTemplate);
+              setShowSetup(true);
+            });
+          }}
+        />
+      ) : null}
+
+      {!showSetup && activeLiveClass?.id && !USE_SIMPLE_LIVE_BATTLE && liveSession ? (
         (() => {
           console.log('[LIVE BATTLE MAP]', {
             role: 'teacher',

@@ -16,6 +16,7 @@ import { LiveClassChat } from '../LiveClassChat';
 import { BattlePlayerView } from '../Battle/BattlePlayerView';
 import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
+import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from '../../BattleHub/LiveBattleSimple';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import {
   BATTLE_STALE_THRESHOLD_MS,
@@ -65,7 +66,8 @@ const StudentStage: React.FC<{
 
   const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const isBattleStage = stageMode === 'battle';
-  const shouldRenderBattleOverlay = Boolean(battleSession) && isBattleStage;
+  const shouldRenderBattleOverlay = !USE_SIMPLE_LIVE_BATTLE && Boolean(battleSession) && isBattleStage;
+  const shouldRenderSimpleBattleOverlay = USE_SIMPLE_LIVE_BATTLE && isBattleStage;
 
 
   useEffect(() => {
@@ -80,6 +82,11 @@ const StudentStage: React.FC<{
   }, [assignedRoster.length, liveClass.id, user.email, user.uid]);
 
   useEffect(() => {
+    if (USE_SIMPLE_LIVE_BATTLE) {
+      setBattleSession(null);
+      return undefined;
+    }
+
     console.info('[BATTLE FIREBASE] student listener attach', {
       classId: liveClass.id,
       docPath: `liveClasses/${liveClass.id}/session/battle`,
@@ -643,7 +650,7 @@ const StudentStage: React.FC<{
               </div>
             </div>
           ) : null}
-          {isBattleStage && !battleSession ? (
+          {!USE_SIMPLE_LIVE_BATTLE && isBattleStage && !battleSession ? (
             <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4">
               <div className="max-w-sm rounded-2xl border border-orange-400/40 bg-slate-950/90 px-4 py-3 text-center shadow-2xl backdrop-blur-sm">
                 <div className="text-xs font-black uppercase tracking-[0.22em] text-orange-300">
@@ -697,6 +704,14 @@ const StudentStage: React.FC<{
               return null;
             })()
           )}
+          {shouldRenderSimpleBattleOverlay ? (
+            <LiveBattleSimple
+              liveClassId={liveClass.id}
+              userId={user.uid}
+              userName={user.displayName || user.email || 'Aluno'}
+              role="student"
+            />
+          ) : null}
         </>
       }
     />
