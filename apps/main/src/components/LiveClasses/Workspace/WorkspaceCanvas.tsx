@@ -158,12 +158,29 @@ interface WsLabels {
 }
 
 const BATTLE_LIBRARY_LANGUAGE_TABS: Array<{ value: BattleTemplateLanguage; label: string; dir?: 'ltr' | 'rtl' }> = [
-  { value: 'pt', label: 'Battles salvos', dir: 'ltr' },
-  { value: 'es', label: 'Battles guardados', dir: 'ltr' },
-  { value: 'en', label: 'Saved battles', dir: 'ltr' },
+  { value: 'pt', label: 'português', dir: 'ltr' },
+  { value: 'es', label: 'español', dir: 'ltr' },
+  { value: 'en', label: 'English', dir: 'ltr' },
   { value: 'el', label: 'Αποθηκευμένες μάχες', dir: 'ltr' },
   { value: 'he', label: 'קרבות שמורים', dir: 'rtl' },
 ];
+
+function getBattleLibraryFolderLabel(language: BattleTemplateLanguage): string {
+  switch (language) {
+    case 'pt':
+      return 'portugu\u00eas';
+    case 'es':
+      return 'espa\u00f1ol';
+    case 'en':
+      return 'English';
+    case 'el':
+      return '\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac';
+    case 'he':
+      return '\u05e2\u05d1\u05e8\u05d9\u05ea';
+    default:
+      return language;
+  }
+}
 
 const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
   pt: {
@@ -3170,10 +3187,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20"><path d="M6 6l8 8M14 6l-8 8"/></svg>
               </button>
             </div>
-            <div className="mb-4 grid grid-cols-2 gap-2">
+            <div className="mb-4 flex flex-wrap gap-2">
               <button
                 onClick={() => setOpenLibraryTab('materials')}
-                className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                className={`min-h-10 min-w-[140px] flex-1 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
                   openLibraryTab === 'materials'
                     ? 'border-blue-600 bg-blue-50 text-blue-700'
                     : 'border-slate-200 text-slate-500 hover:bg-slate-50'
@@ -3186,13 +3203,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   key={languageTab.value}
                   onClick={() => setOpenLibraryTab(languageTab.value)}
                   dir={languageTab.dir}
-                  className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                  className={`min-h-10 min-w-[104px] flex-1 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
                     openLibraryTab === languageTab.value
                       ? 'border-emerald-600 bg-emerald-50 text-emerald-700'
                       : 'border-slate-200 text-slate-500 hover:bg-slate-50'
                   }`}
                 >
-                  {languageTab.label}
+                  {getBattleLibraryFolderLabel(languageTab.value)}
                 </button>
               ))}
             </div>
@@ -3240,7 +3257,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   return (
                     <section key={languageTab.value} className={openLibraryTab === languageTab.value ? '' : 'hidden'}>
                       <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-600" dir={languageTab.dir}>
-                        {languageTab.label}
+                        {getBattleLibraryFolderLabel(languageTab.value)}
                       </h3>
                       {templates.length === 0 ? (
                         <p className="py-2 text-sm text-slate-400">{wsl.noBattles}</p>
