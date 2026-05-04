@@ -168,15 +168,32 @@ const BATTLE_LIBRARY_LANGUAGE_TABS: Array<{ value: BattleTemplateLanguage; label
 function getBattleLibraryFolderLabel(language: BattleTemplateLanguage): string {
   switch (language) {
     case 'pt':
-      return 'portugu\u00eas';
+      return 'Portugu\u00eas';
     case 'es':
-      return 'espa\u00f1ol';
+      return 'Espa\u00f1ol';
     case 'en':
       return 'English';
     case 'el':
       return '\u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac';
     case 'he':
       return '\u05e2\u05d1\u05e8\u05d9\u05ea';
+    default:
+      return language;
+  }
+}
+
+function getBattleLibrarySectionTitle(language: BattleTemplateLanguage): string {
+  switch (language) {
+    case 'pt':
+      return 'Batalhas em Português';
+    case 'es':
+      return 'Batallas en Español';
+    case 'en':
+      return 'English Battles';
+    case 'el':
+      return 'Μάχες στα Ελληνικά';
+    case 'he':
+      return 'קרבות בעברית';
     default:
       return language;
   }
@@ -204,7 +221,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     confirmDelete: 'Excluir esta p�gina?',
     saveModalTitle: 'Salvar como material',
     savePageModalTitle: 'Salvar p�gina como material',
-    openModalTitle: 'Abrir material',
+    openModalTitle: 'Aulas e Materiais de Apoio',
     materialTitleLabel: 'T�tulo do material',
     materialPlaceholder: 'Ex: Vocabul�rio � Cores',
     cancel: 'Cancelar', save: 'Salvar', saving: 'Salvando�',
@@ -213,7 +230,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     noSavedFiles: 'Nenhum arquivo salvo ainda.',
     loading: 'Carregando�', open: 'Abrir',
     openBattle: 'Abrir',
-    materialsSection: 'Aulas e materiais',
+    materialsSection: 'Conteúdo',
     battlesSection: 'Battles salvos',
     exportPopupError: 'Permita popups para exportar o PDF.',
     pageName: (n) => `P�gina ${n}`,
@@ -243,7 +260,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     confirmDelete: 'Delete this page?',
     saveModalTitle: 'Save as material',
     savePageModalTitle: 'Save page as material',
-    openModalTitle: 'Open material',
+    openModalTitle: 'Lessons and Support Materials',
     materialTitleLabel: 'Material title',
     materialPlaceholder: 'E.g.: Vocabulary � Colors',
     cancel: 'Cancel', save: 'Save', saving: 'Saving�',
@@ -252,7 +269,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     noSavedFiles: 'No saved files yet.',
     loading: 'Loading�', open: 'Open',
     openBattle: 'Open',
-    materialsSection: 'Saved lessons and materials',
+    materialsSection: 'Content',
     battlesSection: 'Saved battles',
     exportPopupError: 'Allow popups to export the PDF.',
     pageName: (n) => `Page ${n}`,
@@ -282,7 +299,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     confirmDelete: '�Eliminar esta p�gina?',
     saveModalTitle: 'Guardar como material',
     savePageModalTitle: 'Guardar p�gina como material',
-    openModalTitle: 'Abrir material',
+    openModalTitle: 'Clases y Materiales de Apoyo',
     materialTitleLabel: 'T�tulo del material',
     materialPlaceholder: 'Ej: Vocabulario � Colores',
     cancel: 'Cancelar', save: 'Guardar', saving: 'Guardando�',
@@ -291,7 +308,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     noSavedFiles: 'No hay archivos guardados.',
     loading: 'Cargando�', open: 'Abrir',
     openBattle: 'Abrir',
-    materialsSection: 'Clases y materiales',
+    materialsSection: 'Contenido',
     battlesSection: 'Battles guardados',
     exportPopupError: 'Permite las ventanas emergentes para exportar el PDF.',
     pageName: (n) => `P�gina ${n}`,
@@ -3257,7 +3274,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   return (
                     <section key={languageTab.value} className={openLibraryTab === languageTab.value ? '' : 'hidden'}>
                       <h3 className="mb-2 text-xs font-black uppercase tracking-wide text-emerald-600" dir={languageTab.dir}>
-                        {getBattleLibraryFolderLabel(languageTab.value)}
+                        {getBattleLibrarySectionTitle(languageTab.value)}
                       </h3>
                       {templates.length === 0 ? (
                         <p className="py-2 text-sm text-slate-400">{wsl.noBattles}</p>
