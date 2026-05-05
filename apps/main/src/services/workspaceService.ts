@@ -244,7 +244,6 @@ export async function saveWorkspaceItem(
       const snapshot = await transaction.get(ref);
       const currentData = snapshot.exists() ? (snapshot.data() as WorkspaceDoc) : null;
       const currentItems = currentData?.items ?? [];
-      const nextItems = upsertWorkspaceItemByFreshness(currentItems, item);
       const currentPages = currentData?.pages
         ? normalizeWorkspacePages(currentData.pages as Partial<WorkspacePage>[])
         : [];
@@ -256,6 +255,13 @@ export async function saveWorkspaceItem(
                 : page,
             )
           : currentPages;
+      const activePageId = currentData?.currentPageId;
+      const nextItems =
+        currentPageId && activePageId && activePageId === currentPageId
+          ? nextPages.find((page) => page.id === currentPageId)?.items ?? upsertWorkspaceItemByFreshness(currentItems, item)
+          : activePageId
+            ? currentPages.find((page) => page.id === activePageId)?.items ?? currentItems
+            : upsertWorkspaceItemByFreshness(currentItems, item);
 
       transaction.set(
         ref,
@@ -276,7 +282,6 @@ export async function saveWorkspaceItem(
     const currentSnapshot = await getDoc(workspaceRef(classId));
     const currentData = currentSnapshot.exists() ? (currentSnapshot.data() as WorkspaceDoc) : null;
     const currentItems = currentData?.items ?? [];
-    const nextItems = upsertWorkspaceItemByFreshness(currentItems, item);
     const currentPages = currentData?.pages
       ? normalizeWorkspacePages(currentData.pages as Partial<WorkspacePage>[])
       : [];
@@ -288,6 +293,13 @@ export async function saveWorkspaceItem(
               : page,
           )
         : currentPages;
+    const activePageId = currentData?.currentPageId;
+    const nextItems =
+      currentPageId && activePageId && activePageId === currentPageId
+        ? nextPages.find((page) => page.id === currentPageId)?.items ?? upsertWorkspaceItemByFreshness(currentItems, item)
+        : activePageId
+          ? currentPages.find((page) => page.id === activePageId)?.items ?? currentItems
+          : upsertWorkspaceItemByFreshness(currentItems, item);
     await setDoc(
       workspaceRef(classId),
       {

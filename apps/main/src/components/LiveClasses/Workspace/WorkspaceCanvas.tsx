@@ -1101,9 +1101,11 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     const el = contentRef.current;
     if (!el || item.type !== 'text') return;
     const isTyping = Date.now() - lastTypedAtRef.current < FLOATING_GUARD_MS;
+    const isFocusedLocally = document.activeElement === el && canEditThisContent && !isLockedByOther;
+    if (isFocusedLocally) return;
     if (isTyping) return;
     if (el.innerHTML !== (item.content ?? '')) el.innerHTML = item.content ?? '';
-  }, [item.content, item.type]);
+  }, [canEditThisContent, isLockedByOther, item.content, item.type]);
 
   useEffect(() => {
     const update = () => {
@@ -1425,6 +1427,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     return nextPages;
   }, []);
 
+
   // -- Materials state ------------------------------------------------------
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [saveMaterialTitle, setSaveMaterialTitle] = useState('');
@@ -1648,17 +1651,21 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
-      const normalizedItems = (data?.items ?? []).map(normalizeItemScope);
+      const remotePages = data?.pages ? normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]) : null;
+      const remoteCurrentPageId = data?.currentPageId ?? activePageIdRef.current;
+      const remoteActivePage = remotePages?.find((page) => page.id === remoteCurrentPageId) ?? null;
+      const normalizedItems = (remoteActivePage?.items ?? data?.items ?? []).map(normalizeItemScope);
       const mergedItems = mergeRemoteItemsWithLocal(normalizedItems);
+      const nextDocContent = remoteActivePage?.docContent ?? data?.docContent ?? '';
       console.log('[LIVECLASS WORKSPACE] snapshot', {
         role: viewerIsTeacher ? 'teacher' : viewerIsStudent ? 'student' : 'viewer',
         liveClassId: classId,
         workspacePath: `liveClasses/${classId}/shared/workspace`,
         battlePath: `liveClasses/${classId}/session/battle`,
         userId,
-        currentPageId: data?.currentPageId ?? null,
+        currentPageId: remoteCurrentPageId ?? null,
         itemCount: normalizedItems.length,
-        docLength: (data?.docContent ?? '').length,
+        docLength: nextDocContent.length,
         updatedBy: data?.updatedBy ?? null,
         updatedByName: data?.updatedByName ?? null,
       });
@@ -1682,9 +1689,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // Only apply remote changes; skip our own echo (local state already updated).
       if (data?.currentPageId && !isPageSelfEcho) {
         const remoteCPID = data.currentPageId;
-        const remotePages = data.pages;
         if (remotePages && remotePages.length > 0) {
-          const normalized = normalizeWorkspacePages(remotePages);
+          const normalized = remotePages;
           if (remoteCPID !== activePageIdRef.current) {
             // Remote page switch ? follow it
             pagesRef.current = normalized;
@@ -1698,7 +1704,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             // Update pages metadata; keep active page�s live content.
             const merged = normalized.map((rp) =>
               rp.id === activePageIdRef.current
-                ? { ...rp, docContent: data.docContent ?? rp.docContent, items: mergedItems.length > 0 ? mergedItems : rp.items }
+                ? { ...rp, docContent: nextDocContent, items: mergedItems }
                 : rp,
             );
             pagesRef.current = merged;
@@ -1723,14 +1729,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
 
       // Doc: suppress remote DOM writes while there is active local typing.
-      const nextDoc = data?.docContent ?? '';
       const isLocallyTyping = Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
       if (!isLocallyTyping) {
-        setDocHtml(nextDoc);
-        if (docRef.current && docRef.current.innerHTML !== nextDoc) {
-          docRef.current.innerHTML = nextDoc;
+        setDocHtml(nextDocContent);
+        if (docRef.current && docRef.current.innerHTML !== nextDocContent) {
+          docRef.current.innerHTML = nextDocContent;
         }
-        syncActivePageDocRef(nextDoc);
+        syncActivePageDocRef(nextDocContent);
       }
 
       if (readOnly && data?.scrollRatio != null && overflowRef.current) {
@@ -1792,6 +1797,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ).catch(console.error);
     });
   }, [classId, userId, userName]);
+
+  const flushFloatingEditorBeforePageMutation = useCallback(() => {
+    if (activeFloatingElRef.current && document.activeElement === activeFloatingElRef.current) {
+      activeFloatingElRef.current.blur();
+    }
+    if (saveSingleItemDebounce.current) {
+      clearTimeout(saveSingleItemDebounce.current);
+      saveSingleItemDebounce.current = null;
+    }
+    flushPendingSingleItemSaves();
+  }, [flushPendingSingleItemSaves]);
 
   const flushPendingDocSave = useCallback(() => {
     const pending = pendingDocSaveRef.current;
@@ -2290,6 +2306,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const switchPage = (pageId: string) => {
     if (pageId === activePageIdRef.current || effectiveReadOnly) return;
+    flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const newPage = flushed.find((p) => p.id === pageId);
     if (!newPage) return;
@@ -2307,6 +2324,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const addPage = () => {
     if (effectiveReadOnly) return;
+    flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const newId = uid();
     const newPage: WorkspacePage = { id: newId, name: wsl.pageName(flushed.length + 1), docContent: '', items: [] };
@@ -2326,6 +2344,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const deletePage = (pageId: string) => {
     if (effectiveReadOnly) return;
+    flushFloatingEditorBeforePageMutation();
     const current = pagesRef.current;
     if (current.length <= 1) return; // never delete the last page
     if (!window.confirm(wsl.confirmDelete)) return;
@@ -2362,6 +2381,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const duplicatePage = (pageId: string) => {
     if (effectiveReadOnly) return;
+    flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const idx = flushed.findIndex((p) => p.id === pageId);
     if (idx === -1) return;
@@ -3102,6 +3122,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <button
             onClick={() => {
               if (!window.confirm(wsl.confirmClear)) return;
+              flushFloatingEditorBeforePageMutation();
               setItems([]); setSelectedId(null);
               if (docRef.current) docRef.current.innerHTML = '';
               setDocHtml('');
