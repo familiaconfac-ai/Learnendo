@@ -607,6 +607,7 @@ interface PageTabProps {
   page: WorkspacePage;
   isActive: boolean;
   readOnly: boolean;
+  canActivate: boolean;
   canDelete: boolean;
   onActivate: () => void;
   onRename: (name: string) => void;
@@ -616,7 +617,7 @@ interface PageTabProps {
 }
 
 const PageTab: React.FC<PageTabProps> = ({
-  page, isActive, readOnly, canDelete, onActivate, onRename, onDuplicate, onSavePage, onDelete,
+  page, isActive, readOnly, canActivate, canDelete, onActivate, onRename, onDuplicate, onSavePage, onDelete,
 }) => {
   const wsl = getWsl();
   const [editing, setEditing] = useState(false);
@@ -674,9 +675,11 @@ const PageTab: React.FC<PageTabProps> = ({
       className={`relative flex items-center flex-shrink-0 border-b-2 select-none transition-colors ${
         isActive
           ? 'bg-white border-blue-500'
-          : 'bg-slate-50 border-transparent hover:bg-slate-100 cursor-pointer'
+          : canActivate
+            ? 'bg-slate-50 border-transparent hover:bg-slate-100 cursor-pointer'
+            : 'bg-slate-50 border-transparent'
       }`}
-      onClick={() => { if (!isActive) onActivate(); }}
+      onClick={() => { if (!isActive && canActivate) onActivate(); }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { if (!menuOpen) setHovered(false); }}
       style={{ minWidth: '5rem', maxWidth: '10rem' }}
@@ -1369,6 +1372,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsTeacher = isTeacher(viewerContext);
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
+  const viewerCanEditSharedDocument = viewerCanManageWorkspace && !readOnly;
+  const viewerCanManagePages = viewerCanManageWorkspace && !readOnly;
   const effectiveReadOnly = readOnly || (viewerIsStudent && !studentEditingEnabled);
   const toolbarDisabled = effectiveReadOnly;
 
@@ -2305,7 +2310,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const switchPage = (pageId: string) => {
-    if (pageId === activePageIdRef.current || effectiveReadOnly) return;
+    if (pageId === activePageIdRef.current || !viewerCanManagePages) return;
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const newPage = flushed.find((p) => p.id === pageId);
@@ -2323,7 +2328,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const addPage = () => {
-    if (effectiveReadOnly) return;
+    if (!viewerCanManagePages) return;
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const newId = uid();
@@ -2343,7 +2348,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const deletePage = (pageId: string) => {
-    if (effectiveReadOnly) return;
+    if (!viewerCanManagePages) return;
     flushFloatingEditorBeforePageMutation();
     const current = pagesRef.current;
     if (current.length <= 1) return; // never delete the last page
@@ -2371,7 +2376,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const renamePage = (pageId: string, newName: string) => {
-    if (effectiveReadOnly) return;
+    if (!viewerCanManagePages) return;
     const updated = pagesRef.current.map((p) => (p.id === pageId ? { ...p, name: newName } : p));
     pagesRef.current = updated;
     setPages(updated);
@@ -2380,7 +2385,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const duplicatePage = (pageId: string) => {
-    if (effectiveReadOnly) return;
+    if (!viewerCanManagePages) return;
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const idx = flushed.findIndex((p) => p.id === pageId);
@@ -3043,13 +3048,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
-        {!effectiveReadOnly && !readOnly && (
+        {viewerCanManageWorkspace && !readOnly && (
           <button onClick={addTextBox} className="w-7 h-7 rounded hover:bg-slate-100 text-slate-600 flex items-center justify-center transition border border-slate-200" title={wsl.textBox}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2"/><line x1="5" y1="8" x2="15" y2="8"/><line x1="5" y1="11" x2="11" y2="11"/></svg>
           </button>
         )}
 
-        {!effectiveReadOnly && !readOnly && (
+        {viewerCanManageWorkspace && !readOnly && (
           <>
             <button
               onClick={() => fileRef.current?.click()}
@@ -3112,13 +3117,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </svg>
         </button>
 
-        {!effectiveReadOnly && (
+        {viewerCanManageWorkspace && !readOnly && (
           <button onClick={handleExportPdf} className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 text-slate-600 border border-slate-200 transition" title={wsl.exportPdf} aria-label={wsl.exportPdf}>
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M5 4h7l4 4v8a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/><polyline points="12 4 12 9 17 9"/><line x1="10" y1="12" x2="10" y2="17"/><polyline points="7 14 10 17 13 14"/></svg>
           </button>
         )}
 
-        {!effectiveReadOnly && (
+        {viewerCanManageWorkspace && !readOnly && (
           <button
             onClick={() => {
               if (!window.confirm(wsl.confirmClear)) return;
@@ -3153,7 +3158,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             key={page.id}
             page={page}
             isActive={page.id === activePageId}
-            readOnly={effectiveReadOnly}
+            readOnly={!viewerCanManagePages}
+            canActivate={viewerCanManagePages}
             canDelete={pages.length > 1}
             onActivate={() => switchPage(page.id)}
             onRename={(name) => renamePage(page.id, name)}
@@ -3162,7 +3168,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             onDelete={() => deletePage(page.id)}
           />
         ))}
-        {!effectiveReadOnly && (
+        {viewerCanManagePages && (
           <button
             onClick={addPage}
             className="flex-shrink-0 flex items-center justify-center w-8 h-full text-slate-400 hover:text-blue-600 hover:bg-white transition px-2"
@@ -3351,12 +3357,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <div className="relative w-full bg-white rounded-xl shadow-sm border border-slate-200 mb-6" style={{ minHeight: '60vh' }}>
             {!docHtml && (
               <div className="absolute top-6 left-6 text-slate-300 text-sm pointer-events-none select-none" style={{ fontFamily }}>
-                {effectiveReadOnly ? wsl.readonlyPh : wsl.placeholder}
+                {viewerCanEditSharedDocument ? wsl.placeholder : wsl.readonlyPh}
               </div>
             )}
             <div
               ref={docRef}
-              contentEditable={!effectiveReadOnly}
+              contentEditable={viewerCanEditSharedDocument}
               suppressContentEditableWarning
               spellCheck
               onBlur={onDocBlur}
