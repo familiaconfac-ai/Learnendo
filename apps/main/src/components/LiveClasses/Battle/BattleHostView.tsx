@@ -32,6 +32,7 @@ import {
   getBattlePromptAudioText,
   getMyBattleAnswer,
   isChoiceQuestion,
+  repairBattleTextEncoding,
 } from './battleUtils';
 
 interface BattleHostViewProps {
@@ -63,6 +64,7 @@ const HOST_COPY = {
     answerByVoice: 'Answer by voice',
     answered: 'answered',
     correctAnswer: 'Correct answer',
+    feedbackTitle: 'Why',
     correct: 'correct',
     wrong: 'wrong',
     noAnswer: 'no answer',
@@ -99,6 +101,7 @@ const HOST_COPY = {
     answerByVoice: 'Responder falando',
     answered: 'responderam',
     correctAnswer: 'Resposta correta',
+    feedbackTitle: 'Explicacao',
     correct: 'certo(s)',
     wrong: 'errado(s)',
     noAnswer: 'sem resposta',
@@ -135,6 +138,7 @@ const HOST_COPY = {
     answerByVoice: 'Responder hablando',
     answered: 'respondieron',
     correctAnswer: 'Respuesta correcta',
+    feedbackTitle: 'Explicacion',
     correct: 'correcta(s)',
     wrong: 'incorrecta(s)',
     noAnswer: 'sin respuesta',
@@ -1150,6 +1154,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   }
 
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
+  const questionHint = repairBattleTextEncoding(question?.hint) ?? '';
   const correctCount = Object.values(mergedCurrentAnswers).filter((answer) => answer.isCorrect).length;
   const wrongCount = Object.values(mergedCurrentAnswers).filter((answer) => answer.isCorrect === false).length;
   const unansweredCount = Math.max(0, roundParticipantIds.length - answerCount);
@@ -1347,6 +1352,12 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                   <p className="text-center text-sm font-semibold text-green-300">
                     {copy.correctAnswer}: <span className="font-bold text-green-200">{answerLabel || '-'}</span>
                   </p>
+                  {questionHint ? (
+                    <div className="w-full max-w-2xl rounded-xl border border-slate-700 bg-slate-800/70 px-4 py-3 text-left">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{copy.feedbackTitle}</p>
+                      <p className="mt-1 text-sm leading-6 text-slate-200">{questionHint}</p>
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap justify-center gap-2 text-xs">
                     <span className="rounded-full bg-green-500/15 px-3 py-1 font-semibold text-green-400">
                       {correctCount} {copy.correct}

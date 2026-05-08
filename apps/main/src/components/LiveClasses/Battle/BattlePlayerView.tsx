@@ -62,6 +62,7 @@ const PLAYER_COPY = {
     wrong: 'Wrong!',
     timeUp: 'Time up!',
     answer: 'Answer',
+    feedbackTitle: 'Why',
     totalScore: 'Total score',
     roundPoints: (points: number) => `+${points} this round`,
     streak: (value: number) => `${value} de sequencia!`,
@@ -96,6 +97,7 @@ const PLAYER_COPY = {
     wrong: 'Errado!',
     timeUp: 'Tempo esgotado!',
     answer: 'Resposta',
+    feedbackTitle: 'Explicacao',
     totalScore: 'Pontuacao total',
     roundPoints: (points: number) => `+${points} nesta rodada`,
     streak: (value: number) => `${value} streak!`,
@@ -130,6 +132,7 @@ const PLAYER_COPY = {
     wrong: 'Incorrecto!',
     timeUp: 'Se acabo el tiempo!',
     answer: 'Respuesta',
+    feedbackTitle: 'Explicacion',
     totalScore: 'Puntuacion total',
     roundPoints: (points: number) => `+${points} en esta ronda`,
     streak: (value: number) => `${value} de racha!`,
@@ -1036,6 +1039,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
 
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
   const questionText = repairBattleTextEncoding(question?.text) ?? '';
+  const questionHint = repairBattleTextEncoding(question?.hint) ?? '';
   const questionImageUrl = question?.imageUrl?.trim() ?? '';
   const questionOptions = (question?.options ?? []).map((option) => repairBattleTextEncoding(option) ?? option);
   const correctCount = useMemo(
@@ -1109,6 +1113,12 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
               {copy.answer}: <span className="text-green-400 font-bold">{answerLabel || '-'}</span>
             </p>
           )}
+          {questionHint ? (
+            <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-left">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{copy.feedbackTitle}</p>
+              <p className="mt-1 text-sm leading-6 text-slate-200">{questionHint}</p>
+            </div>
+          ) : null}
           <div className="bg-slate-800/60 rounded-xl px-6 py-3 inline-block">
             <p className="text-xs text-slate-400">{copy.totalScore}</p>
             <p className="text-3xl font-black text-orange-400">{myTotalScore.toLocaleString()}</p>

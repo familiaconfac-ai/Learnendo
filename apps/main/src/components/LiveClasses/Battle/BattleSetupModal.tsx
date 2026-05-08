@@ -67,6 +67,7 @@ interface EditDraft {
   correctIndexes: number[];
   correctText: string;
   acceptedAnswersText: string;
+  hint: string;
   promptAudioText: string;
   imageUrl: string;
   durationSeconds: string;
@@ -172,6 +173,209 @@ const BATTLE_ACTION_COPY: Record<BattleUILanguage, {
     copySuffix: 'עותק',
   },
 };
+
+const BATTLE_IMPORT_COPY: Record<BattleUILanguage, {
+  title: string;
+  description: string;
+  placeholder: string;
+  button: string;
+  success: (count: number) => string;
+  emptyError: string;
+  explanationLabel: string;
+  explanationPlaceholder: string;
+}> = {
+  en: {
+    title: 'Paste multiple questions',
+    description: 'Paste a full block with prompt, options, answer and optional explanation. The battle will split everything automatically.',
+    placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nAnswer: B\nExplanation: The movie started before we arrived.',
+    button: 'Generate interactive quiz',
+    success: (count) => `${count} question(s) imported into the battle.`,
+    emptyError: 'Paste at least one valid multiple-choice question block.',
+    explanationLabel: 'Explanation after answer',
+    explanationPlaceholder: 'Optional explanation shown after the student answers.',
+  },
+  pt: {
+    title: 'Colar varias perguntas',
+    description: 'Cole um bloco inteiro com enunciado, alternativas, resposta e explicacao opcional. O battle separa tudo automaticamente.',
+    placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nResposta: B\nExplicacao: O filme comecou antes de nos chegarmos.',
+    button: 'Gerar quiz interativo',
+    success: (count) => `${count} pergunta(s) importada(s) para o battle.`,
+    emptyError: 'Cole pelo menos um bloco valido de multipla escolha.',
+    explanationLabel: 'Explicacao apos a resposta',
+    explanationPlaceholder: 'Explicacao opcional mostrada depois da resposta do aluno.',
+  },
+  es: {
+    title: 'Pegar varias preguntas',
+    description: 'Pega un bloque completo con enunciado, opciones, respuesta y explicacion opcional. La batalla separa todo automaticamente.',
+    placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nRespuesta: B\nExplicacion: La pelicula empezo antes de que llegaramos.',
+    button: 'Generar quiz interactivo',
+    success: (count) => `${count} pregunta(s) importada(s) a la batalla.`,
+    emptyError: 'Pega al menos un bloque valido de opcion multiple.',
+    explanationLabel: 'Explicacion despues de la respuesta',
+    explanationPlaceholder: 'Explicacion opcional que se muestra despues de responder.',
+  },
+  el: {
+    title: 'Επικολληση πολλων ερωτησεων',
+    description: 'Επικολλησε ολο το μπλοκ με εκφωνηση, επιλογες, σωστη απαντηση και προαιρετικη εξηγηση. Η μαχη τα χωριζει αυτοματα.',
+    placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nAnswer: B\nExplanation: The movie started before we arrived.',
+    button: 'Δημιουργια διαδραστικου quiz',
+    success: (count) => `${count} ερωτηση(εις) εισαχθηκαν στη μαχη.`,
+    emptyError: 'Επικολλησε τουλαχιστον ενα εγκυρο μπλοκ πολλαπλης επιλογης.',
+    explanationLabel: 'Εξηγηση μετα την απαντηση',
+    explanationPlaceholder: 'Προαιρετικη εξηγηση που εμφανιζεται μετα την απαντηση.',
+  },
+  he: {
+    title: 'הדבקת כמה שאלות יחד',
+    description: 'הדבק בלוק שלם עם שאלה, אפשרויות, תשובה נכונה והסבר אופציונלי. הקרב יפריד הכל אוטומטית.',
+    placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nAnswer: B\nExplanation: The movie started before we arrived.',
+    button: 'צור quiz אינטראקטיבי',
+    success: (count) => `${count} שאלה(ות) יובאו לקרב.`,
+    emptyError: 'הדבק לפחות בלוק תקין אחד של שאלת בחירה.',
+    explanationLabel: 'הסבר אחרי התשובה',
+    explanationPlaceholder: 'הסבר אופציונלי שמופיע אחרי התשובה.',
+  },
+};
+
+const IMPORT_OPTION_PATTERN = /^(?:[-*•]\s*)?([A-H])[\)\].:-]\s*(.+)$/i;
+const IMPORT_ANSWER_PATTERN = /^(?:resposta(?:\s+correta)?|gabarito|answer|correct answer|correct|respuesta(?:\s+correcta)?)\s*[:\-]\s*(.+)$/i;
+const IMPORT_EXPLANATION_PATTERN = /^(?:explic(?:a[cç][aã]o|acion)|explanation|feedback|justificativa|justification)\s*[:\-]\s*(.+)$/i;
+const IMPORT_QUESTION_PREFIX_PATTERN = /^(?:(?:question|pergunta|pregunta)\s*\d+[\)\].:-]?\s*|\d+[\)\].:-]\s*)/i;
+
+function normalizeImportValue(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/[.,!?;:'"]/g, '');
+}
+
+function stripImportQuestionPrefix(line: string): string {
+  return line.replace(IMPORT_QUESTION_PREFIX_PATTERN, '').trim();
+}
+
+function looksLikeNewImportedQuestion(line: string): boolean {
+  return IMPORT_QUESTION_PREFIX_PATTERN.test(line.trim());
+}
+
+function resolveImportedCorrectIndexes(answerRaw: string, options: string[]): number[] {
+  const normalizedAnswer = answerRaw.trim();
+  if (!normalizedAnswer) return [];
+
+  const letterTokens = normalizedAnswer
+    .split(/[,/]|(?:\se\s)|(?:\sand\s)|(?:\sy\s)|(?:\s+\+\s+)/i)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  const indexesFromLetters = letterTokens
+    .map((token) => {
+      const match = token.match(/^([A-H])(?:[\)\].:-])?$/i);
+      if (!match) return -1;
+      return match[1].toUpperCase().charCodeAt(0) - 65;
+    })
+    .filter((index) => index >= 0 && index < options.length);
+
+  if (indexesFromLetters.length > 0) {
+    return Array.from(new Set(indexesFromLetters)).sort((left, right) => left - right);
+  }
+
+  const normalizedOptions = options.map((option) => normalizeImportValue(option));
+  const exactMatch = normalizedOptions.findIndex((option) => option === normalizeImportValue(normalizedAnswer));
+  if (exactMatch >= 0) {
+    return [exactMatch];
+  }
+
+  return [];
+}
+
+function parseBulkBattleQuestions(rawText: string): BattleQuestion[] {
+  const lines = rawText.replace(/\r/g, '').split('\n');
+  const parsed: BattleQuestion[] = [];
+  let promptLines: string[] = [];
+  let options: string[] = [];
+  let answerRaw = '';
+  let explanationLines: string[] = [];
+  let collectingExplanation = false;
+
+  const flushQuestion = () => {
+    if (promptLines.length === 0 && options.length === 0) {
+      promptLines = [];
+      options = [];
+      answerRaw = '';
+      explanationLines = [];
+      collectingExplanation = false;
+      return;
+    }
+
+    const text = promptLines.join(' ').trim();
+    const correctIndexes = resolveImportedCorrectIndexes(answerRaw, options);
+    const question = sanitizeBattleQuestion({
+      id: `imported_${Date.now()}_${parsed.length + 1}`,
+      kind: 'multiple-choice',
+      text,
+      options,
+      correctIndexes,
+      correctIndex: correctIndexes[0] ?? 0,
+      hint: explanationLines.join(' ').trim() || undefined,
+    });
+
+    if (question) {
+      parsed.push(question);
+    }
+
+    promptLines = [];
+    options = [];
+    answerRaw = '';
+    explanationLines = [];
+    collectingExplanation = false;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (promptLines.length > 0 && options.length > 0 && answerRaw) {
+        flushQuestion();
+      } else {
+        collectingExplanation = false;
+      }
+      continue;
+    }
+
+    const optionMatch = line.match(IMPORT_OPTION_PATTERN);
+    if (optionMatch) {
+      options.push(optionMatch[2].trim());
+      collectingExplanation = false;
+      continue;
+    }
+
+    const answerMatch = line.match(IMPORT_ANSWER_PATTERN);
+    if (answerMatch) {
+      answerRaw = answerMatch[1].trim();
+      collectingExplanation = false;
+      continue;
+    }
+
+    const explanationMatch = line.match(IMPORT_EXPLANATION_PATTERN);
+    if (explanationMatch) {
+      explanationLines = [explanationMatch[1].trim()];
+      collectingExplanation = true;
+      continue;
+    }
+
+    if (promptLines.length > 0 && options.length > 0 && answerRaw && looksLikeNewImportedQuestion(line)) {
+      flushQuestion();
+    }
+
+    if (collectingExplanation && explanationLines.length > 0) {
+      explanationLines.push(line);
+      continue;
+    }
+
+    promptLines.push(stripImportQuestionPrefix(line));
+  }
+
+  flushQuestion();
+  return sanitizeBattleQuestions(parsed);
+}
 
 async function translateBattleQuestions(
   questions: BattleQuestion[],
@@ -288,6 +492,7 @@ export const BattleSetupModal: React.FC<Props> = ({
 }) => {
   const effectiveUiLanguage = normalizeBattleUiLanguage(uiLanguage ?? getBattleLanguage(defaultCourseId));
   const actionCopy = BATTLE_ACTION_COPY[effectiveUiLanguage] ?? BATTLE_ACTION_COPY.en;
+  const importCopy = BATTLE_IMPORT_COPY[effectiveUiLanguage] ?? BATTLE_IMPORT_COPY.en;
   const copy = useMemo(() => {
     switch (effectiveUiLanguage) {
       case 'pt':
@@ -754,6 +959,8 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [editorLanguage, setEditorLanguage] = useState<BattleUILanguage>(templateLanguage);
   const [duplicateLanguage, setDuplicateLanguage] = useState<BattleUILanguage>(templateLanguage);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [bulkImportText, setBulkImportText] = useState('');
+  const [bulkImportError, setBulkImportError] = useState<string | null>(null);
   const hasTrackedChangesRef = useRef(false);
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
@@ -799,6 +1006,8 @@ export const BattleSetupModal: React.FC<Props> = ({
     setStartError(null);
     setSaveMessage(null);
     setSaveState('idle');
+    setBulkImportText('');
+    setBulkImportError(null);
     setTemplateTitle(initialTemplate.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
     const nextLanguage = getSavedBattleTemplateLanguage(initialTemplate);
     setEditorLanguage(nextLanguage);
@@ -936,6 +1145,28 @@ export const BattleSetupModal: React.FC<Props> = ({
     }
   }
 
+  function handleBulkImport() {
+    try {
+      const importedQuestions = parseBulkBattleQuestions(bulkImportText);
+      if (importedQuestions.length === 0) {
+        setBulkImportError(importCopy.emptyError);
+        return;
+      }
+
+      setQuestions(importedQuestions);
+      setExcludedIds(new Set());
+      setEditingIdx(null);
+      setEditDraft(null);
+      setBulkImportText('');
+      setBulkImportError(null);
+      setSaveMessage(importCopy.success(importedQuestions.length));
+      setStartError(null);
+      setStep('curate');
+    } catch (error) {
+      setBulkImportError(error instanceof Error ? error.message : importCopy.emptyError);
+    }
+  }
+
   function draftToQuestion(baseId: string): BattleQuestion {
     if (!editDraft) {
       return {
@@ -957,6 +1188,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       id: baseId,
       kind: editDraft.kind,
       text: editDraft.text,
+      ...(editDraft.hint.trim() ? { hint: editDraft.hint.trim() } : {}),
       ...(editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice' || editDraft.kind === 'audio-choice'
         ? {
             options: editDraft.options,
@@ -1133,6 +1365,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       correctIndexes: q.correctIndexes?.length ? [...q.correctIndexes] : [q.correctIndex ?? 0],
       correctText: q.correctText ?? '',
       acceptedAnswersText: (q.acceptedAnswers ?? []).join(', '),
+      hint: q.hint ?? '',
       promptAudioText: q.promptAudioText ?? '',
       imageUrl: q.imageUrl ?? '',
       durationSeconds: q.durationSeconds != null ? String(q.durationSeconds) : '',
@@ -1202,6 +1435,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       correctIndexes: [0],
       correctText: '',
       acceptedAnswersText: '',
+      hint: '',
       promptAudioText: '',
       imageUrl: '',
       durationSeconds: '',
@@ -1360,6 +1594,35 @@ export const BattleSetupModal: React.FC<Props> = ({
                 {saveMessage}
               </div>
             ) : null}
+            <div className="rounded-2xl border border-orange-500/20 bg-orange-500/5 px-4 py-4 space-y-3">
+              <div>
+                <h3 className="text-sm font-bold text-white">{importCopy.title}</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-400">{importCopy.description}</p>
+              </div>
+              <textarea
+                value={bulkImportText}
+                onChange={(event) => {
+                  setBulkImportText(event.target.value);
+                  if (bulkImportError) setBulkImportError(null);
+                }}
+                placeholder={importCopy.placeholder}
+                className="min-h-[180px] w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-orange-500"
+              />
+              {bulkImportError ? (
+                <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  {bulkImportError}
+                </div>
+              ) : null}
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleBulkImport}
+                  className="rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
+                >
+                  {importCopy.button}
+                </button>
+              </div>
+            </div>
 
             {/* Scope */}
             <div>
@@ -1877,6 +2140,18 @@ export const BattleSetupModal: React.FC<Props> = ({
                         )}
                       </>
                     )}
+
+                    <div>
+                      <label className="text-[10px] text-slate-500 uppercase tracking-wide">
+                        {importCopy.explanationLabel}
+                      </label>
+                      <textarea
+                        value={editDraft.hint}
+                        onChange={e => setEditDraft(d => d ? { ...d, hint: e.target.value } : d)}
+                        placeholder={importCopy.explanationPlaceholder}
+                        className="w-full mt-0.5 min-h-[88px] bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-orange-500 placeholder-slate-500"
+                      />
+                    </div>
 
                     {/* Options editor */}
                     {(editDraft.kind === 'multiple-choice' || editDraft.kind === 'image-choice' || editDraft.kind === 'audio-choice') && (
