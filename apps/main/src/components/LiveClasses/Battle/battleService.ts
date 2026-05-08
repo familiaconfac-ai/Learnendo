@@ -10,7 +10,6 @@ import {
   deleteDoc,
   getDoc,
   arrayUnion,
-  increment,
   runTransaction,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -223,6 +222,21 @@ function buildBattleParticipantRegistryRecord(
     avatarId: previous?.avatarId ?? identity.avatarId,
     isBot: previous?.isBot ?? identity.isBot,
   });
+}
+
+function getStableRoundParticipantIds(roundParticipantIds: string[] | undefined): string[] {
+  return Array.from(new Set((roundParticipantIds ?? []).filter(Boolean)));
+}
+
+function haveAllRoundParticipantsAnswered(
+  roundParticipantIds: string[] | undefined,
+  currentAnswers: Record<string, BattleAnswer> | undefined,
+): boolean {
+  const participantIds = getStableRoundParticipantIds(roundParticipantIds);
+  if (participantIds.length === 0) return false;
+
+  const answers = currentAnswers ?? {};
+  return participantIds.every((participantId) => participantId in answers);
 }
 
 function applyBattleRoundRankingToScores(params: {
@@ -662,7 +676,9 @@ export async function showBattleAnswer(classId: string): Promise<void> {
 
     const currentScores = data.scores ?? {};
     const currentAnswers = data.currentAnswers ?? {};
-    const roundParticipantIds = Array.isArray(data.roundParticipantIds) ? data.roundParticipantIds : [];
+    const roundParticipantIds = getStableRoundParticipantIds(
+      Array.isArray(data.roundParticipantIds) ? data.roundParticipantIds : [],
+    );
     const participants = data.participants ?? {};
     const nextScores = applyBattleRoundRankingToScores({
       currentScores,
@@ -780,12 +796,9 @@ export async function joinBattle(
 
     // Só entra na rodada imediatamente se ainda estiver esperando.
     // Se já estiver PLAYING/REVEALED, entra no mapa/scores, mas joga na próxima.
-    // [BATTLE ENTRYPOINT] Relax condition: student joins round if PLAYING, regardless of answered count.
-    // BattlePlayerView will handle 'Current round locked' if they join mid-round.
-    const canJoinCurrentRound = status === 'PLAYING';
-
-
-    if ((status === 'WAITING' || canJoinCurrentRound) && !currentRoundParticipantIds.includes(uid)) {
+    // Lock the active roster once the round starts.
+    // Mid-round joins wait for the next question instead of changing answer counts.
+    if (status === 'WAITING' && !currentRoundParticipantIds.includes(uid)) {
       payload.roundParticipantIds = arrayUnion(uid);
     }
 
@@ -833,10 +846,10 @@ export async function submitBattleAnswer(
 
     const liveSession = buildBattleSessionSnapshot(classId, snap.data() as Record<string, unknown>);
 
+    const liveRoundParticipantIds = getStableRoundParticipantIds(liveSession.roundParticipantIds);
     const alreadyAnswered = uid in (liveSession.currentAnswers ?? {});
-    const isInCurrentRound = (liveSession.roundParticipantIds ?? []).includes(uid);
+    const isInCurrentRound = liveRoundParticipantIds.includes(uid);
     const canAnswerCurrentRound = canBattleParticipantAnswerCurrentQuestion(liveSession, uid);
-    const isRegisteredParticipant = uid in (liveSession.participants ?? {}) || uid in (liveSession.scores ?? {});
     const canForceStudentIntoRound =
       options?.forceCurrentRoundParticipation === true &&
       liveSession.status === 'PLAYING';
@@ -844,8 +857,8 @@ export async function submitBattleAnswer(
       options?.forceCurrentRoundParticipation === true &&
       !isInCurrentRound;
     const effectiveRoundParticipantIds = shouldForceCurrentRoundParticipation
-      ? [...new Set([...(liveSession.roundParticipantIds ?? []), uid])]
-      : (liveSession.roundParticipantIds ?? []);
+      ? getStableRoundParticipantIds([...liveRoundParticipantIds, uid])
+      : liveRoundParticipantIds;
 
     if (alreadyAnswered) {
       return { status: 'ignored', reason: 'already-answered' } as const;
@@ -907,15 +920,67 @@ export async function submitBattleAnswer(
       lastAnswerCorrect: isCorrect,
     });
 
+    const nextCurrentAnswers: Record<string, BattleAnswer> = {
+      ...(liveSession.currentAnswers ?? {}),
+      [uid]: answer,
+    };
+    const nextParticipants: Record<string, BattleRosterParticipant> = {
+      ...(liveSession.participants ?? {}),
+      [uid]: nextParticipant,
+    };
+    const answeredCount = Object.keys(nextCurrentAnswers).length;
+    const everyoneAnswered = haveAllRoundParticipantsAnswered(
+      effectiveRoundParticipantIds,
+      nextCurrentAnswers,
+    );
+
+    if (everyoneAnswered) {
+      const nextScores = applyBattleRoundRankingToScores({
+        currentScores: {
+          ...(liveSession.scores ?? {}),
+          [uid]: updatedParticipant,
+        },
+        currentAnswers: nextCurrentAnswers,
+        roundParticipantIds: effectiveRoundParticipantIds,
+        participants: nextParticipants,
+        questionStartedAt: liveSession.questionStartedAt ?? 0,
+      });
+
+      transaction.update(docRef, {
+        [`participants.${uid}`]: nextParticipant,
+        [`answers.${uid}`]: answer,
+        [`currentAnswers.${uid}`]: answer,
+        scores: nextScores,
+        answeredCount,
+        status: 'REVEALED',
+        roundStatus: 'revealed',
+        isRevealed: true,
+        showAnswer: true,
+        updatedAt: answeredAt,
+        lastChange: serverTimestamp(),
+        ...(shouldForceCurrentRoundParticipation
+          ? { roundParticipantIds: effectiveRoundParticipantIds }
+          : {}),
+      });
+
+      return {
+        status: 'saved',
+        answer,
+        updatedParticipant: nextScores[uid] ?? updatedParticipant,
+      } as const;
+    }
+
     transaction.update(docRef, {
       [`participants.${uid}`]: nextParticipant,
       [`answers.${uid}`]: answer,
       [`currentAnswers.${uid}`]: answer,
       [`scores.${uid}`]: updatedParticipant,
-      answeredCount: increment(1),
+      answeredCount,
       updatedAt: answeredAt,
       lastChange: serverTimestamp(),
-      ...(shouldForceCurrentRoundParticipation ? { roundParticipantIds: arrayUnion(uid) } : {}),
+      ...(shouldForceCurrentRoundParticipation
+        ? { roundParticipantIds: effectiveRoundParticipantIds }
+        : {}),
     });
 
     return { status: 'saved', answer, updatedParticipant } as const;
@@ -929,10 +994,10 @@ export async function autoRevealIfAllAnswered(
 ): Promise<void> {
   if (session.status !== 'PLAYING') return;
 
-  const participantIds = Array.from(new Set((session.roundParticipantIds ?? []).filter(Boolean)));
+  const participantIds = getStableRoundParticipantIds(session.roundParticipantIds);
   if (participantIds.length === 0) return;
 
-  const allAnswered = participantIds.every((id) => id in session.currentAnswers);
+  const allAnswered = haveAllRoundParticipantsAnswered(participantIds, session.currentAnswers);
   if (!allAnswered) return;
 
   await showBattleAnswer(classId);

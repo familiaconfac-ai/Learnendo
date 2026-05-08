@@ -373,11 +373,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     const alreadyTrackedInScores = uid in (session.scores ?? {});
     const alreadyTrackedInParticipants = uid in (session.participants ?? {});
     const alreadyTrackedInRound = (session.roundParticipantIds ?? []).includes(uid);
-    const isJoinableStatus = session.status === 'WAITING' || session.status === 'PLAYING';
+    const shouldSyncCurrentRound = session.status === 'WAITING';
     const needsMembershipSync =
       !alreadyTrackedInScores ||
       !alreadyTrackedInParticipants ||
-      (isJoinableStatus && !alreadyTrackedInRound);
+      (shouldSyncCurrentRound && !alreadyTrackedInRound);
 
     console.info('[BATTLE STUDENT JOIN] sync check', {
       component: 'BattlePlayerView',
@@ -388,7 +388,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
       alreadyTrackedInScores,
       alreadyTrackedInParticipants,
       alreadyTrackedInRound,
-      isJoinableStatus,
+      shouldSyncCurrentRound,
       needsMembershipSync,
     });
 

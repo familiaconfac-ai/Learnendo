@@ -523,6 +523,10 @@ export function buildBattleRoundRanking(
 }
 
 export function compareBattleParticipantsByRanking(left: BattleParticipant, right: BattleParticipant): number {
+  const leftScore = left.score ?? 0;
+  const rightScore = right.score ?? 0;
+  if (leftScore !== rightScore) return rightScore - leftScore;
+
   const leftFirstPlaces = left.firstPlaceCount ?? 0;
   const rightFirstPlaces = right.firstPlaceCount ?? 0;
   if (leftFirstPlaces !== rightFirstPlaces) return rightFirstPlaces - leftFirstPlaces;
@@ -534,10 +538,6 @@ export function compareBattleParticipantsByRanking(left: BattleParticipant, righ
   const leftThirdPlaces = left.thirdPlaceCount ?? 0;
   const rightThirdPlaces = right.thirdPlaceCount ?? 0;
   if (leftThirdPlaces !== rightThirdPlaces) return rightThirdPlaces - leftThirdPlaces;
-
-  const leftScore = left.score ?? 0;
-  const rightScore = right.score ?? 0;
-  if (leftScore !== rightScore) return rightScore - leftScore;
 
   const leftBestElapsed = left.bestElapsedMs ?? Number.MAX_SAFE_INTEGER;
   const rightBestElapsed = right.bestElapsedMs ?? Number.MAX_SAFE_INTEGER;
