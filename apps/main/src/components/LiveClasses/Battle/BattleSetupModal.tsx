@@ -863,6 +863,66 @@ export const BattleSetupModal: React.FC<Props> = ({
     };
   }
 
+  async function persistTemplateSnapshot(
+    finalQuestions: BattleQuestion[],
+    options?: {
+      titleOverride?: string;
+      forceDuplicate?: boolean;
+      targetLanguage?: BattleUILanguage;
+    }
+  ) {
+    const forceDuplicate = Boolean(options?.forceDuplicate);
+    const targetLanguage = options?.targetLanguage ?? editorLanguage;
+    const title = options?.titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(editorLanguage);
+
+    if (!forceDuplicate) {
+      setTemplateTitle(title);
+    }
+
+    if (!onSaveTemplate) {
+      setSaveMessage(copy.saveUnavailable);
+      setSaveState('idle');
+      return;
+    }
+
+    if (!forceDuplicate) {
+      setSaveState('saving');
+    }
+
+    const shouldTranslate = forceDuplicate && targetLanguage !== editorLanguage;
+    const resolvedQuestions = shouldTranslate
+      ? await translateBattleQuestions(finalQuestions, editorLanguage, targetLanguage)
+      : finalQuestions;
+    const resolvedTitle = shouldTranslate
+      ? await translateText(title, editorLanguage, targetLanguage)
+      : title;
+    const baseTemplate = buildSavedBattleTemplate(
+      {
+        ...buildConfig(resolvedQuestions.length),
+        courseId: getBattleCourseIdForLanguage(targetLanguage),
+      },
+      resolvedQuestions,
+      resolvedTitle,
+    );
+    const template = initialTemplate && !forceDuplicate
+      ? {
+          ...baseTemplate,
+          id: initialTemplate.id,
+          createdAt: initialTemplate.createdAt,
+          language: editorLanguage,
+        }
+      : baseTemplate;
+
+    await onSaveTemplate(template);
+    setSaveState(forceDuplicate ? 'idle' : 'saved');
+    setSaveMessage(
+      forceDuplicate
+        ? `${shouldTranslate ? actionCopy.translatedSuccess : copy.duplicateSuccess} ${resolvedTitle} -> ${getBattleLanguageLabel(targetLanguage)}.`
+        : copy.saveSuccess,
+    );
+    setStartError(null);
+  }
+
   async function resolveLaunchQuestions() {
     try {
       const generatedQuestions = sanitizeBattleQuestions(await generateQuestions(scope));
@@ -1084,7 +1144,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     setEditDraft(null);
   }
 
-  function saveEdit() {
+  async function saveEdit() {
     if (editingIdx === null || !editDraft) return;
     const currentQuestion = questions[editingIdx];
     const sanitizedQuestion = sanitizeBattleQuestion(draftToQuestion(currentQuestion.id));
@@ -1093,11 +1153,34 @@ export const BattleSetupModal: React.FC<Props> = ({
       return;
     }
 
-    setQuestions(questions.map((question, index) => (
+    const nextQuestions = questions.map((question, index) => (
       index === editingIdx ? sanitizedQuestion : question
-    )));
+    ));
+
+    setQuestions(nextQuestions);
     setEditingIdx(null);
     setEditDraft(null);
+
+    if (!initialTemplate) {
+      return;
+    }
+
+    const finalQuestions = sanitizeBattleQuestions(
+      nextQuestions.filter((question) => !excludedIds.has(question.id))
+    );
+
+    if (finalQuestions.length === 0) {
+      return;
+    }
+
+    try {
+      await persistTemplateSnapshot(finalQuestions);
+    } catch (error) {
+      console.error('[BATTLE SAVE DEBUG] inline question autosave failed:', error);
+      setSaveState('idle');
+      setSaveMessage(null);
+      setStartError(error instanceof Error ? error.message : copy.saveFailure);
+    }
   }
 
   function addCustomQuestion() {
@@ -1187,8 +1270,6 @@ export const BattleSetupModal: React.FC<Props> = ({
     targetLanguage?: BattleUILanguage;
   }) {
     try {
-      const forceDuplicate = Boolean(options?.forceDuplicate);
-      const targetLanguage = options?.targetLanguage ?? editorLanguage;
       const finalQuestions = step === 'curate'
         ? sanitizeBattleQuestions(
             getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
@@ -1200,53 +1281,7 @@ export const BattleSetupModal: React.FC<Props> = ({
         return;
       }
 
-      const title = options?.titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(editorLanguage);
-      if (!forceDuplicate) {
-        setTemplateTitle(title);
-      }
-
-      if (!onSaveTemplate) {
-        setSaveMessage(copy.saveUnavailable);
-        setSaveState('idle');
-        return;
-      }
-
-      if (!forceDuplicate) {
-        setSaveState('saving');
-      }
-
-      const shouldTranslate = forceDuplicate && targetLanguage !== editorLanguage;
-      const resolvedQuestions = shouldTranslate
-        ? await translateBattleQuestions(finalQuestions, editorLanguage, targetLanguage)
-        : finalQuestions;
-      const resolvedTitle = shouldTranslate
-        ? await translateText(title, editorLanguage, targetLanguage)
-        : title;
-      const baseTemplate = buildSavedBattleTemplate(
-        {
-          ...buildConfig(resolvedQuestions.length),
-          courseId: getBattleCourseIdForLanguage(targetLanguage),
-        },
-        resolvedQuestions,
-        resolvedTitle,
-      );
-      const template = initialTemplate && !forceDuplicate
-        ? {
-            ...baseTemplate,
-            id: initialTemplate.id,
-            createdAt: initialTemplate.createdAt,
-            language: editorLanguage,
-          }
-        : baseTemplate;
-
-      await onSaveTemplate(template);
-      setSaveState(forceDuplicate ? 'idle' : 'saved');
-      setSaveMessage(
-        forceDuplicate
-          ? `${shouldTranslate ? actionCopy.translatedSuccess : copy.duplicateSuccess} ${resolvedTitle} -> ${getBattleLanguageLabel(targetLanguage)}.`
-          : copy.saveSuccess,
-      );
-      setStartError(null);
+      await persistTemplateSnapshot(finalQuestions, options);
     } catch (error) {
       console.error('[BATTLE SAVE DEBUG] save failed:', error);
       setSaveState('idle');
