@@ -180,6 +180,7 @@ const BATTLE_IMPORT_COPY: Record<BattleUILanguage, {
   placeholder: string;
   button: string;
   success: (count: number) => string;
+  missingAnswerWarning?: (count: number) => string;
   emptyError: string;
   explanationLabel: string;
   explanationPlaceholder: string;
@@ -190,6 +191,7 @@ const BATTLE_IMPORT_COPY: Record<BattleUILanguage, {
     placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nAnswer: B\nExplanation: The movie started before we arrived.',
     button: 'Generate interactive quiz',
     success: (count) => `${count} question(s) imported into the battle.`,
+    missingAnswerWarning: (count) => `${count} question(s) were imported without "Answer:". Review the correct option before saving.`,
     emptyError: 'Paste at least one valid multiple-choice question block.',
     explanationLabel: 'Explanation after answer',
     explanationPlaceholder: 'Optional explanation shown after the student answers.',
@@ -200,6 +202,7 @@ const BATTLE_IMPORT_COPY: Record<BattleUILanguage, {
     placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nResposta: B\nExplicacao: O filme comecou antes de nos chegarmos.',
     button: 'Gerar quiz interativo',
     success: (count) => `${count} pergunta(s) importada(s) para o battle.`,
+    missingAnswerWarning: (count) => `${count} pergunta(s) foram importadas sem "Resposta:". Revise a alternativa correta antes de salvar.`,
     emptyError: 'Cole pelo menos um bloco valido de multipla escolha.',
     explanationLabel: 'Explicacao apos a resposta',
     explanationPlaceholder: 'Explicacao opcional mostrada depois da resposta do aluno.',
@@ -210,6 +213,7 @@ const BATTLE_IMPORT_COPY: Record<BattleUILanguage, {
     placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nRespuesta: B\nExplicacion: La pelicula empezo antes de que llegaramos.',
     button: 'Generar quiz interactivo',
     success: (count) => `${count} pregunta(s) importada(s) a la batalla.`,
+    missingAnswerWarning: (count) => `${count} pregunta(s) se importaron sin "Respuesta:". Revisa la opcion correcta antes de guardar.`,
     emptyError: 'Pega al menos un bloque valido de opcion multiple.',
     explanationLabel: 'Explicacion despues de la respuesta',
     explanationPlaceholder: 'Explicacion opcional que se muestra despues de responder.',
@@ -257,6 +261,20 @@ function looksLikeNewImportedQuestion(line: string): boolean {
   return IMPORT_QUESTION_PREFIX_PATTERN.test(line.trim());
 }
 
+function looksLikeImportHeading(line: string): boolean {
+  return /(?:multiple\s+choice|choose\s+the\s+correct\s+option|exercise|quiz|bonus)/i.test(line.trim());
+}
+
+function looksLikePromptBoundaryAfterOptions(line: string, optionCount: number, hasAnswer: boolean): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (hasAnswer) return true;
+  if (optionCount < 2) return false;
+  if (looksLikeNewImportedQuestion(trimmed)) return true;
+  if (optionCount >= 4) return true;
+  return /[_?]/.test(trimmed) || /[.!?:]$/.test(trimmed);
+}
+
 function resolveImportedCorrectIndexes(answerRaw: string, options: string[]): number[] {
   const normalizedAnswer = answerRaw.trim();
   if (!normalizedAnswer) return [];
@@ -287,9 +305,10 @@ function resolveImportedCorrectIndexes(answerRaw: string, options: string[]): nu
   return [];
 }
 
-function parseBulkBattleQuestions(rawText: string): BattleQuestion[] {
+function parseBulkBattleQuestions(rawText: string): { questions: BattleQuestion[]; missingAnswerCount: number } {
   const lines = rawText.replace(/\r/g, '').split('\n');
   const parsed: BattleQuestion[] = [];
+  let missingAnswerCount = 0;
   let promptLines: string[] = [];
   let options: string[] = [];
   let answerRaw = '';
@@ -308,6 +327,9 @@ function parseBulkBattleQuestions(rawText: string): BattleQuestion[] {
 
     const text = promptLines.join(' ').trim();
     const correctIndexes = resolveImportedCorrectIndexes(answerRaw, options);
+    if (!answerRaw.trim() || correctIndexes.length === 0) {
+      missingAnswerCount += 1;
+    }
     const question = sanitizeBattleQuestion({
       id: `imported_${Date.now()}_${parsed.length + 1}`,
       kind: 'multiple-choice',
@@ -340,6 +362,16 @@ function parseBulkBattleQuestions(rawText: string): BattleQuestion[] {
       continue;
     }
 
+    if (
+      parsed.length === 0 &&
+      promptLines.length === 0 &&
+      options.length === 0 &&
+      !answerRaw &&
+      looksLikeImportHeading(line)
+    ) {
+      continue;
+    }
+
     const optionMatch = line.match(IMPORT_OPTION_PATTERN);
     if (optionMatch) {
       options.push(optionMatch[2].trim());
@@ -361,7 +393,11 @@ function parseBulkBattleQuestions(rawText: string): BattleQuestion[] {
       continue;
     }
 
-    if (promptLines.length > 0 && options.length > 0 && answerRaw && looksLikeNewImportedQuestion(line)) {
+    if (
+      promptLines.length > 0 &&
+      options.length > 0 &&
+      looksLikePromptBoundaryAfterOptions(line, options.length, Boolean(answerRaw))
+    ) {
       flushQuestion();
     }
 
@@ -374,7 +410,10 @@ function parseBulkBattleQuestions(rawText: string): BattleQuestion[] {
   }
 
   flushQuestion();
-  return sanitizeBattleQuestions(parsed);
+  return {
+    questions: sanitizeBattleQuestions(parsed),
+    missingAnswerCount,
+  };
 }
 
 async function translateBattleQuestions(
@@ -1147,7 +1186,7 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   function handleBulkImport() {
     try {
-      const importedQuestions = parseBulkBattleQuestions(bulkImportText);
+      const { questions: importedQuestions, missingAnswerCount } = parseBulkBattleQuestions(bulkImportText);
       if (importedQuestions.length === 0) {
         setBulkImportError(importCopy.emptyError);
         return;
@@ -1159,7 +1198,12 @@ export const BattleSetupModal: React.FC<Props> = ({
       setEditDraft(null);
       setBulkImportText('');
       setBulkImportError(null);
-      setSaveMessage(importCopy.success(importedQuestions.length));
+      setSaveMessage(
+        missingAnswerCount > 0
+          ? (importCopy.missingAnswerWarning?.(missingAnswerCount)
+            ?? `${missingAnswerCount} imported question(s) need the correct answer reviewed before saving.`)
+          : importCopy.success(importedQuestions.length)
+      );
       setStartError(null);
       setStep('curate');
     } catch (error) {
