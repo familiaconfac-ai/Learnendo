@@ -62,6 +62,8 @@ const PLAYER_COPY = {
     wrong: 'Wrong!',
     timeUp: 'Time up!',
     answer: 'Answer',
+    yourAnswer: 'Your answer',
+    correctAnswerLabel: 'Correct answer',
     feedbackTitle: 'Why',
     totalScore: 'Total score',
     roundPoints: (points: number) => `+${points} this round`,
@@ -97,6 +99,8 @@ const PLAYER_COPY = {
     wrong: 'Errado!',
     timeUp: 'Tempo esgotado!',
     answer: 'Resposta',
+    yourAnswer: 'Sua resposta',
+    correctAnswerLabel: 'Resposta correta',
     feedbackTitle: 'Explicacao',
     totalScore: 'Pontuacao total',
     roundPoints: (points: number) => `+${points} nesta rodada`,
@@ -132,6 +136,8 @@ const PLAYER_COPY = {
     wrong: 'Incorrecto!',
     timeUp: 'Se acabo el tiempo!',
     answer: 'Respuesta',
+    yourAnswer: 'Tu respuesta',
+    correctAnswerLabel: 'Respuesta correcta',
     feedbackTitle: 'Explicacion',
     totalScore: 'Puntuacion total',
     roundPoints: (points: number) => `+${points} en esta ronda`,
@@ -1040,6 +1046,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
   const questionText = repairBattleTextEncoding(question?.text) ?? '';
   const questionHint = repairBattleTextEncoding(question?.hint) ?? '';
+  const myAnswerText = repairBattleTextEncoding(myAnswer?.responseText) ?? '';
   const questionImageUrl = question?.imageUrl?.trim() ?? '';
   const questionOptions = (question?.options ?? []).map((option) => repairBattleTextEncoding(option) ?? option);
   const correctCount = useMemo(
@@ -1113,6 +1120,20 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
               {copy.answer}: <span className="text-green-400 font-bold">{answerLabel || '-'}</span>
             </p>
           )}
+          {question && !isChoiceQuestion(question) && myAnswerText ? (
+            <div className="space-y-2 text-left">
+              <div className={`rounded-xl border px-4 py-3 ${
+                myAnswer?.isCorrect ? 'border-green-600/50 bg-green-600/10' : 'border-red-600/50 bg-red-600/10'
+              }`}>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{copy.yourAnswer}</p>
+                <p className={`mt-1 text-sm leading-6 ${myAnswer?.isCorrect ? 'text-green-300' : 'text-red-300'}`}>{myAnswerText}</p>
+              </div>
+              <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{copy.correctAnswerLabel}</p>
+                <p className="mt-1 text-sm leading-6 text-green-300">{answerLabel || '-'}</p>
+              </div>
+            </div>
+          ) : null}
           {questionHint ? (
             <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-left">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{copy.feedbackTitle}</p>

@@ -416,6 +416,58 @@ function parseBulkBattleQuestions(rawText: string): { questions: BattleQuestion[
   };
 }
 
+function convertImportedQuestionKind(question: BattleQuestion, targetKind: BattleQuestionKind): BattleQuestion {
+  const normalizedQuestion = sanitizeBattleQuestion(question) ?? question;
+  const correctIndexes = normalizedQuestion.correctIndexes?.length
+    ? normalizedQuestion.correctIndexes
+    : typeof normalizedQuestion.correctIndex === 'number'
+      ? [normalizedQuestion.correctIndex]
+      : [];
+  const correctAnswers = correctIndexes
+    .map((index) => normalizedQuestion.options?.[index]?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  if (targetKind === 'audio-open' || targetKind === 'speaking') {
+    const primaryAnswer = correctAnswers[0] ?? normalizedQuestion.correctText ?? '';
+    const acceptedAnswers = Array.from(new Set([
+      primaryAnswer,
+      ...(normalizedQuestion.acceptedAnswers ?? []),
+      ...correctAnswers,
+    ].map((value) => value.trim()).filter(Boolean)));
+
+    return sanitizeBattleQuestion({
+      ...normalizedQuestion,
+      kind: targetKind,
+      promptAudioText: normalizedQuestion.promptAudioText?.trim() || normalizedQuestion.text,
+      correctText: primaryAnswer,
+      acceptedAnswers,
+      options: undefined,
+      correctIndexes: undefined,
+      correctIndex: undefined,
+    }) ?? normalizedQuestion;
+  }
+
+  if (targetKind === 'audio-choice') {
+    return sanitizeBattleQuestion({
+      ...normalizedQuestion,
+      kind: targetKind,
+      promptAudioText: normalizedQuestion.promptAudioText?.trim() || normalizedQuestion.text,
+    }) ?? normalizedQuestion;
+  }
+
+  if (targetKind === 'image-choice') {
+    return sanitizeBattleQuestion({
+      ...normalizedQuestion,
+      kind: 'image-choice',
+    }) ?? normalizedQuestion;
+  }
+
+  return sanitizeBattleQuestion({
+    ...normalizedQuestion,
+    kind: 'multiple-choice',
+  }) ?? normalizedQuestion;
+}
+
 async function translateBattleQuestions(
   questions: BattleQuestion[],
   sourceLanguage: BattleUILanguage,
@@ -999,6 +1051,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [duplicateLanguage, setDuplicateLanguage] = useState<BattleUILanguage>(templateLanguage);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [bulkImportText, setBulkImportText] = useState('');
+  const [bulkImportKind, setBulkImportKind] = useState<BattleQuestionKind>('multiple-choice');
   const [bulkImportError, setBulkImportError] = useState<string | null>(null);
   const hasTrackedChangesRef = useRef(false);
   const exclusionStorageKey = useMemo(
@@ -1186,7 +1239,10 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   function handleBulkImport() {
     try {
-      const { questions: importedQuestions, missingAnswerCount } = parseBulkBattleQuestions(bulkImportText);
+      const { questions: parsedQuestions, missingAnswerCount } = parseBulkBattleQuestions(bulkImportText);
+      const importedQuestions = sanitizeBattleQuestions(
+        parsedQuestions.map((question) => convertImportedQuestionKind(question, bulkImportKind))
+      );
       if (importedQuestions.length === 0) {
         setBulkImportError(importCopy.emptyError);
         return;
@@ -1710,6 +1766,22 @@ export const BattleSetupModal: React.FC<Props> = ({
                 placeholder={importCopy.placeholder}
                 className="min-h-[180px] w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-orange-500"
               />
+              <div>
+                <label className="mb-2 block text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  {copy.questionType}
+                </label>
+                <select
+                  value={bulkImportKind}
+                  onChange={(event) => setBulkImportKind(event.target.value as BattleQuestionKind)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-white outline-none focus:border-orange-500"
+                >
+                  {questionKindOptions.map((kind) => (
+                    <option key={kind.value} value={kind.value}>
+                      {kind.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               {bulkImportError ? (
                 <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
                   {bulkImportError}
