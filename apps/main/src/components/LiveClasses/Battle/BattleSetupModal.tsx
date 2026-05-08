@@ -1499,6 +1499,64 @@ export const BattleSetupModal: React.FC<Props> = ({
     });
   }
 
+  function deleteQuestion(idx: number) {
+    const targetQuestion = questions[idx];
+    if (!targetQuestion) return;
+
+    if (editingIdx === idx) {
+      setEditDraft(null);
+    }
+
+    setEditingIdx((current) => {
+      if (current === null) return current;
+      if (current === idx) return null;
+      return current > idx ? current - 1 : current;
+    });
+    setExcludedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(targetQuestion.id);
+      return next;
+    });
+    setQuestions((prev) => prev.filter((_, questionIdx) => questionIdx !== idx));
+  }
+
+  function toggleQuestionCorrectOption(idx: number, optIdx: number) {
+    setQuestions((prev) => {
+      const current = prev[idx];
+      if (!current || !current.options || current.options.length === 0) {
+        return prev;
+      }
+
+      const currentCorrectIndexes = (current.correctIndexes?.length
+        ? [...current.correctIndexes]
+        : [current.correctIndex ?? 0]
+      ).filter((index) => index >= 0 && index < current.options!.length);
+
+      const isCorrect = currentCorrectIndexes.includes(optIdx);
+      const nextCorrectIndexes = isCorrect
+        ? currentCorrectIndexes.filter((index) => index !== optIdx)
+        : [...currentCorrectIndexes, optIdx].sort((left, right) => left - right);
+
+      if (nextCorrectIndexes.length === 0) {
+        nextCorrectIndexes.push(optIdx);
+      }
+
+      const updatedQuestion = sanitizeBattleQuestion({
+        ...current,
+        correctIndexes: nextCorrectIndexes,
+        correctIndex: nextCorrectIndexes[0] ?? 0,
+      });
+
+      if (!updatedQuestion) {
+        return prev;
+      }
+
+      const next = [...prev];
+      next[idx] = updatedQuestion;
+      return next;
+    });
+  }
+
   /** ✅ Confirmar Lista Final — launch with curated questions */
   async function handleConfirm() {
     const finalQs = sanitizeBattleQuestions(
@@ -2045,6 +2103,11 @@ export const BattleSetupModal: React.FC<Props> = ({
                         className="text-xs px-1.5 py-0.5 rounded border border-slate-600 text-slate-500 hover:border-blue-400 hover:text-blue-400 transition"
                       >⧉</button>
                       <button
+                        onClick={() => deleteQuestion(idx)}
+                        title="Delete question"
+                        className="text-xs px-1.5 py-0.5 rounded border border-slate-600 text-slate-500 hover:border-red-400 hover:text-red-400 transition"
+                      >🗑</button>
+                      <button
                         onClick={() => isEditing ? cancelEdit() : startEdit(idx)}
                         className={`text-xs px-2 py-0.5 rounded border transition-colors ${
                           isEditing
@@ -2060,14 +2123,18 @@ export const BattleSetupModal: React.FC<Props> = ({
                 {!isEditing && !excluded && q.options && q.options.length > 0 && (
                   <div className="grid grid-cols-2 gap-1 px-3 pb-2.5">
                     {q.options.map((opt, optIdx) => (
-                      <div key={optIdx}
+                      <button
+                        key={optIdx}
+                        type="button"
+                        onClick={() => toggleQuestionCorrectOption(idx, optIdx)}
+                        title="Toggle correct answer"
                         className={`text-[11px] px-2 py-1 rounded border truncate ${
                           (q.correctIndexes ?? [q.correctIndex ?? 0]).includes(optIdx)
                             ? 'border-green-600/60 bg-green-600/10 text-green-400'
-                            : 'border-slate-700/60 text-slate-500'
+                            : 'border-slate-700/60 text-slate-500 hover:border-slate-500 hover:text-slate-300'
                         }`}>
                         {(q.correctIndexes ?? [q.correctIndex ?? 0]).includes(optIdx) ? '✓ ' : ''}{opt}
-                      </div>
+                      </button>
                     ))}
                   </div>
                 )}
