@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import type { BattleParticipant } from './battleTypes';
 import { BattleParticipantAvatar } from './BattleParticipantAvatar';
 import { compareBattleParticipantsByRanking } from './battleUtils';
@@ -93,6 +93,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
   uiLanguage = 'en',
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const sorted = useMemo(() => {
     const participantIds = new Set(validParticipantIds ?? Object.keys(scores));
@@ -115,6 +116,22 @@ export const BattleResultsScreen: React.FC<Props> = ({
   }, [scores, hiddenUids, validParticipantIds]);
 
   const myRank = sorted.findIndex((participant) => participant.uid === myUid) + 1;
+  const podium = [sorted[1] ?? null, sorted[0] ?? null, sorted[2] ?? null];
+
+  useEffect(() => {
+    try {
+      const audio = new Audio('/sounds/battle_podium.mp3');
+      audio.volume = 0.45;
+      audioRef.current = audio;
+      audio.play().catch(() => {});
+      return () => {
+        audio.pause();
+        audio.currentTime = 0;
+      };
+    } catch {
+      return undefined;
+    }
+  }, []);
 
   return (
     <div className="fixed inset-0 z-[9100] flex items-center justify-center bg-black/90 backdrop-blur-md">
@@ -129,7 +146,46 @@ export const BattleResultsScreen: React.FC<Props> = ({
           ) : null}
         </div>
 
-        <div className="max-h-72 space-y-2 overflow-y-auto px-4 pb-2">
+        <div className="relative overflow-hidden px-4 pb-2">
+          <div className="pointer-events-none absolute inset-x-4 top-2 flex justify-between text-xl opacity-60">
+            <span>o</span>
+            <span>*</span>
+            <span>o</span>
+            <span>*</span>
+            <span>o</span>
+          </div>
+          <div className="mt-4 grid grid-cols-3 items-end gap-3">
+            {podium.map((participant, index) => {
+              const visualOrder = index === 1 ? 1 : index === 0 ? 2 : 3;
+              const heightClass = index === 1 ? 'h-28' : index === 0 ? 'h-20' : 'h-16';
+              return (
+                <div key={participant?.uid ?? `podium-${index}`} className="flex flex-col items-center">
+                  {participant ? (
+                    <>
+                      <BattleParticipantAvatar
+                        name={participant.name}
+                        avatarId={participant.avatarId}
+                        isBot={participant.isBot}
+                        sizeClassName={index === 1 ? 'h-16 w-16' : 'h-12 w-12'}
+                        showBotBadge
+                      />
+                      <p className="mt-2 max-w-[88px] truncate text-center text-xs font-bold text-white">
+                        {participant.name}
+                      </p>
+                    </>
+                  ) : (
+                    <div className="h-[84px]" />
+                  )}
+                  <div className={`mt-2 flex w-full items-center justify-center rounded-t-2xl bg-gradient-to-b from-orange-500/80 to-orange-700/90 ${heightClass}`}>
+                    <span className="text-2xl font-black text-white">{participant ? visualOrder : '-'}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="max-h-56 space-y-2 overflow-y-auto px-4 pb-2 pt-4">
           {sorted.map((participant, index) => (
             <div
               key={participant.uid}

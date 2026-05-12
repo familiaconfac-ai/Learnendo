@@ -12,6 +12,7 @@ import { BattleResultsScreen } from './BattleResultsScreen';
 import {
   canBattleParticipantAnswerCurrentQuestion,
   calculateBattleRoundScore,
+  compareBattleParticipantsByRanking,
   evaluateBattleAnswer,
   getBattleCorrectAnswerLabel,
   getBattleCorrectIndexes,
@@ -253,6 +254,14 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     ? Math.max(myScore, preRoundScoreRef.current + (myAnswer?.roundPoints ?? 0))
     : myScore;
   const myStreak = visiblePlayerScores[uid]?.streak ?? 0;
+  const leaderboard = useMemo(
+    () =>
+      Object.values(visiblePlayerScores ?? {})
+        .sort(compareBattleParticipantsByRanking)
+        .slice(0, 10),
+    [visiblePlayerScores]
+  );
+  const myRank = leaderboard.findIndex((participant) => participant.uid === uid) + 1;
   const effectiveFrozenTimeLeft = frozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
   const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
   const roundStartedAt =
@@ -1103,6 +1112,131 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
           <div className="mt-4 bg-slate-800/60 rounded-xl px-6 py-3 inline-block">
             <p className="text-xs text-slate-400">{copy.yourScore}</p>
             <p className="text-3xl font-black text-orange-400">{myScore.toLocaleString()}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (false) {
+    console.log('[BATTLE PLAYER] render branch: showing-answer leaderboard');
+    return (
+      <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
+        <div className="mx-4 grid w-full max-w-5xl gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/95 p-6 text-center shadow-2xl">
+            <div className="text-5xl">
+              {myAnswer?.isCorrect === true ? 'OK' : myAnswer?.isCorrect === false ? 'X' : '...'}
+            </div>
+            <h2 className="mt-3 text-2xl font-bold text-white">
+              {myAnswer?.isCorrect === true ? copy.correct : myAnswer?.isCorrect === false ? copy.wrong : copy.timeUp}
+            </h2>
+            {question ? (
+              <p className="mt-2 text-sm text-slate-300">
+                {copy.answer}: <span className="font-bold text-green-400">{answerLabel || '-'}</span>
+              </p>
+            ) : null}
+            {question && isChoiceQuestion(question) ? (
+              <div className="mt-5 grid grid-cols-2 gap-2 text-left">
+                {questionOptions.map((option, index) => {
+                  const isCorrect = revealedCorrectIndexes.includes(index);
+                  const wasSelected = revealedSelectedIndexes.includes(index);
+                  return (
+                    <div
+                      key={index}
+                      className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                        isCorrect
+                          ? 'border-green-500 bg-green-500/15 text-green-300'
+                          : wasSelected
+                            ? 'border-red-500/50 bg-red-500/10 text-red-300'
+                            : 'border-slate-700 bg-slate-800/40 text-slate-400'
+                      }`}
+                    >
+                      {isCorrect ? 'OK ' : wasSelected ? 'X ' : ''}
+                      {option}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+            {question && !isChoiceQuestion(question) && myAnswerText ? (
+              <div className="mt-5 space-y-2 text-left">
+                <div className={`rounded-xl border px-4 py-3 ${
+                  myAnswer?.isCorrect ? 'border-green-600/50 bg-green-600/10' : 'border-red-600/50 bg-red-600/10'
+                }`}>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{copy.yourAnswer}</p>
+                  <p className={`mt-1 text-sm leading-6 ${myAnswer?.isCorrect ? 'text-green-300' : 'text-red-300'}`}>{myAnswerText}</p>
+                </div>
+                <div className="rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{copy.correctAnswerLabel}</p>
+                  <p className="mt-1 text-sm leading-6 text-green-300">{answerLabel || '-'}</p>
+                </div>
+              </div>
+            ) : null}
+            {questionHint ? (
+              <div className="mt-5 rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-3 text-left">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{copy.feedbackTitle}</p>
+                <p className="mt-1 text-sm leading-6 text-slate-200">{questionHint}</p>
+              </div>
+            ) : null}
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+              <div className="rounded-2xl bg-slate-800/70 px-6 py-3">
+                <p className="text-xs text-slate-400">{copy.totalScore}</p>
+                <p className="text-3xl font-black text-orange-400">{myTotalScore.toLocaleString()}</p>
+                {currentRoundLocalAnswer && currentRoundLocalAnswer.roundPoints > 0 ? (
+                  <p className="text-xs text-green-400">{copy.roundPoints(currentRoundLocalAnswer.roundPoints)}</p>
+                ) : null}
+                {myStreak >= 3 ? <p className="text-xs text-orange-300">{copy.streak(myStreak)}</p> : null}
+              </div>
+              <div className="rounded-2xl bg-slate-800/50 px-5 py-3 text-left">
+                <p className="text-xs uppercase tracking-wide text-slate-500">Ranking</p>
+                <p className="text-2xl font-black text-white">{myRank > 0 ? `#${myRank}` : '-'}</p>
+              </div>
+            </div>
+            <div className="mt-4 flex justify-center gap-3 text-sm">
+              <span className="rounded-full bg-green-500/20 px-3 py-1 font-semibold text-green-400">
+                {correctCount} {copy.correctCount}
+              </span>
+              <span className="rounded-full bg-red-500/20 px-3 py-1 font-semibold text-red-400">
+                {wrongCount} {copy.wrongCount}
+              </span>
+            </div>
+            <p className="mt-4 text-xs text-slate-500">{copy.waitingNext}</p>
+          </div>
+          <div className="rounded-3xl border border-slate-800 bg-slate-900/95 p-5 shadow-2xl">
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Ranking</p>
+                <h3 className="text-lg font-black text-white">Top 10</h3>
+              </div>
+              {myRank > 0 ? (
+                <span className="rounded-full bg-orange-500/15 px-3 py-1 text-xs font-bold text-orange-300">
+                  #{myRank}
+                </span>
+              ) : null}
+            </div>
+            <div className="space-y-2">
+              {leaderboard.map((player, index) => (
+                <div
+                  key={player.uid}
+                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
+                    player.uid === uid
+                      ? 'border-orange-500/50 bg-orange-500/15'
+                      : 'border-slate-800 bg-slate-800/60'
+                  }`}
+                >
+                  <span className="w-8 text-center text-base font-black text-white">
+                    {index === 0 ? '1' : index === 1 ? '2' : index === 2 ? '3' : `#${index + 1}`}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-white">
+                      {player.name}
+                      {player.uid === uid ? <span className="ml-1 text-[11px] text-orange-300">(voce)</span> : null}
+                    </p>
+                    <p className="text-xs text-slate-500">{player.score ?? 0} pts</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

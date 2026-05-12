@@ -521,6 +521,16 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   }, [session.status]);
 
   useEffect(() => {
+    if (session.status === 'REVEALED') {
+      setShowRankingOverlay(true);
+      return;
+    }
+    if (session.status !== 'FINISHED') {
+      setShowRankingOverlay(false);
+    }
+  }, [session.status]);
+
+  useEffect(() => {
     if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) return;
 
     const promptKey = `${session.id}:${(question.id as string)}:${session.status}`;
@@ -605,6 +615,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       activeParticipants,
       teacherUid,
       teacherName: session.scores?.[teacherUid]?.name || 'Professor',
+      includeExpectedParticipants: false,
     });
 
   function startSpeechRecognition() {

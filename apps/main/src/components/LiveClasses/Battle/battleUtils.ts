@@ -555,8 +555,15 @@ export function buildBattleRoundParticipantsSnapshot(params: {
   activeParticipants: Array<{ uid: string; name: string }>;
   teacherUid: string;
   teacherName: string;
+  includeExpectedParticipants?: boolean;
 }): BattleRosterParticipant[] {
-  const { session, activeParticipants, teacherUid, teacherName } = params;
+  const {
+    session,
+    activeParticipants,
+    teacherUid,
+    teacherName,
+    includeExpectedParticipants = true,
+  } = params;
   const participantMap = new Map<string, BattleRosterParticipant>();
   const shouldIncludeTeacher = !!session.config.includeTeacher;
 
@@ -576,21 +583,23 @@ export function buildBattleRoundParticipantsSnapshot(params: {
     );
   }
 
-  for (const pid of getExpectedBattleParticipantIds(session, teacherUid)) {
-    if (pid === teacherUid && !shouldIncludeTeacher) continue;
-    if (participantMap.has(pid)) continue;
-    participantMap.set(
-      pid,
-      buildBattleRosterParticipant(
+  if (includeExpectedParticipants) {
+    for (const pid of getExpectedBattleParticipantIds(session, teacherUid)) {
+      if (pid === teacherUid && !shouldIncludeTeacher) continue;
+      if (participantMap.has(pid)) continue;
+      participantMap.set(
         pid,
-        pid === teacherUid ? teacherName : getBattleParticipantName(session, pid),
-        session.participants?.[pid]?.joinedAt ?? session.createdAt,
-        {
-          avatarId: session.participants?.[pid]?.avatarId ?? session.scores?.[pid]?.avatarId,
-          isBot: session.participants?.[pid]?.isBot ?? session.scores?.[pid]?.isBot,
-        }
-      )
-    );
+        buildBattleRosterParticipant(
+          pid,
+          pid === teacherUid ? teacherName : getBattleParticipantName(session, pid),
+          session.participants?.[pid]?.joinedAt ?? session.createdAt,
+          {
+            avatarId: session.participants?.[pid]?.avatarId ?? session.scores?.[pid]?.avatarId,
+            isBot: session.participants?.[pid]?.isBot ?? session.scores?.[pid]?.isBot,
+          }
+        )
+      );
+    }
   }
 
   if (session.config.botEnabled && !participantMap.has(BATTLE_BOT_UID)) {
