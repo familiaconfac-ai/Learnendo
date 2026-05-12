@@ -17,6 +17,7 @@ import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavig
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import type { SavedBattleTemplate } from '../Battle/battleTypes';
 import type { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
+import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
 
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
@@ -31,6 +32,7 @@ interface TeacherRoomViewProps {
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
   onOpenBattleHub: () => void;
   onOpenBattleTemplate: (template: SavedBattleTemplate) => void;
+  onOpenPreviewTab: (role: 'teacher' | 'student') => void;
   onExit: () => void;
 }
 
@@ -44,6 +46,7 @@ const TeacherStage: React.FC<{
   teacherEmail?: string | null;
   onOpenBattleHub: () => void;
   onOpenBattleTemplate: (template: SavedBattleTemplate) => void;
+  onOpenPreviewTab: (role: 'teacher' | 'student') => void;
   onExit: () => void;
 }> = ({
   liveClass,
@@ -55,6 +58,7 @@ const TeacherStage: React.FC<{
   teacherEmail,
   onOpenBattleHub,
   onOpenBattleTemplate,
+  onOpenPreviewTab,
   onExit,
 }) => {
   const participants = useParticipants();
@@ -90,7 +94,7 @@ const TeacherStage: React.FC<{
 
   const uiLang: 'en' | 'pt' | 'es' = (() => {
     try {
-      return (localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es') ?? 'pt';
+      return (getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY) as 'en' | 'pt' | 'es') ?? 'pt';
     } catch {
       return 'pt';
     }
@@ -105,6 +109,10 @@ const TeacherStage: React.FC<{
     back: uiLang === 'en' ? 'Back' : uiLang === 'es' ? 'Volver' : 'Voltar',
     workspace: uiLang === 'en' ? 'Workspace' : uiLang === 'es' ? 'Pizarra' : 'Lousa',
     screen: uiLang === 'en' ? 'Screen share' : uiLang === 'es' ? 'Compartir pantalla' : 'Compartilhar tela',
+    previewStudent:
+      uiLang === 'en' ? 'Open student preview' : uiLang === 'es' ? 'Abrir preview alumno' : 'Abrir preview aluno',
+    previewTeacher:
+      uiLang === 'en' ? 'Open teacher preview' : uiLang === 'es' ? 'Abrir preview profesor' : 'Abrir preview professor',
   };
 
   const cameraTiles = [
@@ -291,6 +299,24 @@ const TeacherStage: React.FC<{
                         aria-label={labels.screen}
                       >
                         &#x1F4FA;
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenPreviewTab('student')}
+                        className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
+                        title={labels.previewStudent}
+                        aria-label={labels.previewStudent}
+                      >
+                        S
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenPreviewTab('teacher')}
+                        className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
+                        title={labels.previewTeacher}
+                        aria-label={labels.previewTeacher}
+                      >
+                        T
                       </button>
                       <button
                         type="button"
@@ -499,7 +525,7 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onExit } = props;
+  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onOpenPreviewTab, onExit } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
 
@@ -543,6 +569,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
         teacherEmail={user.email}
         onOpenBattleHub={onOpenBattleHub}
         onOpenBattleTemplate={onOpenBattleTemplate}
+        onOpenPreviewTab={onOpenPreviewTab}
         onExit={onExit}
       />
     </LiveKitRoom>

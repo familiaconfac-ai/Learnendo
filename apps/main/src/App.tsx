@@ -44,6 +44,16 @@ import {
   UserAccountProfile,
   UserViewMode,
 } from './services/userRoles';
+import {
+  BASE_UI_LANGUAGE_STORAGE_KEY,
+  TabAppContext,
+  USER_LANGUAGE_STORAGE_KEY,
+  getScopedStorageItem,
+  getSessionStorageItem,
+  loadTabAppContext,
+  saveTabAppContext,
+  setScopedStorageItem,
+} from './utils/tabScopedStorage';
 
 /** Accumulated unique word count per lesson number.
  * Lesson N value = sum of all new words introduced from lesson 1 through N.
@@ -57,7 +67,6 @@ const LESSON_WORD_COUNTS: Record<number, number> = {
 const DEFAULT_COURSE_ID = 'english';
 const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
-const LANGUAGE_STORAGE_KEY = 'learnendo_user_language';
 
 // Map courses to language codes
 const COURSE_TO_LANGUAGE: Record<string, LessonLanguageCode> = {
@@ -110,6 +119,15 @@ const VIEW_MODE_LABELS: Record<UserViewMode, string> = {
   teacher: 'Teacher',
   admin: 'Admin',
 };
+
+const buildTabViewModeStorageKey = (uid: string) => `learnendo_tab_view_mode:${uid}`;
+
+const hasTabNavigationContext = (context: TabAppContext): boolean => (
+  Boolean(context.courseId)
+  || typeof context.workbookId === 'number'
+  || Boolean(context.lessonId)
+  || Boolean(context.section)
+);
 
 /**
  * validateAndFixState — pure state guard.
@@ -255,14 +273,13 @@ const findDayInLesson = (lesson: Lesson | null | undefined, exerciseReference: s
 };
 
 const App: React.FC = () => {
+  const initialTabContextRef = useRef<TabAppContext>(loadTabAppContext());
+  const initialStoredLanguage = (getScopedStorageItem(USER_LANGUAGE_STORAGE_KEY) as LessonLanguageCode | null);
+
   // ===== LANGUAGE STATE =====
   const [language, setLanguageState] = useState<LessonLanguageCode>(() => {
-    // Load from localStorage on initial render
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY) as LessonLanguageCode | null;
-      if (stored && ['en', 'pt', 'es', 'el', 'he'].includes(stored)) {
-        return stored;
-      }
+    if (initialStoredLanguage && ['en', 'pt', 'es', 'el', 'he'].includes(initialStoredLanguage)) {
+      return initialStoredLanguage;
     }
     return DEFAULT_LANGUAGE;
   });
@@ -271,12 +288,10 @@ const App: React.FC = () => {
   const setLanguage = useCallback((newLanguage: LessonLanguageCode) => {
     console.log('[App] Language changed:', newLanguage);
     setLanguageState(newLanguage);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(LANGUAGE_STORAGE_KEY, newLanguage);
-      // Persist base UI language (non-biblical) so Greek/Hebrew courses can inherit it
-      if (newLanguage !== 'el' && newLanguage !== 'he') {
-        localStorage.setItem('learnendo_base_ui_lang', newLanguage);
-      }
+    setScopedStorageItem(USER_LANGUAGE_STORAGE_KEY, newLanguage, true);
+    // Persist base UI language (non-biblical) so Greek/Hebrew courses can inherit it.
+    if (newLanguage !== 'el' && newLanguage !== 'he') {
+      setScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY, newLanguage, true);
     }
   }, []);
 
@@ -284,10 +299,8 @@ const App: React.FC = () => {
   // in the last modern language the user had (or English as fallback).
   const uiLanguage: 'en' | 'pt' | 'es' = (() => {
     if (language !== 'el' && language !== 'he') return language as 'en' | 'pt' | 'es';
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('learnendo_base_ui_lang');
-      if (stored === 'pt' || stored === 'es') return stored;
-    }
+    const stored = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY);
+    if (stored === 'pt' || stored === 'es') return stored;
     return 'en';
   })();
 
@@ -300,17 +313,24 @@ const App: React.FC = () => {
     completedActivities: [],
     lastCompletedDate: new Date().toISOString()
   });
-  const [currentCourseId, setCurrentCourseId] = useState<string | null>(null);
+  const [currentCourseId, setCurrentCourseId] = useState<string | null>(() => {
+    const storedCourseId = initialTabContextRef.current.courseId;
+    return storedCourseId ? normalizeCourseId(storedCourseId, initialStoredLanguage ?? DEFAULT_LANGUAGE) : null;
+  });
   const [currentSection, setCurrentSection] = useState<SectionType>(() => {
     if (typeof window !== 'undefined' && window.location.pathname.startsWith('/live-class/')) {
       return SectionType.LIVE_CLASSES;
+    }
+    const storedSection = initialTabContextRef.current.section;
+    if (storedSection && VALID_SECTIONS.has(storedSection as SectionType)) {
+      return storedSection as SectionType;
     }
     return SectionType.COURSES;
   });
   const [menuOpen, setMenuOpen] = useState(false);
   const [courseMenuOpen, setCourseMenuOpen] = useState(false);
-  const [currentWorkbookId, setCurrentWorkbookId] = useState<number | null>(null);
-  const [currentLessonId, setCurrentLessonId] = useState<string | null>(null);
+  const [currentWorkbookId, setCurrentWorkbookId] = useState<number | null>(() => initialTabContextRef.current.workbookId ?? null);
+  const [currentLessonId, setCurrentLessonId] = useState<string | null>(() => initialTabContextRef.current.lessonId ?? null);
   const [currentWorkbook, setCurrentWorkbook] = useState<any>(null);
   const [isWorkbookLoading, setIsWorkbookLoading] = useState(false);
   const [contentLoadError, setContentLoadError] = useState<string | null>(null);
@@ -441,10 +461,19 @@ const App: React.FC = () => {
   /** Mirror of currentSection kept in a ref so the workbook-load effect can read
    *  it without it becoming a reactive dependency (avoids re-running on every nav). */
   const currentSectionRef = useRef<SectionType>(currentSection);
+  const tabContextRef = useRef<TabAppContext>(initialTabContextRef.current);
   /** Timestamp of the last user-initiated language/course action.
    *  Firestore restores that arrive AFTER a manual action are suppressed if they
    *  would revert the user's explicit choice (race-condition guard). */
   const lastUserActionRef = useRef<number>(0);
+
+  const persistTabContext = useCallback((patch: Partial<TabAppContext>) => {
+    tabContextRef.current = {
+      ...tabContextRef.current,
+      ...patch,
+    };
+    saveTabAppContext(tabContextRef.current);
+  }, []);
 
   const toggleMenu = () => setMenuOpen(!menuOpen);
 
@@ -456,12 +485,11 @@ const App: React.FC = () => {
     }
 
     const storageKey = getUserViewModeStorageKey(user.uid);
-    let pendingMode = typeof window !== 'undefined'
-      ? localStorage.getItem(PENDING_VIEW_MODE_STORAGE_KEY)
-      : null;
-    let initialRequestedMode = typeof window !== 'undefined'
-      ? (pendingMode ?? localStorage.getItem(storageKey))
-      : null;
+    const tabStorageKey = buildTabViewModeStorageKey(user.uid);
+    let pendingMode = getSessionStorageItem(PENDING_VIEW_MODE_STORAGE_KEY);
+    let initialRequestedMode = getSessionStorageItem(tabStorageKey)
+      ?? pendingMode
+      ?? getScopedStorageItem(storageKey);
 
     const unsubscribe = subscribeUserAccountProfile(
       user.uid,
@@ -472,9 +500,10 @@ const App: React.FC = () => {
           const requestedMode = initialRequestedMode ?? currentMode;
           const nextMode = normalizeUserViewMode(profile.role, requestedMode);
           if (typeof window !== 'undefined') {
+            setScopedStorageItem(tabStorageKey, nextMode);
             localStorage.setItem(storageKey, nextMode);
             if (pendingMode) {
-              localStorage.removeItem(PENDING_VIEW_MODE_STORAGE_KEY);
+              window.sessionStorage.removeItem(PENDING_VIEW_MODE_STORAGE_KEY);
             }
           }
           initialRequestedMode = null;
@@ -505,6 +534,15 @@ const App: React.FC = () => {
   useEffect(() => {
     currentSectionRef.current = currentSection;
   }, [currentSection]);
+
+  useEffect(() => {
+    persistTabContext({
+      courseId: currentCourseId ?? null,
+      workbookId: currentWorkbookId ?? null,
+      lessonId: currentLessonId ?? null,
+      section: currentSection ?? null,
+    });
+  }, [currentCourseId, currentLessonId, currentSection, currentWorkbookId, persistTabContext]);
 
   // Log whenever language changes
   useEffect(() => {
@@ -788,7 +826,7 @@ const App: React.FC = () => {
       email: user.email,
       userRole,
       userViewMode,
-      savedLanguage: localStorage.getItem('learnendo_user_language'),
+      savedLanguage: getScopedStorageItem(USER_LANGUAGE_STORAGE_KEY),
       savedCourseId: null, // read from Firestore snapshot
     });
 
@@ -865,7 +903,7 @@ const App: React.FC = () => {
           }
 
           console.log('[STATE] FROM FIRESTORE', new Date().toISOString());
-          console.log('[setProgress from snapshot] — APPLYING FIRESTORE STATE', {
+          console.log('[setProgress from snapshot] applying Firestore state', {
             completedDays: countCompletedDays(firestoreDays),
             daysKeys: Object.keys(firestoreDays).sort(),
             language,
@@ -885,24 +923,33 @@ const App: React.FC = () => {
           setProgress((prev) => ({
             ...prev,
             ...(((data.currentWorkbook ?? data.workbook) !== undefined) && { currentWorkbook: data.currentWorkbook ?? data.workbook }),
-            ...(((data.currentLesson  ?? data.lesson)  !== undefined) && { currentLesson:   data.currentLesson  ?? data.lesson  }),
-            ...(data.currentDay      !== undefined && { currentDay:      data.currentDay      }),
-            ...(resolvedActivities   !== undefined && { completedActivities: resolvedActivities }),
-            ...(firestoreDays        !== undefined && { days:             firestoreDays        }),
+            ...(((data.currentLesson ?? data.lesson) !== undefined) && { currentLesson: data.currentLesson ?? data.lesson }),
+            ...(data.currentDay !== undefined && { currentDay: data.currentDay }),
+            ...(resolvedActivities !== undefined && { completedActivities: resolvedActivities }),
+            ...(firestoreDays !== undefined && { days: firestoreDays }),
             ...(data.lastCompletedDate !== undefined && { lastCompletedDate: data.lastCompletedDate }),
-            ...(data.placementScore    !== undefined && { placementScore:    data.placementScore    }),
+            ...(data.placementScore !== undefined && { placementScore: data.placementScore }),
           }));
-          console.log('[STATE CONTROL ✓] Progress updated from Firestore snapshot');
-          setCurrentWorkbookId(data.currentWorkbook ?? data.workbook ?? 1);
-          // Restore the saved courseId so ensureLessonStarted reads the correct
-          // courseProgress/{courseId}_{bookNumber} document after logout/login.
+
+          const keepTabNavigation = hasTabNavigationContext(tabContextRef.current);
+          console.log('[STATE CONTROL] Progress updated from Firestore snapshot', { keepTabNavigation });
+          if (!keepTabNavigation) {
+            setCurrentWorkbookId(data.currentWorkbook ?? data.workbook ?? 1);
+          }
+
           if (data.courseId) {
-            // Race-condition guard: if the user manually switched language/course less
-            // than 3 seconds ago, do NOT let an older Firestore snapshot overwrite it.
             const msSinceUserAction = Date.now() - lastUserActionRef.current;
             if (msSinceUserAction < 3000) {
-              console.warn('[STATE ERROR] Firestore restore suppressed — user action is too recent',
-                { msSinceUserAction, snapshotCourseId: data.courseId, currentCourseId });
+              console.warn('[STATE ERROR] Firestore restore suppressed because user action is too recent', {
+                msSinceUserAction,
+                snapshotCourseId: data.courseId,
+                currentCourseId,
+              });
+            } else if (keepTabNavigation) {
+              console.log('[TAB_CONTEXT] Firestore navigation restore skipped for this tab', {
+                snapshotCourseId: data.courseId,
+                tabContext: tabContextRef.current,
+              });
             } else {
               const restoredCourseId = normalizeCourseId(data.courseId, language);
               setCurrentCourseId(restoredCourseId);
@@ -914,7 +961,6 @@ const App: React.FC = () => {
                 currentLanguage: language,
                 willChangeLanguage: false,
               });
-              // Run state guard after restore to catch any remaining inconsistencies
               const validated = validateAndFixState({
                 language,
                 courseId: restoredCourseId,
@@ -925,10 +971,10 @@ const App: React.FC = () => {
               if (validated.fixed) {
                 if (validated.courseId !== restoredCourseId) setCurrentCourseId(validated.courseId);
                 if (validated.language !== language) setLanguage(validated.language);
-                if (validated.workbookId !== (data.currentWorkbook ?? data.workbook ?? 1)) setCurrentWorkbookId(validated.workbookId);
+                if (validated.workbookId !== (data.currentWorkbook ?? data.workbook ?? 1)) {
+                  setCurrentWorkbookId(validated.workbookId);
+                }
               }
-              // Backfill courseId on the flat progress doc for returning users whose
-              // doc predates the courseId field (written via merge so nothing else changes).
               if (db && user?.uid) {
                 setDoc(
                   doc(db, 'progress', user.uid),
@@ -938,7 +984,6 @@ const App: React.FC = () => {
               }
             }
           } else {
-            // No courseId in Firestore — ensure language → courseId consistency
             const validated = validateAndFixState({
               language,
               courseId: currentCourseId,
@@ -946,10 +991,12 @@ const App: React.FC = () => {
               section: currentSectionRef.current,
               context: 'Firestore restore (no courseId in doc)',
             });
-            if (validated.fixed) {
+            if (validated.fixed && !keepTabNavigation) {
               if (validated.courseId !== currentCourseId) setCurrentCourseId(validated.courseId);
               if (validated.language !== language) setLanguage(validated.language);
-              if (validated.workbookId !== (data.currentWorkbook ?? data.workbook ?? 1)) setCurrentWorkbookId(validated.workbookId);
+              if (validated.workbookId !== (data.currentWorkbook ?? data.workbook ?? 1)) {
+                setCurrentWorkbookId(validated.workbookId);
+              }
             }
           }
           console.log('[LOGIN_FLOW_DEBUG] progress restore ready', { uid: user?.uid });
@@ -995,9 +1042,7 @@ const App: React.FC = () => {
       (err) => {
         // ── FIX: setProgressLoaded(true) was missing here ──
         // Also sync courseId with language so there's no mismatch when Firestore errors.
-        const storedLang = (typeof window !== 'undefined'
-          ? localStorage.getItem(LANGUAGE_STORAGE_KEY)
-          : null) as LessonLanguageCode | null;
+        const storedLang = getScopedStorageItem(USER_LANGUAGE_STORAGE_KEY) as LessonLanguageCode | null;
         const resolvedLang: LessonLanguageCode =
           storedLang && (['en', 'pt', 'es', 'el', 'he'] as string[]).includes(storedLang)
             ? storedLang
@@ -1738,13 +1783,14 @@ const App: React.FC = () => {
     const normalized = normalizeUserViewMode(userRole, nextMode);
     setUserViewMode(normalized);
     if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem(buildTabViewModeStorageKey(user.uid), normalized);
       localStorage.setItem(getUserViewModeStorageKey(user.uid), normalized);
     }
   };
 
   const rememberPendingViewMode = (nextMode: 'student' | 'teacher') => {
     if (typeof window !== 'undefined') {
-      localStorage.setItem(PENDING_VIEW_MODE_STORAGE_KEY, nextMode);
+      window.sessionStorage.setItem(PENDING_VIEW_MODE_STORAGE_KEY, nextMode);
     }
   };
 
@@ -2893,3 +2939,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

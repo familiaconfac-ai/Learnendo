@@ -18,6 +18,7 @@ import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
 import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from '../../BattleHub/LiveBattleSimple';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
+import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
 import {
   BATTLE_STALE_THRESHOLD_MS,
   isActiveBattleStatus,
@@ -298,7 +299,7 @@ const StudentStage: React.FC<{
 
   const uiLang: 'en' | 'pt' | 'es' = (() => {
     try {
-      return (localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es') ?? 'pt';
+      return (getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY) as 'en' | 'pt' | 'es') ?? 'pt';
     } catch {
       return 'pt';
     }

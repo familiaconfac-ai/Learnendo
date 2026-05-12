@@ -13,8 +13,11 @@ import { learnendoLogo } from '../../assets/branding';
 import { BattleHubPage } from '../BattleHub/BattleHubPage';
 import type { SavedBattleTemplate } from './Battle/battleTypes';
 import { deleteBattleSession } from './Battle/battleService';
+import { LiveClassRoomShell } from './Shared/LiveClassRoomShell';
+import { WorkspaceCanvas } from './Workspace/WorkspaceCanvas';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
+import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../utils/tabScopedStorage';
 
 interface LiveClassRoomPageProps {
   liveClass: LiveClass;
@@ -26,6 +29,161 @@ interface LiveClassRoomPageProps {
   onOpenBattleHub: () => void;
   onExit: () => void;
 }
+
+type LiveClassPreviewRole = 'teacher' | 'student';
+
+function getPreviewRoleFromSearch(): LiveClassPreviewRole | null {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const preview = params.get('preview');
+  return preview === 'teacher' || preview === 'student' ? preview : null;
+}
+
+const PREVIEW_COPY: Record<'en' | 'pt' | 'es', {
+  title: string;
+  exit: string;
+  readOnly: string;
+  stage: string;
+  online: string;
+  note: string;
+  workspace: string;
+  battle: string;
+  camera: string;
+  student: string;
+  teacher: string;
+  previewStudent: string;
+  previewTeacher: string;
+}> = {
+  en: {
+    title: 'Preview',
+    exit: 'Close preview',
+    readOnly: 'Read-only preview',
+    stage: 'Current stage',
+    online: 'Online now',
+    note: 'This tab does not control the live class, does not join presence, and is safe for screen sharing.',
+    workspace: 'Workspace',
+    battle: 'Battle in progress',
+    camera: 'Camera or screen sharing in progress',
+    student: 'Student view',
+    teacher: 'Teacher view',
+    previewStudent: 'Open student preview',
+    previewTeacher: 'Open teacher preview',
+  },
+  pt: {
+    title: 'Preview',
+    exit: 'Fechar preview',
+    readOnly: 'Preview somente leitura',
+    stage: 'Palco atual',
+    online: 'Online agora',
+    note: 'Esta aba nao controla a live, nao entra na presenca e fica segura para compartilhamento de tela.',
+    workspace: 'Lousa',
+    battle: 'Batalha em andamento',
+    camera: 'Camera ou compartilhamento em andamento',
+    student: 'Visao de aluno',
+    teacher: 'Visao de professor',
+    previewStudent: 'Abrir preview aluno',
+    previewTeacher: 'Abrir preview professor',
+  },
+  es: {
+    title: 'Preview',
+    exit: 'Cerrar preview',
+    readOnly: 'Preview de solo lectura',
+    stage: 'Escenario actual',
+    online: 'En linea ahora',
+    note: 'Esta pestana no controla la clase, no entra en presencia y es segura para compartir pantalla.',
+    workspace: 'Pizarra',
+    battle: 'Batalla en curso',
+    camera: 'Camara o pantalla compartida en curso',
+    student: 'Vista de alumno',
+    teacher: 'Vista de profesor',
+    previewStudent: 'Abrir preview alumno',
+    previewTeacher: 'Abrir preview profesor',
+  },
+};
+
+const LiveClassPreviewView: React.FC<{
+  liveClass: LiveClass;
+  user: User;
+  uiLanguage: 'en' | 'pt' | 'es';
+  previewRole: LiveClassPreviewRole;
+  assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
+  session: LiveClassSession;
+  onlineCount: number;
+  onExit: () => void;
+}> = ({
+  liveClass,
+  user,
+  uiLanguage,
+  previewRole,
+  assignedRoster,
+  session,
+  onlineCount,
+  onExit,
+}) => {
+  const copy = PREVIEW_COPY[uiLanguage] ?? PREVIEW_COPY.en;
+  const stageLabel =
+    session.mainStageMode === 'battle'
+      ? copy.battle
+      : session.mainStageMode === 'camera'
+        ? copy.camera
+        : copy.workspace;
+
+  return (
+    <LiveClassRoomShell
+      title={`${liveClass.title} · ${copy.title} · ${previewRole === 'teacher' ? copy.teacher : copy.student}`}
+      exitLabel={copy.exit}
+      onExit={onExit}
+      mainContent={
+        <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+          <div className="absolute left-3 top-3 z-20 rounded-full bg-amber-500/95 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-slate-950 shadow-lg">
+            {copy.readOnly}
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl">
+            <WorkspaceCanvas
+              classId={liveClass.id}
+              userId={user.uid}
+              userName={user.displayName || user.email || 'Preview'}
+              userEmail={user.email}
+              readOnly={true}
+              isTeacher={previewRole === 'teacher'}
+              studentEditingEnabled={false}
+              classTeacherUserId={liveClass.teacherUid ?? null}
+              assignedRoster={assignedRoster}
+            />
+          </div>
+        </div>
+      }
+      desktopSidebar={
+        <div className="flex h-full min-h-0 w-full flex-col gap-3 overflow-y-auto px-3 py-4 text-sm text-slate-200">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-300">
+              {previewRole === 'teacher' ? copy.teacher : copy.student}
+            </div>
+            <div className="mt-2 text-xs text-slate-300">{copy.note}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+              {copy.stage}
+            </div>
+            <div className="mt-2 text-sm font-semibold text-white">{stageLabel}</div>
+          </div>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
+            <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+              {copy.online}
+            </div>
+            <div className="mt-2 text-2xl font-black text-white">{onlineCount}</div>
+          </div>
+        </div>
+      }
+      bottomBar={
+        <div className="fixed bottom-0 left-0 z-50 flex w-full items-center justify-center gap-3 border-t border-slate-800 bg-slate-950/90 px-4 py-3 text-xs font-semibold text-slate-200 backdrop-blur-sm">
+          <span className="rounded-full border border-slate-700 px-3 py-1">{stageLabel}</span>
+          <span className="rounded-full border border-slate-700 px-3 py-1">{copy.readOnly}</span>
+        </div>
+      }
+    />
+  );
+};
 
 function buildInitialSession(liveClass: LiveClass): LiveClassSession {
   return {
@@ -49,7 +207,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   isTeacher,
   uiLanguage = (() => {
     try {
-      const stored = localStorage.getItem('learnendo_base_ui_lang');
+      const stored = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY);
       return stored === 'pt' || stored === 'es' ? stored : 'en';
     } catch {
       return 'en';
@@ -58,6 +216,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   onOpenBattleHub,
   onExit,
 }) => {
+  const previewRole = getPreviewRoleFromSearch();
+  const isPreview = previewRole !== null;
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
   const [showWhiteboard, setShowWhiteboard] = useState(false);
   const [showExerciseSession, setShowExerciseSession] = useState(false);
@@ -65,11 +225,12 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [session, setSession] = useState<LiveClassSession>(() => buildInitialSession(liveClass));
 
-  const role = isTeacher ? 'teacher' : 'student';
+  const role = previewRole ?? (isTeacher ? 'teacher' : 'student');
   const isBattleStage = session.mainStageMode === 'battle';
   const battleUiLanguage = uiLanguage;
 
   useEffect(() => {
+    if (isPreview) return undefined;
     const displayName = user.displayName || user.email || 'Usuario';
     const syncPresence = () => upsertLivePresence(liveClass.id, user.uid, displayName, role);
 
@@ -82,7 +243,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       window.clearInterval(heartbeat);
       void markLivePresenceOffline(liveClass.id, user.uid);
     };
-  }, [liveClass.id, role, user.displayName, user.email, user.uid]);
+  }, [isPreview, liveClass.id, role, user.displayName, user.email, user.uid]);
 
   useEffect(() => {
     const unsubscribe = subscribeLivePresence(
@@ -120,9 +281,10 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
   const handleUpdateSession = useCallback(
     async (patch: Partial<LiveClassSession>) => {
+      if (isPreview) return;
       await updateLiveSession(liveClass.id, patch, user.uid);
     },
-    [liveClass.id, user.uid],
+    [isPreview, liveClass.id, user.uid],
   );
 
   const onlinePresence = useMemo(
@@ -160,6 +322,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   );
 
   const handleOpenBattleHub = useCallback(() => {
+    if (isPreview) return;
     setPendingBattleTemplate(null);
     console.log('[BATTLE DEBUG] open battle from live class', {
       liveClassId: liveClass?.id,
@@ -173,9 +336,10 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     });
 
     void handleUpdateSession({ mainStageMode: 'battle' });
-  }, [handleUpdateSession, liveClass?.id, onlinePresence, user?.uid]);
+  }, [handleUpdateSession, isPreview, liveClass?.id, onlinePresence, user?.uid]);
 
   const handleOpenSavedBattleTemplate = useCallback((template: SavedBattleTemplate) => {
+    if (isPreview) return;
     setPendingBattleTemplate(template);
     void deleteBattleSession(liveClass.id)
       .catch((error) => {
@@ -184,11 +348,19 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       .finally(() => {
         void handleUpdateSession({ mainStageMode: 'battle' });
       });
-  }, [handleUpdateSession, liveClass.id]);
+  }, [handleUpdateSession, isPreview, liveClass.id]);
 
   const handleReturnToWorkspace = useCallback(() => {
+    if (isPreview) return;
     void handleUpdateSession({ mainStageMode: 'workspace' });
-  }, [handleUpdateSession]);
+  }, [handleUpdateSession, isPreview]);
+
+  const handleOpenPreviewTab = useCallback((nextRole: LiveClassPreviewRole) => {
+    if (typeof window === 'undefined') return;
+    const previewUrl = new URL(window.location.href);
+    previewUrl.searchParams.set('preview', nextRole);
+    window.open(previewUrl.toString(), '_blank', 'noopener,noreferrer');
+  }, []);
 
   if (!sessionLoaded) {
     return (
@@ -196,6 +368,21 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
         <img src={learnendoLogo} alt="Learnendo" className="mb-4 h-auto w-48 animate-pulse" />
         <div className="text-sm uppercase tracking-widest text-blue-500">Carregando Sala...</div>
       </div>
+    );
+  }
+
+  if (isPreview && previewRole) {
+    return (
+      <LiveClassPreviewView
+        liveClass={liveClass}
+        user={user}
+        uiLanguage={uiLanguage}
+        previewRole={previewRole}
+        assignedRoster={assignedRoster}
+        session={session}
+        onlineCount={onlinePresence.length}
+        onExit={onExit}
+      />
     );
   }
 
@@ -215,6 +402,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           handleUpdateSession={handleUpdateSession}
           onOpenBattleHub={handleOpenBattleHub}
           onOpenBattleTemplate={handleOpenSavedBattleTemplate}
+          onOpenPreviewTab={handleOpenPreviewTab}
           onExit={onExit}
         />
         {isBattleStage ? (

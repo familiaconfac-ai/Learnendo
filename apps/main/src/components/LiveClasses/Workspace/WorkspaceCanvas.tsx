@@ -50,6 +50,7 @@ import { speak } from '../../../services/ttsService';
 import { translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
 import { subscribeUserAccounts, type UserAccountProfile } from '../../../services/userRoles';
 import { MyVocabularyPage } from '../../MyVocabularyPage';
+import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
 
 // -- Helpers -------------------------------------------------------------------
 
@@ -319,9 +320,18 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
   },
 };
 
+const getScopedUiLanguage = (): 'en' | 'pt' | 'es' => {
+  try {
+    const stored = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY);
+    return stored === 'en' || stored === 'es' ? stored : 'pt';
+  } catch {
+    return 'pt';
+  }
+};
+
 const getWsl = (): WsLabels => {
   try {
-    const lang = localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es' | null;
+    const lang = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY) as 'en' | 'pt' | 'es' | null;
     return WS_LABELS[lang ?? 'pt'] ?? WS_LABELS.pt;
   } catch {
     return WS_LABELS.pt;
@@ -330,7 +340,7 @@ const getWsl = (): WsLabels => {
 
 const getWorkspaceBoxFlowLabels = () => {
   try {
-    const lang = localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es' | null;
+    const lang = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY) as 'en' | 'pt' | 'es' | null;
     if (lang === 'en') {
       return {
         move: 'Move',
@@ -796,7 +806,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
 
   // Read UI language once
   const uiLang = (() => {
-    try { return (localStorage.getItem('learnendo_base_ui_lang') as string) ?? 'pt'; } catch { return 'pt'; }
+    try { return getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY) ?? 'pt'; } catch { return 'pt'; }
   })();
   const targetLang = LANG_MM[uiLang] ?? 'pt';
 
@@ -1382,14 +1392,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     alert('Erro: userId n�o fornecido. A funcionalidade de salvar/carregar materiais n�o funcionar�.');
   }
 
-  const uiLang: 'en' | 'pt' | 'es' = (() => {
-    try {
-      const stored = localStorage.getItem('learnendo_base_ui_lang');
-      return stored === 'en' || stored === 'es' ? stored : 'pt';
-    } catch {
-      return 'pt';
-    }
-  })();
+  const uiLang: 'en' | 'pt' | 'es' = getScopedUiLanguage();
   const wsl = getWsl();
   const boxFlowLabels = getWorkspaceBoxFlowLabels();
   const [items, setItems] = useState<WorkspaceItem[]>([]);
@@ -3423,7 +3426,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <div className="flex-1 overflow-hidden">
             <MyVocabularyPage
               userId={userId}
-              uiLanguage={(() => { try { return (localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es') ?? 'pt'; } catch { return 'pt'; } })()}
+              uiLanguage={getScopedUiLanguage()}
               onBack={() => setShowVocabModal(false)}
             />
           </div>

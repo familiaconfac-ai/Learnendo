@@ -18,6 +18,7 @@ import type { UserRole, UserViewMode } from '../../services/userRoles';
 import { LiveClassForm } from './LiveClassForm';
 import { LiveClassGroupForm } from './LiveClassGroupForm';
 import { LiveClassDetailsPage } from './LiveClassDetailsPage';
+import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../utils/tabScopedStorage';
 import { LiveClassRoomPage } from './LiveClassRoomPage';
 import { learnendoLogoTransparent } from '../../assets/branding';
 
@@ -132,7 +133,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   currentCourseId,
   uiLanguage = (() => {
     try {
-      const stored = localStorage.getItem('learnendo_base_ui_lang');
+      const stored = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY);
       return stored === 'pt' || stored === 'es' ? stored : 'en';
     } catch {
       return 'en';
