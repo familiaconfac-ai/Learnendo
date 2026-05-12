@@ -280,7 +280,7 @@ function applyBattleRoundRankingToScores(params: {
       thirdPlaceCount:
         (previous?.thirdPlaceCount ?? 0) + (entry.isCorrect === true && entry.placement === 3 ? 1 : 0),
       bestElapsedMs,
-      lastPlacement: entry.placement,
+      lastPlacement: entry.isCorrect === true ? entry.placement : previous?.lastPlacement ?? null,
     });
   }
 

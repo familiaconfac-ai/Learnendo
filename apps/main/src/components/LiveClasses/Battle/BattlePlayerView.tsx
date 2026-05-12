@@ -1049,6 +1049,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const myAnswerText = repairBattleTextEncoding(myAnswer?.responseText) ?? '';
   const questionImageUrl = question?.imageUrl?.trim() ?? '';
   const questionOptions = (question?.options ?? []).map((option) => repairBattleTextEncoding(option) ?? option);
+  const revealedSelectedIndexes = Array.from(new Set([
+    ...(myAnswer?.optionIndexes ?? []),
+    ...(typeof myAnswer?.optionIndex === 'number' ? [myAnswer.optionIndex] : []),
+  ]));
+  const revealedCorrectIndexes = question ? getBattleCorrectIndexes(question) : [];
   const correctCount = useMemo(
     () => Object.values(session.currentAnswers).filter(answer => answer.isCorrect).length,
     [session.currentAnswers]
@@ -1120,6 +1125,29 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
               {copy.answer}: <span className="text-green-400 font-bold">{answerLabel || '-'}</span>
             </p>
           )}
+          {question && isChoiceQuestion(question) ? (
+            <div className="grid grid-cols-2 gap-2 text-left">
+              {questionOptions.map((option, index) => {
+                const isCorrect = revealedCorrectIndexes.includes(index);
+                const wasSelected = revealedSelectedIndexes.includes(index);
+                return (
+                  <div
+                    key={index}
+                    className={`rounded-xl border px-3 py-2 text-sm font-semibold ${
+                      isCorrect
+                        ? 'border-green-500 bg-green-500/15 text-green-300'
+                        : wasSelected
+                          ? 'border-red-500/50 bg-red-500/10 text-red-300'
+                          : 'border-slate-700 bg-slate-800/40 text-slate-400'
+                    }`}
+                  >
+                    {isCorrect ? '✓ ' : wasSelected ? '✕ ' : ''}
+                    {option}
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
           {question && !isChoiceQuestion(question) && myAnswerText ? (
             <div className="space-y-2 text-left">
               <div className={`rounded-xl border px-4 py-3 ${

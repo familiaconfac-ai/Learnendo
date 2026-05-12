@@ -344,16 +344,18 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       roundParticipantIds,
       mergedCurrentAnswers,
       session.questionStartedAt,
-    ).map((entry) => ({
-      pid: entry.uid,
-      placement: entry.placement,
-      name:
-        mergedCurrentAnswers[entry.uid]?.name ??
-        session.scores?.[entry.uid]?.name ??
-        getBattleParticipantName(session, entry.uid),
-      isCorrect: entry.isCorrect,
-      elapsedMs: entry.elapsedMs,
-    }));
+    )
+      .filter((entry) => entry.isCorrect === true)
+      .map((entry) => ({
+        pid: entry.uid,
+        placement: entry.placement,
+        name:
+          mergedCurrentAnswers[entry.uid]?.name ??
+          session.scores?.[entry.uid]?.name ??
+          getBattleParticipantName(session, entry.uid),
+        isCorrect: entry.isCorrect,
+        elapsedMs: entry.elapsedMs,
+      }));
   }, [effectiveStatus, mergedCurrentAnswers, roundParticipantIds, session, session.scores]);
 
   useEffect(() => {
