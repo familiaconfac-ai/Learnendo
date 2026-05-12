@@ -34,6 +34,7 @@ import {
   isChoiceQuestion,
   repairBattleTextEncoding,
 } from './battleUtils';
+import { createBattleThemeAudio, persistBattleVolume, readBattleVolume, type ManagedBattleAudio } from './battleAudio';
 
 interface BattleHostViewProps {
   session: BattleSession;
@@ -51,6 +52,7 @@ const HOST_COPY = {
     endGame: 'End Game',
     activateMusic: 'Enable music',
     muteMusic: 'Mute music',
+    musicVolume: 'Music volume',
     battleRoom: 'Battle Room',
     participantsOnline: (count: number) => `${count} participant(s) online`,
     waitingStudents: 'Waiting for students to join...',
@@ -88,6 +90,7 @@ const HOST_COPY = {
     endGame: 'Encerrar',
     activateMusic: 'Ativar musica',
     muteMusic: 'Silenciar musica',
+    musicVolume: 'Volume da musica',
     battleRoom: 'Sala de Batalha',
     participantsOnline: (count: number) => `${count} participante(s) online`,
     waitingStudents: 'Aguardando alunos entrarem...',
@@ -125,6 +128,7 @@ const HOST_COPY = {
     endGame: 'Terminar',
     activateMusic: 'Activar musica',
     muteMusic: 'Silenciar musica',
+    musicVolume: 'Volumen de la musica',
     battleRoom: 'Sala de Batalla',
     participantsOnline: (count: number) => `${count} participante(s) conectados`,
     waitingStudents: 'Esperando a que entren los alumnos...',
@@ -180,7 +184,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
   const [busy, setBusy] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const [musicMuted, setMusicMuted] = useState(true);
+  const [musicVolume, setMusicVolume] = useState<number>(() => readBattleVolume('learnendo_battle_host_volume', 0.35));
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isListening, setIsListening] = useState(false);
@@ -189,7 +193,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const [localCurrentAnswers, setLocalCurrentAnswers] = useState<Record<string, BattleAnswer>>({});
   const [showRankingOverlay, setShowRankingOverlay] = useState(false);
   const timerRef = useRef<number | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<ManagedBattleAudio | null>(null);
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
   const botAnswerAttemptRef = useRef<string | null>(null);
@@ -402,32 +406,35 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   ]);
 
   useEffect(() => {
-    const audio = new Audio('/sounds/battle_theme.mp3');
-    audio.loop = true;
-    audio.volume = 0.4;
+    const audio = createBattleThemeAudio(musicVolume);
     audioRef.current = audio;
 
     return () => {
-      audio.pause();
+      audio?.dispose();
+      audioRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    persistBattleVolume('learnendo_battle_host_volume', musicVolume);
+  }, [musicVolume]);
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    if (session.status === 'PLAYING' && !musicMuted) {
-      audio.play().catch(() => {});
+    if (session.status === 'PLAYING') {
+      audio.start();
     } else {
-      audio.pause();
+      audio.stop();
     }
-  }, [musicMuted, session.status]);
+  }, [session.status]);
 
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.volume = musicMuted ? 0 : 0.4;
+      audioRef.current.setVolume(musicVolume);
     }
-  }, [musicMuted]);
+  }, [musicVolume]);
 
   useEffect(() => {
     console.info('[BATTLE HOST ROUND RESET] resetting local teacher round state', {
@@ -1045,6 +1052,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     if (busy) return;
     setBusy(true);
     try {
+      audioRef.current?.start();
       const dedupedActiveParticipants = Array.from(
         new Map(activeParticipants.map((participant) => [participant.uid, participant])).values()
       );
@@ -1183,13 +1191,20 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setMusicMuted((value) => !value)}
-              title={musicMuted ? copy.activateMusic : copy.muteMusic}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-xs transition hover:bg-slate-700"
-            >
-              {musicMuted ? 'M' : 'S'}
-            </button>
+            <div className="flex items-center gap-2 rounded-full bg-slate-800 px-2 py-1">
+              <span className="text-xs text-slate-300" title={copy.musicVolume}>🔊</span>
+              <input
+                type="range"
+                min={10}
+                max={100}
+                step={5}
+                value={Math.round(musicVolume * 100)}
+                onChange={(event) => setMusicVolume(Number(event.target.value) / 100)}
+                className="h-1.5 w-20 accent-orange-500"
+                title={copy.musicVolume}
+                aria-label={copy.musicVolume}
+              />
+            </div>
             <button onClick={handleEnd} className="text-xs text-slate-500 transition hover:text-red-400">
               {copy.endGame}
             </button>

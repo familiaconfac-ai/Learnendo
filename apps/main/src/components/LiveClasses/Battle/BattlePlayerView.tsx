@@ -24,27 +24,7 @@ import {
   isChoiceQuestion,
   repairBattleTextEncoding,
 } from './battleUtils';
-
-interface TensionLoop {
-  start(): void;
-  stop(): void;
-  setVolume(v: number): void;
-}
-
-function createBattleAudio(): TensionLoop | null {
-  try {
-    const audio = new Audio('/sounds/battle_theme.mp3');
-    audio.loop = true;
-    audio.volume = 0.5;
-    return {
-      start() { audio.play().catch(() => {}); },
-      stop() { audio.pause(); audio.currentTime = 0; },
-      setVolume(v: number) { audio.volume = Math.max(0, Math.min(1, v)); },
-    };
-  } catch {
-    return null;
-  }
-}
+import { createBattleThemeAudio, persistBattleVolume, readBattleVolume, type ManagedBattleAudio } from './battleAudio';
 
 interface Props {
   session: BattleSession;
@@ -83,6 +63,7 @@ const PLAYER_COPY = {
     pts: 'pts',
     unmuteMusic: 'Enable music',
     muteMusic: 'Mute music',
+    musicVolume: 'Music volume',
     audioChoiceHint: 'Listen once and choose the correct answer.',
     audioOpenHint: 'Listen once and type the answer.',
     speakingHint: 'Listen to the command and answer with a full sentence.',
@@ -120,6 +101,7 @@ const PLAYER_COPY = {
     pts: 'pts',
     unmuteMusic: 'Ativar musica',
     muteMusic: 'Silenciar musica',
+    musicVolume: 'Volume da musica',
     audioChoiceHint: 'Escute apenas uma vez e escolha a resposta entre as alternativas.',
     audioOpenHint: 'Escute apenas uma vez e digite a resposta.',
     speakingHint: 'Ouca o comando e responda falando uma frase completa.',
@@ -157,6 +139,7 @@ const PLAYER_COPY = {
     pts: 'pts',
     unmuteMusic: 'Activar musica',
     muteMusic: 'Silenciar musica',
+    musicVolume: 'Volumen de la musica',
     audioChoiceHint: 'Escucha solo una vez y elige la respuesta correcta.',
     audioOpenHint: 'Escucha solo una vez y escribe la respuesta.',
     speakingHint: 'Escucha la consigna y responde con una frase completa.',
@@ -180,15 +163,16 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
   const [frozenTimeLeft, setFrozenTimeLeft] = useState<number | null>(null);
   const [showResults, setShowResults] = useState(false);
-  const [musicMuted, setMusicMuted] = useState(true);
+  const [musicVolume, setMusicVolume] = useState<number>(() => readBattleVolume('learnendo_battle_player_volume', 0.3));
   const [isListening, setIsListening] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const joinAttemptRef = useRef<string | null>(null);
   const joinInFlightRef = useRef(false);
   const preRoundScoreRef = useRef(0);
-  const musicRef = useRef<TensionLoop | null>(null);
+  const musicRef = useRef<ManagedBattleAudio | null>(null);
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
+  const musicMuted = musicVolume <= 0.1;
 
   function rollbackStudentSubmitLock() {
     setSubmitted(false);
@@ -371,21 +355,28 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   }, [classId, session.id, uid]);
 
   useEffect(() => {
-    musicRef.current = createBattleAudio();
-    return () => { musicRef.current?.stop(); };
+    musicRef.current = createBattleThemeAudio(musicVolume);
+    return () => {
+      musicRef.current?.dispose();
+      musicRef.current = null;
+    };
   }, []);
 
   useEffect(() => {
+    persistBattleVolume('learnendo_battle_player_volume', musicVolume);
+  }, [musicVolume]);
+
+  useEffect(() => {
     if (session.status === 'PLAYING') {
-      if (!musicMuted) musicRef.current?.start();
+      musicRef.current?.start();
     } else {
       musicRef.current?.stop();
     }
-  }, [session.status, musicMuted]);
+  }, [session.status]);
 
   useEffect(() => {
-    musicRef.current?.setVolume(musicMuted ? 0 : 1);
-  }, [musicMuted]);
+    musicRef.current?.setVolume(musicVolume);
+  }, [musicVolume]);
 
   useEffect(() => {
     const alreadyTrackedInScores = uid in (session.scores ?? {});
@@ -1408,12 +1399,26 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
             {myStreak >= 3 && <span className="ml-1 text-xs">🔥 {myStreak}</span>}
           </div>
           <button
-            onClick={() => setMusicMuted((value) => !value)}
-            title={musicMuted ? copy.unmuteMusic : copy.muteMusic}
-            className="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-xs transition"
+            onClick={() => setMusicVolume((value) => value)}
+            title={copy.musicVolume}
+            className="hidden"
           >
             {musicMuted ? '🔇' : '🔊'}
           </button>
+          <div className="flex items-center gap-2 rounded-full bg-slate-800 px-2 py-1">
+            <span className="text-xs text-slate-300" title={copy.musicVolume}>🔊</span>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              step={5}
+              value={Math.round(musicVolume * 100)}
+              onChange={(event) => setMusicVolume(Number(event.target.value) / 100)}
+              className="h-1.5 w-16 accent-orange-500"
+              title={copy.musicVolume}
+              aria-label={copy.musicVolume}
+            />
+          </div>
         </div>
       </div>
 

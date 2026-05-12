@@ -358,7 +358,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   const handleOpenPreviewTab = useCallback((nextRole: LiveClassPreviewRole) => {
     if (typeof window === 'undefined') return;
     const previewUrl = new URL(window.location.href);
-    previewUrl.searchParams.set('preview', nextRole);
+    previewUrl.searchParams.delete('preview');
+    previewUrl.searchParams.set('tabViewMode', nextRole);
     window.open(previewUrl.toString(), '_blank', 'noopener,noreferrer');
   }, []);
 

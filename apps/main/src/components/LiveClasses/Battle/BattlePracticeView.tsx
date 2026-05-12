@@ -16,6 +16,7 @@ import {
   getBattleQuestionDuration,
   isChoiceQuestion,
 } from './battleUtils';
+import { createBattleThemeAudio, persistBattleVolume, readBattleVolume, type ManagedBattleAudio } from './battleAudio';
 
 interface Props {
   template: SavedBattleTemplate;
@@ -32,6 +33,7 @@ const PRACTICE_COPY = {
     soloTraining: 'Solo training',
     enableMusic: 'Enable music',
     muteMusic: 'Mute music',
+    musicVolume: 'Music volume',
     close: 'Close',
     title: 'Learnendo Battle',
     questions: 'questions',
@@ -65,6 +67,7 @@ const PRACTICE_COPY = {
     soloTraining: 'Treino solo',
     enableMusic: 'Ativar musica',
     muteMusic: 'Silenciar musica',
+    musicVolume: 'Volume da musica',
     close: 'Fechar',
     title: 'Learnendo Battle',
     questions: 'perguntas',
@@ -98,6 +101,7 @@ const PRACTICE_COPY = {
     soloTraining: 'Entrenamiento individual',
     enableMusic: 'Activar musica',
     muteMusic: 'Silenciar musica',
+    musicVolume: 'Volumen de la musica',
     close: 'Cerrar',
     title: 'Batalla Learnendo',
     questions: 'preguntas',
@@ -140,10 +144,11 @@ export const BattlePracticeView: React.FC<Props> = ({
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isListening, setIsListening] = useState(false);
-  const [musicMuted, setMusicMuted] = useState(true);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [musicVolume, setMusicVolume] = useState<number>(() => readBattleVolume('learnendo_battle_practice_volume', 0.35));
+  const audioRef = useRef<ManagedBattleAudio | null>(null);
   const promptPlayedRef = useRef('');
   const recognitionRef = useRef<any>(null);
+  const musicMuted = musicVolume <= 0.1;
 
   const human = useMemo(() => ({ uid, name }), [uid, name]);
   const opponents = useMemo(
@@ -185,30 +190,33 @@ export const BattlePracticeView: React.FC<Props> = ({
   const myScore = scores[uid];
 
   useEffect(() => {
-    const audio = new Audio('/sounds/battle_theme.mp3');
-    audio.loop = true;
-    audio.volume = 0.4;
+    const audio = createBattleThemeAudio(musicVolume);
     audioRef.current = audio;
     return () => {
-      audio.pause();
+      audio?.dispose();
+      audioRef.current = null;
     };
   }, []);
 
   useEffect(() => {
+    persistBattleVolume('learnendo_battle_practice_volume', musicVolume);
+  }, [musicVolume]);
+
+  useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
-    if (phase === 'question' && !musicMuted) {
-      audio.play().catch(() => {});
+    if (phase === 'question') {
+      audio.start();
       return;
     }
-    audio.pause();
-  }, [musicMuted, phase]);
+    audio.stop();
+  }, [phase]);
 
   useEffect(() => {
     if (audioRef.current) {
-      audioRef.current.volume = musicMuted ? 0 : 0.4;
+      audioRef.current.setVolume(musicVolume);
     }
-  }, [musicMuted]);
+  }, [musicVolume]);
 
   useEffect(() => {
     setSelectedOptions([]);
@@ -308,12 +316,26 @@ export const BattlePracticeView: React.FC<Props> = ({
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setMusicMuted((value) => !value)}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-xs transition hover:bg-slate-700"
-            title={musicMuted ? copy.enableMusic : copy.muteMusic}
+            onClick={() => setMusicVolume((value) => value)}
+            className="hidden"
+            title={copy.musicVolume}
           >
             {musicMuted ? '🔇' : '🔉'}
           </button>
+          <div className="flex items-center gap-2 rounded-full bg-slate-800 px-2 py-1">
+            <span className="text-xs text-slate-300" title={copy.musicVolume}>🔊</span>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              step={5}
+              value={Math.round(musicVolume * 100)}
+              onChange={(event) => setMusicVolume(Number(event.target.value) / 100)}
+              className="h-1.5 w-16 accent-orange-500"
+              title={copy.musicVolume}
+              aria-label={copy.musicVolume}
+            />
+          </div>
           <button
             onClick={onClose}
             className="rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200"

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import type { BattleParticipant } from './battleTypes';
 import { BattleParticipantAvatar } from './BattleParticipantAvatar';
 import { compareBattleParticipantsByRanking } from './battleUtils';
+import { createBattlePodiumAudio, type ManagedBattleAudio } from './battleAudio';
 
 type BattleUiLanguage = 'en' | 'pt' | 'es';
 
@@ -93,7 +94,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
   uiLanguage = 'en',
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioRef = useRef<ManagedBattleAudio | null>(null);
 
   const sorted = useMemo(() => {
     const participantIds = new Set(validParticipantIds ?? Object.keys(scores));
@@ -119,18 +120,13 @@ export const BattleResultsScreen: React.FC<Props> = ({
   const podium = [sorted[1] ?? null, sorted[0] ?? null, sorted[2] ?? null];
 
   useEffect(() => {
-    try {
-      const audio = new Audio('/sounds/battle_podium.mp3');
-      audio.volume = 0.45;
-      audioRef.current = audio;
-      audio.play().catch(() => {});
-      return () => {
-        audio.pause();
-        audio.currentTime = 0;
-      };
-    } catch {
-      return undefined;
-    }
+    const audio = createBattlePodiumAudio(0.45);
+    audioRef.current = audio;
+    audio?.start();
+    return () => {
+      audio?.dispose();
+      audioRef.current = null;
+    };
   }, []);
 
   return (

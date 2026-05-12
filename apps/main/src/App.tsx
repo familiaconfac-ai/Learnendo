@@ -122,6 +122,16 @@ const VIEW_MODE_LABELS: Record<UserViewMode, string> = {
 
 const buildTabViewModeStorageKey = (uid: string) => `learnendo_tab_view_mode:${uid}`;
 
+const getRequestedTabViewModeFromSearch = (): UserViewMode | null => {
+  if (typeof window === 'undefined') return null;
+  const params = new URLSearchParams(window.location.search);
+  const requestedMode = params.get('tabViewMode');
+  if (requestedMode === 'student' || requestedMode === 'teacher' || requestedMode === 'admin') {
+    return requestedMode;
+  }
+  return null;
+};
+
 const hasTabNavigationContext = (context: TabAppContext): boolean => (
   Boolean(context.courseId)
   || typeof context.workbookId === 'number'
@@ -487,7 +497,10 @@ const App: React.FC = () => {
     const storageKey = getUserViewModeStorageKey(user.uid);
     const tabStorageKey = buildTabViewModeStorageKey(user.uid);
     let pendingMode = getSessionStorageItem(PENDING_VIEW_MODE_STORAGE_KEY);
-    let initialRequestedMode = getSessionStorageItem(tabStorageKey)
+    const forcedTabViewMode = getRequestedTabViewModeFromSearch();
+    const shouldPersistOnlyToTab = forcedTabViewMode !== null;
+    let initialRequestedMode = forcedTabViewMode
+      ?? getSessionStorageItem(tabStorageKey)
       ?? pendingMode
       ?? getScopedStorageItem(storageKey);
 
@@ -501,7 +514,9 @@ const App: React.FC = () => {
           const nextMode = normalizeUserViewMode(profile.role, requestedMode);
           if (typeof window !== 'undefined') {
             setScopedStorageItem(tabStorageKey, nextMode);
-            localStorage.setItem(storageKey, nextMode);
+            if (!shouldPersistOnlyToTab) {
+              localStorage.setItem(storageKey, nextMode);
+            }
             if (pendingMode) {
               window.sessionStorage.removeItem(PENDING_VIEW_MODE_STORAGE_KEY);
             }
@@ -2350,6 +2365,7 @@ const App: React.FC = () => {
         return (
           <LiveClassesPage
             user={user}
+            accountRole={userRole}
             userRole={liveClassViewerRole}
             viewMode={userViewMode}
             canManageClasses={canManageLiveClasses}

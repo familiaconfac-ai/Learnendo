@@ -602,6 +602,23 @@ export function buildBattleRoundParticipantsSnapshot(params: {
     }
   }
 
+  if (shouldIncludeTeacher && teacherUid && !participantMap.has(teacherUid)) {
+    participantMap.set(
+      teacherUid,
+      buildBattleRosterParticipant(
+        teacherUid,
+        session.participants?.[teacherUid]?.name ??
+          session.scores?.[teacherUid]?.name ??
+          teacherName,
+        session.participants?.[teacherUid]?.joinedAt ?? session.createdAt,
+        {
+          avatarId: session.participants?.[teacherUid]?.avatarId ?? session.scores?.[teacherUid]?.avatarId,
+          isBot: false,
+        }
+      )
+    );
+  }
+
   if (session.config.botEnabled && !participantMap.has(BATTLE_BOT_UID)) {
     participantMap.set(
       BATTLE_BOT_UID,

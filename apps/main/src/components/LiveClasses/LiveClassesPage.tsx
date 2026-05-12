@@ -24,6 +24,7 @@ import { learnendoLogoTransparent } from '../../assets/branding';
 
 interface LiveClassesPageProps {
   user: User;
+  accountRole: UserRole;
   userRole: UserRole;
   viewMode: UserViewMode;
   canManageClasses: boolean;
@@ -88,6 +89,14 @@ const getRoomClassIdFromPath = (): string => {
   }
 };
 
+const getForcedTabViewModeFromSearch = (): UserViewMode | null => {
+  if (typeof window === 'undefined') return null;
+  const requestedMode = new URLSearchParams(window.location.search).get('tabViewMode');
+  return requestedMode === 'student' || requestedMode === 'teacher' || requestedMode === 'admin'
+    ? requestedMode
+    : null;
+};
+
 const buildSessionDraftFromGroup = (group: LiveClassGroup, teacherName: string, courseId: string): Partial<LiveClassInput> => ({
   title: group.name,
   teacherName,
@@ -127,6 +136,7 @@ const getNextOccurrence = (liveClass: LiveClass): Date => {
 
 export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   user,
+  accountRole,
   userRole,
   viewMode,
   canManageClasses,
@@ -163,6 +173,10 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   const [accessError, setAccessError] = useState('');
   const [now, setNow] = useState(() => new Date());
   const teacherDisplayName = user.displayName || user.email || 'Professor';
+  const forcedTabViewMode = getForcedTabViewModeFromSearch();
+  const isForcedStudentRoomView =
+    forcedTabViewMode === 'student' &&
+    (accountRole === 'teacher' || accountRole === 'admin');
   const viewerRole = userRole === 'teacher' && !canManageClasses ? 'student' : userRole;
   const viewer = useMemo(() => ({
     uid: user.uid,
@@ -173,7 +187,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
 
   const enterRoom = (liveClass: LiveClass) => {
     const allowed = canAccessLiveClass(liveClass, viewer);
-    if (!allowed) {
+    if (!allowed && !isForcedStudentRoomView) {
       setAccessError('This classroom is not assigned to this account.');
       return;
     }
@@ -181,8 +195,8 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
     setSelectedClassId(liveClass.id);
     setSelectedClass(liveClass);
     setRoomClassId(liveClass.id);
-    const roomPath = `/live-class/${encodeURIComponent(liveClass.id)}`;
-    if (window.location.pathname !== roomPath) {
+    const roomPath = `/live-class/${encodeURIComponent(liveClass.id)}${window.location.search}`;
+    if (`${window.location.pathname}${window.location.search}` !== roomPath) {
       window.history.pushState({}, '', roomPath);
     }
   };
@@ -190,7 +204,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   const leaveRoom = () => {
     setRoomClassId('');
     if (window.location.pathname.startsWith('/live-class/')) {
-      window.history.pushState({}, '', '/');
+      window.history.pushState({}, '', `/${window.location.search}`);
     }
   };
 
@@ -298,13 +312,14 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
 
   useEffect(() => {
     if (!selectedClass) return;
+    if (isForcedStudentRoomView) return;
     if (canAccessLiveClass(selectedClass, viewer)) return;
     setSelectedClass(null);
     setSelectedClassId('');
     if (roomClassId === selectedClass.id) {
       leaveRoom();
     }
-  }, [roomClassId, selectedClass, viewer]);
+  }, [isForcedStudentRoomView, roomClassId, selectedClass, viewer]);
 
   const openCreate = (draft?: Partial<LiveClassInput>) => {
     setEditingClass(null);
