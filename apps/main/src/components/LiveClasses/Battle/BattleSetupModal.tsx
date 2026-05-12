@@ -240,6 +240,56 @@ const BATTLE_IMPORT_COPY: Record<BattleUILanguage, {
   },
 };
 
+const BATTLE_DUPLICATE_PROMPT_COPY: Record<BattleUILanguage, {
+  title: string;
+  description: string;
+  placeholder: string;
+  button: string;
+  emptyError: string;
+  countMismatch: (expected: number, received: number) => string;
+}> = {
+  en: {
+    title: 'Duplicate and replace content',
+    description: 'Paste a new version of the exercise in the same order. The duplicate keeps images, timing and structure, and only replaces the question content.',
+    placeholder: 'I am a teacher.\na) Eu sou um professor.\nb) Eu sou uma professora.\nc) Eu sou um medico.\nd) Eu sou um doutor.\nResposta: A, B',
+    button: 'Duplicate replacing content',
+    emptyError: 'Paste the new exercise content first.',
+    countMismatch: (expected, received) => `The duplicated battle has ${expected} question(s), but the pasted content has ${received}. Keep the same order and the same number of questions.`,
+  },
+  pt: {
+    title: 'Duplicar e substituir conteudo',
+    description: 'Cole uma nova versao do exercicio na mesma ordem. O duplicado mantem imagens, tempo e estrutura, e troca apenas o conteudo das perguntas.',
+    placeholder: 'I am a teacher.\na) Eu sou um professor.\nb) Eu sou uma professora.\nc) Eu sou um medico.\nd) Eu sou um doutor.\nResposta: A, B',
+    button: 'Duplicar substituindo conteudo',
+    emptyError: 'Cole primeiro o novo conteudo do exercicio.',
+    countMismatch: (expected, received) => `A battle duplicada tem ${expected} pergunta(s), mas o conteudo colado tem ${received}. Mantenha a mesma ordem e a mesma quantidade de perguntas.`,
+  },
+  es: {
+    title: 'Duplicar y reemplazar contenido',
+    description: 'Pega una nueva version del ejercicio en el mismo orden. El duplicado mantiene imagenes, tiempo y estructura, y solo cambia el contenido.',
+    placeholder: 'I am a teacher.\na) Eu sou um professor.\nb) Eu sou uma professora.\nc) Eu sou um medico.\nd) Eu sou um doutor.\nRespuesta: A, B',
+    button: 'Duplicar reemplazando contenido',
+    emptyError: 'Pega primero el nuevo contenido del ejercicio.',
+    countMismatch: (expected, received) => `La batalla duplicada tiene ${expected} pregunta(s), pero el contenido pegado tiene ${received}. Mantiene el mismo orden y la misma cantidad de preguntas.`,
+  },
+  el: {
+    title: 'Duplicate and replace content',
+    description: 'Paste a new version of the exercise in the same order. The duplicate keeps images, timing and structure, and only replaces the question content.',
+    placeholder: 'I am a teacher.\na) Eu sou um professor.\nb) Eu sou uma professora.\nc) Eu sou um medico.\nd) Eu sou um doutor.\nAnswer: A, B',
+    button: 'Duplicate replacing content',
+    emptyError: 'Paste the new exercise content first.',
+    countMismatch: (expected, received) => `The duplicated battle has ${expected} question(s), but the pasted content has ${received}. Keep the same order and the same number of questions.`,
+  },
+  he: {
+    title: 'Duplicate and replace content',
+    description: 'Paste a new version of the exercise in the same order. The duplicate keeps images, timing and structure, and only replaces the question content.',
+    placeholder: 'I am a teacher.\na) Eu sou um professor.\nb) Eu sou uma professora.\nc) Eu sou um medico.\nd) Eu sou um doutor.\nAnswer: A, B',
+    button: 'Duplicate replacing content',
+    emptyError: 'Paste the new exercise content first.',
+    countMismatch: (expected, received) => `The duplicated battle has ${expected} question(s), but the pasted content has ${received}. Keep the same order and the same number of questions.`,
+  },
+};
+
 const IMPORT_OPTION_PATTERN = /^(?:[-*•]\s*)?([A-H])[\)\].:-]\s*(.+)$/i;
 const IMPORT_ANSWER_PATTERN = /^(?:resposta(?:\s+correta)?|gabarito|answer|correct answer|correct|respuesta(?:\s+correcta)?)\s*[:\-]\s*(.+)$/i;
 const IMPORT_EXPLANATION_PATTERN = /^(?:explic(?:a[cç][aã]o|acion)|explanation|feedback|justificativa|justification)\s*[:\-]\s*(.+)$/i;
@@ -468,6 +518,36 @@ function convertImportedQuestionKind(question: BattleQuestion, targetKind: Battl
   }) ?? normalizedQuestion;
 }
 
+function replaceBattleQuestionContentByOrder(
+  baseQuestion: BattleQuestion,
+  incomingQuestion: BattleQuestion,
+): BattleQuestion {
+  const normalizedBase = sanitizeBattleQuestion(baseQuestion) ?? baseQuestion;
+  const preservedKind = normalizedBase.kind ?? 'multiple-choice';
+  const convertedIncoming = sanitizeBattleQuestion(
+    convertImportedQuestionKind(incomingQuestion, preservedKind)
+  ) ?? incomingQuestion;
+
+  const mergedQuestion = sanitizeBattleQuestion({
+    ...normalizedBase,
+    id: normalizedBase.id,
+    kind: preservedKind,
+    text: convertedIncoming.text ?? '',
+    hint: convertedIncoming.hint,
+    promptAudioText: convertedIncoming.promptAudioText,
+    options: convertedIncoming.options,
+    correctIndexes: convertedIncoming.correctIndexes,
+    correctIndex: convertedIncoming.correctIndex,
+    correctText: convertedIncoming.correctText,
+    acceptedAnswers: convertedIncoming.acceptedAnswers,
+    imageUrl: normalizedBase.imageUrl,
+    durationSeconds: normalizedBase.durationSeconds,
+    playAudioOnce: normalizedBase.playAudioOnce ?? convertedIncoming.playAudioOnce,
+  });
+
+  return mergedQuestion ?? normalizedBase;
+}
+
 async function translateBattleQuestions(
   questions: BattleQuestion[],
   sourceLanguage: BattleUILanguage,
@@ -540,6 +620,105 @@ async function translateBattleQuestions(
   return sanitizeBattleQuestions(translated);
 }
 
+function inferPromptTargetLanguage(prompt: string, fallback: BattleUILanguage): BattleUILanguage {
+  const normalized = prompt.toLowerCase();
+  if (/(portugu[eê]s|portuguese|\bpt\b)/i.test(normalized)) return 'pt';
+  if (/(spanish|espanhol|espa[nñ]ol|\bes\b)/i.test(normalized)) return 'es';
+  if (/(greek|grego|ελλην)/i.test(normalized)) return 'el';
+  if (/(hebrew|hebraico|עבר)/i.test(normalized)) return 'he';
+  if (/(english|ingles|\ben\b)/i.test(normalized)) return 'en';
+  return fallback;
+}
+
+function promptRequestsTranslation(prompt: string): boolean {
+  return /(translate|translation|traduz|tradu[cç][aã]o|traduc|vers[aã]o)/i.test(prompt);
+}
+
+function promptRequestsQuestionTextTranslation(prompt: string): boolean {
+  return /(question|pergunta|pregunta|enunciado|prompt).*(also|too|tamb[eé]m|tambien)|translate all|traduz tudo|traducir todo/i.test(prompt);
+}
+
+function promptRequestsHintTranslation(prompt: string): boolean {
+  return /(hint|feedback|explica|justificativa|explanation)/i.test(prompt);
+}
+
+async function duplicateBattleQuestionsWithPrompt(
+  questions: BattleQuestion[],
+  prompt: string,
+  sourceLanguage: BattleUILanguage,
+  fallbackTargetLanguage: BattleUILanguage,
+): Promise<{ questions: BattleQuestion[]; targetLanguage: BattleUILanguage }> {
+  const normalizedPrompt = prompt.trim();
+  if (!normalizedPrompt) {
+    throw new Error('Missing prompt.');
+  }
+
+  if (!promptRequestsTranslation(normalizedPrompt)) {
+    throw new Error('Unsupported prompt.');
+  }
+
+  const targetLanguage = inferPromptTargetLanguage(normalizedPrompt, fallbackTargetLanguage);
+  const translateQuestionText = promptRequestsQuestionTextTranslation(normalizedPrompt);
+  const translateHint = promptRequestsHintTranslation(normalizedPrompt);
+
+  const cache = new Map<string, Promise<string>>();
+  const translateCached = (value?: string | null): Promise<string> => {
+    const trimmed = value?.trim();
+    if (!trimmed) {
+      return Promise.resolve('');
+    }
+
+    const cacheKey = `${targetLanguage}:${trimmed}`;
+    const existing = cache.get(cacheKey);
+    if (existing) {
+      return existing;
+    }
+
+    const pending = translateText(trimmed, sourceLanguage, targetLanguage)
+      .then((translated) => translated.trim() || trimmed)
+      .catch(() => trimmed);
+    cache.set(cacheKey, pending);
+    return pending;
+  };
+
+  const transformed = await Promise.all(
+    questions.map(async (question) => {
+      const nextQuestion: BattleQuestion = {
+        ...question,
+        ...(translateQuestionText && question.text
+          ? { text: await translateCached(question.text) }
+          : {}),
+        ...(translateHint && question.hint
+          ? { hint: await translateCached(question.hint) }
+          : {}),
+      };
+
+      if (question.options?.length) {
+        nextQuestion.options = await Promise.all(
+          question.options.map((option) => translateCached(option))
+        );
+      }
+
+      if (question.correctText) {
+        nextQuestion.correctText = await translateCached(question.correctText);
+      }
+
+      if (question.acceptedAnswers?.length) {
+        nextQuestion.acceptedAnswers = await Promise.all(
+          question.acceptedAnswers.map((answer) => translateCached(answer))
+        );
+      }
+
+      return sanitizeBattleQuestion(nextQuestion) ?? question;
+    })
+  );
+
+  return {
+    questions: sanitizeBattleQuestions(transformed),
+    targetLanguage,
+  };
+}
+
 const SELECT_OPTION_STYLE: React.CSSProperties = {
   color: '#0f172a',
   backgroundColor: '#ffffff',
@@ -584,6 +763,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const effectiveUiLanguage = normalizeBattleUiLanguage(uiLanguage ?? getBattleLanguage(defaultCourseId));
   const actionCopy = BATTLE_ACTION_COPY[effectiveUiLanguage] ?? BATTLE_ACTION_COPY.en;
   const importCopy = BATTLE_IMPORT_COPY[effectiveUiLanguage] ?? BATTLE_IMPORT_COPY.en;
+  const duplicatePromptCopy = BATTLE_DUPLICATE_PROMPT_COPY[effectiveUiLanguage] ?? BATTLE_DUPLICATE_PROMPT_COPY.en;
   const copy = useMemo(() => {
     switch (effectiveUiLanguage) {
       case 'pt':
@@ -1049,6 +1229,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [templateTitle, setTemplateTitle] = useState(() => initialTemplate?.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
   const [editorLanguage, setEditorLanguage] = useState<BattleUILanguage>(templateLanguage);
   const [duplicateLanguage, setDuplicateLanguage] = useState<BattleUILanguage>(templateLanguage);
+  const [duplicatePrompt, setDuplicatePrompt] = useState('');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [bulkImportText, setBulkImportText] = useState('');
   const [bulkImportKind, setBulkImportKind] = useState<BattleQuestionKind>('multiple-choice');
@@ -1100,6 +1281,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     setSaveState('idle');
     setBulkImportText('');
     setBulkImportError(null);
+    setDuplicatePrompt('');
     setTemplateTitle(initialTemplate.title?.trim() || buildSuggestedBattleTitle(effectiveUiLanguage));
     const nextLanguage = getSavedBattleTemplateLanguage(initialTemplate);
     setEditorLanguage(nextLanguage);
@@ -1170,10 +1352,13 @@ export const BattleSetupModal: React.FC<Props> = ({
       titleOverride?: string;
       forceDuplicate?: boolean;
       targetLanguage?: BattleUILanguage;
+      languageOverride?: BattleUILanguage;
+      skipAutoTranslate?: boolean;
     }
   ) {
     const forceDuplicate = Boolean(options?.forceDuplicate);
     const targetLanguage = options?.targetLanguage ?? editorLanguage;
+    const languageOverride = options?.languageOverride ?? targetLanguage;
     const title = options?.titleOverride?.trim() || templateTitle.trim() || buildSuggestedBattleTitle(editorLanguage);
 
     if (!forceDuplicate) {
@@ -1190,7 +1375,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       setSaveState('saving');
     }
 
-    const shouldTranslate = forceDuplicate && targetLanguage !== editorLanguage;
+    const shouldTranslate = forceDuplicate && !options?.skipAutoTranslate && targetLanguage !== editorLanguage;
     const resolvedQuestions = shouldTranslate
       ? await translateBattleQuestions(finalQuestions, editorLanguage, targetLanguage)
       : finalQuestions;
@@ -1200,7 +1385,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     const baseTemplate = buildSavedBattleTemplate(
       {
         ...buildConfig(resolvedQuestions.length),
-        courseId: getBattleCourseIdForLanguage(targetLanguage),
+        courseId: getBattleCourseIdForLanguage(languageOverride),
       },
       resolvedQuestions,
       resolvedTitle,
@@ -1210,7 +1395,7 @@ export const BattleSetupModal: React.FC<Props> = ({
           ...baseTemplate,
           id: initialTemplate.id,
           createdAt: initialTemplate.createdAt,
-          language: editorLanguage,
+          language: languageOverride,
         }
       : baseTemplate;
 
@@ -1692,6 +1877,63 @@ export const BattleSetupModal: React.FC<Props> = ({
     });
   }
 
+  async function handleDuplicateTemplateWithPrompt() {
+    const normalizedPrompt = duplicatePrompt.trim();
+    if (!normalizedPrompt) {
+      setStartError(duplicatePromptCopy.emptyError);
+      return;
+    }
+
+    try {
+      const finalQuestions = step === 'curate'
+        ? sanitizeBattleQuestions(
+            getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
+          )
+        : (await getPreparedQuestionsForCurrentFlow()).preparedQuestions;
+
+      if (finalQuestions.length === 0) {
+        setStartError(copy.noQuestionsSave);
+        return;
+      }
+
+      const { questions: incomingQuestions } = parseBulkBattleQuestions(normalizedPrompt);
+      if (incomingQuestions.length === 0) {
+        setStartError(duplicatePromptCopy.emptyError);
+        return;
+      }
+
+      if (incomingQuestions.length !== finalQuestions.length) {
+        setStartError(
+          duplicatePromptCopy.countMismatch(finalQuestions.length, incomingQuestions.length)
+        );
+        return;
+      }
+
+      const transformedQuestions = sanitizeBattleQuestions(
+        finalQuestions.map((question, index) =>
+          replaceBattleQuestionContentByOrder(question, incomingQuestions[index] ?? question)
+        )
+      );
+
+      const rawTitle = templateTitle.trim() || initialTemplate?.title?.trim() || buildSuggestedBattleTitle(editorLanguage);
+      const baseTitle = stripBattleDuplicateSuffixes(rawTitle);
+      const titleOverride = `${baseTitle} (${actionCopy.copySuffix})`;
+
+      await persistTemplateSnapshot(transformedQuestions, {
+        titleOverride,
+        forceDuplicate: true,
+        targetLanguage: editorLanguage,
+        languageOverride: editorLanguage,
+        skipAutoTranslate: true,
+      });
+    } catch (error) {
+      console.error('[BATTLE DUPLICATE PROMPT DEBUG] duplicate with prompt failed:', error);
+      setSaveState('idle');
+      setSaveMessage(null);
+      setStartError(error instanceof Error ? error.message : copy.saveFailure);
+    }
+  }
+
   if (step === 'config') {
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -2090,35 +2332,59 @@ export const BattleSetupModal: React.FC<Props> = ({
             </div>
           ) : null}
           <div className="mt-1 flex items-start justify-end gap-2">
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <select
-                value={duplicateLanguage}
-                onChange={(event) => setDuplicateLanguage(normalizeBattleUiLanguage(event.target.value))}
-                className="min-w-[148px] rounded-lg border border-orange-400/40 bg-white/10 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-white/40"
-                title={actionCopy.duplicateLanguageLabel}
-              >
-                {BATTLE_LANGUAGE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value} dir={option.dir} style={SELECT_OPTION_STYLE}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                onClick={() => void handleSaveTemplate()}
-                title={copy.saveBattleTitle}
-                disabled={saveState === 'saving'}
-                className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-3 py-2 transition"
-              >
-                {saveState === 'saving' ? actionCopy.saving : saveState === 'saved' ? actionCopy.saved : copy.save}
-              </button>
-              <button
-                onClick={() => void handleDuplicateTemplate()}
-                title={copy.duplicateBattleTitle}
-                disabled={saveState === 'saving'}
-                className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-3 py-2 transition"
-              >
-                {copy.duplicate}
-              </button>
+            <div className="w-full space-y-3">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <select
+                  value={duplicateLanguage}
+                  onChange={(event) => setDuplicateLanguage(normalizeBattleUiLanguage(event.target.value))}
+                  className="min-w-[148px] rounded-lg border border-orange-400/40 bg-white/10 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-white/40"
+                  title={actionCopy.duplicateLanguageLabel}
+                >
+                  {BATTLE_LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value} dir={option.dir} style={SELECT_OPTION_STYLE}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => void handleSaveTemplate()}
+                  title={copy.saveBattleTitle}
+                  disabled={saveState === 'saving'}
+                  className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-3 py-2 transition"
+                >
+                  {saveState === 'saving' ? actionCopy.saving : saveState === 'saved' ? actionCopy.saved : copy.save}
+                </button>
+                <button
+                  onClick={() => void handleDuplicateTemplate()}
+                  title={copy.duplicateBattleTitle}
+                  disabled={saveState === 'saving'}
+                  className="text-xs text-orange-200 hover:text-white border border-orange-400/40 rounded-lg px-3 py-2 transition"
+                >
+                  {copy.duplicate}
+                </button>
+              </div>
+              <div className="rounded-2xl border border-orange-500/20 bg-orange-500/5 px-4 py-4 space-y-3">
+                <div>
+                  <h3 className="text-sm font-bold text-white">{duplicatePromptCopy.title}</h3>
+                  <p className="mt-1 text-xs leading-5 text-slate-400">{duplicatePromptCopy.description}</p>
+                </div>
+                <textarea
+                  value={duplicatePrompt}
+                  onChange={(event) => setDuplicatePrompt(event.target.value)}
+                  placeholder={duplicatePromptCopy.placeholder}
+                  className="min-h-[92px] w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-orange-500"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void handleDuplicateTemplateWithPrompt()}
+                    disabled={saveState === 'saving'}
+                    className="rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-4 py-2 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50"
+                  >
+                    {duplicatePromptCopy.button}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           {questions.map((q, idx) => {
