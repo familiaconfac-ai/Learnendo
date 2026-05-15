@@ -343,13 +343,12 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       .slice(0, 10);
   }, [roundParticipantIds, session.scores]);
 
-  const revealRows = useMemo(() => {
+  const roundResultsRows = useMemo(() => {
     return buildBattleRoundRanking(
       roundParticipantIds,
       mergedCurrentAnswers,
       session.questionStartedAt,
     )
-      .filter((entry) => entry.isCorrect === true)
       .map((entry) => ({
         pid: entry.uid,
         placement: entry.placement,
@@ -361,6 +360,25 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         elapsedMs: entry.elapsedMs,
       }));
   }, [effectiveStatus, mergedCurrentAnswers, roundParticipantIds, session, session.scores]);
+
+  const roundAnswerSummary = useMemo(() => {
+    return roundParticipantIds.reduce(
+      (summary, participantId) => {
+        const answer = mergedCurrentAnswers[participantId];
+        if (!answer) {
+          summary.unanswered += 1;
+          return summary;
+        }
+        if (answer.isCorrect === true) {
+          summary.correct += 1;
+          return summary;
+        }
+        summary.wrong += 1;
+        return summary;
+      },
+      { correct: 0, wrong: 0, unanswered: 0 }
+    );
+  }, [mergedCurrentAnswers, roundParticipantIds]);
 
   useEffect(() => {
     console.info('[BATTLE SESSION STATUS] teacher host snapshot', {
@@ -1176,9 +1194,9 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
 
   const answerLabel = question ? getBattleCorrectAnswerLabel(question) : '';
   const questionHint = repairBattleTextEncoding(question?.hint) ?? '';
-  const correctCount = Object.values(mergedCurrentAnswers).filter((answer) => answer.isCorrect).length;
-  const wrongCount = Object.values(mergedCurrentAnswers).filter((answer) => answer.isCorrect === false).length;
-  const unansweredCount = Math.max(0, roundParticipantIds.length - answerCount);
+  const correctCount = roundAnswerSummary.correct;
+  const wrongCount = roundAnswerSummary.wrong;
+  const unansweredCount = roundAnswerSummary.unanswered;
 
   return (
     <div className="fixed inset-0 z-[9000] flex select-none bg-slate-950">
@@ -1403,7 +1421,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                     onClick={() => setShowRankingOverlay(true)}
                     className="text-xs text-slate-400 underline underline-offset-2 transition hover:text-white"
                   >
-                    {copy.seeRoundRanking(revealRows.length)}
+                    {copy.seeRoundRanking(roundResultsRows.length)}
                   </button>
                 </>
               ) : null}
@@ -1425,8 +1443,33 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                 X
               </button>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-1.5">
-              {revealRows.map((row) => (
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+              <div className="grid grid-cols-3 gap-2">
+                {roundResultsRows.slice(0, 3).map((row) => (
+                  <div
+                    key={`podium-${row.pid}`}
+                    className={`rounded-2xl border px-4 py-3 text-center ${
+                      row.isCorrect === true
+                        ? 'border-green-500/30 bg-green-500/10'
+                        : row.isCorrect === false
+                          ? 'border-red-500/25 bg-red-500/10'
+                          : 'border-slate-700/50 bg-slate-800/70'
+                    }`}
+                  >
+                    <div className="text-2xl font-black text-white">
+                      {row.placement === 1 ? '1' : row.placement === 2 ? '2' : '3'}
+                    </div>
+                    <p className="mt-2 truncate text-sm font-bold text-white">{row.name}</p>
+                    <p className={`mt-1 text-[11px] font-semibold ${
+                      row.isCorrect === true ? 'text-green-400' : row.isCorrect === false ? 'text-red-400' : 'text-slate-400'
+                    }`}>
+                      {row.isCorrect === true ? copy.rightLabel : row.isCorrect === false ? copy.wrongLabel : copy.timeLabel}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+              {roundResultsRows.map((row) => (
                 <div
                   key={row.pid}
                   className={`flex items-center gap-3 rounded-xl border px-4 py-2 text-sm ${
@@ -1456,6 +1499,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                   </span>
                 </div>
               ))}
+              </div>
             </div>
             <div className="flex flex-shrink-0 justify-center border-t border-slate-800 px-5 py-3">
               <button

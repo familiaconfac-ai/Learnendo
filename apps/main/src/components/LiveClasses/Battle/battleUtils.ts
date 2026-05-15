@@ -651,8 +651,9 @@ export function buildBotBattlePayload(
     hard: 0.52,
   };
   const shouldAnswerCorrectly = Math.random() < accuracyByDifficulty[session.config.difficulty];
-  const minDelay = Math.min(totalMs - 250, 2000);
-  const maxDelay = Math.min(totalMs - 150, Math.max(minDelay, 8000));
+  // Keep the bot fast so it does not hold the round open after the human answers.
+  const minDelay = Math.min(totalMs - 250, 350);
+  const maxDelay = Math.min(totalMs - 150, Math.max(minDelay, 1100));
   const delayMs = clamp(
     Math.round(minDelay + Math.random() * Math.max(0, maxDelay - minDelay)),
     300,

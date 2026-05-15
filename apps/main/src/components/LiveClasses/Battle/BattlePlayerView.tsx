@@ -10,6 +10,7 @@ import { BattleLabIndicators } from './BattleLabIndicators';
 import { joinBattle, submitBattleAnswer } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
+  buildBattleRoundRanking,
   canBattleParticipantAnswerCurrentQuestion,
   calculateBattleRoundScore,
   compareBattleParticipantsByRanking,
@@ -52,6 +53,10 @@ const PLAYER_COPY = {
     waitingNext: 'Waiting for next question...',
     correctCount: 'correct',
     wrongCount: 'wrong',
+    noAnswerCount: 'no answer',
+    roundResults: 'Round results',
+    currentRanking: 'Current ranking',
+    noResponse: 'No response',
     preparingTitle: 'Preparing battle',
     preparingBody: 'The session is already running, but the current question has not finished loading yet.',
     preparingHint: 'Waiting for the next Firestore snapshot...',
@@ -90,6 +95,10 @@ const PLAYER_COPY = {
     waitingNext: 'Aguardando a proxima pergunta...',
     correctCount: 'certo',
     wrongCount: 'errado',
+    noAnswerCount: 'sem resposta',
+    roundResults: 'Resultados da rodada',
+    currentRanking: 'Ranking atual',
+    noResponse: 'Sem resposta',
     preparingTitle: 'Preparando batalha',
     preparingBody: 'A sessao ja esta em andamento, mas a pergunta atual ainda nao terminou de carregar.',
     preparingHint: 'Aguardando o proximo snapshot do Firestore...',
@@ -128,6 +137,10 @@ const PLAYER_COPY = {
     waitingNext: 'Esperando la siguiente pregunta...',
     correctCount: 'correctas',
     wrongCount: 'incorrectas',
+    noAnswerCount: 'sin respuesta',
+    roundResults: 'Resultados de la ronda',
+    currentRanking: 'Ranking actual',
+    noResponse: 'Sin respuesta',
     preparingTitle: 'Preparando batalla',
     preparingBody: 'La sesion ya esta en marcha, pero la pregunta actual todavia no termino de cargar.',
     preparingHint: 'Esperando el siguiente snapshot de Firestore...',
@@ -270,12 +283,50 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
   const showMicButton = question?.kind === 'speaking';
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
+  const effectiveRoundParticipantIds =
+    (session.roundParticipantIds ?? []).length > 0 ? (session.roundParticipantIds ?? []) : registeredParticipantIds;
   const roundAnswerCount = useMemo(
     () => {
       const mergedAnswers = currentRoundLocalAnswer ? { ...session.currentAnswers, [uid]: currentRoundLocalAnswer } : session.currentAnswers;
-      return (session.roundParticipantIds ?? []).filter((participantId) => participantId in mergedAnswers).length;
+      return effectiveRoundParticipantIds.filter((participantId) => participantId in mergedAnswers).length;
     },
-    [currentRoundLocalAnswer, session.roundParticipantIds, session.currentAnswers, uid]
+    [currentRoundLocalAnswer, effectiveRoundParticipantIds, session.currentAnswers, uid]
+  );
+  const mergedRoundAnswers = useMemo(
+    () => (currentRoundLocalAnswer ? { ...session.currentAnswers, [uid]: currentRoundLocalAnswer } : session.currentAnswers),
+    [currentRoundLocalAnswer, session.currentAnswers, uid]
+  );
+  const roundRankingRows = useMemo(
+    () =>
+      buildBattleRoundRanking(effectiveRoundParticipantIds, mergedRoundAnswers, session.questionStartedAt)
+        .map((entry) => ({
+          ...entry,
+          name:
+            mergedRoundAnswers[entry.uid]?.name ??
+            visiblePlayerScores[entry.uid]?.name ??
+            session.participants?.[entry.uid]?.name ??
+            entry.uid,
+        })),
+    [effectiveRoundParticipantIds, mergedRoundAnswers, session.participants, session.questionStartedAt, visiblePlayerScores]
+  );
+  const roundAnswerSummary = useMemo(
+    () =>
+      roundRankingRows.reduce(
+        (summary, entry) => {
+          if (entry.isCorrect === true) {
+            summary.correct += 1;
+            return summary;
+          }
+          if (entry.isCorrect === false) {
+            summary.wrong += 1;
+            return summary;
+          }
+          summary.unanswered += 1;
+          return summary;
+        },
+        { correct: 0, wrong: 0, unanswered: 0 }
+      ),
+    [roundRankingRows]
   );
 
   useEffect(() => {
@@ -1054,14 +1105,9 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     ...(typeof myAnswer?.optionIndex === 'number' ? [myAnswer.optionIndex] : []),
   ]));
   const revealedCorrectIndexes = question ? getBattleCorrectIndexes(question) : [];
-  const correctCount = useMemo(
-    () => Object.values(session.currentAnswers).filter(answer => answer.isCorrect).length,
-    [session.currentAnswers]
-  );
-  const wrongCount = useMemo(
-    () => Object.values(session.currentAnswers).filter(answer => !answer.isCorrect).length,
-    [session.currentAnswers]
-  );
+  const correctCount = roundAnswerSummary.correct;
+  const wrongCount = roundAnswerSummary.wrong;
+  const unansweredCount = roundAnswerSummary.unanswered;
 
   if (showResults) {
     console.log('[BATTLE PLAYER] render branch: finished');
@@ -1238,7 +1284,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     console.log('[BATTLE PLAYER] render branch: showing-answer');
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
-        <div className="w-full max-w-sm mx-4 text-center space-y-4">
+        <div className="w-full max-w-4xl mx-4 text-center space-y-4">
           <div className="text-5xl">
             {myAnswer?.isCorrect === true ? '✅' : myAnswer?.isCorrect === false ? '❌' : '⏰'}
           </div>
@@ -1301,15 +1347,87 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
             )}
             {myStreak >= 3 && <p className="text-xs text-orange-300">{copy.streak(myStreak)}</p>}
           </div>
-          <div className="flex justify-center gap-3 text-sm">
+          <div className="flex flex-wrap justify-center gap-3 text-sm">
             <span className="px-3 py-1 rounded-full bg-green-500/20 text-green-400 font-semibold">
               {correctCount} {copy.correctCount}
             </span>
             <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-400 font-semibold">
               {wrongCount} {copy.wrongCount}
             </span>
+            {unansweredCount > 0 ? (
+              <span className="px-3 py-1 rounded-full bg-slate-700/40 text-slate-300 font-semibold">
+                {unansweredCount} {copy.noAnswerCount}
+              </span>
+            ) : null}
           </div>
           <p className="text-xs text-slate-500">{copy.waitingNext}</p>
+          <div className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-800 bg-slate-950/90 p-5 text-left shadow-2xl">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{copy.roundResults}</p>
+                <h3 className="text-lg font-black text-white">{copy.currentRanking}</h3>
+              </div>
+              {myRank > 0 ? (
+                <span className="rounded-full bg-orange-500/15 px-3 py-1 text-xs font-bold text-orange-300">
+                  #{myRank}
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              {roundRankingRows.slice(0, 3).map((entry) => (
+                <div
+                  key={`revealed-podium-${entry.uid}`}
+                  className={`rounded-2xl border px-3 py-3 text-center ${
+                    entry.isCorrect === true
+                      ? 'border-green-500/30 bg-green-500/10'
+                      : entry.isCorrect === false
+                        ? 'border-red-500/25 bg-red-500/10'
+                        : 'border-slate-700/40 bg-slate-800/60'
+                  }`}
+                >
+                  <div className="text-2xl font-black text-white">
+                    {entry.placement === 1 ? '1' : entry.placement === 2 ? '2' : '3'}
+                  </div>
+                  <p className="mt-2 truncate text-sm font-bold text-white">{entry.name}</p>
+                  <p className={`mt-1 text-[11px] font-semibold ${
+                    entry.isCorrect === true ? 'text-green-400' : entry.isCorrect === false ? 'text-red-400' : 'text-slate-400'
+                  }`}>
+                    {entry.isCorrect === true ? copy.correct : entry.isCorrect === false ? copy.wrong : copy.noResponse}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 space-y-2">
+              {roundRankingRows.map((entry) => (
+                <div
+                  key={`revealed-rank-${entry.uid}`}
+                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
+                    entry.isCorrect === true
+                      ? 'border-green-500/25 bg-green-500/10'
+                      : entry.isCorrect === false
+                        ? 'border-red-500/20 bg-red-500/10'
+                        : 'border-slate-700/40 bg-slate-800/50'
+                  }`}
+                >
+                  <span className="w-8 text-center text-base font-black text-white">
+                    {entry.placement === 1 ? '1' : entry.placement === 2 ? '2' : entry.placement === 3 ? '3' : `#${entry.placement}`}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-white">
+                      {entry.name}
+                      {entry.uid === uid ? <span className="ml-1 text-[11px] text-orange-300">(voce)</span> : null}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {visiblePlayerScores[entry.uid]?.score ?? session.scores?.[entry.uid]?.score ?? 0} {copy.pts}
+                    </p>
+                  </div>
+                  <span className="text-xs text-slate-400">
+                    {entry.elapsedMs != null ? `${(entry.elapsedMs / 1000).toFixed(1)}s` : copy.noResponse}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -1327,7 +1445,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     });
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
-        <div className="w-full max-w-sm mx-4 text-center space-y-4">
+        <div className="w-full max-w-4xl mx-4 text-center space-y-4">
           <div className="text-5xl">⏳</div>
           <h2 className="text-xl font-bold text-white">{copy.preparingTitle}</h2>
           <p className="text-sm text-slate-300">
