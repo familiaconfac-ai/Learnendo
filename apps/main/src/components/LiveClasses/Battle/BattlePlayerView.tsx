@@ -1282,6 +1282,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
 
   if (session.status === 'REVEALED') {
     console.log('[BATTLE PLAYER] render branch: showing-answer');
+    const showRoundRanking = session.roundStatus === 'ranking';
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
         <div className="w-full max-w-4xl mx-4 text-center space-y-4">
@@ -1361,73 +1362,51 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
             ) : null}
           </div>
           <p className="text-xs text-slate-500">{copy.waitingNext}</p>
-          <div className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-800 bg-slate-950/90 p-5 text-left shadow-2xl">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{copy.roundResults}</p>
-                <h3 className="text-lg font-black text-white">{copy.currentRanking}</h3>
+          {showRoundRanking ? (
+            <div className="mx-auto w-full max-w-3xl rounded-3xl border border-slate-800 bg-slate-950/90 p-5 text-left shadow-2xl">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{copy.roundResults}</p>
+                  <h3 className="text-lg font-black text-white">{copy.currentRanking}</h3>
+                </div>
+                {myRank > 0 ? (
+                  <span className="rounded-full bg-orange-500/15 px-3 py-1 text-xs font-bold text-orange-300">
+                    #{myRank}
+                  </span>
+                ) : null}
               </div>
-              {myRank > 0 ? (
-                <span className="rounded-full bg-orange-500/15 px-3 py-1 text-xs font-bold text-orange-300">
-                  #{myRank}
-                </span>
-              ) : null}
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
-              {roundRankingRows.slice(0, 3).map((entry) => (
-                <div
-                  key={`revealed-podium-${entry.uid}`}
-                  className={`rounded-2xl border px-3 py-3 text-center ${
-                    entry.isCorrect === true
-                      ? 'border-green-500/30 bg-green-500/10'
-                      : entry.isCorrect === false
-                        ? 'border-red-500/25 bg-red-500/10'
-                        : 'border-slate-700/40 bg-slate-800/60'
-                  }`}
-                >
-                  <div className="text-2xl font-black text-white">
-                    {entry.placement === 1 ? '1' : entry.placement === 2 ? '2' : '3'}
+              <div className="mt-4 space-y-2">
+                {roundRankingRows.slice(0, 10).map((entry) => (
+                  <div
+                    key={`revealed-rank-${entry.uid}`}
+                    className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
+                      entry.isCorrect === true
+                        ? 'border-green-500/25 bg-green-500/10'
+                        : entry.isCorrect === false
+                          ? 'border-red-500/20 bg-red-500/10'
+                          : 'border-slate-700/40 bg-slate-800/50'
+                    }`}
+                  >
+                    <span className="w-8 text-center text-base font-black text-white">
+                      {entry.placement === 1 ? '1' : entry.placement === 2 ? '2' : entry.placement === 3 ? '3' : `#${entry.placement}`}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-white">
+                        {entry.name}
+                        {entry.uid === uid ? <span className="ml-1 text-[11px] text-orange-300">(voce)</span> : null}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {visiblePlayerScores[entry.uid]?.score ?? session.scores?.[entry.uid]?.score ?? 0} {copy.pts}
+                      </p>
+                    </div>
+                    <span className="text-xs text-slate-400">
+                      {entry.elapsedMs != null ? `${(entry.elapsedMs / 1000).toFixed(1)}s` : copy.noResponse}
+                    </span>
                   </div>
-                  <p className="mt-2 truncate text-sm font-bold text-white">{entry.name}</p>
-                  <p className={`mt-1 text-[11px] font-semibold ${
-                    entry.isCorrect === true ? 'text-green-400' : entry.isCorrect === false ? 'text-red-400' : 'text-slate-400'
-                  }`}>
-                    {entry.isCorrect === true ? copy.correct : entry.isCorrect === false ? copy.wrong : copy.noResponse}
-                  </p>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-            <div className="mt-4 space-y-2">
-              {roundRankingRows.map((entry) => (
-                <div
-                  key={`revealed-rank-${entry.uid}`}
-                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
-                    entry.isCorrect === true
-                      ? 'border-green-500/25 bg-green-500/10'
-                      : entry.isCorrect === false
-                        ? 'border-red-500/20 bg-red-500/10'
-                        : 'border-slate-700/40 bg-slate-800/50'
-                  }`}
-                >
-                  <span className="w-8 text-center text-base font-black text-white">
-                    {entry.placement === 1 ? '1' : entry.placement === 2 ? '2' : entry.placement === 3 ? '3' : `#${entry.placement}`}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-bold text-white">
-                      {entry.name}
-                      {entry.uid === uid ? <span className="ml-1 text-[11px] text-orange-300">(voce)</span> : null}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {visiblePlayerScores[entry.uid]?.score ?? session.scores?.[entry.uid]?.score ?? 0} {copy.pts}
-                    </p>
-                  </div>
-                  <span className="text-xs text-slate-400">
-                    {entry.elapsedMs != null ? `${(entry.elapsedMs / 1000).toFixed(1)}s` : copy.noResponse}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+          ) : null}
         </div>
       </div>
     );

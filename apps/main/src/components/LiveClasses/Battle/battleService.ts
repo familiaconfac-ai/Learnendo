@@ -700,6 +700,14 @@ export async function showBattleAnswer(classId: string): Promise<void> {
   });
 }
 
+export async function showBattleRanking(classId: string): Promise<void> {
+  await updateDoc(battleDocRef(classId), {
+    roundStatus: 'ranking',
+    updatedAt: Date.now(),
+    lastChange: serverTimestamp(),
+  });
+}
+
 export async function endBattle(classId: string): Promise<void> {
   await updateDoc(battleDocRef(classId), {
     status: 'FINISHED',

@@ -5,6 +5,7 @@ import {
   advanceBattleQuestion,
   endBattle,
   showBattleAnswer,
+  showBattleRanking,
   startBattle,
   submitBattleAnswer,
 } from './battleService';
@@ -72,6 +73,9 @@ const HOST_COPY = {
     noAnswer: 'no answer',
     seeRoundRanking: (count: number) => `See round ranking (${count})`,
     roundResults: 'Round Results',
+    currentRanking: 'Current ranking',
+    continueReview: 'Continue',
+    wrongStudents: 'Students who missed',
     noResponse: 'no answer',
     rightLabel: 'Correct',
     wrongLabel: 'Wrong',
@@ -110,6 +114,9 @@ const HOST_COPY = {
     noAnswer: 'sem resposta',
     seeRoundRanking: (count: number) => `Ver ranking da rodada (${count})`,
     roundResults: 'Resultados da Rodada',
+    currentRanking: 'Ranking atual',
+    continueReview: 'Continuar',
+    wrongStudents: 'Alunos que erraram',
     noResponse: 'sem resposta',
     rightLabel: 'Correta',
     wrongLabel: 'Errada',
@@ -148,6 +155,9 @@ const HOST_COPY = {
     noAnswer: 'sin respuesta',
     seeRoundRanking: (count: number) => `Ver ranking de la ronda (${count})`,
     roundResults: 'Resultados de la Ronda',
+    currentRanking: 'Ranking actual',
+    continueReview: 'Continuar',
+    wrongStudents: 'Alumnos que fallaron',
     noResponse: 'sin respuesta',
     rightLabel: 'Correcta',
     wrongLabel: 'Incorrecta',
@@ -379,6 +389,13 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       { correct: 0, wrong: 0, unanswered: 0 }
     );
   }, [mergedCurrentAnswers, roundParticipantIds]);
+  const wrongParticipantNames = useMemo(
+    () =>
+      roundResultsRows
+        .filter((row) => row.isCorrect === false)
+        .map((row) => row.name),
+    [roundResultsRows]
+  );
 
   useEffect(() => {
     console.info('[BATTLE SESSION STATUS] teacher host snapshot', {
@@ -546,14 +563,14 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   }, [session.status]);
 
   useEffect(() => {
-    if (session.status === 'REVEALED') {
+    if (session.status === 'REVEALED' && session.roundStatus === 'ranking') {
       setShowRankingOverlay(true);
       return;
     }
     if (session.status !== 'FINISHED') {
       setShowRankingOverlay(false);
     }
-  }, [session.status]);
+  }, [session.roundStatus, session.status]);
 
   useEffect(() => {
     if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) return;
@@ -1154,6 +1171,15 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     }
   }
 
+  async function handleContinueToRanking() {
+    setBusy(true);
+    try {
+      await showBattleRanking(classId);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleNext() {
     setBusy(true);
     try {
@@ -1417,62 +1443,41 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                       </span>
                     ) : null}
                   </div>
-                  <button
-                    onClick={() => setShowRankingOverlay(true)}
-                    className="text-xs text-slate-400 underline underline-offset-2 transition hover:text-white"
-                  >
-                    {copy.seeRoundRanking(roundResultsRows.length)}
-                  </button>
+                  {wrongParticipantNames.length > 0 ? (
+                    <div className="w-full max-w-2xl rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-left">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-red-300">{copy.wrongStudents}</p>
+                      <p className="mt-1 text-sm leading-6 text-red-100">{wrongParticipantNames.join(', ')}</p>
+                    </div>
+                  ) : null}
+                  {session.roundStatus !== 'ranking' ? (
+                    <button
+                      onClick={handleContinueToRanking}
+                      disabled={busy}
+                      className="rounded-xl bg-gradient-to-r from-orange-500 to-red-600 px-8 py-3 text-sm font-black text-white transition hover:opacity-90 disabled:opacity-50"
+                    >
+                      {copy.continueReview}
+                    </button>
+                  ) : null}
                 </>
               ) : null}
             </>
           ) : null}
         </div>
 
-        {showRankingOverlay && effectiveStatus === 'REVEALED' ? (
+        {showRankingOverlay && effectiveStatus === 'REVEALED' && session.roundStatus === 'ranking' ? (
           <div className="fixed inset-0 z-[9500] flex flex-col bg-black/96 backdrop-blur-md">
             <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-800 px-5 py-3">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-white">{copy.roundResults}</span>
-                {answerLabel ? <span className="text-xs font-semibold text-green-400">{answerLabel}</span> : null}
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-500">{copy.roundResults}</p>
+                <h2 className="mt-1 text-xl font-black text-white">{copy.currentRanking}</h2>
               </div>
-              <button
-                onClick={() => setShowRankingOverlay(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800 text-sm text-white transition hover:bg-slate-700"
-              >
-                X
-              </button>
             </div>
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
-              <div className="grid grid-cols-3 gap-2">
-                {roundResultsRows.slice(0, 3).map((row) => (
-                  <div
-                    key={`podium-${row.pid}`}
-                    className={`rounded-2xl border px-4 py-3 text-center ${
-                      row.isCorrect === true
-                        ? 'border-green-500/30 bg-green-500/10'
-                        : row.isCorrect === false
-                          ? 'border-red-500/25 bg-red-500/10'
-                          : 'border-slate-700/50 bg-slate-800/70'
-                    }`}
-                  >
-                    <div className="text-2xl font-black text-white">
-                      {row.placement === 1 ? '1' : row.placement === 2 ? '2' : '3'}
-                    </div>
-                    <p className="mt-2 truncate text-sm font-bold text-white">{row.name}</p>
-                    <p className={`mt-1 text-[11px] font-semibold ${
-                      row.isCorrect === true ? 'text-green-400' : row.isCorrect === false ? 'text-red-400' : 'text-slate-400'
-                    }`}>
-                      {row.isCorrect === true ? copy.rightLabel : row.isCorrect === false ? copy.wrongLabel : copy.timeLabel}
-                    </p>
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-1.5">
-              {roundResultsRows.map((row) => (
+            <div className="flex-1 min-h-0 overflow-y-auto p-4">
+              <div className="mx-auto w-full max-w-5xl space-y-2">
+              {roundResultsRows.slice(0, 10).map((row) => (
                 <div
                   key={row.pid}
-                  className={`flex items-center gap-3 rounded-xl border px-4 py-2 text-sm ${
+                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${
                     row.isCorrect === true
                       ? 'border-green-500/25 bg-green-500/10'
                       : row.isCorrect === false
@@ -1504,7 +1509,6 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
             <div className="flex flex-shrink-0 justify-center border-t border-slate-800 px-5 py-3">
               <button
                 onClick={() => {
-                  setShowRankingOverlay(false);
                   void handleNext();
                 }}
                 disabled={busy}
@@ -1541,7 +1545,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               {copy.revealAnswer}
             </button>
           ) : null}
-          {effectiveStatus === 'REVEALED' ? (
+          {effectiveStatus === 'REVEALED' && session.roundStatus === 'ranking' ? (
             <button
               onClick={handleNext}
               disabled={busy}

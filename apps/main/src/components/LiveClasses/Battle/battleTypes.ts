@@ -86,7 +86,7 @@ export interface BattleSession {
   status: BattleStatus;
   liveClassId?: string;
   hostUid?: string;
-  roundStatus?: 'waiting' | 'active' | 'revealed' | 'finished';
+  roundStatus?: 'waiting' | 'active' | 'revealed' | 'ranking' | 'finished';
   config: BattleConfig;
   questions: BattleQuestion[];
   currentQuestionIndex: number;
