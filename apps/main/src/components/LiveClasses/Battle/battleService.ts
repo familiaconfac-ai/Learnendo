@@ -256,9 +256,9 @@ function applyBattleRoundRankingToScores(params: {
       uid: entry.uid,
       name: previous?.name ?? entry.uid,
     };
-    const placementPoints =
+    const earnedPoints =
       entry.isCorrect === true
-        ? Math.max(1, roundParticipantIds.length - entry.placement + 1)
+        ? Math.max(0, currentAnswers[entry.uid]?.roundPoints ?? 0)
         : 0;
     const bestElapsedMs =
       entry.isCorrect === true && entry.elapsedMs != null
@@ -268,7 +268,7 @@ function applyBattleRoundRankingToScores(params: {
         : previous?.bestElapsedMs ?? null;
     nextScores[entry.uid] = buildBattleParticipantRegistryRecord(previous, identity, {
       lastAnswerCorrect: entry.isCorrect,
-      score: (previous?.score ?? 0) + placementPoints,
+      score: (previous?.score ?? 0) + earnedPoints,
       streak:
         entry.isCorrect === true
           ? (previous?.streak ?? 0) + 1

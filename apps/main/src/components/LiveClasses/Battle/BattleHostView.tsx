@@ -1474,36 +1474,24 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto p-4">
               <div className="mx-auto w-full max-w-5xl space-y-2">
-              {roundResultsRows.slice(0, 10).map((row) => (
+              {leaderboard.slice(0, 10).map((player, index) => {
+                const row = { ...player, placement: index + 1, pid: player.uid };
+                return (
                 <div
-                  key={row.pid}
-                  className={`flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${
-                    row.isCorrect === true
-                      ? 'border-green-500/25 bg-green-500/10'
-                      : row.isCorrect === false
-                        ? 'border-red-500/25 bg-red-500/10'
-                        : 'border-slate-700/40 bg-slate-800/60'
-                  }`}
+                  key={player.uid}
+                  className="flex items-center gap-3 rounded-2xl border border-slate-700/40 bg-slate-800/60 px-4 py-3 text-sm"
                 >
                   <span className="w-8 text-center text-base font-bold text-white">
                     {row.placement === 1 ? '🥇' : row.placement === 2 ? '🥈' : row.placement === 3 ? '🥉' : `#${row.placement}`}
                   </span>
                   <span className="flex-1 truncate text-white">
-                    {row.name}
-                    {row.pid === teacherUid ? <span className="ml-1 text-[10px] text-slate-500">({copy.teacherShort})</span> : null}
+                    {player.name}
+                    {player.uid === teacherUid ? <span className="ml-1 text-[10px] text-slate-500">({copy.teacherShort})</span> : null}
                   </span>
-                  {row.elapsedMs != null ? (
-                    <span className="text-xs text-slate-400">{(row.elapsedMs / 1000).toFixed(1)}s</span>
-                  ) : (
-                    <span className="text-xs text-slate-500">{copy.noResponse}</span>
-                  )}
-                  <span className={`text-xs font-bold ${
-                    row.isCorrect === true ? 'text-green-400' : row.isCorrect === false ? 'text-red-400' : 'text-slate-500'
-                  }`}>
-                    {row.isCorrect === true ? copy.rightLabel : row.isCorrect === false ? copy.wrongLabel : copy.timeLabel}
-                  </span>
+                  <span className="text-xs font-bold text-orange-300">{(player.score ?? 0).toLocaleString()} pts</span>
                 </div>
-              ))}
+              );
+              })}
               </div>
             </div>
             <div className="flex flex-shrink-0 justify-center border-t border-slate-800 px-5 py-3">

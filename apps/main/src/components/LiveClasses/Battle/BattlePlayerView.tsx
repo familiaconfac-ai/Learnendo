@@ -1376,32 +1376,27 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
                 ) : null}
               </div>
               <div className="mt-4 space-y-2">
-                {roundRankingRows.slice(0, 10).map((entry) => (
+                {leaderboard.slice(0, 10).map((player, index) => (
                   <div
-                    key={`revealed-rank-${entry.uid}`}
+                    key={`revealed-rank-${player.uid}`}
                     className={`flex items-center gap-3 rounded-2xl border px-4 py-3 ${
-                      entry.isCorrect === true
-                        ? 'border-green-500/25 bg-green-500/10'
-                        : entry.isCorrect === false
-                          ? 'border-red-500/20 bg-red-500/10'
-                          : 'border-slate-700/40 bg-slate-800/50'
+                      player.uid === uid
+                        ? 'border-orange-500/50 bg-orange-500/15'
+                        : 'border-slate-700/40 bg-slate-800/50'
                     }`}
                   >
                     <span className="w-8 text-center text-base font-black text-white">
-                      {entry.placement === 1 ? '1' : entry.placement === 2 ? '2' : entry.placement === 3 ? '3' : `#${entry.placement}`}
+                      {index === 0 ? '1' : index === 1 ? '2' : index === 2 ? '3' : `#${index + 1}`}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-bold text-white">
-                        {entry.name}
-                        {entry.uid === uid ? <span className="ml-1 text-[11px] text-orange-300">(voce)</span> : null}
+                        {player.name}
+                        {player.uid === uid ? <span className="ml-1 text-[11px] text-orange-300">(voce)</span> : null}
                       </p>
                       <p className="text-xs text-slate-500">
-                        {visiblePlayerScores[entry.uid]?.score ?? session.scores?.[entry.uid]?.score ?? 0} {copy.pts}
+                        {(player.score ?? 0).toLocaleString()} {copy.pts}
                       </p>
                     </div>
-                    <span className="text-xs text-slate-400">
-                      {entry.elapsedMs != null ? `${(entry.elapsedMs / 1000).toFixed(1)}s` : copy.noResponse}
-                    </span>
                   </div>
                 ))}
               </div>

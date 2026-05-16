@@ -403,7 +403,15 @@ export function calculateBattleRoundScore(params: {
   const elapsedMs = params.questionStartedAt > 0
     ? Math.max(0, params.answeredAt - params.questionStartedAt)
     : 0;
-  return { elapsedMs, roundPoints: 0 };
+  if (!params.isCorrect) {
+    return { elapsedMs, roundPoints: 0 };
+  }
+
+  const elapsedSeconds = Math.ceil(elapsedMs / 1000);
+  return {
+    elapsedMs,
+    roundPoints: Math.max(0, 1000 - elapsedSeconds),
+  };
 }
 
 export function buildBattleParticipantScore(
@@ -416,8 +424,8 @@ export function buildBattleParticipantScore(
   return stripUndefinedFields({
     uid,
     name,
-    score: 0,
-    streak: 0,
+    score: (previous?.score ?? 0) + (isCorrect ? roundPoints : 0),
+    streak: isCorrect ? (previous?.streak ?? 0) + 1 : 0,
     lastAnswerCorrect: isCorrect,
     firstPlaceCount: previous?.firstPlaceCount ?? 0,
     secondPlaceCount: previous?.secondPlaceCount ?? 0,
