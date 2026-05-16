@@ -82,6 +82,7 @@ const TeacherStage: React.FC<{
   const [cameraBusy, setCameraBusy] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
+  const [cameraRecoveryAttempts, setCameraRecoveryAttempts] = useState(0);
 
   useEffect(() => {
     setStudentEditingEnabled(session.studentEditingEnabled ?? true);
@@ -209,6 +210,7 @@ const TeacherStage: React.FC<{
     if (!isCameraEnabled || cameraBusy || localCameraTrack) return undefined;
 
     const recoveryTimer = window.setTimeout(() => {
+      setCameraRecoveryAttempts((current) => current + 1);
       void toggleCameraWithRecovery(true);
     }, 600);
 
@@ -216,6 +218,19 @@ const TeacherStage: React.FC<{
       window.clearTimeout(recoveryTimer);
     };
   }, [cameraBusy, isCameraEnabled, localCameraTrack, toggleCameraWithRecovery]);
+
+  useEffect(() => {
+    if (cameraRecoveryAttempts > 0 || cameraBusy || localCameraTrack) return undefined;
+
+    const initialRecoveryTimer = window.setTimeout(() => {
+      setCameraRecoveryAttempts(1);
+      void toggleCameraWithRecovery(true);
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(initialRecoveryTimer);
+    };
+  }, [cameraBusy, cameraRecoveryAttempts, localCameraTrack, toggleCameraWithRecovery]);
 
   const toggleMicrophoneWithRecovery = async (forceEnable = !isMicrophoneEnabled) => {
     if (microphoneBusy) return;

@@ -207,6 +207,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
   const botAnswerAttemptRef = useRef<string | null>(null);
+  const autoRevealRoundKeyRef = useRef<string | null>(null);
 
   const questionIdx = session.currentQuestionIndex;
   const question = session.questions[questionIdx] ?? null;
@@ -242,6 +243,10 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       revealParticipantIds.every((participantId) => participantId in mergedCurrentAnswers) ||
       effectiveAnsweredCount >= revealParticipantIds.length
     );
+  const shouldAutoReveal =
+    session.status === 'PLAYING' &&
+    revealParticipantIds.length > 0 &&
+    effectiveAnsweredCount >= revealParticipantIds.length;
   const effectiveStatus: BattleSession['status'] = session.status;
   const teacherIsRegistered =
     Boolean(session.participants?.[teacherUid]) ||
@@ -603,7 +608,14 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   }, [battleLanguage, question, session.id, session.status]);
 
   useEffect(() => {
-    if (session.status !== 'PLAYING' || revealParticipantIds.length === 0 || !allAnsweredLocally) return;
+    if (!shouldAutoReveal) {
+      autoRevealRoundKeyRef.current = null;
+      return;
+    }
+
+    const roundKey = `${session.id}:${session.currentQuestionId ?? question?.id ?? questionIdx}:${effectiveAnsweredCount}:${revealParticipantIds.join(',')}`;
+    if (autoRevealRoundKeyRef.current === roundKey) return;
+    autoRevealRoundKeyRef.current = roundKey;
 
     console.warn('[BATTLE ROUND STATE DEBUG] revealing answer', {
       reason: 'all-participants-answered',
@@ -614,10 +626,13 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     });
     audioRef.current?.stop();
     setTimeLeft(0);
-    showBattleAnswer(classId, revealParticipantIds).catch((error) => {
-      console.error('[BattleHostView] auto reveal failed:', error);
-    });
-  }, [allAnsweredLocally, effectiveAnsweredCount, classId, revealParticipantIds, session, session.status]);
+    window.setTimeout(() => {
+      showBattleAnswer(classId, revealParticipantIds).catch((error) => {
+        console.error('[BattleHostView] auto reveal failed:', error);
+        autoRevealRoundKeyRef.current = null;
+      });
+    }, 120);
+  }, [classId, effectiveAnsweredCount, question?.id, questionIdx, revealParticipantIds, session.currentQuestionId, session.id, shouldAutoReveal]);
 
   useEffect(() => {
     if (session.status !== 'PLAYING' || !timeUp) return;
@@ -1547,7 +1562,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
           </div>
         ) : null}
         <div className="flex flex-shrink-0 justify-center gap-3 border-t border-slate-800/50 px-5 py-3">
-          {session.status === 'PLAYING' && !allAnsweredLocally ? (
+          {session.status === 'PLAYING' && !shouldAutoReveal ? (
             <button
               onClick={handleShowAnswer}
               disabled={busy}

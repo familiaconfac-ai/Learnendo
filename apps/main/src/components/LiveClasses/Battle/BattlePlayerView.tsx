@@ -1653,9 +1653,6 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
           </div>
         )}
 
-        {hasAnswered && session.status === 'PLAYING' && (
-          <p className="text-sm text-slate-400 animate-pulse">{copy.waitingNext}</p>
-        )}
         {!hasAnswered && !canAnswerCurrentQuestion && !isRegisteredParticipant && session.status === 'PLAYING' && (
           <p className="text-sm text-slate-400">{copy.waitingNext}</p>
         )}
