@@ -10,6 +10,7 @@ import { BattleLabIndicators } from './BattleLabIndicators';
 import { joinBattle, submitBattleAnswer } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
+  BATTLE_BOT_UID,
   buildBattleRoundRanking,
   canBattleParticipantAnswerCurrentQuestion,
   calculateBattleRoundScore,
@@ -283,8 +284,14 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
   const showMicButton = question?.kind === 'speaking';
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
-  const effectiveRoundParticipantIds =
-    (session.roundParticipantIds ?? []).length > 0 ? (session.roundParticipantIds ?? []) : registeredParticipantIds;
+  const effectiveRoundParticipantIds = useMemo(() => {
+    const sourceIds =
+      (session.roundParticipantIds ?? []).length > 0 ? (session.roundParticipantIds ?? []) : registeredParticipantIds;
+    return Array.from(new Set(sourceIds)).filter((participantId) => (
+      participantId !== BATTLE_BOT_UID &&
+      session.participants?.[participantId]?.isBot !== true
+    ));
+  }, [registeredParticipantIds, session.participants, session.roundParticipantIds]);
   const roundAnswerCount = useMemo(
     () => {
       const mergedAnswers = currentRoundLocalAnswer ? { ...session.currentAnswers, [uid]: currentRoundLocalAnswer } : session.currentAnswers;

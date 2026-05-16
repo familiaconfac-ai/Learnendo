@@ -610,10 +610,10 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     });
     audioRef.current?.stop();
     setTimeLeft(0);
-    showBattleAnswer(classId, effectiveRoundParticipantIds).catch((error) => {
+    showBattleAnswer(classId, revealParticipantIds).catch((error) => {
       console.error('[BattleHostView] auto reveal failed:', error);
     });
-  }, [allAnsweredLocally, answerCount, classId, effectiveRoundParticipantIds, revealParticipantIds, session, session.status]);
+  }, [allAnsweredLocally, answerCount, classId, revealParticipantIds, session, session.status]);
 
   useEffect(() => {
     if (session.status !== 'PLAYING' || !timeUp) return;
@@ -626,10 +626,10 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       roundParticipantIds: session?.roundParticipantIds,
     });
     audioRef.current?.stop();
-    showBattleAnswer(classId, effectiveRoundParticipantIds).catch((error) => {
+    showBattleAnswer(classId, revealParticipantIds).catch((error) => {
       console.error('[BattleHostView] timer reveal failed:', error);
     });
-  }, [answerCount, classId, effectiveRoundParticipantIds, revealParticipantIds, session, timeUp]);
+  }, [answerCount, classId, revealParticipantIds, session, timeUp]);
 
   useEffect(() => {
     if (session.status !== 'PLAYING') return;
@@ -853,7 +853,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       console.log('[BATTLE ANSWER DEBUG] answer saved');
       console.log('[BATTLE PROFESSOR ANSWER DEBUG] answer saved');
       if (everyoneAnswered) {
-        await showBattleAnswer(classId, effectiveRoundParticipantIds);
+        await showBattleAnswer(classId, revealParticipantIds);
       }
     } catch (error) {
       console.error('[LIVE BATTLE ANSWER] failed', error);
@@ -1184,7 +1184,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   async function handleShowAnswer() {
     setBusy(true);
     try {
-      await showBattleAnswer(classId, effectiveRoundParticipantIds);
+      await showBattleAnswer(classId, revealParticipantIds);
     } finally {
       setBusy(false);
     }

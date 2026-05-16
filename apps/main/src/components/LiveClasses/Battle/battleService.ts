@@ -228,11 +228,23 @@ function getStableRoundParticipantIds(roundParticipantIds: string[] | undefined)
   return Array.from(new Set((roundParticipantIds ?? []).filter(Boolean)));
 }
 
+function getRevealEligibleParticipantIds(
+  roundParticipantIds: string[] | undefined,
+  participants: Record<string, BattleRosterParticipant> | undefined,
+): string[] {
+  const participantIds = getStableRoundParticipantIds(roundParticipantIds);
+  return participantIds.filter((participantId) => {
+    if (participantId === BATTLE_BOT_UID) return false;
+    return participants?.[participantId]?.isBot !== true;
+  });
+}
+
 function haveAllRoundParticipantsAnswered(
   roundParticipantIds: string[] | undefined,
   currentAnswers: Record<string, BattleAnswer> | undefined,
+  participants?: Record<string, BattleRosterParticipant>,
 ): boolean {
-  const participantIds = getStableRoundParticipantIds(roundParticipantIds);
+  const participantIds = getRevealEligibleParticipantIds(roundParticipantIds, participants);
   if (participantIds.length === 0) return false;
 
   const answers = currentAnswers ?? {};
@@ -676,16 +688,17 @@ export async function showBattleAnswer(classId: string, overrideRoundParticipant
 
     const currentScores = data.scores ?? {};
     const currentAnswers = data.currentAnswers ?? {};
-    const roundParticipantIds = getStableRoundParticipantIds(
+    const revealParticipantIds = getRevealEligibleParticipantIds(
       overrideRoundParticipantIds && overrideRoundParticipantIds.length > 0
         ? overrideRoundParticipantIds
         : Array.isArray(data.roundParticipantIds) ? data.roundParticipantIds : [],
+      data.participants as Record<string, BattleRosterParticipant> | undefined,
     );
     const participants = data.participants ?? {};
     const nextScores = applyBattleRoundRankingToScores({
       currentScores,
       currentAnswers,
-      roundParticipantIds,
+      roundParticipantIds: revealParticipantIds,
       participants,
       questionStartedAt: typeof data.questionStartedAt === 'number' ? data.questionStartedAt : 0,
     });
@@ -695,7 +708,7 @@ export async function showBattleAnswer(classId: string, overrideRoundParticipant
       roundStatus: 'revealed',
       isRevealed: true,
       showAnswer: true,
-      roundParticipantIds,
+      roundParticipantIds: revealParticipantIds,
       scores: nextScores,
       updatedAt: revealedAt,
       lastChange: serverTimestamp(),
@@ -943,6 +956,7 @@ export async function submitBattleAnswer(
     const everyoneAnswered = haveAllRoundParticipantsAnswered(
       effectiveRoundParticipantIds,
       nextCurrentAnswers,
+      nextParticipants,
     );
 
     if (everyoneAnswered) {
@@ -1008,10 +1022,14 @@ export async function autoRevealIfAllAnswered(
   const participantIds = getStableRoundParticipantIds(session.roundParticipantIds);
   if (participantIds.length === 0) return;
 
-  const allAnswered = haveAllRoundParticipantsAnswered(participantIds, session.currentAnswers);
+  const allAnswered = haveAllRoundParticipantsAnswered(
+    participantIds,
+    session.currentAnswers,
+    session.participants,
+  );
   if (!allAnswered) return;
 
-  await showBattleAnswer(classId);
+  await showBattleAnswer(classId, participantIds);
 }
 
 // Subscription

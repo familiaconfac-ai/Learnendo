@@ -125,7 +125,7 @@ const StudentStage: React.FC<{
           sessionAgeMs > BATTLE_STALE_THRESHOLD_MS;
 
         if (nextSession.status === 'FINISHED') {
-          console.info('[BATTLE STUDENT SUBSCRIBE] finished battle session ignored', {
+          console.info('[BATTLE STUDENT SUBSCRIBE] accepting finished battle session for results', {
             component: 'StudentRoomView',
             classId: liveClass.id,
             sessionId: nextSession.id,
@@ -133,7 +133,7 @@ const StudentStage: React.FC<{
             updatedAt: sessionUpdatedAt,
             sessionAgeMs,
           });
-          setBattleSession(null);
+          setBattleSession(nextSession);
           return;
         }
 
