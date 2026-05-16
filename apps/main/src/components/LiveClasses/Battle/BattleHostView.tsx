@@ -247,7 +247,12 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     session.status === 'PLAYING' &&
     revealParticipantIds.length > 0 &&
     effectiveAnsweredCount >= revealParticipantIds.length;
-  const effectiveStatus: BattleSession['status'] = session.status;
+  const localRevealActive = shouldAutoReveal || session.status === 'REVEALED';
+  const effectiveStatus: BattleSession['status'] = localRevealActive ? 'REVEALED' : session.status;
+  const effectiveRoundStatus =
+    effectiveStatus === 'REVEALED' && session.roundStatus === 'active'
+      ? 'revealed'
+      : session.roundStatus;
   const teacherIsRegistered =
     Boolean(session.participants?.[teacherUid]) ||
     Boolean(session.scores?.[teacherUid]) ||
@@ -586,14 +591,14 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   }, [session.status]);
 
   useEffect(() => {
-    if (session.status === 'REVEALED' && session.roundStatus === 'ranking') {
+    if (effectiveStatus === 'REVEALED' && effectiveRoundStatus === 'ranking') {
       setShowRankingOverlay(true);
       return;
     }
     if (session.status !== 'FINISHED') {
       setShowRankingOverlay(false);
     }
-  }, [session.roundStatus, session.status]);
+  }, [effectiveRoundStatus, effectiveStatus, session.status]);
 
   useEffect(() => {
     if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) return;
@@ -1487,7 +1492,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                       <p className="mt-1 text-sm leading-6 text-red-100">{wrongParticipantNames.join(', ')}</p>
                     </div>
                   ) : null}
-                  {session.roundStatus !== 'ranking' ? (
+                  {effectiveRoundStatus !== 'ranking' ? (
                     <button
                       onClick={handleContinueToRanking}
                       disabled={busy}
@@ -1502,7 +1507,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
           ) : null}
         </div>
 
-        {showRankingOverlay && effectiveStatus === 'REVEALED' && session.roundStatus === 'ranking' ? (
+        {showRankingOverlay && effectiveStatus === 'REVEALED' && effectiveRoundStatus === 'ranking' ? (
           <div className="fixed inset-0 z-[9500] flex flex-col bg-black/96 backdrop-blur-md">
             <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-800 px-5 py-3">
               <div>
@@ -1571,7 +1576,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               {copy.revealAnswer}
             </button>
           ) : null}
-          {effectiveStatus === 'REVEALED' && session.roundStatus === 'ranking' ? (
+          {effectiveStatus === 'REVEALED' && effectiveRoundStatus === 'ranking' ? (
             <button
               onClick={handleNext}
               disabled={busy}

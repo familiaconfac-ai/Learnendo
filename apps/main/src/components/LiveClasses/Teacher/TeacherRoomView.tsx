@@ -220,12 +220,12 @@ const TeacherStage: React.FC<{
   }, [cameraBusy, isCameraEnabled, localCameraTrack, toggleCameraWithRecovery]);
 
   useEffect(() => {
-    if (cameraRecoveryAttempts > 0 || cameraBusy || localCameraTrack) return undefined;
+    if (cameraBusy || localCameraTrack || cameraRecoveryAttempts >= 3) return undefined;
 
     const initialRecoveryTimer = window.setTimeout(() => {
-      setCameraRecoveryAttempts(1);
+      setCameraRecoveryAttempts((current) => current + 1);
       void toggleCameraWithRecovery(true);
-    }, 1200);
+    }, cameraRecoveryAttempts === 0 ? 1200 : 900);
 
     return () => {
       window.clearTimeout(initialRecoveryTimer);

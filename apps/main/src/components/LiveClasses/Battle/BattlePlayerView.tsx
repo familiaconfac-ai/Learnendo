@@ -276,14 +276,6 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
       : endsAt != null
         ? Math.max(0, endsAt - Date.now())
         : roundDurationMs;
-  const timeUp = session.status === 'PLAYING' && effectiveFrozenTimeLeft == null && endsAt != null && remainingMs <= 0;
-  const displayTime = hasAnswered && effectiveFrozenTimeLeft != null ? effectiveFrozenTimeLeft : timeLeft;
-  const battleLanguage = getBattleLanguage(session.config.courseId);
-  const timeRatio = displayTime / currentQuestionDuration;
-  const interactionLocked = hasAnswered || timeUp || session.status !== 'PLAYING';
-  const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
-  const showMicButton = question?.kind === 'speaking';
-  const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const effectiveRoundParticipantIds = useMemo(() => {
     const sourceIds =
       (session.roundParticipantIds ?? []).length > 0 ? (session.roundParticipantIds ?? []) : registeredParticipantIds;
@@ -299,6 +291,23 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     },
     [currentRoundLocalAnswer, effectiveRoundParticipantIds, session.currentAnswers, uid]
   );
+  const shouldAutoReveal =
+    session.status === 'PLAYING' &&
+    effectiveRoundParticipantIds.length > 0 &&
+    roundAnswerCount >= effectiveRoundParticipantIds.length;
+  const effectiveStatus: BattleSession['status'] = shouldAutoReveal ? 'REVEALED' : session.status;
+  const effectiveRoundStatus =
+    effectiveStatus === 'REVEALED' && session.roundStatus === 'active'
+      ? 'revealed'
+      : session.roundStatus;
+  const timeUp = effectiveStatus === 'PLAYING' && effectiveFrozenTimeLeft == null && endsAt != null && remainingMs <= 0;
+  const displayTime = hasAnswered && effectiveFrozenTimeLeft != null ? effectiveFrozenTimeLeft : timeLeft;
+  const battleLanguage = getBattleLanguage(session.config.courseId);
+  const timeRatio = displayTime / currentQuestionDuration;
+  const interactionLocked = hasAnswered || timeUp || effectiveStatus !== 'PLAYING';
+  const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
+  const showMicButton = question?.kind === 'speaking';
+  const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const mergedRoundAnswers = useMemo(
     () => (currentRoundLocalAnswer ? { ...session.currentAnswers, [uid]: currentRoundLocalAnswer } : session.currentAnswers),
     [currentRoundLocalAnswer, session.currentAnswers, uid]
@@ -425,12 +434,12 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   }, [musicVolume]);
 
   useEffect(() => {
-    if (session.status === 'PLAYING') {
+    if (effectiveStatus === 'PLAYING') {
       musicRef.current?.start();
     } else {
       musicRef.current?.stop();
     }
-  }, [session.status]);
+  }, [effectiveStatus]);
 
   useEffect(() => {
     musicRef.current?.setVolume(musicVolume);
@@ -644,18 +653,18 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     console.log('[BATTLE STUDENT UI] status from snapshot:', session.status);
     console.log('[BATTLE STUDENT UI] hasAnswered/local locked:', hasAnswered);
     console.log('[BATTLE STUDENT UI] currentQuestionIndex:', session.currentQuestionIndex);
-    if (session.status === 'REVEALED') {
+    if (effectiveStatus === 'REVEALED') {
       console.log('[BATTLE STUDENT UI] render branch: showing-answer');
       return;
     }
-    if (session.status === 'PLAYING' && hasAnswered) {
+    if (effectiveStatus === 'PLAYING' && hasAnswered) {
       console.log('[BATTLE STUDENT UI] render branch: locked');
       return;
     }
-    if (session.status === 'PLAYING') {
+    if (effectiveStatus === 'PLAYING') {
       console.log('[BATTLE STUDENT UI] render branch: active');
     }
-  }, [hasAnswered, session.currentQuestionIndex, session.status]);
+  }, [effectiveStatus, hasAnswered, session.currentQuestionIndex, session.status]);
 
   useEffect(() => {
     console.log('[BATTLE SCORE] uid:', uid);
@@ -1137,7 +1146,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     );
   }
 
-  if (session.status === 'WAITING') {
+  if (effectiveStatus === 'WAITING') {
     console.info('[BATTLE STUDENT WAITING] player waiting on teacher start', {
       component: 'BattlePlayerView',
       classId,
@@ -1287,9 +1296,9 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     );
   }
 
-  if (session.status === 'REVEALED') {
+  if (effectiveStatus === 'REVEALED') {
     console.log('[BATTLE PLAYER] render branch: showing-answer');
-    const showRoundRanking = session.roundStatus === 'ranking';
+    const showRoundRanking = effectiveRoundStatus === 'ranking';
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
         <div className="w-full max-w-4xl mx-4 text-center space-y-4">
@@ -1414,7 +1423,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     );
   }
 
-  if (session.status === 'PLAYING' && !question) {
+  if (effectiveStatus === 'PLAYING' && !question) {
     console.warn('[BATTLE PLAYER] PLAYING without question', {
       battleId: session.id,
       roomId: classId,
@@ -1440,7 +1449,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     );
   }
 
-  if (session.status === 'PLAYING' && !canAnswerCurrentQuestion && question && !isRegisteredParticipant) {
+  if (effectiveStatus === 'PLAYING' && !canAnswerCurrentQuestion && question && !isRegisteredParticipant) {
     console.info('[BATTLE PLAYER ACTIVATE] player locked out of current round', {
       component: 'BattlePlayerView',
       classId,
