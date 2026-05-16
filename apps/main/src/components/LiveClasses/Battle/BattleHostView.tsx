@@ -1430,7 +1430,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         </div>
 
         {showRankingOverlay && effectiveStatus === 'REVEALED' ? (
-          <div className="absolute inset-0 z-20 flex flex-col bg-slate-950/98">
+          <div className="fixed inset-0 z-[9500] flex flex-col bg-black/96 backdrop-blur-md">
             <div className="flex flex-shrink-0 items-center justify-between border-b border-slate-800 px-5 py-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-white">{copy.roundResults}</span>
