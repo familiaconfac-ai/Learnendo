@@ -116,6 +116,14 @@ const TeacherStage: React.FC<{
       uiLang === 'en' ? 'Open student preview' : uiLang === 'es' ? 'Abrir preview alumno' : 'Abrir preview aluno',
     previewTeacher:
       uiLang === 'en' ? 'Open track/workbook tab' : uiLang === 'es' ? 'Abrir pestana de pista/cuaderno' : 'Abrir aba da trilha/caderno',
+    sharingNow:
+      uiLang === 'en' ? 'Sharing screen now' : uiLang === 'es' ? 'Compartiendo pantalla ahora' : 'Compartilhando tela agora',
+    sharingNote:
+      uiLang === 'en'
+        ? 'The local preview stays hidden here to avoid the infinite screen effect.'
+        : uiLang === 'es'
+          ? 'La previsualizacion local queda oculta aqui para evitar el efecto de pantalla infinita.'
+          : 'A pre-visualizacao local fica oculta aqui para evitar o efeito de tela infinita.',
   };
 
   const cameraTiles = [
@@ -376,19 +384,15 @@ const TeacherStage: React.FC<{
 
             {isScreenSharing ? (
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-black">
-                {localScreenTrack && isTrackReference(localScreenTrack) ? (
-                  <VideoTrack
-                    trackRef={localScreenTrack}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                  />
-                ) : (
+                {false ? null : (
                   <div className="flex flex-col items-center gap-2 text-slate-300">
                     <span className="text-4xl">🖥️</span>
-                    <span className="text-sm">Preparando compartilhamento...</span>
+                    <span className="text-sm font-semibold text-white">{labels.sharingNow}</span>
+                    <span className="max-w-md text-center text-xs leading-5 text-slate-400">{labels.sharingNote}</span>
                   </div>
                 )}
                 <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 rounded-full bg-orange-600/90 px-3 py-1 text-xs font-bold text-white">
-                  Compartilhando tela
+                  {labels.sharingNow}
                 </div>
               </div>
             ) : null}
