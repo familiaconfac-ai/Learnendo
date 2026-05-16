@@ -221,9 +221,19 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     () => ({ ...(session.currentAnswers ?? {}), ...localCurrentAnswers }),
     [localCurrentAnswers, session.currentAnswers],
   );
-  const answerCount = roundParticipantIds.filter((participantId) => participantId in mergedCurrentAnswers).length;
+  const effectiveRoundParticipantIds = useMemo(() => {
+    const activeStudentIds = new Set(activeParticipants.map((participant) => participant.uid));
+    return roundParticipantIds.filter((participantId) => (
+      participantId === teacherUid ||
+      participantId === BATTLE_BOT_UID ||
+      activeStudentIds.has(participantId) ||
+      participantId in mergedCurrentAnswers
+    ));
+  }, [activeParticipants, mergedCurrentAnswers, roundParticipantIds, teacherUid]);
+  const answerCount = effectiveRoundParticipantIds.filter((participantId) => participantId in mergedCurrentAnswers).length;
   const allAnsweredLocally =
-    roundParticipantIds.length > 0 && roundParticipantIds.every((participantId) => participantId in mergedCurrentAnswers);
+    effectiveRoundParticipantIds.length > 0 &&
+    effectiveRoundParticipantIds.every((participantId) => participantId in mergedCurrentAnswers);
   const effectiveStatus: BattleSession['status'] = session.status;
   const teacherIsRegistered =
     Boolean(session.participants?.[teacherUid]) ||
@@ -355,7 +365,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
 
   const roundResultsRows = useMemo(() => {
     return buildBattleRoundRanking(
-      roundParticipantIds,
+      effectiveRoundParticipantIds,
       mergedCurrentAnswers,
       session.questionStartedAt,
     )
@@ -369,10 +379,10 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         isCorrect: entry.isCorrect,
         elapsedMs: entry.elapsedMs,
       }));
-  }, [effectiveStatus, mergedCurrentAnswers, roundParticipantIds, session, session.scores]);
+  }, [effectiveStatus, effectiveRoundParticipantIds, mergedCurrentAnswers, session, session.scores]);
 
   const roundAnswerSummary = useMemo(() => {
-    return roundParticipantIds.reduce(
+    return effectiveRoundParticipantIds.reduce(
       (summary, participantId) => {
         const answer = mergedCurrentAnswers[participantId];
         if (!answer) {
@@ -388,7 +398,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       },
       { correct: 0, wrong: 0, unanswered: 0 }
     );
-  }, [mergedCurrentAnswers, roundParticipantIds]);
+  }, [effectiveRoundParticipantIds, mergedCurrentAnswers]);
   const wrongParticipantNames = useMemo(
     () =>
       roundResultsRows
@@ -585,19 +595,19 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   }, [battleLanguage, question, session.id, session.status]);
 
   useEffect(() => {
-    if (session.status !== 'PLAYING' || roundParticipantIds.length === 0 || !allAnsweredLocally) return;
+    if (session.status !== 'PLAYING' || effectiveRoundParticipantIds.length === 0 || !allAnsweredLocally) return;
 
     console.warn('[BATTLE ROUND STATE DEBUG] revealing answer', {
       reason: 'all-participants-answered',
       answeredCount: answerCount,
-      expectedCount: roundParticipantIds.length,
+      expectedCount: effectiveRoundParticipantIds.length,
       answers: session?.answers ?? session?.currentAnswers,
       roundParticipantIds: session?.roundParticipantIds,
     });
-    showBattleAnswer(classId).catch((error) => {
+    showBattleAnswer(classId, effectiveRoundParticipantIds).catch((error) => {
       console.error('[BattleHostView] auto reveal failed:', error);
     });
-  }, [allAnsweredLocally, answerCount, classId, roundParticipantIds.length, session, session.status]);
+  }, [allAnsweredLocally, answerCount, classId, effectiveRoundParticipantIds, session, session.status]);
 
   useEffect(() => {
     if (session.status !== 'PLAYING' || !timeUp) return;
@@ -609,10 +619,10 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       answers: session?.answers ?? session?.currentAnswers,
       roundParticipantIds: session?.roundParticipantIds,
     });
-    showBattleAnswer(classId).catch((error) => {
+    showBattleAnswer(classId, effectiveRoundParticipantIds).catch((error) => {
       console.error('[BattleHostView] timer reveal failed:', error);
     });
-  }, [answerCount, classId, roundParticipantIds.length, session, timeUp]);
+  }, [answerCount, classId, effectiveRoundParticipantIds, session, timeUp]);
 
   useEffect(() => {
     if (session.status !== 'PLAYING') return;
@@ -765,7 +775,8 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     });
     const optimisticAnswers = { ...(session.currentAnswers ?? {}), ...localCurrentAnswers, [teacherUid]: localAnswer };
     const everyoneAnswered =
-      roundParticipantIds.length > 0 && roundParticipantIds.every((participantId) => participantId in optimisticAnswers);
+      effectiveRoundParticipantIds.length > 0 &&
+      effectiveRoundParticipantIds.every((participantId) => participantId in optimisticAnswers);
 
     if (everyoneAnswered) {
       setTimeLeft(0);
@@ -834,7 +845,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       console.log('[BATTLE ANSWER DEBUG] answer saved');
       console.log('[BATTLE PROFESSOR ANSWER DEBUG] answer saved');
       if (everyoneAnswered) {
-        await showBattleAnswer(classId);
+        await showBattleAnswer(classId, effectiveRoundParticipantIds);
       }
     } catch (error) {
       console.error('[LIVE BATTLE ANSWER] failed', error);
@@ -1165,7 +1176,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   async function handleShowAnswer() {
     setBusy(true);
     try {
-      await showBattleAnswer(classId);
+      await showBattleAnswer(classId, effectiveRoundParticipantIds);
     } finally {
       setBusy(false);
     }
@@ -1416,7 +1427,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               <div className="flex items-center gap-3 text-sm text-slate-400">
                 <span>{Math.ceil(displayTimeLeft)}s</span>
                 <span>|</span>
-                <span>{answerCount} / {roundParticipantIds.length} {copy.answered}</span>
+                <span>{answerCount} / {effectiveRoundParticipantIds.length} {copy.answered}</span>
               </div>
 
               {effectiveStatus === 'REVEALED' ? (

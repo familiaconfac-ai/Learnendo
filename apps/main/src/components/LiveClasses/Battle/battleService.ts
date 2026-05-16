@@ -660,7 +660,7 @@ export async function advanceBattleQuestion(
   });
 }
 
-export async function showBattleAnswer(classId: string): Promise<void> {
+export async function showBattleAnswer(classId: string, overrideRoundParticipantIds?: string[]): Promise<void> {
   const revealedAt = Date.now();
   const docRef = battleDocRef(classId);
 
@@ -677,7 +677,9 @@ export async function showBattleAnswer(classId: string): Promise<void> {
     const currentScores = data.scores ?? {};
     const currentAnswers = data.currentAnswers ?? {};
     const roundParticipantIds = getStableRoundParticipantIds(
-      Array.isArray(data.roundParticipantIds) ? data.roundParticipantIds : [],
+      overrideRoundParticipantIds && overrideRoundParticipantIds.length > 0
+        ? overrideRoundParticipantIds
+        : Array.isArray(data.roundParticipantIds) ? data.roundParticipantIds : [],
     );
     const participants = data.participants ?? {};
     const nextScores = applyBattleRoundRankingToScores({
@@ -693,6 +695,7 @@ export async function showBattleAnswer(classId: string): Promise<void> {
       roundStatus: 'revealed',
       isRevealed: true,
       showAnswer: true,
+      roundParticipantIds,
       scores: nextScores,
       updatedAt: revealedAt,
       lastChange: serverTimestamp(),
