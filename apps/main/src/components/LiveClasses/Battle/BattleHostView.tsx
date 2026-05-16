@@ -235,9 +235,13 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     [effectiveRoundParticipantIds],
   );
   const answerCount = revealParticipantIds.filter((participantId) => participantId in mergedCurrentAnswers).length;
+  const effectiveAnsweredCount = Math.max(answerCount, session.answeredCount ?? 0);
   const allAnsweredLocally =
     revealParticipantIds.length > 0 &&
-    revealParticipantIds.every((participantId) => participantId in mergedCurrentAnswers);
+    (
+      revealParticipantIds.every((participantId) => participantId in mergedCurrentAnswers) ||
+      effectiveAnsweredCount >= revealParticipantIds.length
+    );
   const effectiveStatus: BattleSession['status'] = session.status;
   const teacherIsRegistered =
     Boolean(session.participants?.[teacherUid]) ||
@@ -603,7 +607,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
 
     console.warn('[BATTLE ROUND STATE DEBUG] revealing answer', {
       reason: 'all-participants-answered',
-      answeredCount: answerCount,
+      answeredCount: effectiveAnsweredCount,
       expectedCount: revealParticipantIds.length,
       answers: session?.answers ?? session?.currentAnswers,
       roundParticipantIds: session?.roundParticipantIds,
@@ -613,14 +617,14 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     showBattleAnswer(classId, revealParticipantIds).catch((error) => {
       console.error('[BattleHostView] auto reveal failed:', error);
     });
-  }, [allAnsweredLocally, answerCount, classId, revealParticipantIds, session, session.status]);
+  }, [allAnsweredLocally, effectiveAnsweredCount, classId, revealParticipantIds, session, session.status]);
 
   useEffect(() => {
     if (session.status !== 'PLAYING' || !timeUp) return;
 
     console.warn('[BATTLE ROUND STATE DEBUG] revealing answer', {
       reason: 'timer-expired',
-      answeredCount: answerCount,
+      answeredCount: effectiveAnsweredCount,
       expectedCount: revealParticipantIds.length,
       answers: session?.answers ?? session?.currentAnswers,
       roundParticipantIds: session?.roundParticipantIds,
@@ -629,7 +633,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     showBattleAnswer(classId, revealParticipantIds).catch((error) => {
       console.error('[BattleHostView] timer reveal failed:', error);
     });
-  }, [answerCount, classId, revealParticipantIds, session, timeUp]);
+  }, [classId, effectiveAnsweredCount, revealParticipantIds, session, timeUp]);
 
   useEffect(() => {
     if (session.status !== 'PLAYING') return;
@@ -1435,7 +1439,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               <div className="flex items-center gap-3 text-sm text-slate-400">
                 <span>{Math.ceil(displayTimeLeft)}s</span>
                 <span>|</span>
-                <span>{answerCount} / {revealParticipantIds.length} {copy.answered}</span>
+                <span>{Math.min(effectiveAnsweredCount, revealParticipantIds.length)} / {revealParticipantIds.length} {copy.answered}</span>
               </div>
 
               {effectiveStatus === 'REVEALED' ? (
