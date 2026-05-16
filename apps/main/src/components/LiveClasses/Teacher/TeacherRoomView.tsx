@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -167,7 +167,7 @@ const TeacherStage: React.FC<{
     });
   }, [assignedRoster.length, liveClass.id, teacherEmail, teacherUid]);
 
-  const toggleCameraWithRecovery = async (forceEnable = !isCameraEnabled) => {
+  const toggleCameraWithRecovery = useCallback(async (forceEnable = !isCameraEnabled) => {
     if (cameraBusy) return;
 
     setCameraBusy(true);
@@ -203,7 +203,19 @@ const TeacherStage: React.FC<{
     } finally {
       setCameraBusy(false);
     }
-  };
+  }, [cameraBusy, isCameraEnabled, localParticipant]);
+
+  useEffect(() => {
+    if (!isCameraEnabled || cameraBusy || localCameraTrack) return undefined;
+
+    const recoveryTimer = window.setTimeout(() => {
+      void toggleCameraWithRecovery(true);
+    }, 600);
+
+    return () => {
+      window.clearTimeout(recoveryTimer);
+    };
+  }, [cameraBusy, isCameraEnabled, localCameraTrack, toggleCameraWithRecovery]);
 
   const toggleMicrophoneWithRecovery = async (forceEnable = !isMicrophoneEnabled) => {
     if (microphoneBusy) return;

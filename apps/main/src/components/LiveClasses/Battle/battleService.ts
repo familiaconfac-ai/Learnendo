@@ -959,7 +959,9 @@ export async function submitBattleAnswer(
       nextParticipants,
     );
 
-    if (everyoneAnswered) {
+    const canRevealRoundFromThisClient = uid === liveSession.hostUid;
+
+    if (everyoneAnswered && canRevealRoundFromThisClient) {
       const nextScores = applyBattleRoundRankingToScores({
         currentScores: {
           ...(liveSession.scores ?? {}),

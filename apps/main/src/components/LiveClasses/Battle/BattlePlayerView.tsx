@@ -1654,7 +1654,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
         )}
 
         {hasAnswered && session.status === 'PLAYING' && (
-          <p className="text-sm text-slate-400 animate-pulse">{copy.confirmAnswer}!</p>
+          <p className="text-sm text-slate-400 animate-pulse">{copy.waitingNext}</p>
         )}
         {!hasAnswered && !canAnswerCurrentQuestion && !isRegisteredParticipant && session.status === 'PLAYING' && (
           <p className="text-sm text-slate-400">{copy.waitingNext}</p>
@@ -1668,7 +1668,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
         <div className="flex justify-center gap-4 text-xs text-slate-500">
           <span>{Math.ceil(displayTime)}s</span>
           <span>|</span>
-          <span>{roundAnswerCount} / {((session.roundParticipantIds ?? []).length || registeredParticipantIds.length)} {copy.answered}</span>
+          <span>{roundAnswerCount} / {effectiveRoundParticipantIds.length} {copy.answered}</span>
         </div>
       </div>
     </div>
