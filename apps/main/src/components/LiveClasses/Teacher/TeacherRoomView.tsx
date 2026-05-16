@@ -33,6 +33,7 @@ interface TeacherRoomViewProps {
   onOpenBattleHub: () => void;
   onOpenBattleTemplate: (template: SavedBattleTemplate) => void;
   onOpenPreviewTab: (role: 'teacher' | 'student') => void;
+  onOpenTrackTab: () => void;
   onExit: () => void;
 }
 
@@ -47,6 +48,7 @@ const TeacherStage: React.FC<{
   onOpenBattleHub: () => void;
   onOpenBattleTemplate: (template: SavedBattleTemplate) => void;
   onOpenPreviewTab: (role: 'teacher' | 'student') => void;
+  onOpenTrackTab: () => void;
   onExit: () => void;
 }> = ({
   liveClass,
@@ -59,6 +61,7 @@ const TeacherStage: React.FC<{
   onOpenBattleHub,
   onOpenBattleTemplate,
   onOpenPreviewTab,
+  onOpenTrackTab,
   onExit,
 }) => {
   const participants = useParticipants();
@@ -112,7 +115,7 @@ const TeacherStage: React.FC<{
     previewStudent:
       uiLang === 'en' ? 'Open student preview' : uiLang === 'es' ? 'Abrir preview alumno' : 'Abrir preview aluno',
     previewTeacher:
-      uiLang === 'en' ? 'Open teacher preview' : uiLang === 'es' ? 'Abrir preview profesor' : 'Abrir preview professor',
+      uiLang === 'en' ? 'Open track/workbook tab' : uiLang === 'es' ? 'Abrir pestana de pista/cuaderno' : 'Abrir aba da trilha/caderno',
   };
 
   const cameraTiles = [
@@ -311,7 +314,7 @@ const TeacherStage: React.FC<{
                       </button>
                       <button
                         type="button"
-                        onClick={() => onOpenPreviewTab('teacher')}
+                        onClick={onOpenTrackTab}
                         className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
                         title={labels.previewTeacher}
                         aria-label={labels.previewTeacher}
@@ -525,7 +528,7 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onOpenPreviewTab, onExit } = props;
+  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onOpenPreviewTab, onOpenTrackTab, onExit } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
 
@@ -570,6 +573,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
         onOpenBattleHub={onOpenBattleHub}
         onOpenBattleTemplate={onOpenBattleTemplate}
         onOpenPreviewTab={onOpenPreviewTab}
+        onOpenTrackTab={onOpenTrackTab}
         onExit={onExit}
       />
     </LiveKitRoom>

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
-import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
+import { LiveClass, LiveClassPresence, LiveClassSession, SectionType } from '../../types';
 import {
   markLivePresenceOffline,
   subscribeLivePresence,
@@ -17,7 +17,11 @@ import { LiveClassRoomShell } from './Shared/LiveClassRoomShell';
 import { WorkspaceCanvas } from './Workspace/WorkspaceCanvas';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
-import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../utils/tabScopedStorage';
+import {
+  BASE_UI_LANGUAGE_STORAGE_KEY,
+  TAB_APP_CONTEXT_STORAGE_KEY,
+  getScopedStorageItem,
+} from '../../utils/tabScopedStorage';
 
 interface LiveClassRoomPageProps {
   liveClass: LiveClass;
@@ -363,6 +367,34 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     window.open(previewUrl.toString(), '_blank', 'noopener,noreferrer');
   }, []);
 
+  const handleOpenTrackTab = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    const nextWorkbookId = session.activeWorkbookId ?? liveClass.workbookId ?? null;
+    const nextLessonId = session.activeLessonId?.toString() ?? liveClass.lessonId?.toString() ?? null;
+    const nextCourseId = liveClass.courseId ?? null;
+    const nextSection = nextLessonId ? SectionType.LESSON : SectionType.WORKBOOK;
+    const targetUrl = new URL(window.location.origin + '/');
+    const opened = window.open('about:blank', '_blank');
+    if (!opened) return;
+
+    try {
+      opened.sessionStorage.setItem(
+        TAB_APP_CONTEXT_STORAGE_KEY,
+        JSON.stringify({
+          courseId: nextCourseId,
+          workbookId: nextWorkbookId,
+          lessonId: nextLessonId,
+          section: nextSection,
+        }),
+      );
+      opened.sessionStorage.setItem(BASE_UI_LANGUAGE_STORAGE_KEY, uiLanguage);
+    } catch {
+      // Best-effort context handoff only.
+    }
+
+    opened.location.replace(targetUrl.toString());
+  }, [liveClass.courseId, liveClass.lessonId, liveClass.workbookId, session.activeLessonId, session.activeWorkbookId, uiLanguage]);
+
   if (!sessionLoaded) {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-slate-950">
@@ -404,6 +436,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           onOpenBattleHub={handleOpenBattleHub}
           onOpenBattleTemplate={handleOpenSavedBattleTemplate}
           onOpenPreviewTab={handleOpenPreviewTab}
+          onOpenTrackTab={handleOpenTrackTab}
           onExit={onExit}
         />
         {isBattleStage ? (
