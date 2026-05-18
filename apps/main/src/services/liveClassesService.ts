@@ -202,6 +202,46 @@ export interface LiveClassViewer {
   role: UserRole;
 }
 
+export interface AssignedStudentDirectoryEntry {
+  uid: string;
+  name?: string | null;
+  email?: string | null;
+}
+
+export interface AssignedStudentRosterItem {
+  uid: string;
+  label: string;
+}
+
+export function resolveAssignedStudentRoster(
+  source: Pick<LiveClass, 'assignedStudentIds' | 'assignedStudentNames'>,
+  directory: AssignedStudentDirectoryEntry[] = [],
+): AssignedStudentRosterItem[] {
+  const ids = normalizeStudentIds(source.assignedStudentIds ?? []);
+  const names = normalizeStudentNames(source.assignedStudentNames ?? []);
+  const fallbackNamesById = new Map<string, string>();
+
+  ids.forEach((uid, index) => {
+    const fallbackName = names[index];
+    if (fallbackName) {
+      fallbackNamesById.set(uid, fallbackName);
+    }
+  });
+
+  const directoryNamesById = new Map<string, string>();
+  directory.forEach((entry) => {
+    const label = entry.name?.trim() || entry.email?.trim() || entry.uid;
+    if (entry.uid && label) {
+      directoryNamesById.set(entry.uid, label);
+    }
+  });
+
+  return ids.map((uid) => ({
+    uid,
+    label: directoryNamesById.get(uid) || fallbackNamesById.get(uid) || uid,
+  }));
+}
+
 export function isStudentAssignedToLiveClass(
   liveClass: Pick<LiveClass, 'assignedStudentIds' | 'assignedStudentNames'>,
   userUid: string,

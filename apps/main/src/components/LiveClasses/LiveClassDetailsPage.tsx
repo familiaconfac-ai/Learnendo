@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
 import { isLivePresenceActive, subscribeLivePresence, subscribeLiveSession } from '../../services/liveSessionService';
-import { getLiveClassMeetLink, getLiveClassPresentationLink } from '../../services/liveClassesService';
+import { AssignedStudentDirectoryEntry, getLiveClassPresentationLink, resolveAssignedStudentRoster } from '../../services/liveClassesService';
 import { LiveClassChat } from './LiveClassChat';
 import { TeacherLiveControlPanel } from './TeacherLiveControlPanel';
 import { BattlePracticeView } from './Battle/BattlePracticeView';
@@ -10,6 +10,7 @@ import type { SavedBattleTemplate } from './Battle/battleTypes';
 
 interface LiveClassDetailsPageProps {
   liveClass: LiveClass;
+  participantDirectory?: AssignedStudentDirectoryEntry[];
   user: User;
   isTeacher: boolean;
   hasRoomAccess: boolean;
@@ -46,6 +47,7 @@ const buildWhatsappShareUrl = (liveClass: LiveClass) => {
 
 export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   liveClass,
+  participantDirectory = [],
   user,
   isTeacher,
   hasRoomAccess,
@@ -57,6 +59,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
 }) => {
   const [presence, setPresence] = useState<LiveClassPresence[]>([]);
   const [selectedBattleTemplate, setSelectedBattleTemplate] = useState<SavedBattleTemplate | null>(null);
+  const [linkFeedback, setLinkFeedback] = useState('');
   const [session, setSession] = useState<LiveClassSession>({
     sessionStatus: 'idle',
     activeWorkbookId: null,
@@ -88,10 +91,9 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
     return unsubscribe;
   }, [liveClass.id]);
 
-  const meetLink = useMemo(() => getLiveClassMeetLink(liveClass), [liveClass]);
   const presentationLink = useMemo(() => getLiveClassPresentationLink(liveClass), [liveClass]);
+  const roomShareLink = useMemo(() => buildRoomShareLink(liveClass.id), [liveClass.id]);
   const whatsappShareLink = useMemo(() => buildWhatsappShareUrl(liveClass), [liveClass]);
-  const canOpenMeet = useMemo(() => !!meetLink, [meetLink]);
   const canOpenPresentation = useMemo(() => !!presentationLink, [presentationLink]);
   const canOpenWhatsapp = useMemo(() => !!(liveClass.whatsappLink ?? '').trim(), [liveClass.whatsappLink]);
   const onlinePresence = useMemo(
@@ -99,18 +101,43 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
     [presence],
   );
   const assignedRoster = useMemo(() => {
-    const ids = liveClass.assignedStudentIds ?? [];
-    const names = liveClass.assignedStudentNames ?? [];
-    return ids.map((uid, index) => ({
-      uid,
-      label: names[index] || uid,
-      isOnline: onlinePresence.some((item) => item.uid === uid),
+    return resolveAssignedStudentRoster(liveClass, participantDirectory).map((student) => ({
+      uid: student.uid,
+      label: student.label,
+      isOnline: onlinePresence.some((item) => item.uid === student.uid),
     }));
-  }, [liveClass.assignedStudentIds, liveClass.assignedStudentNames, onlinePresence]);
+  }, [liveClass, onlinePresence, participantDirectory]);
   const battleTemplates = useMemo(
     () => (liveClass.battleTemplates ?? []).slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [liveClass.battleTemplates]
   );
+
+  useEffect(() => {
+    if (!linkFeedback) return undefined;
+    const timeoutId = window.setTimeout(() => setLinkFeedback(''), 2500);
+    return () => window.clearTimeout(timeoutId);
+  }, [linkFeedback]);
+
+  const handleShareRoomLink = async () => {
+    if (!roomShareLink) return;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: liveClass.title,
+          text: `Join "${liveClass.title}" on Learnendo`,
+          url: roomShareLink,
+        });
+        setLinkFeedback('Room link shared.');
+        return;
+      }
+
+      await navigator.clipboard.writeText(roomShareLink);
+      setLinkFeedback('Room link copied.');
+    } catch (error) {
+      console.warn('[LiveClassDetailsPage] failed to share room link:', error);
+      setLinkFeedback('Unable to share this link right now.');
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-900 px-3 pb-28 pt-6 sm:px-4">
@@ -154,15 +181,10 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
 
           <button
             type="button"
-            onClick={() => openExternalLink(meetLink)}
-            disabled={!canOpenMeet}
-            className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
-              canOpenMeet
-                ? 'bg-blue-500 text-white shadow-[0_4px_0_0_#1d4ed8]'
-                : 'bg-slate-700 text-slate-400'
-            }`}
+            onClick={() => void handleShareRoomLink()}
+            className="rounded-xl bg-blue-500 px-3 py-2 text-center text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
           >
-            Open Meet (Optional)
+            Share Room Link
           </button>
 
           <button
@@ -175,7 +197,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
                 : 'bg-slate-700 text-slate-400'
             }`}
           >
-            Open WhatsApp
+            Share on Group
           </button>
 
           <button
@@ -207,6 +229,10 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
             Open Material
           </button>
         </div>
+
+        {linkFeedback ? (
+          <p className="mt-3 text-xs font-semibold text-blue-200">{linkFeedback}</p>
+        ) : null}
 
         <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-900/60 p-3">
           <div className="flex items-center justify-between gap-2">

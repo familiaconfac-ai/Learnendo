@@ -18,6 +18,7 @@ import { LiveClassRoomShell } from './Shared/LiveClassRoomShell';
 import { WorkspaceCanvas } from './Workspace/WorkspaceCanvas';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
+import { resolveAssignedStudentRoster } from '../../services/liveClassesService';
 import {
   BASE_UI_LANGUAGE_STORAGE_KEY,
   TAB_APP_CONTEXT_STORAGE_KEY,
@@ -298,15 +299,18 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   );
 
   const assignedRoster = useMemo(() => {
-    const ids = liveClass.assignedStudentIds ?? [];
-    const names = liveClass.assignedStudentNames ?? [];
-
-    return ids.map((uid, index) => ({
-      uid,
-      label: names[index] || uid,
-      isOnline: onlinePresence.some((item) => item.uid === uid),
+    return resolveAssignedStudentRoster(
+      liveClass,
+      onlinePresence.map((participant) => ({
+        uid: participant.uid,
+        name: participant.name,
+      })),
+    ).map((student) => ({
+      uid: student.uid,
+      label: student.label,
+      isOnline: onlinePresence.some((item) => item.uid === student.uid),
     }));
-  }, [liveClass.assignedStudentIds, liveClass.assignedStudentNames, onlinePresence]);
+  }, [liveClass, onlinePresence]);
 
   const battleOnlineParticipants = useMemo(
     () =>

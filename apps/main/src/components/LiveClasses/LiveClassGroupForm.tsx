@@ -23,6 +23,17 @@ const parseCsv = (value: string): string[] => value
   .map((item) => item.trim())
   .filter(Boolean);
 
+const buildFallbackNameById = (ids: string[], names: string[]) => {
+  const mapping = new Map<string, string>();
+  ids.forEach((uid, index) => {
+    const name = names[index];
+    if (name) {
+      mapping.set(uid, name);
+    }
+  });
+  return mapping;
+};
+
 export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
   initialValue,
   onCancel,
@@ -66,6 +77,20 @@ export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
     };
   }, []);
 
+  const participantNamesById = useMemo(() => {
+    const mapping = new Map<string, string>();
+    participants.forEach((participant) => {
+      const label = participant.name?.trim() || participant.email?.trim() || participant.uid;
+      mapping.set(participant.uid, label);
+    });
+    return mapping;
+  }, [participants]);
+
+  const resolveAssignedNames = (ids: string[], fallbackIds: string[], fallbackNames: string[]) => {
+    const fallbackNamesById = buildFallbackNameById(fallbackIds, fallbackNames);
+    return ids.map((uid) => participantNamesById.get(uid) || fallbackNamesById.get(uid) || uid);
+  };
+
   const setField = <K extends keyof LiveClassGroupInput>(key: K, value: LiveClassGroupInput[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -76,20 +101,27 @@ export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
   );
 
   const toggleStudentSelection = (student: StudentBasicInfo) => {
-    const nextIds = new Set(parseCsv(assignedIdsText));
-    const nextNames = new Set(parseCsv(assignedNamesText));
+    const currentIds = parseCsv(assignedIdsText);
+    const nextIds = currentIds.includes(student.uid)
+      ? currentIds.filter((uid) => uid !== student.uid)
+      : [...currentIds, student.uid];
 
-    if (nextIds.has(student.uid)) {
-      nextIds.delete(student.uid);
-      nextNames.delete(student.name);
-    } else {
-      nextIds.add(student.uid);
-      nextNames.add(student.name);
-    }
-
-    setAssignedIdsText(Array.from(nextIds).join(', '));
-    setAssignedNamesText(Array.from(nextNames).join(', '));
+    setAssignedIdsText(nextIds.join(', '));
+    setAssignedNamesText(
+      resolveAssignedNames(nextIds, parseCsv(assignedIdsText), parseCsv(assignedNamesText)).join(', '),
+    );
   };
+
+  useEffect(() => {
+    const mergedIds = merged.assignedStudentIds ?? [];
+    setAssignedNamesText(
+      resolveAssignedNames(
+        mergedIds,
+        merged.assignedStudentIds ?? [],
+        merged.assignedStudentNames ?? [],
+      ).join(', '),
+    );
+  }, [merged.assignedStudentIds, merged.assignedStudentNames, participantNamesById]);
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (event) => {
     event.preventDefault();
@@ -99,12 +131,17 @@ export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
     }
 
     setError('');
+    const parsedAssignedIds = parseCsv(assignedIdsText);
     await onSubmit({
       name: form.name.trim(),
       description: form.description?.trim() ?? '',
       whatsappLink: form.whatsappLink?.trim() ?? '',
-      assignedStudentIds: parseCsv(assignedIdsText),
-      assignedStudentNames: parseCsv(assignedNamesText),
+      assignedStudentIds: parsedAssignedIds,
+      assignedStudentNames: resolveAssignedNames(
+        parsedAssignedIds,
+        parseCsv(assignedIdsText),
+        parseCsv(assignedNamesText),
+      ),
     });
   };
 

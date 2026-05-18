@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassGroup, LiveClassGroupInput, LiveClassInput } from '../../types';
 import {
@@ -11,6 +11,7 @@ import {
   subscribeLiveClass,
   subscribeLiveClassGroups,
   subscribeLiveClasses,
+  resolveAssignedStudentRoster,
   updateLiveClass,
   updateLiveClassGroup,
 } from '../../services/liveClassesService';
@@ -21,6 +22,7 @@ import { LiveClassDetailsPage } from './LiveClassDetailsPage';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../utils/tabScopedStorage';
 import { LiveClassRoomPage } from './LiveClassRoomPage';
 import { learnendoLogoTransparent } from '../../assets/branding';
+import { getLiveClassAssignableUsers, StudentBasicInfo } from '../../services/teacherDashboard';
 
 interface LiveClassesPageProps {
   user: User;
@@ -172,6 +174,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   const [roomClassId, setRoomClassId] = useState<string>(() => getRoomClassIdFromPath());
   const [accessError, setAccessError] = useState('');
   const [now, setNow] = useState(() => new Date());
+  const [participantDirectory, setParticipantDirectory] = useState<StudentBasicInfo[]>([]);
   const teacherDisplayName = user.displayName || user.email || 'Professor';
   const forcedTabViewMode = getForcedTabViewModeFromSearch();
   const isForcedStudentRoomView =
@@ -251,6 +254,27 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   }, [canManageClasses, viewer]);
 
   useEffect(() => {
+    if (!canManageClasses) {
+      setParticipantDirectory([]);
+      return undefined;
+    }
+
+    let mounted = true;
+    getLiveClassAssignableUsers()
+      .then((rows) => {
+        if (!mounted) return;
+        setParticipantDirectory(rows);
+      })
+      .catch((error) => {
+        console.warn('[LiveClassesPage] participant directory load failed:', error);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [canManageClasses]);
+
+  useEffect(() => {
     if (!roomClassId || selectedClassId === roomClassId) return;
     setSelectedClassId(roomClassId);
   }, [roomClassId, selectedClassId]);
@@ -288,6 +312,11 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   const sortedClasses = useMemo(
     () => [...visibleClasses].sort((a, b) => getNextOccurrence(a).getTime() - getNextOccurrence(b).getTime()),
     [visibleClasses],
+  );
+
+  const getAssignedStudentLabels = useCallback(
+    (liveClass: LiveClass) => resolveAssignedStudentRoster(liveClass, participantDirectory).map((student) => student.label),
+    [participantDirectory],
   );
 
   const getCountdown = (liveClass: LiveClass): string | null => {
@@ -441,6 +470,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
     return (
       <LiveClassDetailsPage
         liveClass={selectedClass}
+        participantDirectory={participantDirectory}
         user={user}
         isTeacher={canManageClasses}
         hasRoomAccess={hasRoomAccess}
@@ -576,10 +606,10 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
                   {getCountdown(liveClass) ? (
                     <p className="mt-0.5 text-xs font-bold text-amber-300">⏱ {getCountdown(liveClass)}</p>
                   ) : null}
-                  {liveClass.assignedStudentNames.length > 0 ? (
+                  {getAssignedStudentLabels(liveClass).length > 0 ? (
                     <p className="mt-1 text-xs text-slate-400">
                       <span className="font-semibold text-slate-300">Students: </span>
-                      {liveClass.assignedStudentNames.join(', ')}
+                      {getAssignedStudentLabels(liveClass).join(', ')}
                     </p>
                   ) : null}
                 </div>

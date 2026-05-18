@@ -34,6 +34,22 @@ const clampNumber = (value: number, min: number, max: number) => {
   return Math.min(max, Math.max(min, value));
 };
 
+const parseCsv = (value: string): string[] => value
+  .split(',')
+  .map((item) => item.trim())
+  .filter(Boolean);
+
+const buildFallbackNameById = (ids: string[], names: string[]) => {
+  const mapping = new Map<string, string>();
+  ids.forEach((uid, index) => {
+    const name = names[index];
+    if (name) {
+      mapping.set(uid, name);
+    }
+  });
+  return mapping;
+};
+
 export const LiveClassForm: React.FC<LiveClassFormProps> = ({
   initialValue,
   onCancel,
@@ -77,6 +93,20 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
     };
   }, []);
 
+  const participantNamesById = useMemo(() => {
+    const mapping = new Map<string, string>();
+    participants.forEach((participant) => {
+      const label = participant.name?.trim() || participant.email?.trim() || participant.uid;
+      mapping.set(participant.uid, label);
+    });
+    return mapping;
+  }, [participants]);
+
+  const resolveAssignedNames = (ids: string[], fallbackIds: string[], fallbackNames: string[]) => {
+    const fallbackNamesById = buildFallbackNameById(fallbackIds, fallbackNames);
+    return ids.map((uid) => participantNamesById.get(uid) || fallbackNamesById.get(uid) || uid);
+  };
+
   const setField = <K extends keyof LiveClassInput>(key: K, value: LiveClassInput[K]) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -90,31 +120,33 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
     return '';
   };
 
-  const parseCsv = (value: string): string[] => value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
   const selectedStudentIds = new Set(parseCsv(assignedIdsText));
   const workbookNumber = clampNumber(Number(form.workbookId ?? 1), 1, 8);
   const unitNumber = clampNumber(Number(form.unitId ?? 1), 1, 16);
   const lessonNumber = clampNumber(Number(form.lessonId ?? 1), 1, 12);
 
   const toggleStudentSelection = (student: StudentBasicInfo) => {
-    const nextIds = new Set(parseCsv(assignedIdsText));
-    const nextNames = new Set(parseCsv(assignedNamesText));
+    const currentIds = parseCsv(assignedIdsText);
+    const nextIds = currentIds.includes(student.uid)
+      ? currentIds.filter((uid) => uid !== student.uid)
+      : [...currentIds, student.uid];
 
-    if (nextIds.has(student.uid)) {
-      nextIds.delete(student.uid);
-      nextNames.delete(student.name);
-    } else {
-      nextIds.add(student.uid);
-      nextNames.add(student.name);
-    }
-
-    setAssignedIdsText(Array.from(nextIds).join(', '));
-    setAssignedNamesText(Array.from(nextNames).join(', '));
+    setAssignedIdsText(nextIds.join(', '));
+    setAssignedNamesText(
+      resolveAssignedNames(nextIds, parseCsv(assignedIdsText), parseCsv(assignedNamesText)).join(', '),
+    );
   };
+
+  useEffect(() => {
+    const mergedIds = merged.assignedStudentIds ?? [];
+    setAssignedNamesText(
+      resolveAssignedNames(
+        mergedIds,
+        merged.assignedStudentIds ?? [],
+        merged.assignedStudentNames ?? [],
+      ).join(', '),
+    );
+  }, [merged.assignedStudentIds, merged.assignedStudentNames, participantNamesById]);
 
   const handleSubmit: React.FormEventHandler<HTMLFormElement> = async (e) => {
     e.preventDefault();
@@ -125,6 +157,7 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
     }
 
     setError('');
+    const parsedAssignedIds = parseCsv(assignedIdsText);
     await onSubmit({
       ...form,
       title: form.title.trim(),
@@ -140,8 +173,12 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
       workbookId: workbookNumber,
       unitId: String(unitNumber),
       lessonId: String(lessonNumber),
-      assignedStudentIds: parseCsv(assignedIdsText),
-      assignedStudentNames: parseCsv(assignedNamesText),
+      assignedStudentIds: parsedAssignedIds,
+      assignedStudentNames: resolveAssignedNames(
+        parsedAssignedIds,
+        parseCsv(assignedIdsText),
+        parseCsv(assignedNamesText),
+      ),
     });
   };
 
