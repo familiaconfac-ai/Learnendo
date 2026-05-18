@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassPresence, LiveClassSession, SectionType } from '../../types';
 import {
+  isLivePresenceActive,
   markLivePresenceOffline,
   subscribeLivePresence,
   subscribeLiveSession,
@@ -292,7 +293,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   );
 
   const onlinePresence = useMemo(
-    () => presence.filter((item) => item.isOnline),
+    () => presence.filter((item) => isLivePresenceActive(item)),
     [presence],
   );
 

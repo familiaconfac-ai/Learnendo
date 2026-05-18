@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
-import { subscribeLivePresence, subscribeLiveSession } from '../../services/liveSessionService';
+import { isLivePresenceActive, subscribeLivePresence, subscribeLiveSession } from '../../services/liveSessionService';
 import { getLiveClassMeetLink, getLiveClassPresentationLink } from '../../services/liveClassesService';
 import { LiveClassChat } from './LiveClassChat';
 import { TeacherLiveControlPanel } from './TeacherLiveControlPanel';
@@ -95,7 +95,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   const canOpenPresentation = useMemo(() => !!presentationLink, [presentationLink]);
   const canOpenWhatsapp = useMemo(() => !!(liveClass.whatsappLink ?? '').trim(), [liveClass.whatsappLink]);
   const onlinePresence = useMemo(
-    () => presence.filter((item) => item.isOnline),
+    () => presence.filter((item) => isLivePresenceActive(item)),
     [presence],
   );
   const assignedRoster = useMemo(() => {

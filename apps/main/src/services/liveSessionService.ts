@@ -28,6 +28,7 @@ const LIVE_SHARED_COLLECTION = 'shared';
 const LIVE_WHITEBOARD_DOC = 'whiteboard';
 const LIVE_EXERCISE_SESSION_DOC = 'exerciseSession';
 const LIVE_EXERCISE_BLOCKS_COLLECTION = 'exerciseBlocks';
+const LIVE_PRESENCE_STALE_MS = 75_000;
 
 function normalizeAssignedIdentifier(value: string | null | undefined) {
   return (value ?? '').trim();
@@ -77,6 +78,29 @@ const mapPresence = (id: string, data: Record<string, any>): LiveClassPresence =
   isOnline: Boolean(data.isOnline),
   lastSeenAt: data.lastSeenAt?.toDate?.()?.toISOString?.() ?? data.lastSeenAt ?? undefined,
 });
+
+function toPresenceTimestamp(value: unknown): number | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  return null;
+}
+
+export function isLivePresenceActive(
+  presence: LiveClassPresence,
+  now = Date.now(),
+  staleMs = LIVE_PRESENCE_STALE_MS,
+): boolean {
+  if (!presence.isOnline) return false;
+  const lastSeenAt = toPresenceTimestamp(presence.lastSeenAt);
+  if (lastSeenAt == null) return false;
+  return now - lastSeenAt <= staleMs;
+}
 
 const mapWhiteboardBlock = (item: unknown, index: number): LiveWhiteboardBlock | null => {
   if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
