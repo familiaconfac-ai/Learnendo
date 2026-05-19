@@ -27,10 +27,12 @@ import {
   saveDocContent,
   saveScrollRatio,
   savePageSwitch,
+  saveWorkspaceSurfaceMode,
   normalizeWorkspacePages,
   WorkspaceItem,
   WorkspaceItemType,
   WorkspacePage,
+  type WorkspaceSurfaceMode,
 } from '../../../services/workspaceService';
 import {
   saveWorkspaceAsMaterial,
@@ -61,6 +63,8 @@ function uid(): string {
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
+
+const GENERIC_SURFACE_NAME_RE = /^(page|pagina|página|slide|diapositiva)\s+\d+$/i;
 
 const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
 const WORKSPACE_DOC_SYNC_DEBOUNCE_MS = 150;
@@ -158,6 +162,24 @@ interface WsLabels {
   vocab: string;
 }
 
+interface SurfaceModeLabels {
+  document: string;
+  slides: string;
+  switchToDocument: string;
+  switchToSlides: string;
+  currentCanvas: string;
+  pageName: (n: number) => string;
+  pageNameTip: (name: string) => string;
+  currentLabel: string;
+  pageMenu: string;
+  savePage: string;
+  deletePage: string;
+  newPage: string;
+  clearPage: string;
+  confirmClear: string;
+  confirmDelete: string;
+}
+
 const BATTLE_LIBRARY_LANGUAGE_TABS: Array<{ value: BattleTemplateLanguage; label: string; dir?: 'ltr' | 'rtl' }> = [
   { value: 'pt', label: 'português', dir: 'ltr' },
   { value: 'es', label: 'español', dir: 'ltr' },
@@ -198,6 +220,84 @@ function getBattleLibrarySectionTitle(language: BattleTemplateLanguage): string 
     default:
       return language;
   }
+}
+
+function getSurfaceModeLabels(
+  uiLang: 'en' | 'pt' | 'es',
+  surfaceMode: WorkspaceSurfaceMode,
+  wsl: WsLabels,
+): SurfaceModeLabels {
+  const isSlides = surfaceMode === 'slides';
+  if (uiLang === 'en') {
+    return {
+      document: 'Board',
+      slides: 'Slides',
+      switchToDocument: 'Switch to board mode',
+      switchToSlides: 'Switch to slides mode',
+      currentCanvas: isSlides ? 'Slides canvas' : 'Board canvas',
+      pageName: (n) => (isSlides ? `Slide ${n}` : wsl.pageName(n)),
+      pageNameTip: (name) => (isSlides ? `${name} - double-click to rename` : wsl.pageNameTip(name)),
+      currentLabel: isSlides ? 'Slide' : 'Page',
+      pageMenu: isSlides ? 'Slide options' : wsl.pageMenu,
+      savePage: isSlides ? 'Save this slide' : wsl.savePage,
+      deletePage: isSlides ? 'Delete slide' : wsl.deletePage,
+      newPage: isSlides ? 'New slide' : wsl.newPage,
+      clearPage: isSlides ? 'Clear this slide content' : wsl.clearPage,
+      confirmClear: isSlides ? 'Clear this slide content?' : wsl.confirmClear,
+      confirmDelete: isSlides ? 'Delete this slide?' : wsl.confirmDelete,
+    };
+  }
+  if (uiLang === 'es') {
+    return {
+      document: 'Pizarra',
+      slides: 'Diapositivas',
+      switchToDocument: 'Cambiar al modo pizarra',
+      switchToSlides: 'Cambiar al modo diapositivas',
+      currentCanvas: isSlides ? 'Lienzo de diapositivas' : 'Lienzo de pizarra',
+      pageName: (n) => (isSlides ? `Diapositiva ${n}` : wsl.pageName(n)),
+      pageNameTip: (name) => (isSlides ? `${name} - doble clic para renombrar` : wsl.pageNameTip(name)),
+      currentLabel: isSlides ? 'Diapositiva' : 'Página',
+      pageMenu: isSlides ? 'Opciones de diapositiva' : wsl.pageMenu,
+      savePage: isSlides ? 'Guardar esta diapositiva' : wsl.savePage,
+      deletePage: isSlides ? 'Eliminar diapositiva' : wsl.deletePage,
+      newPage: isSlides ? 'Nueva diapositiva' : wsl.newPage,
+      clearPage: isSlides ? 'Limpiar esta diapositiva' : wsl.clearPage,
+      confirmClear: isSlides ? '¿Limpiar esta diapositiva?' : wsl.confirmClear,
+      confirmDelete: isSlides ? '¿Eliminar esta diapositiva?' : wsl.confirmDelete,
+    };
+  }
+  return {
+    document: 'Lousa',
+    slides: 'Slides',
+    switchToDocument: 'Trocar para modo lousa',
+    switchToSlides: 'Trocar para modo slides',
+    currentCanvas: isSlides ? 'Tela de slides' : 'Tela da lousa',
+    pageName: (n) => (isSlides ? `Slide ${n}` : wsl.pageName(n)),
+    pageNameTip: (name) => (isSlides ? `${name} - duplo clique para renomear` : wsl.pageNameTip(name)),
+    currentLabel: isSlides ? 'Slide' : 'Página',
+    pageMenu: isSlides ? 'Opções do slide' : wsl.pageMenu,
+    savePage: isSlides ? 'Salvar este slide' : wsl.savePage,
+    deletePage: isSlides ? 'Excluir slide' : wsl.deletePage,
+    newPage: isSlides ? 'Novo slide' : wsl.newPage,
+    clearPage: isSlides ? 'Limpar conteúdo deste slide' : wsl.clearPage,
+    confirmClear: isSlides ? 'Limpar o conteúdo deste slide?' : wsl.confirmClear,
+    confirmDelete: isSlides ? 'Excluir este slide?' : wsl.confirmDelete,
+  };
+}
+
+function isGenericSurfaceName(name: string) {
+  return GENERIC_SURFACE_NAME_RE.test((name ?? '').trim());
+}
+
+function relabelSurfacePages(
+  pages: WorkspacePage[],
+  labels: SurfaceModeLabels,
+): WorkspacePage[] {
+  return pages.map((page, index) =>
+    isGenericSurfaceName(page.name)
+      ? { ...page, name: labels.pageName(index + 1) }
+      : page,
+  );
 }
 
 const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
@@ -347,6 +447,10 @@ const getWorkspaceBoxFlowLabels = () => {
         unassigned: 'Unassigned',
         none: 'None',
         boxLabel: 'Box label',
+        contentBox: 'Slide text box',
+        studentBox: 'Student box',
+        contentBadge: 'Slide',
+        studentBadge: 'Student',
         selectStudent: 'Select a student',
         searchStudent: 'Search by name or email',
         clearOwner: 'Remove owner',
@@ -358,6 +462,10 @@ const getWorkspaceBoxFlowLabels = () => {
         unassigned: 'Sin asignar',
         none: 'Ninguno',
         boxLabel: 'Nombre de la caja',
+        contentBox: 'Caja del slide',
+        studentBox: 'Caja del alumno',
+        contentBadge: 'Slide',
+        studentBadge: 'Alumno',
         selectStudent: 'Selecciona un alumno',
         searchStudent: 'Buscar por nombre o correo',
         clearOwner: 'Quitar alumno',
@@ -372,6 +480,10 @@ const getWorkspaceBoxFlowLabels = () => {
     unassigned: 'Sem dono',
     none: 'Nenhum',
     boxLabel: 'Nome da caixa',
+    contentBox: 'Caixa do slide',
+    studentBox: 'Caixa do aluno',
+    contentBadge: 'Slide',
+    studentBadge: 'Aluno',
     selectStudent: 'Selecione um aluno',
     searchStudent: 'Buscar por nome ou e-mail',
     clearOwner: 'Remover dono',
@@ -630,6 +742,7 @@ interface PageTabProps {
   readOnly: boolean;
   canActivate: boolean;
   canDelete: boolean;
+  labels: Pick<SurfaceModeLabels, 'pageNameTip' | 'pageMenu' | 'savePage' | 'deletePage'>;
   onActivate: () => void;
   onRename: (name: string) => void;
   onDuplicate: () => void;
@@ -638,7 +751,7 @@ interface PageTabProps {
 }
 
 const PageTab: React.FC<PageTabProps> = ({
-  page, isActive, readOnly, canActivate, canDelete, onActivate, onRename, onDuplicate, onSavePage, onDelete,
+  page, isActive, readOnly, canActivate, canDelete, labels, onActivate, onRename, onDuplicate, onSavePage, onDelete,
 }) => {
   const wsl = getWsl();
   const [editing, setEditing] = useState(false);
@@ -724,7 +837,7 @@ const PageTab: React.FC<PageTabProps> = ({
         <span
           className={`flex-1 truncate px-2 py-1 text-xs ${isActive ? 'text-blue-700 font-medium' : 'text-slate-500'}`}
           onDoubleClick={(e) => { e.stopPropagation(); startEdit(); }}
-          title={wsl.pageNameTip(page.name)}
+          title={labels.pageNameTip(page.name)}
         >
           {page.name}
         </span>
@@ -736,7 +849,7 @@ const PageTab: React.FC<PageTabProps> = ({
             ref={menuBtnRef}
             onClick={handleMenuOpen}
             className="flex items-center justify-center w-5 h-6 mx-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-slate-600"
-            title={wsl.pageMenu}
+            title={labels.pageMenu}
           >
             <svg viewBox="0 0 4 14" className="w-1 h-3.5" fill="currentColor">
               <circle cx="2" cy="2" r="1.5"/><circle cx="2" cy="7" r="1.5"/><circle cx="2" cy="12" r="1.5"/>
@@ -760,7 +873,7 @@ const PageTab: React.FC<PageTabProps> = ({
                 className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition flex items-center gap-2"
               >
                 <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 16 16"><path d="M13 3v9a1 1 0 01-1 1H3a1 1 0 01-1-1V3a1 1 0 011-1h7l3 3z"/><path d="M10 2v3H7V2"/><path d="M5 9h5"/></svg>
-                {wsl.savePage}
+                {labels.savePage}
               </button>
               {canDelete && (
                 <>
@@ -770,7 +883,7 @@ const PageTab: React.FC<PageTabProps> = ({
                     className="w-full text-left px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition flex items-center gap-2"
                   >
                     <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 16 16"><path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M4 4l1 9h6l1-9"/></svg>
-                    {wsl.deletePage}
+                    {labels.deletePage}
                   </button>
                 </>
               )}
@@ -1405,6 +1518,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const uiLang: 'en' | 'pt' | 'es' = getScopedUiLanguage();
   const wsl = getWsl();
+  const [surfaceMode, setSurfaceMode] = useState<WorkspaceSurfaceMode>('document');
+  const surfaceModeRef = useRef<WorkspaceSurfaceMode>('document');
+  const surfaceLabels = useMemo(
+    () => getSurfaceModeLabels(uiLang, surfaceMode, wsl),
+    [surfaceMode, uiLang, wsl],
+  );
+  const isSlidesMode = surfaceMode === 'slides';
   const boxFlowLabels = getWorkspaceBoxFlowLabels();
   const [items, setItems] = useState<WorkspaceItem[]>([]);
   const [docHtml, setDocHtml] = useState<string>('');
@@ -1422,11 +1542,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // On page switch (or save), we �flush� docRef.current.innerHTML + items into pages first.
   const _initPageId = useRef<string>(uid()).current; // stable across re-renders
   const [pages, setPages] = useState<WorkspacePage[]>([
-    { id: _initPageId, name: wsl.pageName(1), docContent: '', items: [] },
+    { id: _initPageId, name: surfaceLabels.pageName(1), docContent: '', items: [] },
   ]);
   const [activePageId, setActivePageId] = useState<string>(_initPageId);
   // Refs are kept in sync manually (no useEffect delay) so closures always see latest.
-  const pagesRef = useRef<WorkspacePage[]>([{ id: _initPageId, name: wsl.pageName(1), docContent: '', items: [] }]);
+  const pagesRef = useRef<WorkspacePage[]>([{ id: _initPageId, name: surfaceLabels.pageName(1), docContent: '', items: [] }]);
   const activePageIdRef = useRef<string>(_initPageId);
   const syncActivePageDocRef = useCallback((html: string) => {
     const nextPages = pagesRef.current.map((page) =>
@@ -1676,6 +1796,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     const unsub = subscribeWorkspace(classId, (data) => {
       const remotePages = data?.pages ? normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]) : null;
       const remoteCurrentPageId = data?.currentPageId ?? activePageIdRef.current;
+      const remoteSurfaceMode = data?.surfaceMode ?? 'document';
       const remoteActivePage = remotePages?.find((page) => page.id === remoteCurrentPageId) ?? null;
       const normalizedItems = (remoteActivePage?.items ?? data?.items ?? []).map(normalizeItemScope);
       const mergedItems = mergeRemoteItemsWithLocal(normalizedItems);
@@ -1687,11 +1808,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         battlePath: `liveClasses/${classId}/session/battle`,
         userId,
         currentPageId: remoteCurrentPageId ?? null,
+        surfaceMode: remoteSurfaceMode,
         itemCount: normalizedItems.length,
         docLength: nextDocContent.length,
         updatedBy: data?.updatedBy ?? null,
         updatedByName: data?.updatedByName ?? null,
       });
+      if (remoteSurfaceMode !== surfaceModeRef.current) {
+        surfaceModeRef.current = remoteSurfaceMode;
+        setSurfaceMode(remoteSurfaceMode);
+      }
       // Use SECTION-SPECIFIC authorship instead of a single updatedBy field.
       // Problem: updatedBy is a single field for the whole document.  If the
       // teacher updates items (setting updatedBy = teacherUid) while the student
@@ -2064,11 +2190,29 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       scheduleDocSave(html);
     }, 20);
   };
-  const applyTextColor = (color: string) => { setTextColor(color); execFmt('foreColor', color || '#000000'); };
+  const applyTextColor = (color: string) => {
+    setTextColor(color);
+    const hasTextSelection = Boolean(window.getSelection()?.toString().trim());
+    if (activeFloatingIdRef.current && !hasTextSelection && selectedId) {
+      const item = items.find((i) => i.id === selectedId);
+      if (item) {
+        updateItem(selectedId, { styles: { ...(item.styles ?? {}), color: color || '#000000' } });
+        return;
+      }
+    }
+    execFmt('foreColor', color || '#000000');
+  };
   const applyHighlight = (color: string) => {
     setBgColor(color);
+    const hasTextSelection = Boolean(window.getSelection()?.toString().trim());
+    if (activeFloatingIdRef.current && !hasTextSelection && selectedId) {
+      const item = items.find((i) => i.id === selectedId);
+      if (item) {
+        updateItem(selectedId, { styles: { ...(item.styles ?? {}), bgColor: color || '' } });
+        return;
+      }
+    }
     if (activeFloatingIdRef.current) {
-      // Cursor is inside a floating block ? apply as inline text highlight
       execFmt('hiliteColor', color || 'transparent');
       return;
     }
@@ -2183,17 +2327,25 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     flushPendingSingleItemSaves();
   };
 
-  const addTextBox = () => {
+  const addBox = (boxRole: 'content' | 'student' = 'content') => {
     if (effectiveReadOnly || readOnly) return;
     const newItem = normalizeItemScope({
       id: uid(), type: 'text' as WorkspaceItemType,
-      x: 5, y: 5, w: 45, h: 20,
+      boxRole,
+      x: boxRole === 'student' ? 4 : 8,
+      y: boxRole === 'student' ? 8 : 8,
+      w: boxRole === 'student' ? 42 : (isSlidesMode ? 52 : 45),
+      h: boxRole === 'student' ? 24 : (isSlidesMode ? 26 : 20),
       content: '',
-      label: '',
+      label: boxRole === 'student' ? boxFlowLabels.studentBox : '',
       ownerUserId: viewerIsStudent ? userId : undefined,
       ownerName: viewerIsStudent ? userName : undefined,
       ownerEmail: viewerIsStudent ? userEmail ?? undefined : undefined,
-      styles: { color: '#1e293b', fontSize: 16, bgColor: '#ffffff' },
+      styles: {
+        color: '#1e293b',
+        fontSize: boxRole === 'student' ? 16 : (isSlidesMode ? 26 : 16),
+        bgColor: boxRole === 'student' ? '#f8fafc' : '#ffffff',
+      },
       updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
     });
     setItems((prev) => {
@@ -2203,6 +2355,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     });
     setSelectedId(newItem.id);
   };
+
+  const addTextBox = () => addBox('content');
+  const addStudentBox = () => addBox('student');
 
   const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2352,7 +2507,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setSelectedId(null);
     activePageIdRef.current = pageId;
     setActivePageId(pageId);
-    savePageSwitch(classId, flushed, pageId, newPage.docContent, newPage.items, userId, userName).catch(console.error);
+    savePageSwitch(classId, flushed, pageId, newPage.docContent, newPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
   const addPage = () => {
@@ -2360,7 +2515,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const newId = uid();
-    const newPage: WorkspacePage = { id: newId, name: wsl.pageName(flushed.length + 1), docContent: '', items: [] };
+    const newPage: WorkspacePage = { id: newId, name: surfaceLabels.pageName(flushed.length + 1), docContent: '', items: [] };
     const updated = [...flushed, newPage];
     pagesRef.current = updated;
     setPages(updated);
@@ -2372,7 +2527,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setSelectedId(null);
     activePageIdRef.current = newId;
     setActivePageId(newId);
-    savePageSwitch(classId, updated, newId, '', [], userId, userName).catch(console.error);
+    savePageSwitch(classId, updated, newId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
   const deletePage = (pageId: string) => {
@@ -2380,7 +2535,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     flushFloatingEditorBeforePageMutation();
     const current = pagesRef.current;
     if (current.length <= 1) return; // never delete the last page
-    if (!window.confirm(wsl.confirmDelete)) return;
+    if (!window.confirm(surfaceLabels.confirmDelete)) return;
     const isActive = pageId === activePageIdRef.current;
     const idx = current.findIndex((p) => p.id === pageId);
     const remaining = current.filter((p) => p.id !== pageId);
@@ -2396,10 +2551,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       setSelectedId(null);
       activePageIdRef.current = nextPage.id;
       setActivePageId(nextPage.id);
-      savePageSwitch(classId, remaining, nextPage.id, nextPage.docContent, nextPage.items, userId, userName).catch(console.error);
+      savePageSwitch(classId, remaining, nextPage.id, nextPage.docContent, nextPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
     } else {
       const currentDoc = docRef.current?.innerHTML ?? docHtml;
-      savePageSwitch(classId, remaining, activePageIdRef.current, currentDoc, items, userId, userName).catch(console.error);
+      savePageSwitch(classId, remaining, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
     }
   };
 
@@ -2409,7 +2564,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     pagesRef.current = updated;
     setPages(updated);
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
-    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName).catch(console.error);
+    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
   const duplicatePage = (pageId: string) => {
@@ -2429,8 +2584,46 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     pagesRef.current = updated;
     setPages(updated);
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
-    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName).catch(console.error);
+    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
   };
+
+  const toggleSurfaceMode = useCallback(() => {
+    if (!viewerCanManageWorkspace || readOnly) return;
+    flushFloatingEditorBeforePageMutation();
+    const flushed = flushPages();
+    const nextMode: WorkspaceSurfaceMode = surfaceModeRef.current === 'slides' ? 'document' : 'slides';
+    const nextLabels = getSurfaceModeLabels(uiLang, nextMode, wsl);
+    const renamedPages = relabelSurfacePages(flushed, nextLabels);
+
+    surfaceModeRef.current = nextMode;
+    setSurfaceMode(nextMode);
+    pagesRef.current = renamedPages;
+    setPages(renamedPages);
+
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    savePageSwitch(
+      classId,
+      renamedPages,
+      activePageIdRef.current,
+      currentDoc,
+      items,
+      userId,
+      userName,
+      nextMode,
+    ).catch(console.error);
+    saveWorkspaceSurfaceMode(classId, nextMode, userId, userName).catch(console.error);
+  }, [
+    classId,
+    docHtml,
+    flushFloatingEditorBeforePageMutation,
+    items,
+    readOnly,
+    uiLang,
+    userId,
+    userName,
+    viewerCanManageWorkspace,
+    wsl,
+  ]);
 
   const handleSaveMaterial = async () => {
     const title = saveMaterialTitle.trim();
@@ -2598,7 +2791,21 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     }, 80);
   }, []);
 
-  const selected = items.find((i) => i.id === selectedId) ?? null;
+  const visibleItems = useMemo(() => {
+    if (!viewerIsStudent) return items;
+    return items.filter((item) => {
+      if (item.boxRole !== 'student') return true;
+      return isBoxOwner(viewerContext, item);
+    });
+  }, [items, viewerContext, viewerIsStudent]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    if (visibleItems.some((item) => item.id === selectedId)) return;
+    setSelectedId(null);
+  }, [selectedId, visibleItems]);
+
+  const selected = visibleItems.find((i) => i.id === selectedId) ?? null;
 
   // -- ResizeHandle ---------------------------------------------------------------
 
@@ -2667,6 +2874,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       item.ownerName?.trim() ||
       item.ownerEmail?.trim() ||
       (item.ownerUserId ? item.ownerUserId.slice(0, 6) : '');
+    const boxRoleBadgeLabel =
+      item.boxRole === 'student'
+        ? boxFlowLabels.studentBadge
+        : item.boxRole === 'content'
+          ? boxFlowLabels.contentBadge
+          : null;
     const filteredAssignableStudents = assignableStudents.filter((student) => {
       const query = ownerQuery.trim().toLowerCase();
       if (!query) return true;
@@ -2825,6 +3038,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               ) : (
                 <input ref={inputRef} value={labelValue} placeholder={boxFlowLabels.boxLabel} title={boxFlowLabels.boxLabel} onChange={(e) => setLabelValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveLabel(); }} onBlur={saveLabel} className="bg-white border border-slate-300 rounded px-1 py-0 text-[11px] font-semibold text-slate-700 flex-1" />
               )}
+              {boxRoleBadgeLabel ? (
+                <span className={`text-[9px] px-1.5 py-0.5 rounded ${item.boxRole === 'student' ? 'text-emerald-700 bg-emerald-100' : 'text-violet-700 bg-violet-100'}`}>
+                  {boxRoleBadgeLabel}
+                </span>
+              ) : null}
               {item.ownerUserId && ownerBadgeLabel ? (
                 <span className="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                   {ownerBadgeLabel}
@@ -3037,6 +3255,22 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
           </>
         )}
+        {viewerCanManageWorkspace && !readOnly && (
+          <>
+            <button
+              onClick={toggleSurfaceMode}
+              className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
+                isSlidesMode
+                  ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+              }`}
+              title={isSlidesMode ? surfaceLabels.switchToDocument : surfaceLabels.switchToSlides}
+            >
+              {isSlidesMode ? surfaceLabels.slides : surfaceLabels.document}
+            </button>
+            <div className="w-px h-5 bg-slate-200 mx-0.5" />
+          </>
+        )}
         <select
           value={fontFamily}
           onChange={(e) => applyFont(e.target.value)}
@@ -3077,9 +3311,24 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
         {viewerCanManageWorkspace && !readOnly && (
-          <button onClick={addTextBox} className="w-7 h-7 rounded hover:bg-slate-100 text-slate-600 flex items-center justify-center transition border border-slate-200" title={wsl.textBox}>
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2"/><line x1="5" y1="8" x2="15" y2="8"/><line x1="5" y1="11" x2="11" y2="11"/></svg>
-          </button>
+          <>
+            <button
+              onClick={addTextBox}
+              className={`w-7 h-7 rounded flex items-center justify-center transition border ${isSlidesMode ? 'border-violet-200 text-violet-700 hover:bg-violet-50' : 'border-slate-200 text-slate-600 hover:bg-slate-100'}`}
+              title={isSlidesMode ? boxFlowLabels.contentBox : wsl.textBox}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2"/><line x1="5" y1="8" x2="15" y2="8"/><line x1="5" y1="11" x2="11" y2="11"/></svg>
+            </button>
+            {isSlidesMode && (
+              <button
+                onClick={addStudentBox}
+                className="w-7 h-7 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 flex items-center justify-center transition"
+                title={boxFlowLabels.studentBox}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><circle cx="10" cy="6" r="3"/><path d="M4.5 16c.8-2.7 3.1-4 5.5-4s4.7 1.3 5.5 4"/><rect x="1.5" y="3" width="17" height="14" rx="2"/></svg>
+              </button>
+            )}
+          </>
         )}
 
         {viewerCanManageWorkspace && !readOnly && (
@@ -3165,11 +3414,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               );
               pagesRef.current = updated;
               setPages(updated);
-              savePageSwitch(classId, updated, activePageIdRef.current, '', [], userId, userName).catch(console.error);
+              savePageSwitch(classId, updated, activePageIdRef.current, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
             }}
             className="w-7 h-7 rounded flex items-center justify-center hover:bg-red-50 text-red-500 border border-red-200 transition"
-            title={wsl.clearPage}
-            aria-label={wsl.clearPage}
+            title={surfaceLabels.clearPage}
+            aria-label={surfaceLabels.clearPage}
           >
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20"><path d="M4 7h12M6 7V5a1 1 0 011-1h6a1 1 0 011 1v2M16 7l-1 10a2 2 0 01-2 2H7a2 2 0 01-2-2L4 7"/></svg>
           </button>
@@ -3181,6 +3430,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         className="flex-shrink-0 flex items-stretch gap-0 bg-slate-50 border-b border-slate-200 overflow-x-auto"
         style={{ minHeight: '2rem', zIndex: 15 }}
       >
+        <div className="flex flex-shrink-0 items-center px-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+          {surfaceLabels.currentLabel}
+        </div>
         {pages.map((page) => (
           <PageTab
             key={page.id}
@@ -3189,6 +3441,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             readOnly={!viewerCanManagePages}
             canActivate={viewerCanManagePages}
             canDelete={pages.length > 1}
+            labels={surfaceLabels}
             onActivate={() => switchPage(page.id)}
             onRename={(name) => renamePage(page.id, name)}
             onDuplicate={() => duplicatePage(page.id)}
@@ -3200,7 +3453,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <button
             onClick={addPage}
             className="flex-shrink-0 flex items-center justify-center w-8 h-full text-slate-400 hover:text-blue-600 hover:bg-white transition px-2"
-            title={wsl.newPage}
+            title={surfaceLabels.newPage}
           >
             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 16 16">
               <line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
@@ -3374,17 +3627,39 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       {/* -- Scrollable content ----------------------------------------------- */}
       <div
         ref={overflowRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-100 p-3 sm:p-4"
+        className={`flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
         onScroll={onScrollSync}
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}
       >
-        <div ref={canvasRef} className="relative w-full" onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
+        <div
+          ref={canvasRef}
+          className={`relative w-full ${isSlidesMode ? 'mx-auto max-w-6xl' : ''}`}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerLeave={onPointerUp}
+        >
 
           {/* Main shared document */}
-          <div className="relative w-full bg-white rounded-xl shadow-sm border border-slate-200 mb-6" style={{ minHeight: '60vh' }}>
+          <div
+            className={`relative w-full border mb-6 ${
+              isSlidesMode
+                ? 'overflow-hidden rounded-[28px] border-slate-700 bg-white shadow-[0_25px_70px_rgba(15,23,42,0.45)]'
+                : 'rounded-xl border-slate-200 bg-white shadow-sm'
+            }`}
+            style={{
+              minHeight: isSlidesMode ? 'min(72vh, 48rem)' : '60vh',
+              aspectRatio: isSlidesMode ? '16 / 9' : undefined,
+            }}
+          >
+            {isSlidesMode && (
+              <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-24 bg-gradient-to-b from-slate-100 via-slate-50 to-transparent" />
+            )}
             {!docHtml && (
-              <div className="absolute top-6 left-6 text-slate-300 text-sm pointer-events-none select-none" style={{ fontFamily }}>
+              <div
+                className={`absolute text-sm text-slate-300 pointer-events-none select-none ${isSlidesMode ? 'left-8 top-8' : 'left-6 top-6'}`}
+                style={{ fontFamily }}
+              >
                 {viewerCanEditSharedDocument ? wsl.placeholder : wsl.readonlyPh}
               </div>
             )}
@@ -3395,14 +3670,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               spellCheck
               onBlur={onDocBlur}
               onInput={onDocInput}
-              className="w-full min-h-[60vh] p-6 focus:outline-none leading-relaxed"
+              className={`w-full focus:outline-none leading-relaxed ${isSlidesMode ? 'min-h-full overflow-auto px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12' : 'min-h-[60vh] p-6'}`}
               style={{ fontFamily, fontSize: `${fontSize}px`, color: '#000000', wordBreak: 'break-word' }}
             />
           </div>
 
           {/* Floating blocks overlay */}
           <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
-            {items.map((item) => (
+            {visibleItems.map((item) => (
               <StableFloatingBlock
                 key={item.id}
                 item={item}
@@ -3440,7 +3715,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             ))}
           </div>
 
-          {items.length > 0 && <div className="h-40" />}
+          {visibleItems.length > 0 && <div className="h-40" />}
         </div>
       </div>
 

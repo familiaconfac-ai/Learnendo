@@ -226,12 +226,20 @@ const TeacherStage: React.FC<{
     const recoveryTimer = window.setTimeout(() => {
       setCameraRecoveryAttempts((current) => current + 1);
       void toggleCameraWithRecovery(true);
-    }, cameraRecoveryAttempts === 0 ? 600 : 1000);
+    }, cameraRecoveryAttempts === 0 ? 300 : 1000);
 
     return () => {
       window.clearTimeout(recoveryTimer);
     };
   }, [cameraBusy, cameraRecoveryAttempts, hasLiveLocalCamera, toggleCameraWithRecovery]);
+
+  // Auto-enable camera on mount
+  useEffect(() => {
+    if (!isCameraEnabled && !cameraBusy && cameraRecoveryAttempts === 0) {
+      console.info('[TeacherRoomView] Auto-enabling camera on room initialization');
+      void toggleCameraWithRecovery(true);
+    }
+  }, []);
 
   const toggleMicrophoneWithRecovery = async (forceEnable = !isMicrophoneEnabled) => {
     if (microphoneBusy) return;
@@ -270,6 +278,14 @@ const TeacherStage: React.FC<{
       setMicrophoneBusy(false);
     }
   };
+
+  // Auto-enable microphone on mount
+  useEffect(() => {
+    if (!isMicrophoneEnabled && !microphoneBusy) {
+      console.info('[TeacherRoomView] Auto-enabling microphone on room initialization');
+      void toggleMicrophoneWithRecovery(true);
+    }
+  }, []);
 
   const toggleScreenShare = async () => {
     try {

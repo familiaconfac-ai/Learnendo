@@ -13,6 +13,7 @@ export interface WorkspaceTextStyles {
 }
 
 export type WorkspaceItemType = 'text' | 'image';
+export type WorkspaceSurfaceMode = 'document' | 'slides';
 
 /** A single page within a workspace material or live session. */
 export interface WorkspacePage {
@@ -27,6 +28,7 @@ export interface WorkspacePage {
 export interface WorkspaceItem {
   id: string;
   type: WorkspaceItemType;
+  boxRole?: 'content' | 'student';
   x: number;          // % of workspace width  (0-100)
   y: number;          // % of workspace height (0-100)
   w: number;          // % of workspace width
@@ -65,6 +67,8 @@ export interface WorkspaceDoc {
   pages?: WorkspacePage[];
   /** ID of the currently active page (Fase 2). */
   currentPageId?: string;
+  /** Visual surface mode shared by teacher and students. */
+  surfaceMode?: WorkspaceSurfaceMode;
   updatedAt: number;
   updatedBy: string;
   updatedByName: string;
@@ -152,6 +156,30 @@ export async function saveScrollRatio(
   await updateDoc(workspaceRef(classId), { scrollRatio }).catch(() => {
     // ignore if doc doesn't exist yet
   });
+}
+
+/** Persist only the current workspace surface mode (document/slides). */
+export async function saveWorkspaceSurfaceMode(
+  classId: string,
+  surfaceMode: WorkspaceSurfaceMode,
+  uid: string,
+  name: string,
+): Promise<void> {
+  if (!db) return;
+  const { updateDoc, setDoc } = await import('firebase/firestore');
+  const payload = {
+    surfaceMode,
+    updatedAt: Date.now(),
+    updatedBy: uid,
+    updatedByName: name,
+  };
+  try {
+    await updateDoc(workspaceRef(classId), payload);
+    console.log(`[WS] saveWorkspaceSurfaceMode ✅ mode=${surfaceMode}`);
+  } catch {
+    await setDoc(workspaceRef(classId), payload, { merge: true });
+    console.log('[WS] saveWorkspaceSurfaceMode setDoc ✅');
+  }
 }
 
 // ── Firestore path ────────────────────────────────────────────────────────────
@@ -330,12 +358,14 @@ export async function savePageSwitch(
   items: WorkspaceItem[],
   uid: string,
   name: string,
+  surfaceMode?: WorkspaceSurfaceMode,
 ): Promise<void> {
   if (!db) return;
   const { updateDoc, setDoc } = await import('firebase/firestore');
   const payload = {
     pages,
     currentPageId,
+    ...(surfaceMode ? { surfaceMode } : {}),
     docContent,
     docUpdatedBy: uid,
     items,
