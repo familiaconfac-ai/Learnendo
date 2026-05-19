@@ -414,14 +414,6 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       { correct: 0, wrong: 0, unanswered: 0 }
     );
   }, [mergedCurrentAnswers, revealParticipantIds]);
-  const wrongParticipantNames = useMemo(
-    () =>
-      roundResultsRows
-        .filter((row) => row.isCorrect === false)
-        .map((row) => row.name),
-    [roundResultsRows]
-  );
-
   useEffect(() => {
     console.info('[BATTLE SESSION STATUS] teacher host snapshot', {
       component: 'BattleHostView',
@@ -1264,6 +1256,37 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const correctCount = roundAnswerSummary.correct;
   const wrongCount = roundAnswerSummary.wrong;
   const unansweredCount = roundAnswerSummary.unanswered;
+  const wrongParticipantDetails = useMemo(() => {
+    return roundResultsRows
+      .filter((row) => row.isCorrect === false)
+      .map((row) => {
+        const answer = mergedCurrentAnswers[row.pid];
+        let selectedLabel: string = copy.noResponse;
+
+        if (question && isChoiceQuestion(question)) {
+          const selectedIndexes = Array.from(new Set([
+            ...(answer?.optionIndexes ?? []),
+            ...(typeof answer?.optionIndex === 'number' ? [answer.optionIndex] : []),
+          ]))
+            .filter((index) => index >= 0)
+            .sort((left, right) => left - right);
+
+          if (selectedIndexes.length > 0) {
+            selectedLabel = selectedIndexes
+              .map((index) => question.options?.[index] ?? `#${index + 1}`)
+              .join(' + ');
+          }
+        } else if (answer?.responseText?.trim()) {
+          selectedLabel = answer.responseText.trim();
+        }
+
+        return {
+          pid: row.pid,
+          name: row.name,
+          selectedLabel,
+        };
+      });
+  }, [copy.noResponse, mergedCurrentAnswers, question, roundResultsRows]);
 
   return (
     <div className="fixed inset-0 z-[9000] flex select-none bg-slate-950">
@@ -1484,10 +1507,16 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                       </span>
                     ) : null}
                   </div>
-                  {wrongParticipantNames.length > 0 ? (
+                  {wrongParticipantDetails.length > 0 ? (
                     <div className="w-full max-w-2xl rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-left">
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-red-300">{copy.wrongStudents}</p>
-                      <p className="mt-1 text-sm leading-6 text-red-100">{wrongParticipantNames.join(', ')}</p>
+                      <div className="mt-2 space-y-1.5">
+                        {wrongParticipantDetails.map((participant) => (
+                          <p key={participant.pid} className="text-sm leading-6 text-red-100">
+                            <span className="font-semibold">{participant.name}:</span> {participant.selectedLabel}
+                          </p>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
                   {effectiveRoundStatus !== 'ranking' ? (

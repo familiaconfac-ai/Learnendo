@@ -95,6 +95,16 @@ const TeacherStage: React.FC<{
 
   const localCameraTrack =
     cameraTrackRefs.find((track) => track.participant?.isLocal) ?? null;
+  const localCameraPublication = localParticipant.getTrackPublication(Track.Source.Camera);
+  const localCameraMediaTrack = (localCameraPublication?.track as any)?.mediaStreamTrack as
+    | MediaStreamTrack
+    | undefined;
+  const hasLiveLocalCamera =
+    Boolean(localCameraTrack) &&
+    Boolean(localCameraMediaTrack) &&
+    localCameraMediaTrack?.readyState === 'live' &&
+    localCameraPublication?.isMuted !== true;
+  const cameraActive = isCameraEnabled && hasLiveLocalCamera;
 
   const uiLang: 'en' | 'pt' | 'es' = (() => {
     try {
@@ -131,7 +141,7 @@ const TeacherStage: React.FC<{
     {
       id: 'local',
       label: labels.you,
-      trackRef: localCameraTrack,
+      trackRef: hasLiveLocalCamera ? localCameraTrack : null,
       emptyLabel: labels.cameraOff,
     },
     ...remoteParticipants.map((participant) => ({
@@ -207,30 +217,21 @@ const TeacherStage: React.FC<{
   }, [cameraBusy, isCameraEnabled, localParticipant]);
 
   useEffect(() => {
-    if (!isCameraEnabled || cameraBusy || localCameraTrack) return undefined;
+    if (hasLiveLocalCamera) {
+      setCameraRecoveryAttempts(0);
+      return undefined;
+    }
+    if (cameraBusy || cameraRecoveryAttempts >= 5) return undefined;
 
     const recoveryTimer = window.setTimeout(() => {
       setCameraRecoveryAttempts((current) => current + 1);
       void toggleCameraWithRecovery(true);
-    }, 600);
+    }, cameraRecoveryAttempts === 0 ? 600 : 1000);
 
     return () => {
       window.clearTimeout(recoveryTimer);
     };
-  }, [cameraBusy, isCameraEnabled, localCameraTrack, toggleCameraWithRecovery]);
-
-  useEffect(() => {
-    if (cameraBusy || localCameraTrack || cameraRecoveryAttempts >= 3) return undefined;
-
-    const initialRecoveryTimer = window.setTimeout(() => {
-      setCameraRecoveryAttempts((current) => current + 1);
-      void toggleCameraWithRecovery(true);
-    }, cameraRecoveryAttempts === 0 ? 1200 : 900);
-
-    return () => {
-      window.clearTimeout(initialRecoveryTimer);
-    };
-  }, [cameraBusy, cameraRecoveryAttempts, localCameraTrack, toggleCameraWithRecovery]);
+  }, [cameraBusy, cameraRecoveryAttempts, hasLiveLocalCamera, toggleCameraWithRecovery]);
 
   const toggleMicrophoneWithRecovery = async (forceEnable = !isMicrophoneEnabled) => {
     if (microphoneBusy) return;
@@ -474,7 +475,7 @@ const TeacherStage: React.FC<{
               </span>
             </button>
           ) : null}
-          {localCameraTrack ? (
+          {hasLiveLocalCamera && localCameraTrack ? (
             <button
               type="button"
               onClick={() => setExpandedCameraId('local')}
@@ -523,15 +524,15 @@ const TeacherStage: React.FC<{
             }}
             disabled={cameraBusy}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-lg shadow transition ${
-              isCameraEnabled
+              cameraActive
                 ? 'bg-sky-500 text-white hover:bg-sky-400'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             } disabled:opacity-60`}
-            title={isCameraEnabled ? 'Desligar camera' : 'Ligar camera'}
+            title={cameraActive ? 'Desligar camera' : 'Ligar camera'}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              {!isCameraEnabled ? <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" /> : null}
+              {!cameraActive ? <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" /> : null}
             </svg>
           </button>
 

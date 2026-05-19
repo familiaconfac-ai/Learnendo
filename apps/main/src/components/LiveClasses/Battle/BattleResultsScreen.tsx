@@ -66,6 +66,10 @@ function formatResultSummary(participant: BattleParticipant, totalQuestions?: nu
   return String(correctAnswers);
 }
 
+function formatPointsSummary(participant: BattleParticipant) {
+  return `${(participant.score ?? 0).toLocaleString()} pts`;
+}
+
 export const BattleResultsScreen: React.FC<Props> = ({
   scores,
   myUid,
@@ -190,9 +194,14 @@ export const BattleResultsScreen: React.FC<Props> = ({
                 {participant.name}
                 {participant.uid === myUid ? <span className="ml-1 text-xs text-orange-400">({copy.you})</span> : null}
               </span>
-              <span className="text-[11px] text-slate-400">
-                {formatResultSummary(participant, totalQuestions)}
-              </span>
+              <div className="text-right">
+                <div className="text-[11px] font-semibold text-slate-300">
+                  {formatResultSummary(participant, totalQuestions)}
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  {formatPointsSummary(participant)}
+                </div>
+              </div>
             </div>
           ))}
           {sorted.length === 0 ? (
