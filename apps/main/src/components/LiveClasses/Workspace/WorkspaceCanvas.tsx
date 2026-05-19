@@ -531,6 +531,36 @@ function getEmailLocalPart(email?: string | null): string {
   return normalized.includes('@') ? normalized.split('@')[0] : normalized;
 }
 
+function normalizeLooseText(value?: string | null): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function resolveAssignableOwner(
+  item: WorkspaceItem,
+  assignableStudents: AssignableStudentOption[],
+): AssignableStudentOption | null {
+  if (item.ownerUserId) {
+    return assignableStudents.find((student) => student.uid === item.ownerUserId) ?? null;
+  }
+
+  if (item.boxRole !== 'student') return null;
+
+  const labelKey = normalizeLooseText(item.label);
+  if (!labelKey) return null;
+
+  return (
+    assignableStudents.find((student) => {
+      const labelMatch = normalizeLooseText(student.label) === labelKey;
+      const emailMatch = normalizeLooseText(getEmailLocalPart(student.email)) === labelKey;
+      return labelMatch || emailMatch;
+    }) ?? null
+  );
+}
+
 function isAdmin(viewer: WorkspaceViewerContext): boolean {
   return normalizeEmail(viewer.userEmail) === WORKSPACE_ADMIN_EMAIL;
 }
@@ -1122,10 +1152,27 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS,
   );
   const lockOwnerName = item.editingByUserName || item.editingByUserId;
+  const resolvedOwner = resolveAssignableOwner(item, assignableStudents);
+  const resolvedOwnerUid = resolvedOwner?.uid ?? item.ownerUserId ?? null;
+  const resolvedOwnerEmail = resolvedOwner?.email ?? item.ownerEmail ?? null;
   const canManageThisBox = canManageBox(viewerContext, item);
-  const isOwner = isBoxOwner(viewerContext, item);
+  const isOwner =
+    isBoxOwner(viewerContext, item) ||
+    Boolean(
+      resolvedOwnerUid && resolvedOwnerUid === viewerContext.userId
+    ) ||
+    Boolean(
+      resolvedOwnerEmail &&
+      viewerContext.userEmail &&
+      normalizeEmail(resolvedOwnerEmail) === normalizeEmail(viewerContext.userEmail)
+    ) ||
+    Boolean(
+      resolvedOwnerEmail &&
+      viewerContext.userEmail &&
+      getEmailLocalPart(resolvedOwnerEmail) === getEmailLocalPart(viewerContext.userEmail)
+    );
   const canBypassReadonlyForBox = canManageThisBox || isOwner;
-  const canEditThisContent = canEditBoxContent(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
+  const canEditThisContent = (canManageThisBox || isOwner) && (!readOnly || canBypassReadonlyForBox);
   const canRenameThisBox = canRenameBox(viewerContext, item);
   const canAssignThisBox = canAssignBoxOwner(viewerContext, item);
   const canMoveThisBox = canMoveBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
@@ -1134,7 +1181,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     !canManageThisBox &&
       (
         (item.ownerUserId && item.ownerUserId !== currentUserId) ||
-        (!item.ownerUserId && item.ownerEmail && currentUserEmail && normalizeEmail(item.ownerEmail) !== normalizeEmail(currentUserEmail))
+        (!item.ownerUserId && resolvedOwnerEmail && currentUserEmail && normalizeEmail(resolvedOwnerEmail) !== normalizeEmail(currentUserEmail))
       ),
   );
 
@@ -1146,8 +1193,15 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
 
   const ownerBadgeLabel =
     item.ownerName?.trim() ||
-    item.ownerEmail?.trim() ||
-    (item.ownerUserId ? item.ownerUserId.slice(0, 6) : '');
+    resolvedOwner?.label?.trim() ||
+    resolvedOwnerEmail?.trim() ||
+    (resolvedOwnerUid ? resolvedOwnerUid.slice(0, 6) : '');
+  const boxRoleBadgeLabel =
+    item.boxRole === 'student'
+      ? boxFlowLabels.studentBadge
+      : item.boxRole === 'content'
+        ? boxFlowLabels.contentBadge
+        : null;
   const filteredAssignableStudents = assignableStudents.filter((student) => {
     const query = ownerQuery.trim().toLowerCase();
     if (!query) return true;
@@ -1278,7 +1332,25 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       return;
     }
     const newLabel = labelValue.trim();
-    onUpdateItem(item.id, { label: newLabel || undefined });
+    const matchedStudent =
+      item.boxRole === 'student'
+        ? assignableStudents.find((student) => {
+            const labelMatch = normalizeLooseText(student.label) === normalizeLooseText(newLabel);
+            const emailMatch = normalizeLooseText(getEmailLocalPart(student.email)) === normalizeLooseText(newLabel);
+            return labelMatch || emailMatch;
+          }) ?? null
+        : null;
+
+    onUpdateItem(item.id, {
+      label: newLabel || undefined,
+      ...(matchedStudent
+        ? {
+            ownerUserId: matchedStudent.uid,
+            ownerName: matchedStudent.label,
+            ownerEmail: matchedStudent.email ?? undefined,
+          }
+        : {}),
+    });
     setEditingLabel(false);
   };
 
@@ -1338,7 +1410,12 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
                 className="flex-1 rounded border border-slate-300 bg-white px-1 py-0 text-[11px] font-semibold text-slate-700"
               />
             )}
-            {item.ownerUserId && ownerBadgeLabel ? (
+            {boxRoleBadgeLabel ? (
+              <span className={`rounded px-1.5 py-0.5 text-[9px] ${item.boxRole === 'student' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700'}`}>
+                {boxRoleBadgeLabel}
+              </span>
+            ) : null}
+            {(resolvedOwnerUid || item.ownerUserId) && ownerBadgeLabel ? (
               <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">
                 {ownerBadgeLabel}
               </span>
@@ -1396,14 +1473,15 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
                  data-box-no-drag="true"
                  type="button"
                 className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-[10px] text-slate-600 transition hover:bg-slate-50"
-                onClick={() => {
-                  onUpdateItem(item.id, {
-                    ownerUserId: undefined,
-                    ownerName: undefined,
-                    ownerEmail: undefined,
-                  });
-                  setAssigningOwner(false);
-                }}
+                  onClick={() => {
+                    onUpdateItem(item.id, {
+                      ownerUserId: undefined,
+                      ownerName: undefined,
+                      ownerEmail: undefined,
+                      ...(item.boxRole === 'student' ? { label: undefined } : {}),
+                    });
+                    setAssigningOwner(false);
+                  }}
               >
                 <span>{boxFlowLabels.clearOwner}</span>
               </button>
@@ -1535,6 +1613,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [textColor, setTextColor] = useState<string>('#000000');
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
+  const [presentationMode, setPresentationMode] = useState(false);
 
   // -- Page state (---------------------------------------------------------------
   // The �pages� array owns names / IDs and the content snapshots of INACTIVE pages.
@@ -1598,6 +1677,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       },
     );
   }, [battleTemplatesList]);
+
+  useEffect(() => {
+    if (!isSlidesMode && presentationMode) {
+      setPresentationMode(false);
+    }
+  }, [isSlidesMode, presentationMode]);
 
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
@@ -1687,6 +1772,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         })
         .filter((option): option is AssignableStudentOption => Boolean(option)),
     [assignedRoster, userAccounts],
+  );
+
+  const canEditResolvedBoxContent = useCallback(
+    (item: WorkspaceItem) => {
+      if (canManageBox(viewerContext, item)) return true;
+      const resolvedOwner = resolveAssignableOwner(item, assignableStudents);
+      if (resolvedOwner?.uid && resolvedOwner.uid === userId) return true;
+      if (resolvedOwner?.email && userEmail && normalizeEmail(resolvedOwner.email) === normalizeEmail(userEmail)) return true;
+      if (resolvedOwner?.email && userEmail && getEmailLocalPart(resolvedOwner.email) === getEmailLocalPart(userEmail)) return true;
+      return isBoxOwner(viewerContext, item);
+    },
+    [assignableStudents, userEmail, userId, viewerContext],
   );
 
   const getCanvasMetrics = useCallback(() => {
@@ -2278,11 +2375,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       editingByUserId: '',
       editingByUserName: '',
       editingStartedAt: 0,
-    }, { forceSave: canEditBoxContent(viewerContext, item) });
+    }, { forceSave: canEditResolvedBoxContent(item) });
   };
 
   const acquireItemLock = (item: WorkspaceItem) => {
-    const canEditThisItem = canEditBoxContent(viewerContext, item);
+    const canEditThisItem = canEditResolvedBoxContent(item);
     if (!canEditThisItem) return false;
     if (effectiveReadOnly && !canEditThisItem) return false;
     if (isItemLockedByOther(item)) return false;
@@ -2303,7 +2400,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const requestItemEdit = (itemId: string, el: HTMLElement) => {
     const item = items.find((it) => it.id === itemId);
     if (!item || item.type !== 'text') return;
-    const canEditThisItem = canEditBoxContent(viewerContext, item);
+    const canEditThisItem = canEditResolvedBoxContent(item);
     if (!canEditThisItem || (effectiveReadOnly && !canEditThisItem) || isItemLockedByOther(item)) {
       el.blur();
       return;
@@ -2795,9 +2892,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (!viewerIsStudent) return items;
     return items.filter((item) => {
       if (item.boxRole !== 'student') return true;
+      const resolvedOwner = resolveAssignableOwner(item, assignableStudents);
+      if (resolvedOwner?.uid && resolvedOwner.uid === userId) return true;
+      if (resolvedOwner?.email && userEmail && normalizeEmail(resolvedOwner.email) === normalizeEmail(userEmail)) return true;
+      if (resolvedOwner?.email && userEmail && getEmailLocalPart(resolvedOwner.email) === getEmailLocalPart(userEmail)) return true;
       return isBoxOwner(viewerContext, item);
     });
-  }, [items, viewerContext, viewerIsStudent]);
+  }, [assignableStudents, items, userEmail, userId, viewerContext, viewerIsStudent]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -3237,12 +3338,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   return (
-    <div className="flex flex-col w-full h-full bg-slate-100 overflow-hidden" style={{ fontFamily: 'Arial, sans-serif' }}>
+    <div
+      className={`flex flex-col w-full h-full overflow-hidden ${presentationMode ? 'fixed inset-0 z-[1000] bg-slate-950' : 'bg-slate-100'}`}
+      style={{ fontFamily: 'Arial, sans-serif' }}
+    >
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
       <div
         ref={toolbarRef}
-        className="flex-shrink-0 flex flex-wrap items-center gap-0.5 px-1.5 py-1 bg-white border-b border-slate-200"
+        className={`flex-shrink-0 flex flex-wrap items-center gap-0.5 px-1.5 py-1 border-b ${presentationMode ? 'bg-slate-900/95 border-slate-700 text-white' : 'bg-white border-slate-200'}`}
         style={{ minHeight: '2.5rem', zIndex: 20 }}
         onMouseDown={(e) => {
           const tag = (e.target as HTMLElement).tagName;
@@ -3268,6 +3372,19 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             >
               {isSlidesMode ? surfaceLabels.slides : surfaceLabels.document}
             </button>
+            {isSlidesMode && (
+              <button
+                onClick={() => setPresentationMode((prev) => !prev)}
+                className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
+                  presentationMode
+                    ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                }`}
+                title={presentationMode ? 'Exit presentation mode' : 'Presentation mode'}
+              >
+                {presentationMode ? 'Exit' : 'Presentation'}
+              </button>
+            )}
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
           </>
         )}
@@ -3427,10 +3544,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
       {/* -- Page tab bar ---------------------------------------------- */}
       <div
-        className="flex-shrink-0 flex items-stretch gap-0 bg-slate-50 border-b border-slate-200 overflow-x-auto"
+        className={`flex-shrink-0 flex items-stretch gap-0 overflow-x-auto border-b ${presentationMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
         style={{ minHeight: '2rem', zIndex: 15 }}
       >
-        <div className="flex flex-shrink-0 items-center px-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+        <div className={`flex flex-shrink-0 items-center px-3 text-[10px] font-black uppercase tracking-[0.18em] ${presentationMode ? 'text-slate-500' : 'text-slate-400'}`}>
           {surfaceLabels.currentLabel}
         </div>
         {pages.map((page) => (
@@ -3702,7 +3819,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     editingByUserName: userName,
                     editingStartedAt: Date.now(),
                   },
-                  { forceSave: canEditBoxContent(viewerContext, item) },
+                  { forceSave: canEditResolvedBoxContent(item) },
                 )}
                 onUpdateItem={updateItem}
                 onEditorFocus={requestItemEdit}
