@@ -1687,6 +1687,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 720,
+  });
   const [slidePanelVisible, setSlidePanelVisible] = useState(true);
   const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
   const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 224, height: 520 });
@@ -1845,6 +1849,39 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       delete document.body.dataset.workspacePresentation;
     };
   }, [presentationMode]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const syncViewportSize = () => {
+      setViewportSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+    };
+
+    syncViewportSize();
+    window.addEventListener('resize', syncViewportSize);
+    window.addEventListener('orientationchange', syncViewportSize);
+    return () => {
+      window.removeEventListener('resize', syncViewportSize);
+      window.removeEventListener('orientationchange', syncViewportSize);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const screenOrientation = window.screen?.orientation as
+      | (ScreenOrientation & { lock?: (orientation: string) => Promise<void>; unlock?: () => void })
+      | undefined;
+    if (!presentationMode || !isSlidesMode || typeof screenOrientation?.lock !== 'function') return undefined;
+
+    void screenOrientation.lock('landscape').catch(() => undefined);
+    return () => {
+      void screenOrientation.unlock?.();
+    };
+  }, [isSlidesMode, presentationMode]);
 
   useEffect(() => {
     onPresentationModeChange?.(presentationMode);
@@ -3336,6 +3373,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   );
   const hasPreviousSlide = currentSlideIndex > 0;
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
+  const isPortraitViewport = viewportSize.height > viewportSize.width;
+  const shouldRotatePresentation = presentationMode && isSlidesMode && isPortraitViewport;
   const getSlidePreviewText = useCallback((page: WorkspacePage) => {
     const docText = (page.docContent ?? '')
       .replace(/<[^>]+>/g, ' ')
@@ -4232,12 +4271,27 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       {/* -- Scrollable content ----------------------------------------------- */}
       <div
         ref={overflowRef}
-        className={`flex-1 overflow-x-hidden ${presentationMode ? 'overflow-hidden p-0' : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
+        className={`flex-1 overflow-x-hidden ${presentationMode ? 'relative overflow-hidden p-0' : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
         onScroll={onScrollSync}
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}
       >
-        <div className={`${presentationMode ? 'h-full w-full' : 'mx-auto max-w-none'}`}>
+        <div
+          className={`${presentationMode ? 'h-full w-full' : 'mx-auto max-w-none'}`}
+          style={
+            shouldRotatePresentation
+              ? {
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  width: '100dvh',
+                  height: '100dvw',
+                  transform: 'translate(-50%, -50%) rotate(90deg)',
+                  transformOrigin: 'center center',
+                }
+              : undefined
+          }
+        >
         <div
           ref={canvasRef}
           className={`relative w-full ${presentationMode ? 'h-full' : ''} ${isSlidesMode ? (presentationMode ? 'mx-0 max-w-none' : 'mx-auto max-w-6xl') : ''}`}
@@ -4297,7 +4351,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 : 'rounded-xl border-slate-200 bg-white shadow-sm'
             }`}
             style={{
-              minHeight: presentationMode ? '100vh' : isSlidesMode ? 'min(72vh, 48rem)' : '60vh',
+              minHeight: presentationMode ? (shouldRotatePresentation ? '100dvw' : '100dvh') : isSlidesMode ? 'min(72vh, 48rem)' : '60vh',
               aspectRatio: isSlidesMode ? '16 / 9' : undefined,
               backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
             }}
