@@ -1192,6 +1192,36 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     if (!query) return true;
     return student.label.toLowerCase().includes(query) || (student.email ?? '').toLowerCase().includes(query);
   });
+  const autoResizeStudentBox = useCallback(() => {
+    if (item.type !== 'text' || item.boxRole !== 'student') return;
+    const el = contentRef.current;
+    if (!el) return;
+
+    requestAnimationFrame(() => {
+      const { height: canvasHeight } = getCanvasMetrics();
+      if (!canvasHeight || canvasHeight <= 1) return;
+
+      const desiredHeightPx = Math.max(el.scrollHeight + 6, el.clientHeight);
+      const nextHeightPercent = clamp(
+        (desiredHeightPx / canvasHeight) * 100,
+        10,
+        Math.max(10, 100 - item.y),
+      );
+
+      if (Math.abs(nextHeightPercent - item.h) < 0.5) return;
+      onUpdateItem(item.id, { h: nextHeightPercent }, { forceSave: canEditThisContent || canManageThisBox });
+    });
+  }, [
+    canEditThisContent,
+    canManageThisBox,
+    getCanvasMetrics,
+    item.boxRole,
+    item.h,
+    item.id,
+    item.type,
+    item.y,
+    onUpdateItem,
+  ]);
 
   const handleHeaderPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!canMoveThisBox) return;
@@ -1281,7 +1311,8 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     if (isFocusedLocally) return;
     if (isTyping) return;
     if (el.innerHTML !== (item.content ?? '')) el.innerHTML = item.content ?? '';
-  }, [canEditThisContent, isLockedByOther, item.content, item.type]);
+    autoResizeStudentBox();
+  }, [autoResizeStudentBox, canEditThisContent, isLockedByOther, item.content, item.type]);
 
   useEffect(() => {
     const update = () => {
@@ -1515,6 +1546,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           onEditorBlur();
           if (!canEditThisContent || isLockedByOther) return;
           onContentChange((e.target as HTMLDivElement).innerHTML);
+          autoResizeStudentBox();
         }}
         onInput={(e) => {
           if (!canEditThisContent || isLockedByOther) {
@@ -1523,6 +1555,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           }
           lastTypedAtRef.current = Date.now();
           onContentChange((e.target as HTMLDivElement).innerHTML);
+          autoResizeStudentBox();
           onEditorTyping?.();
         }}
         className="h-full w-full overflow-auto p-2 leading-snug focus:outline-none"
