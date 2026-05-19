@@ -260,6 +260,17 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     [visiblePlayerScores]
   );
   const myRank = leaderboard.findIndex((participant) => participant.uid === uid) + 1;
+  const finalParticipantIds = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...Object.keys(session.scores ?? {}),
+          ...Object.keys(session.participants ?? {}),
+          ...(session.roundParticipantIds ?? []),
+        ].filter(Boolean)),
+      ),
+    [session.participants, session.roundParticipantIds, session.scores],
+  );
   const effectiveFrozenTimeLeft = frozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
   const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
   const roundStartedAt =
@@ -1127,13 +1138,10 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
 
   if (showResults) {
     console.log('[BATTLE PLAYER] render branch: finished');
-    const validParticipantIds = (session.roundParticipantIds ?? []).length > 0
-      ? (session.roundParticipantIds ?? [])
-      : Object.keys(session.participants ?? {});
     console.log('[BATTLE FINISH] roundParticipantIds:', session.roundParticipantIds);
     console.log('[BATTLE FINISH] participants keys:', Object.keys(session.participants ?? {}));
     console.log('[BATTLE FINISH] scores snapshot:', Object.keys(session.scores ?? {}));
-    console.log('[BATTLE FINISH] resolved validParticipantIds:', validParticipantIds);
+    console.log('[BATTLE FINISH] resolved validParticipantIds:', finalParticipantIds);
     return (
       <BattleResultsScreen
         scores={visiblePlayerScores}
@@ -1141,7 +1149,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
         totalQuestions={session.questions.length}
         onClose={() => setShowResults(false)}
         isTeacher={false}
-        validParticipantIds={validParticipantIds}
+        validParticipantIds={finalParticipantIds}
         uiLanguage={uiLanguage}
       />
     );

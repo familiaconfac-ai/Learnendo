@@ -378,6 +378,18 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       .slice(0, 10);
   }, [roundParticipantIds, session.scores]);
 
+  const finalParticipantIds = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...Object.keys(session.scores ?? {}),
+          ...Object.keys(session.participants ?? {}),
+          ...(session.roundParticipantIds ?? []),
+        ].filter(Boolean)),
+      ),
+    [session.participants, session.roundParticipantIds, session.scores],
+  );
+
   const roundResultsRows = useMemo(() => {
     return buildBattleRoundRanking(
       revealParticipantIds,
@@ -414,6 +426,38 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       { correct: 0, wrong: 0, unanswered: 0 }
     );
   }, [mergedCurrentAnswers, revealParticipantIds]);
+
+  const wrongParticipantDetails = useMemo(() => {
+    return roundResultsRows
+      .filter((row) => row.isCorrect === false)
+      .map((row) => {
+        const answer = mergedCurrentAnswers[row.pid];
+        let selectedLabel: string = copy.noResponse;
+
+        if (question && isChoiceQuestion(question)) {
+          const selectedIndexes = Array.from(new Set([
+            ...(answer?.optionIndexes ?? []),
+            ...(typeof answer?.optionIndex === 'number' ? [answer.optionIndex] : []),
+          ]))
+            .filter((index) => index >= 0)
+            .sort((left, right) => left - right);
+
+          if (selectedIndexes.length > 0) {
+            selectedLabel = selectedIndexes
+              .map((index) => question.options?.[index] ?? `#${index + 1}`)
+              .join(' + ');
+          }
+        } else if (answer?.responseText?.trim()) {
+          selectedLabel = answer.responseText.trim();
+        }
+
+        return {
+          pid: row.pid,
+          name: row.name,
+          selectedLabel,
+        };
+      });
+  }, [copy.noResponse, mergedCurrentAnswers, question, roundResultsRows]);
   useEffect(() => {
     console.info('[BATTLE SESSION STATUS] teacher host snapshot', {
       component: 'BattleHostView',
@@ -1245,7 +1289,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         onNewBattle={onNewBattle}
         onClose={onClose}
         isTeacher={true}
-        validParticipantIds={roundParticipantIds}
+        validParticipantIds={finalParticipantIds}
         uiLanguage={uiLanguage}
       />
     );
@@ -1256,37 +1300,6 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const correctCount = roundAnswerSummary.correct;
   const wrongCount = roundAnswerSummary.wrong;
   const unansweredCount = roundAnswerSummary.unanswered;
-  const wrongParticipantDetails = useMemo(() => {
-    return roundResultsRows
-      .filter((row) => row.isCorrect === false)
-      .map((row) => {
-        const answer = mergedCurrentAnswers[row.pid];
-        let selectedLabel: string = copy.noResponse;
-
-        if (question && isChoiceQuestion(question)) {
-          const selectedIndexes = Array.from(new Set([
-            ...(answer?.optionIndexes ?? []),
-            ...(typeof answer?.optionIndex === 'number' ? [answer.optionIndex] : []),
-          ]))
-            .filter((index) => index >= 0)
-            .sort((left, right) => left - right);
-
-          if (selectedIndexes.length > 0) {
-            selectedLabel = selectedIndexes
-              .map((index) => question.options?.[index] ?? `#${index + 1}`)
-              .join(' + ');
-          }
-        } else if (answer?.responseText?.trim()) {
-          selectedLabel = answer.responseText.trim();
-        }
-
-        return {
-          pid: row.pid,
-          name: row.name,
-          selectedLabel,
-        };
-      });
-  }, [copy.noResponse, mergedCurrentAnswers, question, roundResultsRows]);
 
   return (
     <div className="fixed inset-0 z-[9000] flex select-none bg-slate-950">
