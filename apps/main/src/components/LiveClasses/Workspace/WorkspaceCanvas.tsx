@@ -413,6 +413,12 @@ function normalizeEmail(email?: string | null): string {
   return (email ?? '').trim().toLowerCase();
 }
 
+function getEmailLocalPart(email?: string | null): string {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return '';
+  return normalized.includes('@') ? normalized.split('@')[0] : normalized;
+}
+
 function isAdmin(viewer: WorkspaceViewerContext): boolean {
   return normalizeEmail(viewer.userEmail) === WORKSPACE_ADMIN_EMAIL;
 }
@@ -431,6 +437,11 @@ function isBoxOwner(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolea
   if (item.ownerUserId && item.ownerUserId === viewer.userId) return true;
   if (item.ownerEmail && viewer.userEmail) {
     return normalizeEmail(item.ownerEmail) === normalizeEmail(viewer.userEmail);
+  }
+  if (item.ownerUserId && viewer.userEmail) {
+    // Backward compatibility for older boxes that stored the email local part
+    // instead of the real Firebase UID in ownerUserId.
+    return item.ownerUserId.trim().toLowerCase() === getEmailLocalPart(viewer.userEmail);
   }
   return false;
 }
@@ -1541,18 +1552,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     return unsubscribe;
   }, [assignedRoster]);
 
-  const assignableStudents: AssignableStudentOption[] = assignedRoster
-    .map((rosterStudent) => {
-      const account = userAccounts.find((candidate) => candidate.uid === rosterStudent.uid);
-      if (account && account.role !== 'student') return null;
-      return {
-        uid: rosterStudent.uid,
-        label: account?.name || rosterStudent.label || rosterStudent.uid,
-        email: account?.email ?? null,
-        isOnline: rosterStudent.isOnline,
-      };
-    })
-    .filter((option): option is AssignableStudentOption => Boolean(option));
+  const assignableStudents: AssignableStudentOption[] = useMemo(
+    () =>
+      assignedRoster
+        .map((rosterStudent) => {
+          const account = userAccounts.find((candidate) => candidate.uid === rosterStudent.uid);
+          if (account && account.role !== 'student') return null;
+          return {
+            uid: rosterStudent.uid,
+            label: account?.name || rosterStudent.label || rosterStudent.uid,
+            email: account?.email ?? null,
+            isOnline: rosterStudent.isOnline,
+          };
+        })
+        .filter((option): option is AssignableStudentOption => Boolean(option)),
+    [assignedRoster, userAccounts],
+  );
 
   const getCanvasMetrics = useCallback(() => {
     const canvas = canvasRef.current;
@@ -1729,8 +1744,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         `[WS] snap from "${data?.updatedByName ?? '?'}" docBy=${data?.docUpdatedBy?.slice(0,6) ?? '?'} itemsBy=${data?.itemsUpdatedBy?.slice(0,6) ?? '?'} docSelf=${isDocSelfEcho} itemsSelf=${isItemsSelfEcho}`,
       );
 
-      // Items: merge per item so a remote save never clobbers a newer local edit.
-      if (dragRef.current === null) {
+      const isLocallyEditingFloating = Boolean(
+        activeFloatingIdRef.current &&
+          activeFloatingElRef.current &&
+          document.activeElement === activeFloatingElRef.current &&
+          Date.now() - lastItemEditRef.current < ITEM_GUARD_MS,
+      );
+
+      // Items: merge per item so a remote save never clobbers a newer local
+      // edit. While a floating box is actively being typed locally, hold off on
+      // remote item application for a brief guard window so another student's
+      // keystrokes do not keep re-rendering this editor mid-input.
+      if (dragRef.current === null && !isLocallyEditingFloating) {
         itemsRef.current = mergedItems;
         setItems(mergedItems);
         syncActivePageItemsRef(mergedItems, true);
@@ -3394,9 +3419,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 onSelect={() => setSelectedId(item.id)}
                 onPointerDownMove={(e) => onPointerDown(e, item.id, 'move')}
                 onPointerDownResize={(e) => onPointerDown(e, item.id, 'resize')}
-                onContentChange={(html) => updateItem(item.id, { content: html }, { forceSave: canEditBoxContent(viewerContext, item) })}
+                onContentChange={(html) => updateItem(
+                  item.id,
+                  {
+                    content: html,
+                    editingByUserId: userId,
+                    editingByUserName: userName,
+                    editingStartedAt: Date.now(),
+                  },
+                  { forceSave: canEditBoxContent(viewerContext, item) },
+                )}
                 onUpdateItem={updateItem}
-                onEditorTyping={() => updateItem(item.id, { editingStartedAt: Date.now() }, { forceSave: canEditBoxContent(viewerContext, item) })}
                 onEditorFocus={requestItemEdit}
                 onEditorBlur={() => {
                   activeFloatingIdRef.current = null;

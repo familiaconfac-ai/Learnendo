@@ -10,6 +10,8 @@ export interface StudentBasicInfo {
   name: string;
   email: string | null;
   role?: UserRole;
+  assignedTeacherUid?: string | null;
+  assignedTeacherName?: string | null;
   isAnonymous: boolean;
   createdAt: any;
   lastActive: any;
@@ -63,6 +65,8 @@ export async function getAllStudents(): Promise<StudentBasicInfo[]> {
         isAnonymous: doc.data().isAnonymous || false,
         createdAt: doc.data().createdAt,
         lastActive: doc.data().lastActive,
+        assignedTeacherUid: doc.data().assignedTeacherUid || null,
+        assignedTeacherName: doc.data().assignedTeacherName || null,
         role: getEffectiveUserRole(doc.data().email || null, doc.data().role || null),
       }))
       .filter((student) => student.role === 'student')
@@ -148,6 +152,8 @@ export async function getLiveClassAssignableUsers(): Promise<StudentBasicInfo[]>
         isAnonymous: doc.data().isAnonymous || false,
         createdAt: doc.data().createdAt,
         lastActive: doc.data().lastActive,
+        assignedTeacherUid: doc.data().assignedTeacherUid || null,
+        assignedTeacherName: doc.data().assignedTeacherName || null,
         role: getEffectiveUserRole(doc.data().email || null, doc.data().role || null),
       }))
       .filter((user) => !user.isAnonymous);
@@ -224,6 +230,8 @@ export async function getStudentDetail(uid: string): Promise<StudentDetail | nul
       isAnonymous: userSnapshot.data().isAnonymous || false,
       createdAt: userSnapshot.data().createdAt,
       lastActive: userSnapshot.data().lastActive,
+      assignedTeacherUid: userSnapshot.data().assignedTeacherUid || null,
+      assignedTeacherName: userSnapshot.data().assignedTeacherName || null,
     };
 
     // Get activity stats

@@ -535,10 +535,10 @@ const App: React.FC = () => {
   }, [user?.email, user?.uid]);
 
   useEffect(() => {
-    if (currentSection === SectionType.TEACHER_DASHBOARD && !canManageUsers) {
-      setCurrentSection(SectionType.COURSES);
-    }
-  }, [canManageUsers, currentSection]);
+    if (currentSection === SectionType.TEACHER_DASHBOARD && !isTeacherAccount) {
+        setCurrentSection(SectionType.COURSES);
+      }
+  }, [currentSection, isTeacherAccount]);
 
   // Keep latestProgressRef in sync with the latest progress state
   useEffect(() => {
@@ -2676,8 +2676,8 @@ const App: React.FC = () => {
           uiLanguage={uiLanguage}
         />;
       case SectionType.TEACHER_DASHBOARD:
-        return user && canManageUsers ? (
-          <TeacherDashboard user={user} canManageUsers={canManageUsers} />
+        return user && isTeacherAccount ? (
+          <TeacherDashboard user={user} canManageUsers={canManageUsers} teacherUid={canManageUsers ? null : user.uid} />
         ) : (
           <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
             <p className="text-slate-300 font-semibold">Access denied. Teacher dashboard is for authorized users only.</p>
@@ -2834,7 +2834,7 @@ const App: React.FC = () => {
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.LIVE_CLASSES); setMenuOpen(false); }}>Live Classes</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.VOCABULARY); setMenuOpen(false); }}>📖 My Vocabulary</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
-              {canManageUsers && (
+              {isTeacherAccount && (
                 <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>
               )}
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>

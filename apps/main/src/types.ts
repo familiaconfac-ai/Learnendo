@@ -132,6 +132,9 @@ export interface LiveClass {
   battleTemplates?: SavedBattleTemplate[];
   status: LiveClassStatus;
   createdBy: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  restoreUntilAt?: string;
   createdAt?: string;
   updatedAt?: string;
 }

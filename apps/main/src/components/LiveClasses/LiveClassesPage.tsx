@@ -7,7 +7,9 @@ import {
   createLiveClassGroup,
   deleteLiveClass,
   ensureLiveClassSession,
-  filterLiveClassesForViewer,
+  filterActiveLiveClassesForViewer,
+  filterDeletedLiveClassesForViewer,
+  restoreLiveClass,
   subscribeLiveClass,
   subscribeLiveClassGroups,
   subscribeLiveClasses,
@@ -180,6 +182,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   const isForcedStudentRoomView =
     forcedTabViewMode === 'student' &&
     (accountRole === 'teacher' || accountRole === 'admin');
+  const isAdminManager = accountRole === 'admin' && viewMode === 'admin';
   const viewerRole = userRole === 'teacher' && !canManageClasses ? 'student' : userRole;
   const viewer = useMemo(() => ({
     uid: user.uid,
@@ -299,7 +302,11 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   }, [selectedClassId]);
 
   const visibleClasses = useMemo(
-    () => filterLiveClassesForViewer(classes, viewer),
+    () => filterActiveLiveClassesForViewer(classes, viewer),
+    [classes, viewer],
+  );
+  const trashedClasses = useMemo(
+    () => filterDeletedLiveClassesForViewer(classes, viewer),
     [classes, viewer],
   );
 
@@ -434,10 +441,10 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   };
 
   const handleDeleteClass = async (liveClass: LiveClass) => {
-    if (!window.confirm(`Delete "${liveClass.title}"?`)) return;
+    if (!window.confirm(`Move "${liveClass.title}" to trash? You will have 7 days to restore it.`)) return;
 
     try {
-      await deleteLiveClass(liveClass.id);
+      await deleteLiveClass(liveClass.id, user.uid);
       setClasses((prev) => prev.filter((item) => item.id !== liveClass.id));
       setSelectedClassId('');
       setSelectedClass(null);
@@ -447,6 +454,14 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
       }
     } catch (error) {
       console.warn('[LiveClassesPage] delete class failed:', error);
+    }
+  };
+
+  const handleRestoreClass = async (liveClass: LiveClass) => {
+    try {
+      await restoreLiveClass(liveClass.id);
+    } catch (error) {
+      console.warn('[LiveClassesPage] restore class failed:', error);
     }
   };
 
@@ -473,6 +488,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
         participantDirectory={participantDirectory}
         user={user}
         isTeacher={canManageClasses}
+        isAdminManager={isAdminManager}
         hasRoomAccess={hasRoomAccess}
         onBack={() => {
           setSelectedClassId('');
@@ -500,13 +516,13 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
         <div>
           <h1 className="text-2xl font-black text-white">Live</h1>
           <p className="mt-1 text-sm text-slate-400">
-            {viewerRole === 'admin'
+            {isAdminManager
               ? 'Admin can review every teacher and every live class.'
                 : canManageClasses
                   ? 'Teacher view shows only the classes owned by this account.'
                 : 'Student view shows only classes assigned to this email.'}
           </p>
-          {viewMode !== 'admin' ? (
+          {!isAdminManager ? (
             <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-blue-300">
               Viewing as {viewMode}
             </p>
@@ -587,6 +603,20 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
               role="button"
               tabIndex={0}
             >
+              {canManageClasses ? (
+                <div className="mb-2 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleDeleteClass(liveClass);
+                    }}
+                    className="rounded-full border border-rose-500/50 bg-rose-950/30 px-3 py-1 text-xs font-bold text-rose-200"
+                  >
+                    Trash
+                  </button>
+                </div>
+              ) : null}
               <div className="flex items-start gap-3 mb-3">
                 <img src={learnendoLogoTransparent} alt="Learnendo" className="h-28 w-auto shrink-0 opacity-80" />
                 <div className="flex-1 min-w-0">
@@ -622,18 +652,6 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
               ) : null}
 
               <div className="mt-3 flex flex-wrap justify-end gap-2">
-                {canManageClasses ? (
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      void handleDeleteClass(liveClass);
-                    }}
-                    className="rounded-xl border border-rose-500/50 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-200"
-                  >
-                    Delete
-                  </button>
-                ) : null}
                 <button
                   type="button"
                   onClick={(event) => {
@@ -649,21 +667,63 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
                     type="button"
                     onClick={(event) => {
                       event.stopPropagation();
-                      setEditingClass(liveClass);
-                      setSessionDraft(undefined);
-                      setShowForm(true);
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className="rounded-xl bg-blue-500 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
-                  >
-                    Settings
-                  </button>
-                ) : null}
+                    setEditingClass(liveClass);
+                    setSessionDraft(undefined);
+                    setShowForm(true);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="rounded-xl bg-blue-500 px-3 py-2 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
+                >
+                  {isAdminManager ? 'Teacher' : 'Teacher Settings'}
+                </button>
+              ) : null}
               </div>
             </article>
           ))
         )}
       </div>
+
+      {canManageClasses && trashedClasses.length > 0 ? (
+        <div className="mt-6 rounded-2xl border border-slate-700 bg-slate-900/70 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black text-white">Trash</h2>
+              <p className="mt-1 text-sm text-slate-400">
+                Classes moved to trash stay restorable for 7 days.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-800 px-3 py-1 text-xs font-black uppercase tracking-wide text-slate-300">
+              {trashedClasses.length} in trash
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {trashedClasses.map((liveClass) => (
+              <article
+                key={liveClass.id}
+                className="rounded-2xl border border-slate-700 bg-slate-800/80 p-4"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <h3 className="text-base font-black text-white">{liveClass.title}</h3>
+                    <p className="mt-1 text-sm text-slate-300">{liveClass.teacherName}</p>
+                    <p className="mt-1 text-xs text-slate-400">
+                      Restore until {liveClass.restoreUntilAt ? new Date(liveClass.restoreUntilAt).toLocaleString('pt-BR') : 'soon'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleRestoreClass(liveClass)}
+                    className="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#059669]"
+                  >
+                    Restore
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

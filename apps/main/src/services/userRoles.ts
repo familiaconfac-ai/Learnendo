@@ -16,6 +16,8 @@ export interface UserAccountProfile {
   name: string;
   email: string | null;
   role: UserRole;
+  assignedTeacherUid?: string | null;
+  assignedTeacherName?: string | null;
   roleSource: 'firestore' | 'reserved-admin' | 'default-student';
   isAnonymous: boolean;
   createdAt?: unknown;
@@ -86,6 +88,8 @@ function mapUserAccountProfile(
     name: data?.name ?? data?.displayName ?? email?.split('@')[0] ?? 'User',
     email,
     role: getEffectiveUserRole(email, data?.role ?? null),
+    assignedTeacherUid: (data?.assignedTeacherUid ?? null) as string | null,
+    assignedTeacherName: (data?.assignedTeacherName ?? null) as string | null,
     roleSource,
     isAnonymous: Boolean(data?.isAnonymous),
     createdAt: data?.createdAt,
@@ -168,6 +172,30 @@ export async function updateUserAccountRole(
       role,
       roleUpdatedAt: serverTimestamp(),
       roleUpdatedBy: updatedByUid,
+    },
+    { merge: true },
+  );
+}
+
+export async function updateUserAssignedTeacher(
+  uid: string,
+  teacherUid: string | null,
+  teacherName: string | null,
+  updatedByUid: string,
+): Promise<void> {
+  if (!db) {
+    throw new Error('Firestore is not initialized');
+  }
+
+  if (!uid) return;
+
+  await setDoc(
+    doc(db, 'users', uid),
+    {
+      assignedTeacherUid: teacherUid,
+      assignedTeacherName: teacherName,
+      assignedTeacherUpdatedAt: serverTimestamp(),
+      assignedTeacherUpdatedBy: updatedByUid,
     },
     { merge: true },
   );

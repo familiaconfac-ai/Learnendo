@@ -13,6 +13,7 @@ interface LiveClassDetailsPageProps {
   participantDirectory?: AssignedStudentDirectoryEntry[];
   user: User;
   isTeacher: boolean;
+  isAdminManager?: boolean;
   hasRoomAccess: boolean;
   onBack: () => void;
   onEdit: () => void;
@@ -50,6 +51,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   participantDirectory = [],
   user,
   isTeacher,
+  isAdminManager = false,
   hasRoomAccess,
   onBack,
   onEdit,
@@ -248,7 +250,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
                 onClick={onEdit}
                 className="rounded-xl border border-slate-500 px-3 py-2 text-xs font-bold text-slate-100"
               >
-                Manage Students
+                {isAdminManager ? 'Admin' : 'Teacher'}
               </button>
             ) : null}
           </div>
@@ -282,14 +284,14 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
               onClick={onEdit}
               className="flex-1 rounded-xl border border-slate-500 px-3 py-2 text-sm font-bold text-slate-100"
             >
-              Edit Class
+              {isAdminManager ? 'Admin Settings' : 'Teacher Settings'}
             </button>
             <button
               type="button"
               onClick={onDelete}
-              className="flex-1 rounded-xl border border-rose-500/50 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-200"
+              className="rounded-xl border border-rose-500/50 bg-rose-950/30 px-3 py-2 text-sm font-bold text-rose-200"
             >
-              Delete Class
+              Move To Trash
             </button>
           </div>
         )}

@@ -34,6 +34,7 @@ type Tab = 'students' | 'ranking' | 'access';
 interface TeacherDashboardProps {
   user: User;
   canManageUsers?: boolean;
+  teacherUid?: string | null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -397,7 +398,7 @@ const SummaryCard: React.FC<{
 // Main export
 // ─────────────────────────────────────────────────────────────
 
-export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canManageUsers = false }) => {
+export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canManageUsers = false, teacherUid = null }) => {
   const [tab, setTab]               = useState<Tab>('students');
   const [rows, setRows]             = useState<TeacherStudentRow[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -414,10 +415,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
     const unsub = subscribeToTeacherData((data) => {
       setRows(data);
       setLoading(false);
-    });
+    }, null, canManageUsers ? null : teacherUid);
 
     return unsub;
-  }, [refreshKey]);
+  }, [canManageUsers, refreshKey, teacherUid]);
 
   // ── Loading state ──────────────────────────────────────────
   if (loading) {
@@ -464,7 +465,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
           <div>
             <h1 className="text-2xl font-black text-slate-800">📊 Teacher Dashboard</h1>
             <p className="text-sm text-slate-500 mt-1">
-              {totalStudents} student{totalStudents !== 1 ? 's' : ''} registered
+              {canManageUsers
+                ? `${totalStudents} student${totalStudents !== 1 ? 's' : ''} registered`
+                : `${totalStudents} assigned student${totalStudents !== 1 ? 's' : ''}`}
             </p>
           </div>
           <button

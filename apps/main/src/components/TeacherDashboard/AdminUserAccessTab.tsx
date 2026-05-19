@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import {
   subscribeUserAccounts,
   updateUserAccountRole,
+  updateUserAssignedTeacher,
   UserAccountProfile,
   UserRole,
 } from '../../services/userRoles';
@@ -68,6 +69,11 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
     students: accounts.filter((item) => item.role === 'student').length,
   }), [accounts]);
 
+  const teachers = useMemo(
+    () => accounts.filter((account) => account.role === 'teacher' || account.role === 'admin'),
+    [accounts],
+  );
+
   const handleRoleChange = async (account: UserAccountProfile, role: UserRole) => {
     if (account.role === role) return;
 
@@ -77,6 +83,26 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
     } catch (reason) {
       console.warn('[AdminUserAccessTab] role update failed:', reason);
       setError('Unable to update this access level right now.');
+    } finally {
+      setSavingUid(null);
+    }
+  };
+
+  const handleTeacherAssignmentChange = async (account: UserAccountProfile, teacherUid: string) => {
+    if (account.role !== 'student') return;
+
+    const teacher = teachers.find((item) => item.uid === teacherUid);
+    setSavingUid(account.uid);
+    try {
+      await updateUserAssignedTeacher(
+        account.uid,
+        teacher ? teacher.uid : null,
+        teacher ? teacher.name : null,
+        user.uid,
+      );
+    } catch (reason) {
+      console.warn('[AdminUserAccessTab] teacher assignment update failed:', reason);
+      setError('Unable to update this teacher assignment right now.');
     } finally {
       setSavingUid(null);
     }
@@ -138,6 +164,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
                   <th className="px-3 py-3">User</th>
                   <th className="px-3 py-3">Email</th>
                   <th className="px-3 py-3">Current Role</th>
+                  <th className="px-3 py-3">Assigned Teacher</th>
                   <th className="px-3 py-3">Access Source</th>
                   <th className="px-3 py-3">Change Role</th>
                 </tr>
@@ -158,6 +185,25 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
                         <span className={`inline-flex rounded-full px-2 py-1 text-xs font-bold ${ROLE_STYLES[account.role]}`}>
                           {formatRole(account.role)}
                         </span>
+                      </td>
+                      <td className="px-3 py-3 text-xs text-slate-600">
+                        {account.role === 'student' ? (
+                          <select
+                            value={account.assignedTeacherUid ?? ''}
+                            disabled={isSaving}
+                            onChange={(event) => void handleTeacherAssignmentChange(account, event.target.value)}
+                            className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-400"
+                          >
+                            <option value="">Unassigned</option>
+                            {teachers.map((teacher) => (
+                              <option key={teacher.uid} value={teacher.uid}>
+                                {teacher.name || teacher.email || teacher.uid}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          account.assignedTeacherName || account.assignedTeacherUid || 'Not applicable'
+                        )}
                       </td>
                       <td className="px-3 py-3 text-xs text-slate-500">
                         {account.roleSource === 'reserved-admin'

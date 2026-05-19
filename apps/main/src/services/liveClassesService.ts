@@ -169,6 +169,9 @@ const mapLiveClass = (id: string, data: Record<string, any>): LiveClass => ({
   battleTemplates: Array.isArray(data.battleTemplates) ? data.battleTemplates : [],
   status: deriveLiveClassStatus(data.date ?? '', data.time ?? ''),
   createdBy: data.createdBy ?? data.teacherUid ?? data.teacherId ?? data.ownerUid ?? '',
+  deletedAt: data.deletedAt?.toDate?.()?.toISOString?.() ?? data.deletedAt ?? undefined,
+  deletedBy: data.deletedBy ?? undefined,
+  restoreUntilAt: data.restoreUntilAt?.toDate?.()?.toISOString?.() ?? data.restoreUntilAt ?? undefined,
   createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
   updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
 });
@@ -301,6 +304,20 @@ export function filterLiveClassesForViewer(
   return classes.filter((item) => canViewLiveClass(item, viewer));
 }
 
+export function filterActiveLiveClassesForViewer(
+  classes: LiveClass[],
+  viewer: LiveClassViewer,
+): LiveClass[] {
+  return filterLiveClassesForViewer(classes, viewer).filter((item) => !item.deletedAt);
+}
+
+export function filterDeletedLiveClassesForViewer(
+  classes: LiveClass[],
+  viewer: LiveClassViewer,
+): LiveClass[] {
+  return filterLiveClassesForViewer(classes, viewer).filter((item) => Boolean(item.deletedAt));
+}
+
 export function canAccessLiveClass(
   liveClass: Pick<LiveClass, 'createdBy' | 'teacherUid' | 'teacherName' | 'assignedStudentIds' | 'assignedStudentNames'>,
   viewer: LiveClassViewer,
@@ -399,7 +416,8 @@ export async function getLiveClass(classId: string): Promise<LiveClass | null> {
   const classRef = doc(db, LIVE_CLASSES_COLLECTION, classId);
   const snapshot = await getDoc(classRef);
   if (!snapshot.exists()) return null;
-  return mapLiveClass(snapshot.id, snapshot.data() as Record<string, any>);
+  const mapped = mapLiveClass(snapshot.id, snapshot.data() as Record<string, any>);
+  return mapped.deletedAt ? null : mapped;
 }
 
 export async function createLiveClass(createdBy: string, input: LiveClassInput): Promise<string> {
@@ -483,11 +501,30 @@ export async function appendLiveClassBattleTemplate(
   });
 }
 
-export async function deleteLiveClass(classId: string): Promise<void> {
+export async function deleteLiveClass(classId: string, deletedByUid: string): Promise<void> {
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId) return;
   const classRef = doc(db, LIVE_CLASSES_COLLECTION, classId);
-  await deleteDoc(classRef);
+  const restoreUntilAt = new Date(Date.now() + (7 * 24 * 60 * 60 * 1000)).toISOString();
+  await updateDoc(classRef, {
+    deletedAt: serverTimestamp(),
+    deletedBy: deletedByUid,
+    restoreUntilAt,
+    updatedAt: serverTimestamp(),
+  });
+}
+
+export async function restoreLiveClass(classId: string): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId) return;
+
+  const classRef = doc(db, LIVE_CLASSES_COLLECTION, classId);
+  await updateDoc(classRef, {
+    deletedAt: deleteField(),
+    deletedBy: deleteField(),
+    restoreUntilAt: deleteField(),
+    updatedAt: serverTimestamp(),
+  });
 }
 
 export function getLiveClassPresentationLink(liveClass: Pick<LiveClass, 'presentationUrl'>): string {

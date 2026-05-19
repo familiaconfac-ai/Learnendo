@@ -292,6 +292,7 @@ const COURSE_LANGUAGE_MAP: Record<string, string> = {
 export function subscribeToTeacherData(
   cb: (rows: TeacherStudentRow[]) => void,
   courseId?: string | null,
+  teacherUid?: string | null,
 ): () => void {
   if (!db) {
     cb([]);
@@ -387,7 +388,14 @@ export function subscribeToTeacherData(
         })
       : summaries;
 
-    const ranked = rankStudents(forDashboard);
+    const scopedDashboard = teacherUid
+      ? forDashboard.filter((summary) => {
+          const userData = userDocs.get(summary.uid) ?? {};
+          return (userData.assignedTeacherUid ?? null) === teacherUid;
+        })
+      : forDashboard;
+
+    const ranked = rankStudents(scopedDashboard);
     cb(ranked.map((student) => buildTeacherRow(student, progressDocs.get(student.uid))));
   };
 
