@@ -1,5 +1,6 @@
 import {
   collection,
+  deleteDoc,
   doc,
   onSnapshot,
   query,
@@ -23,6 +24,11 @@ export interface UserAccountProfile {
   createdAt?: unknown;
   lastActive?: unknown;
   lastLoginAt?: unknown;
+}
+
+export interface UserAccountProfileUpdate {
+  name: string;
+  email: string | null;
 }
 
 const RESERVED_ADMIN_EMAILS = new Set([
@@ -199,4 +205,54 @@ export async function updateUserAssignedTeacher(
     },
     { merge: true },
   );
+}
+
+export async function updateUserAccountProfileDetails(
+  uid: string,
+  profile: UserAccountProfileUpdate,
+  updatedByUid: string,
+): Promise<void> {
+  if (!db) {
+    throw new Error('Firestore is not initialized');
+  }
+
+  if (!uid) return;
+
+  const trimmedName = profile.name.trim();
+  const trimmedEmail = profile.email?.trim() ?? '';
+
+  await setDoc(
+    doc(db, 'users', uid),
+    {
+      name: trimmedName || 'User',
+      displayName: trimmedName || 'User',
+      email: trimmedEmail || null,
+      profileUpdatedAt: serverTimestamp(),
+      profileUpdatedBy: updatedByUid,
+    },
+    { merge: true },
+  );
+
+  await setDoc(
+    doc(db, 'progress', uid),
+    {
+      displayName: trimmedName || 'User',
+      email: trimmedEmail || null,
+      lastUpdated: new Date().toISOString(),
+    },
+    { merge: true },
+  );
+}
+
+export async function deleteUserAccountRecord(
+  uid: string,
+): Promise<void> {
+  if (!db) {
+    throw new Error('Firestore is not initialized');
+  }
+
+  if (!uid) return;
+
+  await deleteDoc(doc(db, 'users', uid));
+  await deleteDoc(doc(db, 'progress', uid));
 }

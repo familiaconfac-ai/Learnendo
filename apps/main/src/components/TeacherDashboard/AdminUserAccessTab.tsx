@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
+  deleteUserAccountRecord,
   subscribeUserAccounts,
   updateUserAccountRole,
+  updateUserAccountProfileDetails,
   updateUserAssignedTeacher,
   UserAccountProfile,
   UserRole,
@@ -28,6 +30,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
   const [error, setError] = useState<string | null>(null);
   const [savingUid, setSavingUid] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [drafts, setDrafts] = useState<Record<string, { name: string; email: string }>>({});
 
   useEffect(() => {
     const unsubscribe = subscribeUserAccounts(
@@ -45,6 +48,28 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    setDrafts((current) => {
+      const next = { ...current };
+      for (const account of accounts) {
+        if (!next[account.uid]) {
+          next[account.uid] = {
+            name: account.name || '',
+            email: account.email || '',
+          };
+        }
+      }
+
+      for (const uid of Object.keys(next)) {
+        if (!accounts.some((account) => account.uid === uid)) {
+          delete next[uid];
+        }
+      }
+
+      return next;
+    });
+  }, [accounts]);
 
   const filteredAccounts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -73,6 +98,27 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
     () => accounts.filter((account) => account.role === 'teacher' || account.role === 'admin'),
     [accounts],
   );
+
+  const updateDraft = (uid: string, field: 'name' | 'email', value: string) => {
+    setDrafts((current) => ({
+      ...current,
+      [uid]: {
+        name: current[uid]?.name ?? '',
+        email: current[uid]?.email ?? '',
+        [field]: value,
+      },
+    }));
+  };
+
+  const resetDraft = (account: UserAccountProfile) => {
+    setDrafts((current) => ({
+      ...current,
+      [account.uid]: {
+        name: account.name || '',
+        email: account.email || '',
+      },
+    }));
+  };
 
   const handleRoleChange = async (account: UserAccountProfile, role: UserRole) => {
     if (account.role === role) return;
@@ -103,6 +149,53 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
     } catch (reason) {
       console.warn('[AdminUserAccessTab] teacher assignment update failed:', reason);
       setError('Unable to update this teacher assignment right now.');
+    } finally {
+      setSavingUid(null);
+    }
+  };
+
+  const handleProfileSave = async (account: UserAccountProfile) => {
+    const draft = drafts[account.uid] ?? { name: account.name || '', email: account.email || '' };
+    const trimmedName = draft.name.trim();
+    const trimmedEmail = draft.email.trim();
+
+    if (!trimmedName) {
+      setError('Name cannot be empty.');
+      return;
+    }
+
+    setSavingUid(account.uid);
+    try {
+      await updateUserAccountProfileDetails(
+        account.uid,
+        {
+          name: trimmedName,
+          email: trimmedEmail || null,
+        },
+        user.uid,
+      );
+      setError(null);
+    } catch (reason) {
+      console.warn('[AdminUserAccessTab] profile update failed:', reason);
+      setError('Unable to save this user profile right now.');
+    } finally {
+      setSavingUid(null);
+    }
+  };
+
+  const handleDelete = async (account: UserAccountProfile) => {
+    const confirmed = window.confirm(
+      `Delete the dashboard record for "${account.name || account.email || account.uid}"?\n\nThis removes the Firestore user/profile entry and its progress mirror, but it does not delete the Firebase Auth login itself.`,
+    );
+    if (!confirmed) return;
+
+    setSavingUid(account.uid);
+    try {
+      await deleteUserAccountRecord(account.uid);
+      setError(null);
+    } catch (reason) {
+      console.warn('[AdminUserAccessTab] user delete failed:', reason);
+      setError('Unable to delete this user record right now.');
     } finally {
       setSavingUid(null);
     }
@@ -173,14 +266,34 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
                 {filteredAccounts.map((account) => {
                   const isProtected = account.roleSource === 'reserved-admin';
                   const isSaving = savingUid === account.uid;
+                  const draft = drafts[account.uid] ?? { name: account.name || '', email: account.email || '' };
+                  const hasProfileChanges =
+                    draft.name.trim() !== (account.name || '').trim()
+                    || draft.email.trim() !== (account.email || '').trim();
+                  const canDelete = !isProtected && account.uid !== user.uid;
 
                   return (
                     <tr key={account.uid}>
                       <td className="px-3 py-3">
-                        <div className="font-semibold text-slate-800">{account.name || 'Unnamed user'}</div>
+                        <input
+                          type="text"
+                          value={draft.name}
+                          disabled={isSaving}
+                          onChange={(event) => updateDraft(account.uid, 'name', event.target.value)}
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 font-semibold text-slate-800 outline-none focus:border-blue-400"
+                        />
                         <div className="text-xs text-slate-500">{account.uid}</div>
                       </td>
-                      <td className="px-3 py-3 text-slate-600">{account.email || 'No email'}</td>
+                      <td className="px-3 py-3 text-slate-600">
+                        <input
+                          type="email"
+                          value={draft.email}
+                          disabled={isSaving}
+                          onChange={(event) => updateDraft(account.uid, 'email', event.target.value)}
+                          placeholder="No email"
+                          className="w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-slate-700 outline-none focus:border-blue-400"
+                        />
+                      </td>
                       <td className="px-3 py-3">
                         <span className={`inline-flex rounded-full px-2 py-1 text-xs font-bold ${ROLE_STYLES[account.role]}`}>
                           {formatRole(account.role)}
@@ -214,6 +327,31 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={isSaving || !hasProfileChanges}
+                            onClick={() => void handleProfileSave(account)}
+                            className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {isSaving ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSaving || !hasProfileChanges}
+                            onClick={() => resetDraft(account)}
+                            className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-600 transition-colors hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Reset
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSaving || !canDelete}
+                            onClick={() => void handleDelete(account)}
+                            className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50"
+                            title={canDelete ? 'Delete Firestore profile/progress record' : 'Reserved admins and your own account cannot be deleted here'}
+                          >
+                            Delete
+                          </button>
                           {ROLE_OPTIONS.map((role) => (
                             <button
                               key={role}

@@ -58,11 +58,19 @@ export async function createOrUpdateUserProfile(user: User, emailOverride?: stri
 
   try {
     const userDoc = doc(db, 'users', user.uid);
-    const emailToUse = emailOverride || user.email || null;
+    const existingSnapshot = await getDoc(userDoc);
+    const existingData = existingSnapshot.data() || {};
+    const emailToUse = existingData.email || emailOverride || user.email || null;
+    const nameToUse =
+      user.displayName?.trim() ||
+      existingData.name ||
+      existingData.displayName ||
+      (emailToUse ? String(emailToUse).split('@')[0] : 'User');
     
     await setDoc(userDoc, {
       uid: user.uid,
-      name: user.displayName || 'User',
+      name: nameToUse,
+      displayName: nameToUse,
       email: emailToUse,
       isAnonymous: user.isAnonymous,
       wasAnonymous: user.isAnonymous === false && user.email ? true : false, // Track if converted from anonymous
@@ -337,10 +345,19 @@ export async function createStudentProfile(uid: string, email: string, displayNa
 
   try {
     const userDocRef = doc(db, "users", uid);
+    const existingSnapshot = await getDoc(userDocRef);
+    const existingData = existingSnapshot.data() || {};
+    const resolvedEmail = existingData.email || email || null;
+    const resolvedName =
+      displayName?.trim() ||
+      existingData.name ||
+      existingData.displayName ||
+      (resolvedEmail ? resolvedEmail.split("@")[0] : 'User');
     await setDoc(userDocRef, {
       uid,
-      email,
-      displayName: displayName || email.split("@")[0],
+      email: resolvedEmail,
+      name: resolvedName,
+      displayName: resolvedName,
       createdAt: serverTimestamp(),
       lastActive: serverTimestamp(),
       difficultyLevel: "normal",
