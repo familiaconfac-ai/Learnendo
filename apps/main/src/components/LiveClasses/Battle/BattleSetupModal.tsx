@@ -1235,6 +1235,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [bulkImportKind, setBulkImportKind] = useState<BattleQuestionKind>('multiple-choice');
   const [bulkImportError, setBulkImportError] = useState<string | null>(null);
   const hasTrackedChangesRef = useRef(false);
+  const questionCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
       courseId: defaultCourseId,
@@ -1640,21 +1641,37 @@ export const BattleSetupModal: React.FC<Props> = ({
     });
   }
 
+  function buildEditDraft(question: BattleQuestion): EditDraft {
+    return {
+      kind: question.kind,
+      text: question.text,
+      options: [...(question.options ?? ['', '', '', ''])],
+      correctIndexes: question.correctIndexes?.length ? [...question.correctIndexes] : [question.correctIndex ?? 0],
+      correctText: question.correctText ?? '',
+      acceptedAnswersText: (question.acceptedAnswers ?? []).join(', '),
+      hint: question.hint ?? '',
+      promptAudioText: question.promptAudioText ?? '',
+      imageUrl: question.imageUrl ?? '',
+      durationSeconds: question.durationSeconds != null ? String(question.durationSeconds) : '',
+    };
+  }
+
+  function scrollToQuestion(questionId: string) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        questionCardRefs.current[questionId]?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      });
+    });
+  }
+
   function startEdit(idx: number) {
     const q = questions[idx];
     setEditingIdx(idx);
-    setEditDraft({
-      kind: q.kind,
-      text: q.text,
-      options: [...(q.options ?? ['', '', '', ''])],
-      correctIndexes: q.correctIndexes?.length ? [...q.correctIndexes] : [q.correctIndex ?? 0],
-      correctText: q.correctText ?? '',
-      acceptedAnswersText: (q.acceptedAnswers ?? []).join(', '),
-      hint: q.hint ?? '',
-      promptAudioText: q.promptAudioText ?? '',
-      imageUrl: q.imageUrl ?? '',
-      durationSeconds: q.durationSeconds != null ? String(q.durationSeconds) : '',
-    });
+    setEditDraft(buildEditDraft(q));
+    scrollToQuestion(q.id);
   }
 
   function cancelEdit() {
@@ -1676,8 +1693,11 @@ export const BattleSetupModal: React.FC<Props> = ({
     ));
 
     setQuestions(nextQuestions);
-    setEditingIdx(null);
-    setEditDraft(null);
+    const nextEditingIdx = Math.min(editingIdx + 1, nextQuestions.length - 1);
+    const nextEditingQuestion = nextQuestions[nextEditingIdx];
+    setEditingIdx(nextEditingIdx);
+    setEditDraft(buildEditDraft(nextEditingQuestion));
+    scrollToQuestion(nextEditingQuestion.id);
 
     if (!initialTemplate) {
       return;
@@ -2391,7 +2411,11 @@ export const BattleSetupModal: React.FC<Props> = ({
             const excluded  = excludedIds.has(q.id);
             const isEditing = editingIdx === idx;
             return (
-              <div key={q.id}
+              <div
+                key={q.id}
+                ref={(element) => {
+                  questionCardRefs.current[q.id] = element;
+                }}
                 className={`rounded-xl border transition-all ${
                   excluded
                     ? 'border-slate-700/40 bg-slate-800/20 opacity-40'
