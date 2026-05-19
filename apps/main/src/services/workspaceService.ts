@@ -19,6 +19,7 @@ export type WorkspaceSurfaceMode = 'document' | 'slides';
 export interface WorkspacePage {
   id: string;
   name: string;
+  backgroundColor?: string;
   /** HTML snapshot as of the last time this page was the active page.
    *  While a page is active, authoritative content lives in WorkspaceDoc.docContent / .items. */
   docContent: string;
@@ -132,6 +133,7 @@ export function normalizeWorkspacePages(
   return (raw ?? []).map((p, i) => ({
     id: p.id ?? `pg_${i}_${Math.random().toString(36).slice(2, 6)}`,
     name: p.name ?? `Página ${i + 1}`,
+    backgroundColor: p.backgroundColor ?? '#ffffff',
     docContent: p.docContent ?? '',
     items: p.items ?? [],
   }));

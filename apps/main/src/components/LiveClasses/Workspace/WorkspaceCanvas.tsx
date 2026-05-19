@@ -1635,7 +1635,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     (mode: WorkspaceSurfaceMode, pageId: string): WorkspaceSurfaceState => {
       const labels = mode === 'slides' ? slideLabels : boardLabels;
       return {
-        pages: [{ id: pageId, name: labels.pageName(1), docContent: '', items: [] }],
+        pages: [{ id: pageId, name: labels.pageName(1), backgroundColor: '#ffffff', docContent: '', items: [] }],
         currentPageId: pageId,
         docContent: '',
         items: [],
@@ -1800,6 +1800,38 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   useEffect(() => {
     onPresentationModeChange?.(presentationMode);
   }, [onPresentationModeChange, presentationMode]);
+
+  const navigateSlides = useCallback((direction: 'previous' | 'next') => {
+    if (!isSlidesMode) return;
+    const activeIndex = pages.findIndex((page) => page.id === activePageIdRef.current);
+    const targetIndex = direction === 'previous' ? activeIndex - 1 : activeIndex + 1;
+    const targetPage = pages[targetIndex];
+    if (!targetPage) return;
+    switchPage(targetPage.id);
+  }, [isSlidesMode, pages]);
+
+  useEffect(() => {
+    if (!presentationMode) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPresentationMode(false);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        navigateSlides('next');
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        navigateSlides('previous');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigateSlides, presentationMode]);
 
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
@@ -2796,7 +2828,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const newId = uid();
-    const newPage: WorkspacePage = { id: newId, name: surfaceLabels.pageName(flushed.length + 1), docContent: '', items: [] };
+    const newPage: WorkspacePage = { id: newId, name: surfaceLabels.pageName(flushed.length + 1), backgroundColor: '#ffffff', docContent: '', items: [] };
     const updated = [...flushed, newPage];
     pagesRef.current = updated;
     setPages(updated);
@@ -2884,10 +2916,29 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const copy: WorkspacePage = {
       id: uid(),
       name: `${source.name} (c�pia)`,
+      backgroundColor: source.backgroundColor ?? '#ffffff',
       docContent: source.docContent,
       items: source.items.map((it) => ({ ...it, id: uid() })),
     };
     const updated = [...flushed.slice(0, idx + 1), copy, ...flushed.slice(idx + 1)];
+    pagesRef.current = updated;
+    setPages(updated);
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
+      ...current,
+      pages: updated,
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items,
+    }));
+    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+  };
+
+  const updateActiveSlideBackground = (backgroundColor: string) => {
+    if (!viewerCanManagePages || !isSlidesMode) return;
+    const updated = pagesRef.current.map((page) =>
+      page.id === activePageIdRef.current ? { ...page, backgroundColor } : page,
+    );
     pagesRef.current = updated;
     setPages(updated);
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
@@ -3131,6 +3182,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   }, [selectedId, visibleItems]);
 
   const selected = visibleItems.find((i) => i.id === selectedId) ?? null;
+  const activePage = useMemo(
+    () => pages.find((page) => page.id === activePageId) ?? null,
+    [activePageId, pages],
+  );
+  const activeSlideBackgroundColor = activePage?.backgroundColor ?? '#ffffff';
+  const currentSlideIndex = useMemo(
+    () => Math.max(0, pages.findIndex((page) => page.id === activePageId)),
+    [activePageId, pages],
+  );
+  const hasPreviousSlide = currentSlideIndex > 0;
+  const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
   const getSlidePreviewText = useCallback((page: WorkspacePage) => {
     const docText = (page.docContent ?? '')
       .replace(/<[^>]+>/g, ' ')
@@ -3574,7 +3636,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   return (
     <div
-      className={`flex flex-col w-full h-full overflow-hidden ${presentationMode ? 'fixed inset-0 z-[1000] bg-slate-950' : 'bg-slate-100'}`}
+      className={`group flex h-full w-full flex-col overflow-hidden ${presentationMode ? 'fixed inset-0 z-[12000] bg-slate-950' : 'bg-slate-100'}`}
       style={{ fontFamily: 'Arial, sans-serif' }}
     >
 
@@ -3609,17 +3671,31 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               {isSlidesMode ? surfaceLabels.slides : surfaceLabels.document}
             </button>
             {isSlidesMode && (
-              <button
-                onClick={() => setPresentationMode((prev) => !prev)}
-                className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
-                  presentationMode
-                    ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
-                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                }`}
-                title={presentationMode ? 'Exit presentation mode' : 'Presentation mode'}
-              >
-                {presentationMode ? 'Exit' : 'Presentation'}
-              </button>
+              <>
+                <button
+                  onClick={() => setPresentationMode((prev) => !prev)}
+                  className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
+                    presentationMode
+                      ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                  title={presentationMode ? 'Exit presentation mode' : 'Presentation mode'}
+                >
+                  {presentationMode ? 'Exit' : 'Presentation'}
+                </button>
+                <select
+                  value={activeSlideBackgroundColor}
+                  onChange={(event) => updateActiveSlideBackground(event.target.value)}
+                  className="h-7 max-w-[8.5rem] rounded-md border border-slate-200 bg-white px-2 text-[11px] font-medium text-slate-700 focus:outline-none"
+                  title="Slide background"
+                >
+                  {BG_COLORS.filter((color) => color.v).map((color) => (
+                    <option key={`slide-bg-${color.v}`} value={color.v}>
+                      {color.label}
+                    </option>
+                  ))}
+                </select>
+              </>
             )}
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
           </>
@@ -3994,26 +4070,52 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}
       >
-        <div className={`mx-auto ${isSlidesMode && !presentationMode ? 'flex max-w-[92rem] items-start gap-4' : 'max-w-none'}`}>
+        <div className={`${presentationMode ? 'h-full w-full' : 'mx-auto max-w-none'}`}>
         <div
           ref={canvasRef}
-          className={`relative w-full ${presentationMode ? 'h-full' : ''} ${isSlidesMode ? 'mx-auto max-w-6xl flex-1' : ''}`}
+          className={`relative w-full ${presentationMode ? 'h-full' : ''} ${isSlidesMode ? 'mx-auto max-w-6xl' : ''}`}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
         >
           {presentationMode && (
+            <>
             <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center pt-3">
               <button
                 type="button"
                 onClick={() => setPresentationMode(false)}
-                className="pointer-events-auto rounded-full bg-black/20 px-3 py-1 text-sm font-bold text-white opacity-0 transition hover:bg-black/60 hover:opacity-100 focus:bg-black/60 focus:opacity-100"
+                className="pointer-events-auto rounded-full bg-black/10 px-3 py-1 text-sm font-bold text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 focus:bg-black/60 focus:opacity-100"
                 aria-label="Exit presentation mode"
                 title="Exit presentation mode"
               >
                 ×
               </button>
             </div>
+            {pages.length > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={() => navigateSlides('previous')}
+                  disabled={!hasPreviousSlide}
+                  className="absolute left-4 top-1/2 z-40 -translate-y-1/2 rounded-full bg-black/10 px-3 py-5 text-lg font-black text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-0"
+                  aria-label="Previous slide"
+                  title="Previous slide"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigateSlides('next')}
+                  disabled={!hasNextSlide}
+                  className="absolute right-4 top-1/2 z-40 -translate-y-1/2 rounded-full bg-black/10 px-3 py-5 text-lg font-black text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-0"
+                  aria-label="Next slide"
+                  title="Next slide"
+                >
+                  ›
+                </button>
+              </>
+            ) : null}
+            </>
           )}
 
           {/* Main shared document */}
@@ -4026,6 +4128,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             style={{
               minHeight: presentationMode ? '100vh' : isSlidesMode ? 'min(72vh, 48rem)' : '60vh',
               aspectRatio: isSlidesMode ? '16 / 9' : undefined,
+              backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
             }}
           >
             {isSlidesMode && (
@@ -4047,7 +4150,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               onBlur={onDocBlur}
               onInput={onDocInput}
               className={`w-full focus:outline-none leading-relaxed ${isSlidesMode ? `min-h-full ${presentationMode ? 'overflow-hidden' : 'overflow-auto'} px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12` : 'min-h-[60vh] p-6'}`}
-              style={{ fontFamily, fontSize: `${fontSize}px`, color: '#000000', wordBreak: 'break-word' }}
+              style={{ fontFamily, fontSize: `${fontSize}px`, color: '#000000', wordBreak: 'break-word', backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff' }}
             />
           </div>
 
@@ -4094,7 +4197,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           {visibleItems.length > 0 && <div className="h-40" />}
         </div>
         {isSlidesMode && !presentationMode && viewerCanManagePages && (
-          <aside className="sticky top-3 hidden w-56 flex-shrink-0 rounded-2xl border border-slate-800 bg-slate-950/90 p-3 shadow-xl lg:block">
+          <aside className="absolute right-3 top-3 z-30 hidden w-56 rounded-2xl border border-slate-800 bg-slate-950/90 p-3 shadow-xl lg:block">
             <div className="mb-3 flex items-center justify-between gap-2">
               <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
                 {surfaceLabels.slides}
@@ -4133,7 +4236,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                         {pages.findIndex((entry) => entry.id === page.id) + 1}
                       </span>
                     </div>
-                    <div className="aspect-video overflow-hidden rounded-xl border border-slate-700 bg-white p-3">
+                    <div
+                      className="aspect-video overflow-hidden rounded-xl border border-slate-700 p-3"
+                      style={{ backgroundColor: page.backgroundColor ?? '#ffffff' }}
+                    >
                       <p className="line-clamp-5 text-[11px] leading-4 text-slate-500">
                         {getSlidePreviewText(page)}
                       </p>

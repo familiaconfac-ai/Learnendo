@@ -45,6 +45,7 @@ import type {
 export interface WorkspaceMaterialPage {
   id: string;    // required; pre-Fase-2 docs may lack this — normalizePages() fills it in
   name: string;
+  backgroundColor?: string;
   docContent: string;
   items: WorkspaceItem[];
 }
@@ -82,6 +83,7 @@ function normalizePages(raw: Partial<WorkspaceMaterialPage>[]): WorkspaceMateria
   return (raw ?? []).map((p, i) => ({
     id: p.id ?? `pg_${i}_${Math.random().toString(36).slice(2, 6)}`,
     name: p.name ?? `Página ${i + 1}`,
+    backgroundColor: p.backgroundColor ?? '#ffffff',
     docContent: p.docContent ?? '',
     items: p.items ?? [],
   }));
@@ -131,6 +133,7 @@ export async function saveWorkspaceAsMaterial(
   const safePages: WorkspaceMaterialPage[] = pages.map((page, i) => ({
     id: page.id ?? `pg_${i}_${Math.random().toString(36).slice(2, 6)}`,
     name: page.name,
+    backgroundColor: page.backgroundColor ?? '#ffffff',
     docContent: page.docContent,
     items: page.items.map((item) => {
       if (item.type === 'image' && item.imageUrl?.startsWith('data:')) {
