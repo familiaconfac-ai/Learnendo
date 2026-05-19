@@ -32,6 +32,7 @@ import {
   WorkspaceItem,
   WorkspaceItemType,
   WorkspacePage,
+  type WorkspaceSurfaceState,
   type WorkspaceSurfaceMode,
 } from '../../../services/workspaceService';
 import {
@@ -63,8 +64,6 @@ function uid(): string {
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
 }
-
-const GENERIC_SURFACE_NAME_RE = /^(page|pagina|página|slide|diapositiva)\s+\d+$/i;
 
 const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
 const WORKSPACE_DOC_SYNC_DEBOUNCE_MS = 150;
@@ -283,21 +282,6 @@ function getSurfaceModeLabels(
     confirmClear: isSlides ? 'Limpar o conteúdo deste slide?' : wsl.confirmClear,
     confirmDelete: isSlides ? 'Excluir este slide?' : wsl.confirmDelete,
   };
-}
-
-function isGenericSurfaceName(name: string) {
-  return GENERIC_SURFACE_NAME_RE.test((name ?? '').trim());
-}
-
-function relabelSurfacePages(
-  pages: WorkspacePage[],
-  labels: SurfaceModeLabels,
-): WorkspacePage[] {
-  return pages.map((page, index) =>
-    isGenericSurfaceName(page.name)
-      ? { ...page, name: labels.pageName(index + 1) }
-      : page,
-  );
 }
 
 const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
@@ -627,6 +611,7 @@ export interface WorkspaceCanvasProps {
   assignedRoster?: Array<{ uid: string; label: string; isOnline: boolean }>;
   toolbarLeading?: React.ReactNode;
   onOpenBattleTemplate?: (template: SavedBattleTemplate) => void;
+  onPresentationModeChange?: (active: boolean) => void;
 }
 
 // -- UnifiedColorSwatch --------------------------------------------------------
@@ -1570,6 +1555,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   assignedRoster = [],
   toolbarLeading,
   onOpenBattleTemplate,
+  onPresentationModeChange,
 }) => {
   console.log('[WorkspaceCanvas] INITIALIZED with userId:', userId, 'classId:', classId, 'userName:', userName);
 
@@ -1603,9 +1589,43 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     [surfaceMode, uiLang, wsl],
   );
   const isSlidesMode = surfaceMode === 'slides';
+  const boardLabels = useMemo(
+    () => getSurfaceModeLabels(uiLang, 'document', wsl),
+    [uiLang, wsl],
+  );
+  const slideLabels = useMemo(
+    () => getSurfaceModeLabels(uiLang, 'slides', wsl),
+    [uiLang, wsl],
+  );
   const boxFlowLabels = getWorkspaceBoxFlowLabels();
-  const [items, setItems] = useState<WorkspaceItem[]>([]);
-  const [docHtml, setDocHtml] = useState<string>('');
+  const createDefaultSurfaceState = useCallback(
+    (mode: WorkspaceSurfaceMode, pageId: string): WorkspaceSurfaceState => {
+      const labels = mode === 'slides' ? slideLabels : boardLabels;
+      return {
+        pages: [{ id: pageId, name: labels.pageName(1), docContent: '', items: [] }],
+        currentPageId: pageId,
+        docContent: '',
+        items: [],
+      };
+    },
+    [boardLabels, slideLabels],
+  );
+  const initialBoardPageId = useRef<string>(uid()).current;
+  const initialSlidePageId = useRef<string>(uid()).current;
+  const boardInitialStateRef = useRef<WorkspaceSurfaceState | null>(null);
+  const slidesInitialStateRef = useRef<WorkspaceSurfaceState | null>(null);
+  if (!boardInitialStateRef.current) {
+    boardInitialStateRef.current = createDefaultSurfaceState('document', initialBoardPageId);
+  }
+  if (!slidesInitialStateRef.current) {
+    slidesInitialStateRef.current = createDefaultSurfaceState('slides', initialSlidePageId);
+  }
+  const surfaceStatesRef = useRef<Record<WorkspaceSurfaceMode, WorkspaceSurfaceState>>({
+    document: boardInitialStateRef.current,
+    slides: slidesInitialStateRef.current,
+  });
+  const [items, setItems] = useState<WorkspaceItem[]>(surfaceStatesRef.current.document.items);
+  const [docHtml, setDocHtml] = useState<string>(surfaceStatesRef.current.document.docContent);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingImageUpload, setPendingImageUpload] = useState(false);
   const [fontFamily, setFontFamily] = useState<string>(FONT_FAMILIES[0].v);
@@ -1614,36 +1634,96 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
+  const normalizeItemScope = useCallback(
+    (item: WorkspaceItem): WorkspaceItem => ({
+      ...item,
+      classId: item.classId ?? classId,
+      teacherUserId: item.teacherUserId ?? classTeacherUserId ?? undefined,
+    }),
+    [classId, classTeacherUserId],
+  );
 
   // -- Page state (---------------------------------------------------------------
   // The �pages� array owns names / IDs and the content snapshots of INACTIVE pages.
   // The ACTIVE page�s live content lives in the existing docHtml / items state.
   // On page switch (or save), we �flush� docRef.current.innerHTML + items into pages first.
-  const _initPageId = useRef<string>(uid()).current; // stable across re-renders
-  const [pages, setPages] = useState<WorkspacePage[]>([
-    { id: _initPageId, name: surfaceLabels.pageName(1), docContent: '', items: [] },
-  ]);
-  const [activePageId, setActivePageId] = useState<string>(_initPageId);
+  const [pages, setPages] = useState<WorkspacePage[]>(surfaceStatesRef.current.document.pages);
+  const [activePageId, setActivePageId] = useState<string>(surfaceStatesRef.current.document.currentPageId);
   // Refs are kept in sync manually (no useEffect delay) so closures always see latest.
-  const pagesRef = useRef<WorkspacePage[]>([{ id: _initPageId, name: surfaceLabels.pageName(1), docContent: '', items: [] }]);
-  const activePageIdRef = useRef<string>(_initPageId);
+  const pagesRef = useRef<WorkspacePage[]>(surfaceStatesRef.current.document.pages);
+  const activePageIdRef = useRef<string>(surfaceStatesRef.current.document.currentPageId);
+  const updateSurfaceStateRef = useCallback(
+    (
+      mode: WorkspaceSurfaceMode,
+      updater: (current: WorkspaceSurfaceState) => WorkspaceSurfaceState,
+    ) => {
+      const currentState =
+        surfaceStatesRef.current[mode] ??
+        createDefaultSurfaceState(mode, uid());
+      surfaceStatesRef.current[mode] = updater(currentState);
+    },
+    [createDefaultSurfaceState],
+  );
+  const applySurfaceState = useCallback((mode: WorkspaceSurfaceMode, nextState: WorkspaceSurfaceState) => {
+    const normalizedPages = normalizeWorkspacePages(nextState.pages as Partial<WorkspacePage>[]);
+    const fallbackState = createDefaultSurfaceState(mode, uid());
+    const resolvedPages = normalizedPages.length > 0 ? normalizedPages : fallbackState.pages;
+    const resolvedCurrentPageId =
+      resolvedPages.find((page) => page.id === nextState.currentPageId)?.id ??
+      resolvedPages[0]?.id ??
+      fallbackState.currentPageId;
+    const activePage =
+      resolvedPages.find((page) => page.id === resolvedCurrentPageId) ??
+      resolvedPages[0] ??
+      fallbackState.pages[0];
+    const resolvedState: WorkspaceSurfaceState = {
+      pages: resolvedPages,
+      currentPageId: resolvedCurrentPageId,
+      docContent: activePage.docContent ?? nextState.docContent ?? '',
+      items: activePage.items ?? nextState.items ?? [],
+    };
+
+    surfaceStatesRef.current[mode] = resolvedState;
+    pagesRef.current = resolvedState.pages;
+    activePageIdRef.current = resolvedState.currentPageId;
+    setPages(resolvedState.pages);
+    setActivePageId(resolvedState.currentPageId);
+    setDocHtml(resolvedState.docContent);
+    if (docRef.current) docRef.current.innerHTML = resolvedState.docContent;
+    setItems(resolvedState.items.map(normalizeItemScope));
+    setSelectedId(null);
+  }, [createDefaultSurfaceState, normalizeItemScope]);
   const syncActivePageDocRef = useCallback((html: string) => {
     const nextPages = pagesRef.current.map((page) =>
       page.id === activePageIdRef.current ? { ...page, docContent: html } : page,
     );
     pagesRef.current = nextPages;
+    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
+      ...current,
+      pages: nextPages,
+      currentPageId: activePageIdRef.current,
+      docContent: html,
+      items: itemsRef.current,
+    }));
     return nextPages;
-  }, []);
+  }, [updateSurfaceStateRef]);
   const syncActivePageItemsRef = useCallback((nextItems: WorkspaceItem[], shouldUpdateState = false) => {
     const nextPages = pagesRef.current.map((page) =>
       page.id === activePageIdRef.current ? { ...page, items: nextItems } : page,
     );
     pagesRef.current = nextPages;
+    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
+      ...current,
+      pages: nextPages,
+      currentPageId: activePageIdRef.current,
+      docContent: docRef.current?.innerHTML ?? docHtml,
+      items: nextItems,
+    }));
     if (shouldUpdateState) {
       setPages(nextPages);
     }
     return nextPages;
-  }, []);
+  }, [docHtml, updateSurfaceStateRef]);
 
 
   // -- Materials state ------------------------------------------------------
@@ -1683,6 +1763,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       setPresentationMode(false);
     }
   }, [isSlidesMode, presentationMode]);
+
+  useEffect(() => {
+    onPresentationModeChange?.(presentationMode);
+  }, [onPresentationModeChange, presentationMode]);
 
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
@@ -1734,15 +1818,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const dirtyItemTimestampsRef = useRef<Record<string, number>>({});
   const deletedItemTimestampsRef = useRef<Record<string, number>>({});
   const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
-
-  const normalizeItemScope = useCallback(
-    (item: WorkspaceItem): WorkspaceItem => ({
-      ...item,
-      classId: item.classId ?? classId,
-      teacherUserId: item.teacherUserId ?? classTeacherUserId ?? undefined,
-    }),
-    [classId, classTeacherUserId],
-  );
 
   useEffect(() => {
     if (assignedRoster.length === 0) {
@@ -1891,13 +1966,54 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
-      const remotePages = data?.pages ? normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]) : null;
-      const remoteCurrentPageId = data?.currentPageId ?? activePageIdRef.current;
       const remoteSurfaceMode = data?.surfaceMode ?? 'document';
+      const remoteBoardState: WorkspaceSurfaceState = (() => {
+        if (data?.boardState?.pages?.length) {
+          return {
+            pages: normalizeWorkspacePages(data.boardState.pages as Partial<WorkspacePage>[]),
+            currentPageId: data.boardState.currentPageId,
+            docContent: data.boardState.docContent ?? '',
+            items: data.boardState.items ?? [],
+          };
+        }
+        if (remoteSurfaceMode === 'document' && data?.pages?.length) {
+          return {
+            pages: normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]),
+            currentPageId: data.currentPageId ?? surfaceStatesRef.current.document.currentPageId,
+            docContent: data.docContent ?? '',
+            items: data.items ?? [],
+          };
+        }
+        return surfaceStatesRef.current.document;
+      })();
+      const remoteSlidesState: WorkspaceSurfaceState = (() => {
+        if (data?.slidesState?.pages?.length) {
+          return {
+            pages: normalizeWorkspacePages(data.slidesState.pages as Partial<WorkspacePage>[]),
+            currentPageId: data.slidesState.currentPageId,
+            docContent: data.slidesState.docContent ?? '',
+            items: data.slidesState.items ?? [],
+          };
+        }
+        if (remoteSurfaceMode === 'slides' && data?.pages?.length) {
+          return {
+            pages: normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]),
+            currentPageId: data.currentPageId ?? surfaceStatesRef.current.slides.currentPageId,
+            docContent: data.docContent ?? '',
+            items: data.items ?? [],
+          };
+        }
+        return surfaceStatesRef.current.slides;
+      })();
+      surfaceStatesRef.current.document = remoteBoardState;
+      surfaceStatesRef.current.slides = remoteSlidesState;
+      const remoteState = remoteSurfaceMode === 'slides' ? remoteSlidesState : remoteBoardState;
+      const remotePages = remoteState.pages;
+      const remoteCurrentPageId = remoteState.currentPageId ?? activePageIdRef.current;
       const remoteActivePage = remotePages?.find((page) => page.id === remoteCurrentPageId) ?? null;
-      const normalizedItems = (remoteActivePage?.items ?? data?.items ?? []).map(normalizeItemScope);
+      const normalizedItems = (remoteActivePage?.items ?? remoteState.items ?? []).map(normalizeItemScope);
       const mergedItems = mergeRemoteItemsWithLocal(normalizedItems);
-      const nextDocContent = remoteActivePage?.docContent ?? data?.docContent ?? '';
+      const nextDocContent = remoteActivePage?.docContent ?? remoteState.docContent ?? '';
       console.log('[LIVECLASS WORKSPACE] snapshot', {
         role: viewerIsTeacher ? 'teacher' : viewerIsStudent ? 'student' : 'viewer',
         liveClassId: classId,
@@ -1914,6 +2030,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (remoteSurfaceMode !== surfaceModeRef.current) {
         surfaceModeRef.current = remoteSurfaceMode;
         setSurfaceMode(remoteSurfaceMode);
+        applySurfaceState(remoteSurfaceMode, {
+          pages: remotePages,
+          currentPageId: remoteCurrentPageId,
+          docContent: nextDocContent,
+          items: mergedItems,
+        });
       }
       // Use SECTION-SPECIFIC authorship instead of a single updatedBy field.
       // Problem: updatedBy is a single field for the whole document.  If the
@@ -1933,18 +2055,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
       // -- Pages / active-page sync (Fase 2) ----------------------------------
       // Only apply remote changes; skip our own echo (local state already updated).
-      if (data?.currentPageId && !isPageSelfEcho) {
-        const remoteCPID = data.currentPageId;
+      if (remoteCurrentPageId && !isPageSelfEcho) {
+        const remoteCPID = remoteCurrentPageId;
         if (remotePages && remotePages.length > 0) {
           const normalized = remotePages;
           if (remoteCPID !== activePageIdRef.current) {
-            // Remote page switch ? follow it
-            pagesRef.current = normalized;
-            setPages(normalized);
-            activePageIdRef.current = remoteCPID;
-            setActivePageId(remoteCPID);
-            // docContent/items for the new active page will be applied below by the
-            // existing handler (they are the top-level docContent/items in the snapshot).
+            applySurfaceState(remoteSurfaceMode, {
+              pages: normalized,
+              currentPageId: remoteCPID,
+              docContent: nextDocContent,
+              items: mergedItems,
+            });
           } else {
             // Same active page, but pages structure changed (rename/add/delete/duplicate).
             // Update pages metadata; keep active page�s live content.
@@ -1955,11 +2076,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             );
             pagesRef.current = merged;
             setPages(merged);
+            updateSurfaceStateRef(remoteSurfaceMode, (current) => ({
+              ...current,
+              pages: merged,
+              currentPageId: remoteCPID,
+              docContent: nextDocContent,
+              items: mergedItems,
+            }));
           }
         } else if (remoteCPID !== activePageIdRef.current) {
           // currentPageId changed but pages array isn�t present (legacy or partial write)
           activePageIdRef.current = remoteCPID;
           setActivePageId(remoteCPID);
+          updateSurfaceStateRef(remoteSurfaceMode, (current) => ({
+            ...current,
+            currentPageId: remoteCPID,
+          }));
         }
       }
 
@@ -2002,11 +2134,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     });
     return unsub;
   }, [
+    applySurfaceState,
     classId,
     normalizeItemScope,
     readOnly,
     syncActivePageDocRef,
     syncActivePageItemsRef,
+    updateSurfaceStateRef,
     userId,
     viewerIsStudent,
     viewerIsTeacher,
@@ -2035,6 +2169,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       userName,
       pending.currentPageId,
       pending.pages,
+      surfaceModeRef.current,
     ).catch(console.error);
   }, [classId, userId, userName]);
 
@@ -2050,6 +2185,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         userId,
         userName,
         currentPageId,
+        surfaceModeRef.current,
       ).catch(console.error);
     });
   }, [classId, userId, userName]);
@@ -2077,6 +2213,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       userName,
       pending.currentPageId,
       pending.pages,
+      surfaceModeRef.current,
     ).catch(console.error);
   }, [classId, userId, userName]);
 
@@ -2586,6 +2723,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     );
     pagesRef.current = flushed;
     setPages(flushed);
+    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
+      ...current,
+      pages: flushed,
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items,
+    }));
     return flushed;
   };
 
@@ -2600,10 +2744,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(newPage.docContent);
     if (docRef.current) docRef.current.innerHTML = newPage.docContent;
-      setItems(newPage.items.map(normalizeItemScope));
+    setItems(newPage.items.map(normalizeItemScope));
     setSelectedId(null);
     activePageIdRef.current = pageId;
     setActivePageId(pageId);
+    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
+      ...current,
+      pages: flushed,
+      currentPageId: pageId,
+      docContent: newPage.docContent,
+      items: newPage.items,
+    }));
     savePageSwitch(classId, flushed, pageId, newPage.docContent, newPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
@@ -2624,6 +2775,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setSelectedId(null);
     activePageIdRef.current = newId;
     setActivePageId(newId);
+    updateSurfaceStateRef(surfaceModeRef.current, () => ({
+      pages: updated,
+      currentPageId: newId,
+      docContent: '',
+      items: [],
+    }));
     savePageSwitch(classId, updated, newId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
@@ -2644,13 +2801,26 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(nextPage.docContent);
       if (docRef.current) docRef.current.innerHTML = nextPage.docContent;
-    setItems(nextPage.items.map(normalizeItemScope));
+      setItems(nextPage.items.map(normalizeItemScope));
       setSelectedId(null);
       activePageIdRef.current = nextPage.id;
       setActivePageId(nextPage.id);
+      updateSurfaceStateRef(surfaceModeRef.current, () => ({
+        pages: remaining,
+        currentPageId: nextPage.id,
+        docContent: nextPage.docContent,
+        items: nextPage.items,
+      }));
       savePageSwitch(classId, remaining, nextPage.id, nextPage.docContent, nextPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
     } else {
       const currentDoc = docRef.current?.innerHTML ?? docHtml;
+      updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
+        ...currentState,
+        pages: remaining,
+        currentPageId: activePageIdRef.current,
+        docContent: currentDoc,
+        items,
+      }));
       savePageSwitch(classId, remaining, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
     }
   };
@@ -2661,6 +2831,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     pagesRef.current = updated;
     setPages(updated);
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
+      ...current,
+      pages: updated,
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items,
+    }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
@@ -2681,6 +2858,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     pagesRef.current = updated;
     setPages(updated);
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
+      ...current,
+      pages: updated,
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items,
+    }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
@@ -2688,38 +2872,41 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (!viewerCanManageWorkspace || readOnly) return;
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
-    const nextMode: WorkspaceSurfaceMode = surfaceModeRef.current === 'slides' ? 'document' : 'slides';
-    const nextLabels = getSurfaceModeLabels(uiLang, nextMode, wsl);
-    const renamedPages = relabelSurfacePages(flushed, nextLabels);
-
-    surfaceModeRef.current = nextMode;
-    setSurfaceMode(nextMode);
-    pagesRef.current = renamedPages;
-    setPages(renamedPages);
-
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    updateSurfaceStateRef(surfaceModeRef.current, () => ({
+      pages: flushed,
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items,
+    }));
     savePageSwitch(
       classId,
-      renamedPages,
+      flushed,
       activePageIdRef.current,
       currentDoc,
       items,
       userId,
       userName,
-      nextMode,
+      surfaceModeRef.current,
     ).catch(console.error);
-    saveWorkspaceSurfaceMode(classId, nextMode, userId, userName).catch(console.error);
+    const nextMode: WorkspaceSurfaceMode = surfaceModeRef.current === 'slides' ? 'document' : 'slides';
+    surfaceModeRef.current = nextMode;
+    setSurfaceMode(nextMode);
+    const targetState = surfaceStatesRef.current[nextMode] ?? createDefaultSurfaceState(nextMode, uid());
+    applySurfaceState(nextMode, targetState);
+    saveWorkspaceSurfaceMode(classId, nextMode, userId, userName, targetState).catch(console.error);
   }, [
+    applySurfaceState,
     classId,
+    createDefaultSurfaceState,
     docHtml,
     flushFloatingEditorBeforePageMutation,
     items,
     readOnly,
-    uiLang,
     userId,
     userName,
+    updateSurfaceStateRef,
     viewerCanManageWorkspace,
-    wsl,
   ]);
 
   const handleSaveMaterial = async () => {
@@ -2736,10 +2923,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           throw new Error('Pï¿½gina selecionada nï¿½o foi encontrada para salvar.');
         }
         console.log('[WorkspaceCanvas] Saving single page:', targetPage.name);
-        await saveWorkspaceAsMaterial([targetPage], { title }, userId);
+        await saveWorkspaceAsMaterial([targetPage], { title }, userId, surfaceModeRef.current);
       } else {
         console.log('[WorkspaceCanvas] Saving all pages');
-        await saveWorkspaceAsMaterial(allPages, { title }, userId);
+        await saveWorkspaceAsMaterial(allPages, { title }, userId, surfaceModeRef.current);
       }
       console.log('[WorkspaceCanvas] Save completed successfully, closing modal');
       // Refresh the materials list if the open modal is currently shown
@@ -2792,19 +2979,20 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setLoadingMaterialId(materialId);
     try {
       console.log('[WorkspaceCanvas] Calling loadMaterialToWorkspace');
-      const { pages: loadedPages, currentPageId } = await loadMaterialToWorkspace(materialId, classId, userName);
+      const { pages: loadedPages, currentPageId, surfaceMode: loadedSurfaceMode } = await loadMaterialToWorkspace(materialId, classId, userName);
       console.log('[WorkspaceCanvas] Material loaded successfully � pages:', loadedPages.length);
       // Apply loaded material to local state immediately (before self-echo arrives).
       const normalized = normalizeWorkspacePages(loadedPages);
-      pagesRef.current = normalized;
-      setPages(normalized);
-      activePageIdRef.current = currentPageId;
-      setActivePageId(currentPageId);
       const activePage = normalized.find((p) => p.id === currentPageId) ?? normalized[0];
       if (activePage) {
-        setDocHtml(activePage.docContent);
-        if (docRef.current) docRef.current.innerHTML = activePage.docContent;
-        setItems(activePage.items.map(normalizeItemScope));
+        surfaceModeRef.current = loadedSurfaceMode;
+        setSurfaceMode(loadedSurfaceMode);
+        applySurfaceState(loadedSurfaceMode, {
+          pages: normalized,
+          currentPageId,
+          docContent: activePage.docContent,
+          items: activePage.items,
+        });
       }
       setSelectedId(null);
       setShowOpenModal(false);
@@ -2889,6 +3077,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   }, []);
 
   const visibleItems = useMemo(() => {
+    if (isSlidesMode) {
+      return items.filter((item) => item.boxRole !== 'student');
+    }
     if (!viewerIsStudent) return items;
     return items.filter((item) => {
       if (item.boxRole !== 'student') return true;
@@ -2898,7 +3089,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (resolvedOwner?.email && userEmail && getEmailLocalPart(resolvedOwner.email) === getEmailLocalPart(userEmail)) return true;
       return isBoxOwner(viewerContext, item);
     });
-  }, [assignableStudents, items, userEmail, userId, viewerContext, viewerIsStudent]);
+  }, [assignableStudents, isSlidesMode, items, userEmail, userId, viewerContext, viewerIsStudent]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -2907,6 +3098,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   }, [selectedId, visibleItems]);
 
   const selected = visibleItems.find((i) => i.id === selectedId) ?? null;
+  const getSlidePreviewText = useCallback((page: WorkspacePage) => {
+    const docText = (page.docContent ?? '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const boxText = (page.items ?? [])
+      .filter((item) => item.boxRole !== 'student')
+      .map((item) => (item.content ?? '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+      .find(Boolean);
+    return (docText || boxText || page.name || surfaceLabels.currentLabel).slice(0, 96);
+  }, [surfaceLabels.currentLabel]);
 
   // -- ResizeHandle ---------------------------------------------------------------
 
@@ -3344,9 +3546,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     >
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
+      {!presentationMode && (
       <div
         ref={toolbarRef}
-        className={`flex-shrink-0 flex flex-wrap items-center gap-0.5 px-1.5 py-1 border-b ${presentationMode ? 'bg-slate-900/95 border-slate-700 text-white' : 'bg-white border-slate-200'}`}
+        className="flex-shrink-0 flex flex-wrap items-center gap-0.5 px-1.5 py-1 border-b bg-white border-slate-200"
         style={{ minHeight: '2.5rem', zIndex: 20 }}
         onMouseDown={(e) => {
           const tag = (e.target as HTMLElement).tagName;
@@ -3436,7 +3639,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2"/><line x1="5" y1="8" x2="15" y2="8"/><line x1="5" y1="11" x2="11" y2="11"/></svg>
             </button>
-            {isSlidesMode && (
+            {!isSlidesMode && (
               <button
                 onClick={addStudentBox}
                 className="w-7 h-7 rounded border border-emerald-200 text-emerald-700 hover:bg-emerald-50 flex items-center justify-center transition"
@@ -3531,6 +3734,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               );
               pagesRef.current = updated;
               setPages(updated);
+              updateSurfaceStateRef(surfaceModeRef.current, () => ({
+                pages: updated,
+                currentPageId: activePageIdRef.current,
+                docContent: '',
+                items: [],
+              }));
               savePageSwitch(classId, updated, activePageIdRef.current, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
             }}
             className="w-7 h-7 rounded flex items-center justify-center hover:bg-red-50 text-red-500 border border-red-200 transition"
@@ -3541,13 +3750,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </button>
         )}
       </div>
+      )}
 
       {/* -- Page tab bar ---------------------------------------------- */}
+      {!presentationMode && !isSlidesMode && (
       <div
-        className={`flex-shrink-0 flex items-stretch gap-0 overflow-x-auto border-b ${presentationMode ? 'bg-slate-900 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+        className="flex-shrink-0 flex items-stretch gap-0 overflow-x-auto border-b bg-slate-50 border-slate-200"
         style={{ minHeight: '2rem', zIndex: 15 }}
       >
-        <div className={`flex flex-shrink-0 items-center px-3 text-[10px] font-black uppercase tracking-[0.18em] ${presentationMode ? 'text-slate-500' : 'text-slate-400'}`}>
+        <div className="flex flex-shrink-0 items-center px-3 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
           {surfaceLabels.currentLabel}
         </div>
         {pages.map((page) => (
@@ -3578,6 +3789,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </button>
         )}
       </div>
+      )}
 
       {/* -- Save Material Modal -------------------------------------------- */}
       {showSaveModal && (
@@ -3744,18 +3956,32 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       {/* -- Scrollable content ----------------------------------------------- */}
       <div
         ref={overflowRef}
-        className={`flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
+        className={`flex-1 overflow-x-hidden ${presentationMode ? 'overflow-hidden p-0' : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
         onScroll={onScrollSync}
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}
       >
+        <div className={`mx-auto ${isSlidesMode && !presentationMode ? 'flex max-w-[92rem] items-start gap-4' : 'max-w-none'}`}>
         <div
           ref={canvasRef}
-          className={`relative w-full ${isSlidesMode ? 'mx-auto max-w-6xl' : ''}`}
+          className={`relative w-full ${presentationMode ? 'h-full' : ''} ${isSlidesMode ? 'mx-auto max-w-6xl flex-1' : ''}`}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
         >
+          {presentationMode && (
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center pt-3">
+              <button
+                type="button"
+                onClick={() => setPresentationMode(false)}
+                className="pointer-events-auto rounded-full bg-black/20 px-3 py-1 text-sm font-bold text-white opacity-0 transition hover:bg-black/60 hover:opacity-100 focus:bg-black/60 focus:opacity-100"
+                aria-label="Exit presentation mode"
+                title="Exit presentation mode"
+              >
+                ×
+              </button>
+            </div>
+          )}
 
           {/* Main shared document */}
           <div
@@ -3765,7 +3991,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 : 'rounded-xl border-slate-200 bg-white shadow-sm'
             }`}
             style={{
-              minHeight: isSlidesMode ? 'min(72vh, 48rem)' : '60vh',
+              minHeight: presentationMode ? '100vh' : isSlidesMode ? 'min(72vh, 48rem)' : '60vh',
               aspectRatio: isSlidesMode ? '16 / 9' : undefined,
             }}
           >
@@ -3787,7 +4013,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               spellCheck
               onBlur={onDocBlur}
               onInput={onDocInput}
-              className={`w-full focus:outline-none leading-relaxed ${isSlidesMode ? 'min-h-full overflow-auto px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12' : 'min-h-[60vh] p-6'}`}
+              className={`w-full focus:outline-none leading-relaxed ${isSlidesMode ? `min-h-full ${presentationMode ? 'overflow-hidden' : 'overflow-auto'} px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12` : 'min-h-[60vh] p-6'}`}
               style={{ fontFamily, fontSize: `${fontSize}px`, color: '#000000', wordBreak: 'break-word' }}
             />
           </div>
@@ -3833,6 +4059,97 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </div>
 
           {visibleItems.length > 0 && <div className="h-40" />}
+        </div>
+        {isSlidesMode && !presentationMode && viewerCanManagePages && (
+          <aside className="sticky top-3 hidden w-56 flex-shrink-0 rounded-2xl border border-slate-800 bg-slate-950/90 p-3 shadow-xl lg:block">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
+                {surfaceLabels.slides}
+              </span>
+              {viewerCanManagePages && (
+                <button
+                  type="button"
+                  onClick={addPage}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-blue-500 hover:bg-slate-800 hover:text-white"
+                  title={surfaceLabels.newPage}
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.25" viewBox="0 0 16 16">
+                    <line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
+                  </svg>
+                </button>
+              )}
+            </div>
+            <div className="flex max-h-[68vh] flex-col gap-3 overflow-y-auto pr-1">
+              {pages.map((page) => {
+                const isActive = page.id === activePageId;
+                return (
+                  <button
+                    key={page.id}
+                    type="button"
+                    onClick={() => switchPage(page.id)}
+                    className={`group w-full rounded-2xl border p-2 text-left transition ${
+                      isActive
+                        ? 'border-blue-500 bg-slate-800 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]'
+                        : 'border-slate-800 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/80'
+                    }`}
+                    title={surfaceLabels.pageNameTip(page.name)}
+                  >
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="truncate text-xs font-semibold text-white">{page.name}</span>
+                      <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-300">
+                        {pages.findIndex((entry) => entry.id === page.id) + 1}
+                      </span>
+                    </div>
+                    <div className="aspect-video overflow-hidden rounded-xl border border-slate-700 bg-white p-3">
+                      <p className="line-clamp-5 text-[11px] leading-4 text-slate-500">
+                        {getSlidePreviewText(page)}
+                      </p>
+                    </div>
+                    <div className="mt-2 flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          duplicatePage(page.id);
+                        }}
+                        className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white"
+                        title={wsl.duplicate}
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSaveSinglePageId(page.id);
+                          setSaveMaterialTitle('');
+                          setShowSaveModal(true);
+                        }}
+                        className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-300 transition hover:border-emerald-500 hover:text-white"
+                        title={surfaceLabels.savePage}
+                      >
+                        Save
+                      </button>
+                      {pages.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deletePage(page.id);
+                          }}
+                          className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-300 transition hover:border-rose-500 hover:text-white"
+                          title={surfaceLabels.deletePage}
+                        >
+                          Del
+                        </button>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+        )}
         </div>
       </div>
 

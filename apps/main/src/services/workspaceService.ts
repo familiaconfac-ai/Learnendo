@@ -53,6 +53,13 @@ export interface WorkspaceItem {
   updatedByName: string;
 }
 
+export interface WorkspaceSurfaceState {
+  pages: WorkspacePage[];
+  currentPageId: string;
+  docContent: string;
+  items: WorkspaceItem[];
+}
+
 export interface WorkspaceDoc {
   items: WorkspaceItem[];
   /** Author of the last items write (used for self-echo suppression per section) */
@@ -69,6 +76,10 @@ export interface WorkspaceDoc {
   currentPageId?: string;
   /** Visual surface mode shared by teacher and students. */
   surfaceMode?: WorkspaceSurfaceMode;
+  /** Dedicated state for the board/lousa mode. */
+  boardState?: WorkspaceSurfaceState;
+  /** Dedicated state for the slide presentation mode. */
+  slidesState?: WorkspaceSurfaceState;
   updatedAt: number;
   updatedBy: string;
   updatedByName: string;
@@ -91,6 +102,24 @@ function upsertWorkspaceItemByFreshness(
   const nextItems = [...items];
   nextItems[existingIndex] = incomingItem;
   return nextItems;
+}
+
+function surfaceStateKey(surfaceMode: WorkspaceSurfaceMode): 'boardState' | 'slidesState' {
+  return surfaceMode === 'slides' ? 'slidesState' : 'boardState';
+}
+
+function buildSurfaceState(
+  pages: WorkspacePage[],
+  currentPageId: string,
+  docContent: string,
+  items: WorkspaceItem[],
+): WorkspaceSurfaceState {
+  return {
+    pages,
+    currentPageId,
+    docContent,
+    items,
+  };
 }
 
 /**
@@ -116,6 +145,7 @@ export async function saveDocContent(
   name: string,
   currentPageId?: string,
   pages?: WorkspacePage[],
+  surfaceMode: WorkspaceSurfaceMode = 'document',
 ): Promise<void> {
   if (!db) return;
   console.log(`[WS] saveDocContent by ${name} (${uid.slice(0, 6)})`);
@@ -124,9 +154,19 @@ export async function saveDocContent(
     currentPageId && pages
       ? pages.map((page) => (page.id === currentPageId ? { ...page, docContent } : page))
       : undefined;
+  const nextItems =
+    currentPageId && syncedPages
+      ? syncedPages.find((page) => page.id === currentPageId)?.items ?? []
+      : [];
+  const surfaceState =
+    currentPageId && syncedPages
+      ? buildSurfaceState(syncedPages, currentPageId, docContent, nextItems)
+      : undefined;
+  const modeKey = surfaceStateKey(surfaceMode);
   const payload = {
     docContent,
     docUpdatedBy: uid,
+    ...(surfaceState ? { [modeKey]: surfaceState } : {}),
     updatedAt: Date.now(),
     updatedBy: uid,
     updatedByName: name,
@@ -164,11 +204,22 @@ export async function saveWorkspaceSurfaceMode(
   surfaceMode: WorkspaceSurfaceMode,
   uid: string,
   name: string,
+  state?: WorkspaceSurfaceState,
 ): Promise<void> {
   if (!db) return;
   const { updateDoc, setDoc } = await import('firebase/firestore');
+  const modeKey = surfaceStateKey(surfaceMode);
   const payload = {
     surfaceMode,
+    ...(state
+      ? {
+          [modeKey]: state,
+          pages: state.pages,
+          currentPageId: state.currentPageId,
+          docContent: state.docContent,
+          items: state.items,
+        }
+      : {}),
     updatedAt: Date.now(),
     updatedBy: uid,
     updatedByName: name,
@@ -223,6 +274,7 @@ export async function saveWorkspace(
   name: string,
   currentPageId?: string,
   pages?: WorkspacePage[],
+  surfaceMode: WorkspaceSurfaceMode = 'document',
 ): Promise<void> {
   if (!db) return;
   console.log(`[WS] saveWorkspace by ${name} (${uid.slice(0, 6)}) — ${items.length} items`);
@@ -231,9 +283,19 @@ export async function saveWorkspace(
     currentPageId && pages
       ? pages.map((page) => (page.id === currentPageId ? { ...page, items } : page))
       : undefined;
+  const nextDocContent =
+    currentPageId && syncedPages
+      ? syncedPages.find((page) => page.id === currentPageId)?.docContent ?? ''
+      : '';
+  const surfaceState =
+    currentPageId && syncedPages
+      ? buildSurfaceState(syncedPages, currentPageId, nextDocContent, items)
+      : undefined;
+  const modeKey = surfaceStateKey(surfaceMode);
   const payload = {
     items,
     itemsUpdatedBy: uid,
+    ...(surfaceState ? { [modeKey]: surfaceState } : {}),
     updatedAt: Date.now(),
     updatedBy: uid,
     updatedByName: name,
@@ -261,6 +323,7 @@ export async function saveWorkspaceItem(
   uid: string,
   name: string,
   currentPageId?: string,
+  surfaceMode: WorkspaceSurfaceMode = 'document',
 ): Promise<void> {
   if (!db) return;
   console.log(`[WS] saveWorkspaceItem by ${name} (${uid.slice(0, 6)}) — ${item.id}`);
@@ -271,10 +334,14 @@ export async function saveWorkspaceItem(
       const ref = workspaceRef(classId);
       const snapshot = await transaction.get(ref);
       const currentData = snapshot.exists() ? (snapshot.data() as WorkspaceDoc) : null;
-      const currentItems = currentData?.items ?? [];
-      const currentPages = currentData?.pages
-        ? normalizeWorkspacePages(currentData.pages as Partial<WorkspacePage>[])
-        : [];
+      const modeKey = surfaceStateKey(surfaceMode);
+      const currentSurfaceState = currentData?.[modeKey];
+      const currentItems = currentSurfaceState?.items ?? currentData?.items ?? [];
+      const currentPages = currentSurfaceState?.pages
+        ? normalizeWorkspacePages(currentSurfaceState.pages as Partial<WorkspacePage>[])
+        : currentData?.pages
+          ? normalizeWorkspacePages(currentData.pages as Partial<WorkspacePage>[])
+          : [];
       const nextPages =
         currentPageId && currentPages.length > 0
           ? currentPages.map((page) =>
@@ -283,23 +350,38 @@ export async function saveWorkspaceItem(
                 : page,
             )
           : currentPages;
-      const activePageId = currentData?.currentPageId;
+      const activePageId = currentSurfaceState?.currentPageId ?? currentData?.currentPageId;
       const nextItems =
         currentPageId && activePageId && activePageId === currentPageId
           ? nextPages.find((page) => page.id === currentPageId)?.items ?? upsertWorkspaceItemByFreshness(currentItems, item)
           : activePageId
             ? currentPages.find((page) => page.id === activePageId)?.items ?? currentItems
             : upsertWorkspaceItemByFreshness(currentItems, item);
+      const nextDocContent =
+        currentPageId && activePageId && activePageId === currentPageId
+          ? nextPages.find((page) => page.id === currentPageId)?.docContent ?? currentSurfaceState?.docContent ?? currentData?.docContent ?? ''
+          : activePageId
+            ? currentPages.find((page) => page.id === activePageId)?.docContent ?? currentSurfaceState?.docContent ?? currentData?.docContent ?? ''
+            : currentSurfaceState?.docContent ?? currentData?.docContent ?? '';
+      const nextCurrentPageId = activePageId ?? currentPageId ?? currentSurfaceState?.currentPageId ?? currentData?.currentPageId ?? '';
+      const nextSurfaceState = buildSurfaceState(nextPages, nextCurrentPageId, nextDocContent, nextItems);
 
       transaction.set(
         ref,
         {
           items: nextItems,
           itemsUpdatedBy: uid,
+          [modeKey]: nextSurfaceState,
+          ...(currentData?.surfaceMode === surfaceMode
+            ? {
+                pages: nextSurfaceState.pages,
+                currentPageId: nextSurfaceState.currentPageId,
+                docContent: nextSurfaceState.docContent,
+              }
+            : {}),
           updatedAt: Date.now(),
           updatedBy: uid,
           updatedByName: name,
-          ...(nextPages.length > 0 ? { pages: nextPages } : {}),
         },
         { merge: true },
       );
@@ -309,34 +391,53 @@ export async function saveWorkspaceItem(
     console.warn('[WS] saveWorkspaceItem transaction failed — falling back to setDoc:', err);
     const currentSnapshot = await getDoc(workspaceRef(classId));
     const currentData = currentSnapshot.exists() ? (currentSnapshot.data() as WorkspaceDoc) : null;
-    const currentItems = currentData?.items ?? [];
-    const currentPages = currentData?.pages
-      ? normalizeWorkspacePages(currentData.pages as Partial<WorkspacePage>[])
-      : [];
+    const modeKey = surfaceStateKey(surfaceMode);
+    const currentSurfaceState = currentData?.[modeKey];
+    const currentItems = currentSurfaceState?.items ?? currentData?.items ?? [];
+    const currentPages = currentSurfaceState?.pages
+      ? normalizeWorkspacePages(currentSurfaceState.pages as Partial<WorkspacePage>[])
+      : currentData?.pages
+        ? normalizeWorkspacePages(currentData.pages as Partial<WorkspacePage>[])
+        : [];
     const nextPages =
       currentPageId && currentPages.length > 0
         ? currentPages.map((page) =>
             page.id === currentPageId
               ? { ...page, items: upsertWorkspaceItemByFreshness(page.items ?? [], item) }
               : page,
-          )
+        )
         : currentPages;
-    const activePageId = currentData?.currentPageId;
+    const activePageId = currentSurfaceState?.currentPageId ?? currentData?.currentPageId;
     const nextItems =
       currentPageId && activePageId && activePageId === currentPageId
         ? nextPages.find((page) => page.id === currentPageId)?.items ?? upsertWorkspaceItemByFreshness(currentItems, item)
         : activePageId
           ? currentPages.find((page) => page.id === activePageId)?.items ?? currentItems
           : upsertWorkspaceItemByFreshness(currentItems, item);
+    const nextDocContent =
+      currentPageId && activePageId && activePageId === currentPageId
+        ? nextPages.find((page) => page.id === currentPageId)?.docContent ?? currentSurfaceState?.docContent ?? currentData?.docContent ?? ''
+        : activePageId
+          ? currentPages.find((page) => page.id === activePageId)?.docContent ?? currentSurfaceState?.docContent ?? currentData?.docContent ?? ''
+          : currentSurfaceState?.docContent ?? currentData?.docContent ?? '';
+    const nextCurrentPageId = activePageId ?? currentPageId ?? currentSurfaceState?.currentPageId ?? currentData?.currentPageId ?? '';
+    const nextSurfaceState = buildSurfaceState(nextPages, nextCurrentPageId, nextDocContent, nextItems);
     await setDoc(
       workspaceRef(classId),
       {
         items: nextItems,
         itemsUpdatedBy: uid,
+        [modeKey]: nextSurfaceState,
+        ...(currentData?.surfaceMode === surfaceMode
+          ? {
+              pages: nextSurfaceState.pages,
+              currentPageId: nextSurfaceState.currentPageId,
+              docContent: nextSurfaceState.docContent,
+            }
+          : {}),
         updatedAt: Date.now(),
         updatedBy: uid,
         updatedByName: name,
-        ...(nextPages.length > 0 ? { pages: nextPages } : {}),
       },
       { merge: true },
     );
@@ -358,14 +459,17 @@ export async function savePageSwitch(
   items: WorkspaceItem[],
   uid: string,
   name: string,
-  surfaceMode?: WorkspaceSurfaceMode,
+  surfaceMode: WorkspaceSurfaceMode = 'document',
 ): Promise<void> {
   if (!db) return;
   const { updateDoc, setDoc } = await import('firebase/firestore');
+  const nextSurfaceState = buildSurfaceState(pages, currentPageId, docContent, items);
+  const modeKey = surfaceStateKey(surfaceMode);
   const payload = {
     pages,
     currentPageId,
-    ...(surfaceMode ? { surfaceMode } : {}),
+    surfaceMode,
+    [modeKey]: nextSurfaceState,
     docContent,
     docUpdatedBy: uid,
     items,

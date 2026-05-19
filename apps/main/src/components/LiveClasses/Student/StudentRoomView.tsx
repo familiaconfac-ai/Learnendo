@@ -64,6 +64,7 @@ const StudentStage: React.FC<{
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
   const [showTeacherMiniCamera, setShowTeacherMiniCamera] = useState(true);
+  const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
 
   const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const isBattleStage = stageMode === 'battle';
@@ -422,6 +423,7 @@ const StudentStage: React.FC<{
       title={liveClass.title}
       exitLabel={labels.exit}
       onExit={onExit}
+      immersiveMode={workspacePresentationActive}
       mainContent={
         <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
         <div className="relative flex-1 min-h-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl">
@@ -449,6 +451,7 @@ const StudentStage: React.FC<{
                 studentEditingEnabled={session.studentEditingEnabled ?? true}
                 classTeacherUserId={liveClass.teacherUid ?? null}
                 assignedRoster={assignedRoster}
+                onPresentationModeChange={setWorkspacePresentationActive}
                 toolbarLeading={
                   <>
                     <button

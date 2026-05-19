@@ -83,6 +83,7 @@ const TeacherStage: React.FC<{
   const [camError, setCamError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
   const [cameraRecoveryAttempts, setCameraRecoveryAttempts] = useState(0);
+  const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
 
   useEffect(() => {
     setStudentEditingEnabled(session.studentEditingEnabled ?? true);
@@ -318,6 +319,7 @@ const TeacherStage: React.FC<{
       title={liveClass.title}
       exitLabel={labels.exit}
       onExit={onExit}
+      immersiveMode={workspacePresentationActive}
       mainContent={
         <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
           <div className="relative flex-1 min-h-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/80 shadow-xl">
@@ -402,6 +404,7 @@ const TeacherStage: React.FC<{
                   classTeacherUserId={liveClass.teacherUid ?? teacherUid}
                   assignedRoster={assignedRoster}
                   onOpenBattleTemplate={onOpenBattleTemplate}
+                  onPresentationModeChange={setWorkspacePresentationActive}
                 />
               </div>
             ) : null}
