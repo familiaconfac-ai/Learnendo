@@ -1689,18 +1689,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [presentationMode, setPresentationMode] = useState(false);
   const [slidePanelVisible, setSlidePanelVisible] = useState(true);
   const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
+  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 224, height: 520 });
   const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  const slidePanelResizeOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const getDefaultSlidePanelPosition = useCallback(() => {
     if (typeof window === 'undefined') {
       return { x: 24, y: 112 };
     }
 
-    const panelWidth = 224;
+    const panelWidth = slidePanelSize.width;
     return {
       x: Math.max(24, window.innerWidth - panelWidth - 24),
       y: 112,
     };
-  }, []);
+  }, [slidePanelSize.width]);
   const normalizeItemScope = useCallback(
     (item: WorkspaceItem): WorkspaceItem => ({
       ...item,
@@ -1928,6 +1930,40 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
   }, [getDefaultSlidePanelPosition, presentationMode, slidePanelPosition]);
+
+  const handleSlidePanelResizePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (presentationMode) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    slidePanelResizeOriginRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      width: slidePanelSize.width,
+      height: slidePanelSize.height,
+    };
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const origin = slidePanelResizeOriginRef.current;
+      const position = slidePanelPosition ?? getDefaultSlidePanelPosition();
+      if (!origin) return;
+
+      const maxWidth = Math.max(220, window.innerWidth - position.x - 24);
+      const maxHeight = Math.max(240, window.innerHeight - position.y - 24);
+      const nextWidth = clamp(origin.width + (moveEvent.clientX - origin.x), 220, Math.min(420, maxWidth));
+      const nextHeight = clamp(origin.height + (moveEvent.clientY - origin.y), 240, Math.min(720, maxHeight));
+      setSlidePanelSize({ width: nextWidth, height: nextHeight });
+    };
+
+    const handleUp = () => {
+      slidePanelResizeOriginRef.current = null;
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  }, [getDefaultSlidePanelPosition, presentationMode, slidePanelPosition, slidePanelSize.height, slidePanelSize.width]);
 
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
@@ -3287,6 +3323,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const resolvedMode = mode === 'slides' ? 'slides' : 'document';
     return resolvedMode === 'slides' ? surfaceLabels.slides : surfaceLabels.document;
   }, [surfaceLabels.document, surfaceLabels.slides]);
+  const getSaveActionLabel = useCallback(() => {
+    if (saveSinglePageId) {
+      return isSlidesMode ? 'Save this slide' : wsl.save;
+    }
+    if (isSlidesMode) return 'Save all slides';
+    return 'Save all pages';
+  }, [isSlidesMode, saveSinglePageId, wsl.save]);
   const currentSlideIndex = useMemo(
     () => Math.max(0, pages.findIndex((page) => page.id === activePageId)),
     [activePageId, pages],
@@ -4022,6 +4065,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <div className="mb-3 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
               {getMaterialSurfaceLabel(surfaceMode)}
             </div>
+            <p className="mb-3 text-xs text-slate-500">
+              {saveSinglePageId
+                ? (isSlidesMode ? 'You are saving only the current slide.' : 'You are saving only the current page.')
+                : (isSlidesMode ? 'You are saving the full slide deck.' : 'You are saving the full board material.')}
+            </p>
             <label className="block text-xs text-slate-500 mb-1">{wsl.materialTitleLabel}</label>
             <input
               type="text"
@@ -4044,7 +4092,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 disabled={savingMaterial || !saveMaterialTitle.trim()}
                 className="px-3 py-1.5 rounded-lg text-xs bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 transition"
               >
-                {savingMaterial ? wsl.saving : wsl.save}
+                {savingMaterial ? wsl.saving : getSaveActionLabel()}
               </button>
             </div>
           </div>
@@ -4243,7 +4291,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <div
             className={`relative w-full border mb-6 ${
               isSlidesMode
-                ? 'overflow-hidden rounded-[28px] border-slate-700 bg-white shadow-[0_25px_70px_rgba(15,23,42,0.45)]'
+                ? presentationMode
+                  ? 'overflow-hidden rounded-none border-slate-700 bg-white shadow-none'
+                  : 'overflow-hidden rounded-[28px] border-slate-700 bg-white shadow-[0_25px_70px_rgba(15,23,42,0.45)]'
                 : 'rounded-xl border-slate-200 bg-white shadow-sm'
             }`}
             style={{
@@ -4322,6 +4372,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             style={{
               left: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).x}px`,
               top: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).y}px`,
+              width: `${slidePanelSize.width}px`,
+              height: `${slidePanelSize.height}px`,
             }}
           >
             <div
@@ -4354,7 +4406,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 </button>
               </div>
             </div>
-            <div className="flex max-h-[68vh] flex-col gap-3 overflow-y-auto pr-1">
+            <div className="flex h-[calc(100%-3.5rem)] flex-col gap-3 overflow-y-auto pr-1">
               {pages.map((page) => {
                 const isActive = page.id === activePageId;
                 return (
@@ -4426,6 +4478,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 );
               })}
             </div>
+            <button
+              type="button"
+              onPointerDown={handleSlidePanelResizePointerDown}
+              className="absolute bottom-1 right-1 flex h-5 w-5 cursor-se-resize items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-800 hover:text-white"
+              title="Resize slides panel"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20">
+                <path d="M7 13l6-6M10 16l6-6M13 19l6-6" />
+              </svg>
+            </button>
           </aside>
         )}
         </div>
