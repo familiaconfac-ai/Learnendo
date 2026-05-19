@@ -2768,7 +2768,18 @@ const App: React.FC = () => {
 
   return (
     <div className="app overflow-x-hidden bg-slate-900 min-h-screen">
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-700 bg-slate-900/95 backdrop-blur">
+      <style>{`
+        body[data-workspace-presentation="true"] [data-app-chrome="header"],
+        body[data-workspace-presentation="true"] [data-app-chrome="menu"],
+        body[data-workspace-presentation="true"] [data-app-chrome="banner"] {
+          display: none !important;
+        }
+        body[data-workspace-presentation="true"] [data-app-chrome="main"] {
+          padding-top: 0 !important;
+          padding-bottom: 0 !important;
+        }
+      `}</style>
+      <header data-app-chrome="header" className="fixed inset-x-0 top-0 z-50 border-b border-slate-700 bg-slate-900/95 backdrop-blur">
         <div className="mx-auto flex w-full max-w-full items-center justify-between gap-1 sm:gap-2 px-2 sm:px-3 py-2 overflow-x-auto">
           <button
             type="button"
@@ -2800,7 +2811,7 @@ const App: React.FC = () => {
         </div>
       </header>
       {menuOpen && (
-        <div className="fixed inset-0 z-[1000] bg-black/30 backdrop-blur-sm flex items-center justify-center" onClick={() => setMenuOpen(false)}>
+        <div data-app-chrome="menu" className="fixed inset-0 z-[1000] bg-black/30 backdrop-blur-sm flex items-center justify-center" onClick={() => setMenuOpen(false)}>
           <div
             className="bg-white rounded-3xl shadow-2xl p-6 w-11/12 max-w-sm mx-auto"
             onClick={(e) => e.stopPropagation()}
@@ -2844,7 +2855,7 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      <main className="pt-[68px] pb-[56px]">{renderSection()}</main>
+      <main data-app-chrome="main" className="pt-[68px] pb-[56px]">{renderSection()}</main>
       {weekCompletionResult && (
         <WeekCompletionPopup
           result={weekCompletionResult}
@@ -2926,7 +2937,7 @@ const App: React.FC = () => {
         );
       })()}
       {showPlacementBanner && (
-        <div className="fixed top-[68px] left-0 right-0 z-40 bg-amber-400 text-slate-900 flex items-center justify-between gap-2 px-4 py-2.5 shadow-lg">
+        <div data-app-chrome="banner" className="fixed top-[68px] left-0 right-0 z-40 bg-amber-400 text-slate-900 flex items-center justify-between gap-2 px-4 py-2.5 shadow-lg">
           <span className="text-sm font-bold">
             {uiLanguage === 'pt'
               ? '📝 Faça seu teste de nivelamento'

@@ -588,7 +588,7 @@ function canRenameBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): bool
 }
 
 function canAssignBoxOwner(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
-  return canManageBox(viewer, item);
+  return item.boxRole === 'student' && canManageBox(viewer, item);
 }
 
 function canMoveBox(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
@@ -1085,6 +1085,7 @@ interface StableFloatingBlockProps {
   item: WorkspaceItem;
   isSelected: boolean;
   readOnly: boolean;
+  isSlidesMode: boolean;
   currentUserId: string;
   currentUserEmail?: string | null;
   viewerContext: WorkspaceViewerContext;
@@ -1094,8 +1095,8 @@ interface StableFloatingBlockProps {
   boxFlowLabels: ReturnType<typeof getWorkspaceBoxFlowLabels>;
   getCanvasMetrics: () => { width: number; height: number };
   onSelect: () => void;
-  onPointerDownMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerDownResize: (e: ReactPointerEvent<HTMLDivElement>) => void;
+  onPointerDownMove: (e: ReactPointerEvent<HTMLElement>) => void;
+  onPointerDownResize: (e: ReactPointerEvent<HTMLElement>) => void;
   onContentChange: (html: string) => void;
   onUpdateItem: (id: string, patch: Partial<WorkspaceItem>, options?: { forceSave?: boolean }) => void;
   onEditorTyping?: () => void;
@@ -1107,6 +1108,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   item,
   isSelected,
   readOnly,
+  isSlidesMode,
   currentUserId,
   currentUserEmail,
   viewerContext,
@@ -1192,6 +1194,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     if (!query) return true;
     return student.label.toLowerCase().includes(query) || (student.email ?? '').toLowerCase().includes(query);
   });
+  const isSlideContentBox = isSlidesMode && item.boxRole === 'content';
   const autoResizeStudentBox = useCallback(() => {
     if (item.type !== 'text' || item.boxRole !== 'student') return;
     const el = contentRef.current;
@@ -1397,6 +1400,22 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
+      {isSlideContentBox && isSelected && canMoveThisBox ? (
+        <button
+          type="button"
+          data-box-no-drag="true"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onPointerDownMove(event);
+          }}
+          className="pointer-events-auto absolute left-2 top-2 z-30 flex h-7 min-w-7 items-center justify-center rounded-full bg-slate-900/65 px-2 text-[10px] font-bold text-white shadow-lg transition hover:bg-slate-900"
+          title={boxFlowLabels.move}
+        >
+          ⋮⋮
+        </button>
+      ) : null}
+      {!isSlideContentBox ? (
       <div
         className={`pointer-events-auto absolute inset-x-0 top-0 z-30 border-b border-slate-200 bg-white/90 px-2 py-1 text-[11px] font-semibold text-slate-700 ${canMoveThisBox ? 'cursor-grab' : ''}`}
         onPointerDown={handleHeaderPointerDown}
@@ -1531,6 +1550,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           </div>
         ) : null}
       </div>
+      ) : null}
       <div
         ref={contentRef}
         contentEditable={canEditThisContent && !isLockedByOther}
@@ -1563,7 +1583,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           fontFamily: 'Arial, sans-serif',
           fontSize: `${item.styles?.fontSize ?? 14}px`,
           color: item.styles?.color ?? '#1e293b',
-          paddingTop: isSelected ? '2.1rem' : '0.5rem',
+          paddingTop: isSlideContentBox ? '0.75rem' : isSelected ? '2.1rem' : '0.5rem',
           cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
           wordBreak: 'break-word',
           opacity: isOwnedByOther ? 0.65 : isLockedByOther ? 0.85 : 1,
@@ -1667,6 +1687,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
+  const [slidePanelVisible, setSlidePanelVisible] = useState(true);
+  const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
+  const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+  const getDefaultSlidePanelPosition = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return { x: 24, y: 112 };
+    }
+
+    const panelWidth = 224;
+    return {
+      x: Math.max(24, window.innerWidth - panelWidth - 24),
+      y: 112,
+    };
+  }, []);
   const normalizeItemScope = useCallback(
     (item: WorkspaceItem): WorkspaceItem => ({
       ...item,
@@ -1798,8 +1832,37 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [isSlidesMode, presentationMode]);
 
   useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    if (!presentationMode) {
+      delete document.body.dataset.workspacePresentation;
+      return undefined;
+    }
+
+    document.body.dataset.workspacePresentation = 'true';
+    return () => {
+      delete document.body.dataset.workspacePresentation;
+    };
+  }, [presentationMode]);
+
+  useEffect(() => {
     onPresentationModeChange?.(presentationMode);
   }, [onPresentationModeChange, presentationMode]);
+
+  useEffect(() => {
+    if (!isSlidesMode) {
+      setSlidePanelPosition(null);
+      return;
+    }
+    if (slidePanelPosition) return;
+    setSlidePanelPosition(getDefaultSlidePanelPosition());
+  }, [getDefaultSlidePanelPosition, isSlidesMode, slidePanelPosition]);
+
+  useEffect(() => {
+    if (!isSlidesMode) {
+      setSlidePanelVisible(true);
+      setSlidePanelPosition(null);
+    }
+  }, [isSlidesMode]);
 
   const navigateSlides = useCallback((direction: 'previous' | 'next') => {
     if (!isSlidesMode) return;
@@ -1832,6 +1895,39 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigateSlides, presentationMode]);
+
+  const handleSlidePanelPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (presentationMode) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const basePosition = slidePanelPosition ?? getDefaultSlidePanelPosition();
+    slidePanelDragOffsetRef.current = {
+      x: event.clientX - basePosition.x,
+      y: event.clientY - basePosition.y,
+    };
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const panel = document.getElementById('workspace-slide-panel');
+      const offset = slidePanelDragOffsetRef.current;
+      if (!panel || !offset) return;
+
+      const maxX = Math.max(24, window.innerWidth - panel.offsetWidth - 24);
+      const maxY = Math.max(24, window.innerHeight - panel.offsetHeight - 24);
+      const nextX = Math.min(Math.max(24, moveEvent.clientX - offset.x), maxX);
+      const nextY = Math.min(Math.max(24, moveEvent.clientY - offset.y), maxY);
+      setSlidePanelPosition({ x: nextX, y: nextY });
+    };
+
+    const handleUp = () => {
+      slidePanelDragOffsetRef.current = null;
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+  }, [getDefaultSlidePanelPosition, presentationMode, slidePanelPosition]);
 
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
@@ -2637,9 +2733,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       h: boxRole === 'student' ? 24 : (isSlidesMode ? 26 : 20),
       content: '',
       label: boxRole === 'student' ? boxFlowLabels.studentBox : '',
-      ownerUserId: viewerIsStudent ? userId : undefined,
-      ownerName: viewerIsStudent ? userName : undefined,
-      ownerEmail: viewerIsStudent ? userEmail ?? undefined : undefined,
+      ownerUserId: boxRole === 'student' && viewerIsStudent ? userId : undefined,
+      ownerName: boxRole === 'student' && viewerIsStudent ? userName : undefined,
+      ownerEmail: boxRole === 'student' && viewerIsStudent ? userEmail ?? undefined : undefined,
       styles: {
         color: '#1e293b',
         fontSize: boxRole === 'student' ? 16 : (isSlidesMode ? 26 : 16),
@@ -2687,7 +2783,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>, itemId: string, mode: 'move' | 'resize') => {
+  const onPointerDown = (e: ReactPointerEvent<HTMLElement>, itemId: string, mode: 'move' | 'resize') => {
     const item = items.find((candidate) => candidate.id === itemId);
     if (!item) return;
     const canBypassReadonlyForBox = canManageBox(viewerContext, item) || isBoxOwner(viewerContext, item);
@@ -3187,6 +3283,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     [activePageId, pages],
   );
   const activeSlideBackgroundColor = activePage?.backgroundColor ?? '#ffffff';
+  const getMaterialSurfaceLabel = useCallback((mode?: WorkspaceSurfaceMode) => {
+    const resolvedMode = mode === 'slides' ? 'slides' : 'document';
+    return resolvedMode === 'slides' ? surfaceLabels.slides : surfaceLabels.document;
+  }, [surfaceLabels.document, surfaceLabels.slides]);
   const currentSlideIndex = useMemo(
     () => Math.max(0, pages.findIndex((page) => page.id === activePageId)),
     [activePageId, pages],
@@ -3441,7 +3541,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   {boxRoleBadgeLabel}
                 </span>
               ) : null}
-              {item.ownerUserId && ownerBadgeLabel ? (
+              {item.boxRole === 'student' && item.ownerUserId && ownerBadgeLabel ? (
                 <span className="text-[9px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                   {ownerBadgeLabel}
                 </span>
@@ -3683,6 +3783,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 >
                   {presentationMode ? 'Exit' : 'Presentation'}
                 </button>
+                <button
+                  onClick={() => setSlidePanelVisible((prev) => !prev)}
+                  className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
+                    slidePanelVisible
+                      ? 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                  }`}
+                  title={slidePanelVisible ? 'Hide slides panel' : 'Show slides panel'}
+                >
+                  {slidePanelVisible ? 'Hide Slides' : 'Show Slides'}
+                </button>
                 <select
                   value={activeSlideBackgroundColor}
                   onChange={(event) => updateActiveSlideBackground(event.target.value)}
@@ -3908,6 +4019,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         >
           <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm mx-4">
             <h2 className="text-base font-semibold text-slate-800 mb-4">{saveSinglePageId ? wsl.savePageModalTitle : wsl.saveModalTitle}</h2>
+            <div className="mb-3 inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold text-slate-600">
+              {getMaterialSurfaceLabel(surfaceMode)}
+            </div>
             <label className="block text-xs text-slate-500 mb-1">{wsl.materialTitleLabel}</label>
             <input
               type="text"
@@ -3991,7 +4105,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     {materialsList.map((m) => (
                       <li key={m.id} className="py-2.5 flex items-center justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 truncate">{m.title}</p>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="text-sm font-medium text-slate-800 truncate">{m.title}</p>
+                            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${m.surfaceMode === 'slides' ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-600'}`}>
+                              {getMaterialSurfaceLabel(m.surfaceMode)}
+                            </span>
+                          </div>
                           <p className="text-xs text-slate-400">{new Date(m.updatedAt).toLocaleDateString('pt-BR')}</p>
                         </div>
                         <div className="flex flex-shrink-0 items-center gap-2">
@@ -4007,7 +4126,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                             disabled={loadingMaterialId === m.id}
                             className="px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
                           >
-                            {loadingMaterialId === m.id ? '...' : wsl.open}
+                            {loadingMaterialId === m.id ? '...' : `${wsl.open} ${getMaterialSurfaceLabel(m.surfaceMode)}`}
                           </button>
                         </div>
                       </li>
@@ -4073,23 +4192,25 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div className={`${presentationMode ? 'h-full w-full' : 'mx-auto max-w-none'}`}>
         <div
           ref={canvasRef}
-          className={`relative w-full ${presentationMode ? 'h-full' : ''} ${isSlidesMode ? 'mx-auto max-w-6xl' : ''}`}
+          className={`relative w-full ${presentationMode ? 'h-full' : ''} ${isSlidesMode ? (presentationMode ? 'mx-0 max-w-none' : 'mx-auto max-w-6xl') : ''}`}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
         >
           {presentationMode && (
             <>
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-center pt-3">
-              <button
-                type="button"
-                onClick={() => setPresentationMode(false)}
-                className="pointer-events-auto rounded-full bg-black/10 px-3 py-1 text-sm font-bold text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 focus:bg-black/60 focus:opacity-100"
-                aria-label="Exit presentation mode"
-                title="Exit presentation mode"
-              >
-                ×
-              </button>
+            <div className="pointer-events-none fixed inset-x-0 top-0 z-[12040] flex justify-center">
+              <div className="group/exit pointer-events-auto mt-2 flex h-16 min-w-[180px] items-start justify-center rounded-full">
+                <button
+                  type="button"
+                  onClick={() => setPresentationMode(false)}
+                  className="mt-2 rounded-full bg-black/20 px-3 py-1 text-sm font-bold text-white opacity-0 transition group-hover/exit:opacity-100 group-focus-within/exit:opacity-100 hover:bg-black/70 focus:bg-black/70 focus:opacity-100"
+                  aria-label="Exit presentation mode"
+                  title="Exit presentation mode"
+                >
+                  ×
+                </button>
+              </div>
             </div>
             {pages.length > 1 ? (
               <>
@@ -4131,9 +4252,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
             }}
           >
-            {isSlidesMode && (
-              <div className="pointer-events-none absolute inset-x-0 top-0 z-0 h-24 bg-gradient-to-b from-slate-100 via-slate-50 to-transparent" />
-            )}
             {!docHtml && (
               <div
                 className={`absolute text-sm text-slate-300 pointer-events-none select-none ${isSlidesMode ? 'left-8 top-8' : 'left-6 top-6'}`}
@@ -4162,6 +4280,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 item={item}
                 isSelected={item.id === selectedId}
                 readOnly={effectiveReadOnly}
+                isSlidesMode={isSlidesMode}
                 currentUserId={userId}
                 currentUserEmail={userEmail}
                 viewerContext={viewerContext}
@@ -4194,26 +4313,46 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             ))}
           </div>
 
-          {visibleItems.length > 0 && <div className="h-40" />}
+          {visibleItems.length > 0 && !isSlidesMode && <div className="h-40" />}
         </div>
-        {isSlidesMode && !presentationMode && viewerCanManagePages && (
-          <aside className="absolute right-3 top-3 z-30 hidden w-56 rounded-2xl border border-slate-800 bg-slate-950/90 p-3 shadow-xl lg:block">
-            <div className="mb-3 flex items-center justify-between gap-2">
+        {isSlidesMode && !presentationMode && viewerCanManagePages && slidePanelVisible && (
+          <aside
+            id="workspace-slide-panel"
+            className="fixed z-[12010] hidden w-56 rounded-2xl border border-slate-800 bg-slate-950/92 p-3 shadow-2xl lg:block"
+            style={{
+              left: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).x}px`,
+              top: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).y}px`,
+            }}
+          >
+            <div
+              className="mb-3 flex cursor-move items-center justify-between gap-2"
+              onPointerDown={handleSlidePanelPointerDown}
+            >
               <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
                 {surfaceLabels.slides}
               </span>
-              {viewerCanManagePages && (
+              <div className="flex items-center gap-1">
+                {viewerCanManagePages && (
+                  <button
+                    type="button"
+                    onClick={addPage}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-blue-500 hover:bg-slate-800 hover:text-white"
+                    title={surfaceLabels.newPage}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.25" viewBox="0 0 16 16">
+                      <line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
+                    </svg>
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={addPage}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-blue-500 hover:bg-slate-800 hover:text-white"
-                  title={surfaceLabels.newPage}
+                  onClick={() => setSlidePanelVisible(false)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-rose-500 hover:bg-slate-800 hover:text-white"
+                  title="Close slides panel"
                 >
-                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.25" viewBox="0 0 16 16">
-                    <line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
-                  </svg>
+                  ×
                 </button>
-              )}
+              </div>
             </div>
             <div className="flex max-h-[68vh] flex-col gap-3 overflow-y-auto pr-1">
               {pages.map((page) => {
