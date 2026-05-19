@@ -52,7 +52,7 @@ const StudentStage: React.FC<{
 }> = ({ liveClass, user, session, assignedRoster, onOpenBattleHub, onExit }) => {
   const room = useRoomContext();
   const { localParticipant, isMicrophoneEnabled, isCameraEnabled } = useLocalParticipant();
-  const cameraTrackRefs = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]).filter(
+  const cameraTrackRefs = useTracks([{ source: Track.Source.Camera, withPlaceholder: false }]).filter(
     isTrackReference,
   );
   const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);

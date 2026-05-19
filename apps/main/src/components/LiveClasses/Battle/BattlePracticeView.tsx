@@ -298,6 +298,7 @@ export const BattlePracticeView: React.FC<Props> = ({
       <BattleResultsScreen
         scores={scores}
         myUid={uid}
+        totalQuestions={totalQuestions}
         onClose={onClose}
         isTeacher={isTeacher}
         uiLanguage={uiLanguage}

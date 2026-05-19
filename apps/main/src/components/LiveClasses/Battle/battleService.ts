@@ -188,6 +188,7 @@ function buildScoresForParticipants(
       uid: participant.uid,
       name: previous?.name ?? participant.name,
       score: resetScore ? 0 : previous?.score ?? 0,
+      correctAnswersCount: resetScore ? 0 : previous?.correctAnswersCount ?? 0,
       streak: resetScore ? 0 : previous?.streak ?? 0,
       lastAnswerCorrect: resetScore ? null : previous?.lastAnswerCorrect ?? null,
       firstPlaceCount: previous?.firstPlaceCount ?? 0,
@@ -212,6 +213,7 @@ function buildBattleParticipantRegistryRecord(
     uid: identity.uid,
     name: previous?.name ?? identity.name,
     score: overrides?.score ?? previous?.score ?? 0,
+    correctAnswersCount: overrides?.correctAnswersCount ?? previous?.correctAnswersCount ?? 0,
     streak: overrides?.streak ?? previous?.streak ?? 0,
     lastAnswerCorrect: overrides?.lastAnswerCorrect ?? previous?.lastAnswerCorrect ?? null,
     firstPlaceCount: overrides?.firstPlaceCount ?? previous?.firstPlaceCount ?? 0,
@@ -281,6 +283,8 @@ function applyBattleRoundRankingToScores(params: {
     nextScores[entry.uid] = buildBattleParticipantRegistryRecord(previous, identity, {
       lastAnswerCorrect: entry.isCorrect,
       score: (previous?.score ?? 0) + earnedPoints,
+      correctAnswersCount:
+        (previous?.correctAnswersCount ?? 0) + (entry.isCorrect === true ? 1 : 0),
       streak:
         entry.isCorrect === true
           ? (previous?.streak ?? 0) + 1
@@ -807,6 +811,7 @@ export async function joinBattle(
         uid,
         name,
         score: 0,
+        correctAnswersCount: 0,
         streak: 0,
         lastAnswerCorrect: null,
       });

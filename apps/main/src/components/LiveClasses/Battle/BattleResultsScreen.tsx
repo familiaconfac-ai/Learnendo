@@ -9,6 +9,7 @@ type BattleUiLanguage = 'en' | 'pt' | 'es';
 interface Props {
   scores: Record<string, BattleParticipant>;
   myUid: string;
+  totalQuestions?: number;
   onNewBattle?: () => void;
   onClose: () => void;
   isTeacher: boolean;
@@ -27,7 +28,6 @@ const COPY: Record<BattleUiLanguage, {
   close: string;
   ok: string;
   you: string;
-  placementSuffix: string;
 }> = {
   en: {
     title: 'Final Ranking',
@@ -37,7 +37,6 @@ const COPY: Record<BattleUiLanguage, {
     close: 'Close',
     ok: 'Ok',
     you: 'you',
-    placementSuffix: '',
   },
   pt: {
     title: 'Ranking Final',
@@ -47,7 +46,6 @@ const COPY: Record<BattleUiLanguage, {
     close: 'Fechar',
     ok: 'Ok',
     you: 'voce',
-    placementSuffix: 'o',
   },
   es: {
     title: 'Ranking final',
@@ -57,35 +55,21 @@ const COPY: Record<BattleUiLanguage, {
     close: 'Cerrar',
     ok: 'Ok',
     you: 'tu',
-    placementSuffix: 'o',
   },
 };
 
-function formatPlacementSummary(
-  participant: BattleParticipant,
-  fallbackIndex: number,
-  uiLanguage: BattleUiLanguage,
-) {
-  const firstPlaces = participant.firstPlaceCount ?? 0;
-  const secondPlaces = participant.secondPlaceCount ?? 0;
-  const thirdPlaces = participant.thirdPlaceCount ?? 0;
-  const suffix = COPY[uiLanguage].placementSuffix;
-  const summaryParts = [
-    firstPlaces > 0 ? `${firstPlaces}x1${suffix}` : null,
-    secondPlaces > 0 ? `${secondPlaces}x2${suffix}` : null,
-    thirdPlaces > 0 ? `${thirdPlaces}x3${suffix}` : null,
-  ].filter(Boolean);
-
-  if (summaryParts.length > 0) {
-    return summaryParts.join(' · ');
+function formatResultSummary(participant: BattleParticipant, totalQuestions?: number) {
+  const correctAnswers = participant.correctAnswersCount ?? 0;
+  if (totalQuestions && totalQuestions > 0) {
+    return `${correctAnswers}/${totalQuestions}`;
   }
-
-  return `${participant.lastPlacement ?? fallbackIndex + 1}${suffix}`;
+  return String(correctAnswers);
 }
 
 export const BattleResultsScreen: React.FC<Props> = ({
   scores,
   myUid,
+  totalQuestions,
   onNewBattle,
   onClose,
   isTeacher,
@@ -110,6 +94,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
         uid: participant.uid,
         name: participant.name,
         placement: participant.lastPlacement ?? null,
+        correctAnswersCount: participant.correctAnswersCount ?? 0,
       })),
     });
 
@@ -192,7 +177,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
               }`}
             >
               <span className="w-7 text-center text-sm font-bold text-white">
-                {index < 3 ? MEDALS[index] : `${index + 1}${copy.placementSuffix}`}
+                {index < 3 ? MEDALS[index] : `${index + 1}`}
               </span>
               <BattleParticipantAvatar
                 name={participant.name}
@@ -206,7 +191,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
                 {participant.uid === myUid ? <span className="ml-1 text-xs text-orange-400">({copy.you})</span> : null}
               </span>
               <span className="text-[11px] text-slate-400">
-                {formatPlacementSummary(participant, index, uiLanguage)}
+                {formatResultSummary(participant, totalQuestions)}
               </span>
             </div>
           ))}

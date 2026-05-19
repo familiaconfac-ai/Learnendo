@@ -66,7 +66,7 @@ const TeacherStage: React.FC<{
 }) => {
   const participants = useParticipants();
   const remoteParticipants = participants.filter((participant) => !participant.isLocal);
-  const cameraTrackRefs = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]).filter(
+  const cameraTrackRefs = useTracks([{ source: Track.Source.Camera, withPlaceholder: false }]).filter(
     isTrackReference,
   );
   const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);

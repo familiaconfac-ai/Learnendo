@@ -223,20 +223,17 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     [localCurrentAnswers, session.currentAnswers],
   );
   const effectiveRoundParticipantIds = useMemo(() => {
-    const activeStudentIds = new Set(activeParticipants.map((participant) => participant.uid));
-    return roundParticipantIds.filter((participantId) => (
-      participantId === teacherUid ||
-      participantId === BATTLE_BOT_UID ||
-      activeStudentIds.has(participantId) ||
-      participantId in mergedCurrentAnswers
-    ));
-  }, [activeParticipants, mergedCurrentAnswers, roundParticipantIds, teacherUid]);
+    return roundParticipantIds.filter((participantId) => {
+      if (participantId === BATTLE_BOT_UID) return true;
+      return session.participants?.[participantId]?.isBot !== true;
+    });
+  }, [roundParticipantIds, session.participants]);
   const revealParticipantIds = useMemo(
     () => effectiveRoundParticipantIds.filter((participantId) => participantId !== BATTLE_BOT_UID),
     [effectiveRoundParticipantIds],
   );
   const answerCount = revealParticipantIds.filter((participantId) => participantId in mergedCurrentAnswers).length;
-  const effectiveAnsweredCount = Math.max(answerCount, session.answeredCount ?? 0);
+  const effectiveAnsweredCount = answerCount;
   const allAnsweredLocally =
     revealParticipantIds.length > 0 &&
     (
@@ -1252,6 +1249,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       <BattleResultsScreen
         scores={session.scores ?? {}}
         myUid={teacherUid}
+        totalQuestions={session.questions.length}
         onNewBattle={onNewBattle}
         onClose={onClose}
         isTeacher={true}

@@ -1138,6 +1138,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
       <BattleResultsScreen
         scores={visiblePlayerScores}
         myUid={uid}
+        totalQuestions={session.questions.length}
         onClose={() => setShowResults(false)}
         isTeacher={false}
         validParticipantIds={validParticipantIds}

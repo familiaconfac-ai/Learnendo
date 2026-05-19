@@ -49,6 +49,7 @@ export interface BattleParticipant {
   uid: string;
   name: string;
   score: number;
+  correctAnswersCount?: number;
   streak: number;
   lastAnswerCorrect: boolean | null;
   firstPlaceCount?: number;
