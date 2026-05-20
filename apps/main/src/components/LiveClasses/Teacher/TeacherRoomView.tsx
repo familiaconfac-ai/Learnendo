@@ -215,7 +215,7 @@ const TeacherStage: React.FC<{
     } finally {
       setCameraBusy(false);
     }
-  }, [cameraBusy, isCameraEnabled, localParticipant]);
+  }, [localParticipant]);
 
   useEffect(() => {
     if (hasLiveLocalCamera) {
@@ -240,9 +240,9 @@ const TeacherStage: React.FC<{
       console.info('[TeacherRoomView] Auto-enabling camera on room initialization');
       void toggleCameraWithRecovery(true);
     }
-  }, []);
+  }, [isCameraEnabled, cameraBusy, cameraRecoveryAttempts, toggleCameraWithRecovery]);
 
-  const toggleMicrophoneWithRecovery = async (forceEnable = !isMicrophoneEnabled) => {
+  const toggleMicrophoneWithRecovery = useCallback(async (forceEnable = !isMicrophoneEnabled) => {
     if (microphoneBusy) return;
 
     setMicrophoneBusy(true);
@@ -278,7 +278,7 @@ const TeacherStage: React.FC<{
     } finally {
       setMicrophoneBusy(false);
     }
-  };
+  }, [localParticipant, isMicrophoneEnabled, microphoneBusy]);
 
   // Auto-enable microphone on mount
   useEffect(() => {
@@ -286,7 +286,7 @@ const TeacherStage: React.FC<{
       console.info('[TeacherRoomView] Auto-enabling microphone on room initialization');
       void toggleMicrophoneWithRecovery(true);
     }
-  }, []);
+  }, [isMicrophoneEnabled, microphoneBusy, toggleMicrophoneWithRecovery]);
 
   const toggleScreenShare = async () => {
     try {
