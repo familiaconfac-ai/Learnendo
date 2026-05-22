@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -84,6 +84,8 @@ const TeacherStage: React.FC<{
   const [micError, setMicError] = useState<string | null>(null);
   const [cameraRecoveryAttempts, setCameraRecoveryAttempts] = useState(0);
   const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
+  const desiredCameraEnabledRef = useRef(true);
+  const desiredMicrophoneEnabledRef = useRef(true);
 
   useEffect(() => {
     setStudentEditingEnabled(session.studentEditingEnabled ?? true);
@@ -182,14 +184,17 @@ const TeacherStage: React.FC<{
   const toggleCameraWithRecovery = useCallback(async (forceEnable = !isCameraEnabled) => {
     if (cameraBusy) return;
 
+    desiredCameraEnabledRef.current = forceEnable;
     setCameraBusy(true);
     setCamError(null);
     try {
       if (!forceEnable) {
+        setCameraRecoveryAttempts(0);
         await localParticipant.setCameraEnabled(false);
         return;
       }
 
+      setCameraRecoveryAttempts(0);
       await localParticipant.setCameraEnabled(true);
       const publication = localParticipant.getTrackPublication(Track.Source.Camera);
       const mediaTrack = (publication?.track as any)?.mediaStreamTrack as
@@ -218,6 +223,10 @@ const TeacherStage: React.FC<{
   }, [localParticipant]);
 
   useEffect(() => {
+    if (!desiredCameraEnabledRef.current) {
+      setCameraRecoveryAttempts(0);
+      return undefined;
+    }
     if (hasLiveLocalCamera) {
       setCameraRecoveryAttempts(0);
       return undefined;
@@ -236,7 +245,12 @@ const TeacherStage: React.FC<{
 
   // Auto-enable camera on mount
   useEffect(() => {
-    if (!isCameraEnabled && !cameraBusy && cameraRecoveryAttempts === 0) {
+    if (
+      desiredCameraEnabledRef.current &&
+      !isCameraEnabled &&
+      !cameraBusy &&
+      cameraRecoveryAttempts === 0
+    ) {
       console.info('[TeacherRoomView] Auto-enabling camera on room initialization');
       void toggleCameraWithRecovery(true);
     }
@@ -245,6 +259,7 @@ const TeacherStage: React.FC<{
   const toggleMicrophoneWithRecovery = useCallback(async (forceEnable = !isMicrophoneEnabled) => {
     if (microphoneBusy) return;
 
+    desiredMicrophoneEnabledRef.current = forceEnable;
     setMicrophoneBusy(true);
     setMicError(null);
     try {
@@ -282,7 +297,7 @@ const TeacherStage: React.FC<{
 
   // Auto-enable microphone on mount
   useEffect(() => {
-    if (!isMicrophoneEnabled && !microphoneBusy) {
+    if (desiredMicrophoneEnabledRef.current && !isMicrophoneEnabled && !microphoneBusy) {
       console.info('[TeacherRoomView] Auto-enabling microphone on room initialization');
       void toggleMicrophoneWithRecovery(true);
     }
