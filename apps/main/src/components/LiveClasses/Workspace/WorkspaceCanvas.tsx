@@ -1,15 +1,15 @@
-/**
- * WorkspaceCanvas � collaborative document editor for live classes.
+﻿/**
+ * WorkspaceCanvas ï¿½ collaborative document editor for live classes.
  *
  * Layout:
  *   +-------------------- fixed toolbar --------------------+
- *   �  font | size | B I U | align | color | tools | export �
- *   +--------------------------------------------------------�
- *   �  scrollable area                                       �
- *   �   +---- main document (contenteditable) ------------+  �
- *   �   �  type directly here                             �  �
- *   �   +-------------------------------------------------+  �
- *   �   floating blocks (text boxes / images) overlay doc   �
+ *   ï¿½  font | size | B I U | align | color | tools | export ï¿½
+ *   +--------------------------------------------------------ï¿½
+ *   ï¿½  scrollable area                                       ï¿½
+ *   ï¿½   +---- main document (contenteditable) ------------+  ï¿½
+ *   ï¿½   ï¿½  type directly here                             ï¿½  ï¿½
+ *   ï¿½   +-------------------------------------------------+  ï¿½
+ *   ï¿½   floating blocks (text boxes / images) overlay doc   ï¿½
  *   +--------------------------------------------------------+
  */
 import React, {
@@ -63,6 +63,10 @@ function uid(): string {
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
+}
+
+function stripFileExtension(filename: string): string {
+  return filename.replace(/\.[^.]+$/, '').trim();
 }
 
 const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
@@ -127,6 +131,9 @@ interface WsLabels {
   saveAll: string;
   openMaterial: string;
   exportPdf: string;
+  importSlides: string;
+  importingSlides: string;
+  importSlidesError: string;
   clearPage: string;
   newPage: string;
   placeholder: string;
@@ -180,11 +187,11 @@ interface SurfaceModeLabels {
 }
 
 const BATTLE_LIBRARY_LANGUAGE_TABS: Array<{ value: BattleTemplateLanguage; label: string; dir?: 'ltr' | 'rtl' }> = [
-  { value: 'pt', label: 'português', dir: 'ltr' },
-  { value: 'es', label: 'español', dir: 'ltr' },
+  { value: 'pt', label: 'portuguÃªs', dir: 'ltr' },
+  { value: 'es', label: 'espaÃ±ol', dir: 'ltr' },
   { value: 'en', label: 'English', dir: 'ltr' },
-  { value: 'el', label: 'Αποθηκευμένες μάχες', dir: 'ltr' },
-  { value: 'he', label: 'קרבות שמורים', dir: 'rtl' },
+  { value: 'el', label: 'Î‘Ï€Î¿Î¸Î·ÎºÎµÏ…Î¼Î­Î½ÎµÏ‚ Î¼Î¬Ï‡ÎµÏ‚', dir: 'ltr' },
+  { value: 'he', label: '×§×¨×‘×•×ª ×©×ž×•×¨×™×', dir: 'rtl' },
 ];
 
 function getBattleLibraryFolderLabel(language: BattleTemplateLanguage): string {
@@ -207,15 +214,15 @@ function getBattleLibraryFolderLabel(language: BattleTemplateLanguage): string {
 function getBattleLibrarySectionTitle(language: BattleTemplateLanguage): string {
   switch (language) {
     case 'pt':
-      return 'Batalhas em Português';
+      return 'Batalhas em PortuguÃªs';
     case 'es':
-      return 'Batallas en Español';
+      return 'Batallas en EspaÃ±ol';
     case 'en':
       return 'English Battles';
     case 'el':
-      return 'Μάχες στα Ελληνικά';
+      return 'ÎœÎ¬Ï‡ÎµÏ‚ ÏƒÏ„Î± Î•Î»Î»Î·Î½Î¹ÎºÎ¬';
     case 'he':
-      return 'קרבות בעברית';
+      return '×§×¨×‘×•×ª ×‘×¢×‘×¨×™×ª';
     default:
       return language;
   }
@@ -255,14 +262,14 @@ function getSurfaceModeLabels(
       currentCanvas: isSlides ? 'Lienzo de diapositivas' : 'Lienzo de pizarra',
       pageName: (n) => (isSlides ? `Diapositiva ${n}` : wsl.pageName(n)),
       pageNameTip: (name) => (isSlides ? `${name} - doble clic para renombrar` : wsl.pageNameTip(name)),
-      currentLabel: isSlides ? 'Diapositiva' : 'Página',
+      currentLabel: isSlides ? 'Diapositiva' : 'PÃ¡gina',
       pageMenu: isSlides ? 'Opciones de diapositiva' : wsl.pageMenu,
       savePage: isSlides ? 'Guardar esta diapositiva' : wsl.savePage,
       deletePage: isSlides ? 'Eliminar diapositiva' : wsl.deletePage,
       newPage: isSlides ? 'Nueva diapositiva' : wsl.newPage,
       clearPage: isSlides ? 'Limpiar esta diapositiva' : wsl.clearPage,
-      confirmClear: isSlides ? '¿Limpiar esta diapositiva?' : wsl.confirmClear,
-      confirmDelete: isSlides ? '¿Eliminar esta diapositiva?' : wsl.confirmDelete,
+      confirmClear: isSlides ? 'Â¿Limpiar esta diapositiva?' : wsl.confirmClear,
+      confirmDelete: isSlides ? 'Â¿Eliminar esta diapositiva?' : wsl.confirmDelete,
     };
   }
   return {
@@ -273,13 +280,13 @@ function getSurfaceModeLabels(
     currentCanvas: isSlides ? 'Tela de slides' : 'Tela da lousa',
     pageName: (n) => (isSlides ? `Slide ${n}` : wsl.pageName(n)),
     pageNameTip: (name) => (isSlides ? `${name} - duplo clique para renomear` : wsl.pageNameTip(name)),
-    currentLabel: isSlides ? 'Slide' : 'Página',
-    pageMenu: isSlides ? 'Opções do slide' : wsl.pageMenu,
+    currentLabel: isSlides ? 'Slide' : 'PÃ¡gina',
+    pageMenu: isSlides ? 'OpÃ§Ãµes do slide' : wsl.pageMenu,
     savePage: isSlides ? 'Salvar este slide' : wsl.savePage,
     deletePage: isSlides ? 'Excluir slide' : wsl.deletePage,
     newPage: isSlides ? 'Novo slide' : wsl.newPage,
-    clearPage: isSlides ? 'Limpar conteúdo deste slide' : wsl.clearPage,
-    confirmClear: isSlides ? 'Limpar o conteúdo deste slide?' : wsl.confirmClear,
+    clearPage: isSlides ? 'Limpar conteÃºdo deste slide' : wsl.clearPage,
+    confirmClear: isSlides ? 'Limpar o conteÃºdo deste slide?' : wsl.confirmClear,
     confirmDelete: isSlides ? 'Excluir este slide?' : wsl.confirmDelete,
   };
 }
@@ -289,40 +296,43 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     textSection: 'Texto', bgSection: 'Fundo', colorBtn: 'Cor do texto e fundo',
     alignLeft: 'Esquerda', alignCenter: 'Centralizar', alignRight: 'Direita', alignJustify: 'Justificar',
     alignLabel: (v) => `Alinhar: ${v}`,
-    bold: 'Negrito', italic: 'It�lico', underline: 'Sublinhado',
+    bold: 'Negrito', italic: 'Itï¿½lico', underline: 'Sublinhado',
     textBox: 'Caixa de texto flutuante',
-    image: 'Inserir imagem (PNG com transpar�ncia preservada)',
+    image: 'Inserir imagem (PNG com transparï¿½ncia preservada)',
     deleteBlock: 'Apagar bloco selecionado',
-    saveAll: 'Salvar lousa como material reutiliz�vel',
+    saveAll: 'Salvar lousa como material reutilizï¿½vel',
     openMaterial: 'Abrir material salvo na lousa',
     exportPdf: 'Exportar como PDF',
-    clearPage: 'Limpar conte�do desta p�gina',
-    newPage: 'Nova p�gina',
-    placeholder: 'Clique aqui e comece a digitar�',
-    readonlyPh: 'Aguardando conte�do do professor�',
-    pageMenu: 'Op��es da p�gina', duplicate: 'Duplicar p�gina',
-    savePage: 'Salvar esta p�gina', deletePage: 'Excluir p�gina',
-    confirmClear: 'Limpar o conte�do desta p�gina?',
-    confirmDelete: 'Excluir esta p�gina?',
+    clearPage: 'Limpar conteï¿½do desta pï¿½gina',
+    importSlides: 'Importar slides (PNG/JPG/WebP)',
+    importingSlides: 'Importando slides…',
+    importSlidesError: 'Selecione imagens PNG, JPG ou WebP para importar como slides.',
+    newPage: 'Nova pï¿½gina',
+    placeholder: 'Clique aqui e comece a digitarï¿½',
+    readonlyPh: 'Aguardando conteï¿½do do professorï¿½',
+    pageMenu: 'Opï¿½ï¿½es da pï¿½gina', duplicate: 'Duplicar pï¿½gina',
+    savePage: 'Salvar esta pï¿½gina', deletePage: 'Excluir pï¿½gina',
+    confirmClear: 'Limpar o conteï¿½do desta pï¿½gina?',
+    confirmDelete: 'Excluir esta pï¿½gina?',
     saveModalTitle: 'Salvar como material',
-    savePageModalTitle: 'Salvar p�gina como material',
+    savePageModalTitle: 'Salvar pï¿½gina como material',
     openModalTitle: 'Aulas e Materiais de Apoio',
-    materialTitleLabel: 'T�tulo do material',
-    materialPlaceholder: 'Ex: Vocabul�rio � Cores',
-    cancel: 'Cancelar', save: 'Salvar', saving: 'Salvando�',
+    materialTitleLabel: 'Tï¿½tulo do material',
+    materialPlaceholder: 'Ex: Vocabulï¿½rio ï¿½ Cores',
+    cancel: 'Cancelar', save: 'Salvar', saving: 'Salvandoï¿½',
     noMaterials: 'Nenhum material salvo ainda.',
     noBattles: 'Nenhum battle salvo ainda.',
     noSavedFiles: 'Nenhum arquivo salvo ainda.',
-    loading: 'Carregando�', open: 'Abrir',
+    loading: 'Carregandoï¿½', open: 'Abrir',
     openBattle: 'Abrir',
-    materialsSection: 'Conteúdo',
+    materialsSection: 'ConteÃºdo',
     battlesSection: 'Battles salvos',
     exportPopupError: 'Permita popups para exportar o PDF.',
-    pageName: (n) => `P�gina ${n}`,
-    pageNameTip: (name) => `${name} � duplo clique para renomear`,
+    pageName: (n) => `Pï¿½gina ${n}`,
+    pageNameTip: (name) => `${name} ï¿½ duplo clique para renomear`,
     errorSave: (msg) => `Erro ao salvar material: ${msg}`,
     errorOpen: 'Erro ao abrir material. Tente novamente.',
-    vocab: 'Vocabul�rio',
+    vocab: 'Vocabulï¿½rio',
   },
   en: {
     textSection: 'Text', bgSection: 'Background', colorBtn: 'Text and background color',
@@ -335,10 +345,13 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     saveAll: 'Save whiteboard as reusable material',
     openMaterial: 'Open saved material',
     exportPdf: 'Export as PDF',
+    importSlides: 'Import slides (PNG/JPG/WebP)',
+    importingSlides: 'Importing slidesÃ¯Â¿Â½',
+    importSlidesError: 'Select PNG, JPG, or WebP images to import as slides.',
     clearPage: 'Clear this page content',
     newPage: 'New page',
-    placeholder: 'Click here and start typing�',
-    readonlyPh: "Waiting for teacher's content�",
+    placeholder: 'Click here and start typingï¿½',
+    readonlyPh: "Waiting for teacher's contentï¿½",
     pageMenu: 'Page options', duplicate: 'Duplicate page',
     savePage: 'Save this page', deletePage: 'Delete page',
     confirmClear: 'Clear this page content?',
@@ -347,18 +360,18 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     savePageModalTitle: 'Save page as material',
     openModalTitle: 'Lessons and Support Materials',
     materialTitleLabel: 'Material title',
-    materialPlaceholder: 'E.g.: Vocabulary � Colors',
-    cancel: 'Cancel', save: 'Save', saving: 'Saving�',
+    materialPlaceholder: 'E.g.: Vocabulary ï¿½ Colors',
+    cancel: 'Cancel', save: 'Save', saving: 'Savingï¿½',
     noMaterials: 'No saved materials yet.',
     noBattles: 'No saved battles yet.',
     noSavedFiles: 'No saved files yet.',
-    loading: 'Loading�', open: 'Open',
+    loading: 'Loadingï¿½', open: 'Open',
     openBattle: 'Open',
     materialsSection: 'Content',
     battlesSection: 'Saved battles',
     exportPopupError: 'Allow popups to export the PDF.',
     pageName: (n) => `Page ${n}`,
-    pageNameTip: (name) => `${name} � double-click to rename`,
+    pageNameTip: (name) => `${name} ï¿½ double-click to rename`,
     errorSave: (msg) => `Error saving material: ${msg}`,
     errorOpen: 'Error opening material. Please try again.',
     vocab: 'Vocabulary',
@@ -374,32 +387,35 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     saveAll: 'Guardar pizarra como material',
     openMaterial: 'Abrir material guardado',
     exportPdf: 'Exportar como PDF',
-    clearPage: 'Limpiar esta p�gina',
-    newPage: 'Nueva p�gina',
-    placeholder: 'Haz clic aqu� y comienza a escribir�',
-    readonlyPh: 'Esperando el contenido del profesor�',
-    pageMenu: 'Opciones de p�gina', duplicate: 'Duplicar p�gina',
-    savePage: 'Guardar esta p�gina', deletePage: 'Eliminar p�gina',
-    confirmClear: '�Limpiar el contenido de esta p�gina?',
-    confirmDelete: '�Eliminar esta p�gina?',
+    clearPage: 'Limpiar esta pï¿½gina',
+    newPage: 'Nueva pï¿½gina',
+    placeholder: 'Haz clic aquï¿½ y comienza a escribirï¿½',
+    importSlides: 'Importar diapositivas (PNG/JPG/WebP)',
+    importingSlides: 'Importando diapositivas…',
+    importSlidesError: 'Selecciona imágenes PNG, JPG o WebP para importarlas como diapositivas.',
+    readonlyPh: 'Esperando el contenido del profesorï¿½',
+    pageMenu: 'Opciones de pï¿½gina', duplicate: 'Duplicar pï¿½gina',
+    savePage: 'Guardar esta pï¿½gina', deletePage: 'Eliminar pï¿½gina',
+    confirmClear: 'ï¿½Limpiar el contenido de esta pï¿½gina?',
+    confirmDelete: 'ï¿½Eliminar esta pï¿½gina?',
     saveModalTitle: 'Guardar como material',
-    savePageModalTitle: 'Guardar p�gina como material',
+    savePageModalTitle: 'Guardar pï¿½gina como material',
     openModalTitle: 'Clases y Materiales de Apoyo',
-    materialTitleLabel: 'T�tulo del material',
-    materialPlaceholder: 'Ej: Vocabulario � Colores',
-    cancel: 'Cancelar', save: 'Guardar', saving: 'Guardando�',
+    materialTitleLabel: 'Tï¿½tulo del material',
+    materialPlaceholder: 'Ej: Vocabulario ï¿½ Colores',
+    cancel: 'Cancelar', save: 'Guardar', saving: 'Guardandoï¿½',
     noMaterials: 'No hay materiales guardados.',
     noBattles: 'No hay battles guardados.',
     noSavedFiles: 'No hay archivos guardados.',
-    loading: 'Cargando�', open: 'Abrir',
+    loading: 'Cargandoï¿½', open: 'Abrir',
     openBattle: 'Abrir',
     materialsSection: 'Contenido',
     battlesSection: 'Battles guardados',
     exportPopupError: 'Permite las ventanas emergentes para exportar el PDF.',
-    pageName: (n) => `P�gina ${n}`,
-    pageNameTip: (name) => `${name} � doble clic para renombrar`,
+    pageName: (n) => `Pï¿½gina ${n}`,
+    pageNameTip: (name) => `${name} ï¿½ doble clic para renombrar`,
     errorSave: (msg) => `Error al guardar material: ${msg}`,
-    errorOpen: 'Error al abrir material. Int�ntalo de nuevo.',
+    errorOpen: 'Error al abrir material. Intï¿½ntalo de nuevo.',
     vocab: 'Vocabulario',
   },
 };
@@ -952,7 +968,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
   // Translate on mount
   useEffect(() => {
     if (targetLang === CONTENT_LANG) {
-      setTranslation(null); // same language � no translation needed
+      setTranslation(null); // same language ï¿½ no translation needed
       return;
     }
     setLoadingT(true);
@@ -1039,7 +1055,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
             ? <span className="italic">{wsl.loading}</span>
             : translation
               ? <span>{translation}</span>
-              : <span className="italic text-slate-400">�</span>}
+              : <span className="italic text-slate-400">ï¿½</span>}
         </div>
       )}
 
@@ -1061,7 +1077,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
               : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
           }`}
         >
-          {saved ? '? Saved' : saving ? '�' : 'Save'}
+          {saved ? '? Saved' : saving ? 'ï¿½' : 'Save'}
         </button>
       </div>
     </div>
@@ -1412,7 +1428,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           className="pointer-events-auto absolute left-2 top-2 z-30 flex h-7 min-w-7 items-center justify-center rounded-full bg-slate-900/65 px-2 text-[10px] font-bold text-white shadow-lg transition hover:bg-slate-900"
           title={boxFlowLabels.move}
         >
-          ⋮⋮
+          â‹®â‹®
         </button>
       ) : null}
       {!isSlideContentBox ? (
@@ -1472,7 +1488,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
                 className="rounded px-1.5 py-0.5 text-[9px] transition hover:bg-slate-200"
                 type="button"
               >
-                👤
+                ðŸ‘¤
               </button>
             ) : null}
             {isLockedByOther ? (
@@ -1630,7 +1646,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   if (!userId) {
     console.error('[WorkspaceCanvas] userId is null/undefined! This will break save/load functionality');
-    alert('Erro: userId n�o fornecido. A funcionalidade de salvar/carregar materiais n�o funcionar�.');
+    alert('Erro: userId nï¿½o fornecido. A funcionalidade de salvar/carregar materiais nï¿½o funcionarï¿½.');
   }
 
   const uiLang: 'en' | 'pt' | 'es' = getScopedUiLanguage();
@@ -1681,13 +1697,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [docHtml, setDocHtml] = useState<string>(surfaceStatesRef.current.document.docContent);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingImageUpload, setPendingImageUpload] = useState(false);
+  const [pendingSlideImport, setPendingSlideImport] = useState(false);
   const [fontFamily, setFontFamily] = useState<string>(FONT_FAMILIES[0].v);
   const [fontSize, setFontSize] = useState<number>(16);
   const [textColor, setTextColor] = useState<string>('#000000');
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
-  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>({
+  const [presentationViewport, setPresentationViewport] = useState<{ width: number; height: number }>({
     width: typeof window !== 'undefined' ? window.innerWidth : 1280,
     height: typeof window !== 'undefined' ? window.innerHeight : 720,
   });
@@ -1717,9 +1734,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   );
 
   // -- Page state (---------------------------------------------------------------
-  // The �pages� array owns names / IDs and the content snapshots of INACTIVE pages.
-  // The ACTIVE page�s live content lives in the existing docHtml / items state.
-  // On page switch (or save), we �flush� docRef.current.innerHTML + items into pages first.
+  // The ï¿½pagesï¿½ array owns names / IDs and the content snapshots of INACTIVE pages.
+  // The ACTIVE pageï¿½s live content lives in the existing docHtml / items state.
+  // On page switch (or save), we ï¿½flushï¿½ docRef.current.innerHTML + items into pages first.
   const [pages, setPages] = useState<WorkspacePage[]>(surfaceStatesRef.current.document.pages);
   const [activePageId, setActivePageId] = useState<string>(surfaceStatesRef.current.document.currentPageId);
   // Refs are kept in sync manually (no useEffect delay) so closures always see latest.
@@ -1841,33 +1858,62 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (typeof document === 'undefined') return undefined;
     if (!presentationMode) {
       delete document.body.dataset.workspacePresentation;
+      document.body.style.overflow = '';
+      document.body.style.overscrollBehavior = '';
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.overscrollBehavior = '';
       return undefined;
     }
 
     document.body.dataset.workspacePresentation = 'true';
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    const previousDocumentOverscroll = document.documentElement.style.overscrollBehavior;
+    document.body.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+    document.documentElement.style.overflow = 'hidden';
+    document.documentElement.style.overscrollBehavior = 'none';
     return () => {
       delete document.body.dataset.workspacePresentation;
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+      document.documentElement.style.overscrollBehavior = previousDocumentOverscroll;
     };
   }, [presentationMode]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+    if (typeof window === 'undefined' || !presentationMode || !isSlidesMode) return undefined;
 
+    let rafId: number | null = null;
+    const visualViewport = window.visualViewport;
     const syncViewportSize = () => {
-      setViewportSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+      rafId = window.requestAnimationFrame(() => {
+        const nextWidth = Math.round(visualViewport?.width ?? window.innerWidth);
+        const nextHeight = Math.round(visualViewport?.height ?? window.innerHeight);
+        setPresentationViewport((current) => (
+          current.width === nextWidth && current.height === nextHeight
+            ? current
+            : { width: nextWidth, height: nextHeight }
+        ));
       });
     };
 
     syncViewportSize();
-    window.addEventListener('resize', syncViewportSize);
     window.addEventListener('orientationchange', syncViewportSize);
+    visualViewport?.addEventListener('resize', syncViewportSize);
     return () => {
-      window.removeEventListener('resize', syncViewportSize);
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
       window.removeEventListener('orientationchange', syncViewportSize);
+      visualViewport?.removeEventListener('resize', syncViewportSize);
     };
-  }, []);
+  }, [isSlidesMode, presentationMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -2008,6 +2054,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
+  const slideImportRef = useRef<HTMLInputElement>(null);
   const overflowRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
@@ -2302,7 +2349,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             });
           } else {
             // Same active page, but pages structure changed (rename/add/delete/duplicate).
-            // Update pages metadata; keep active page�s live content.
+            // Update pages metadata; keep active pageï¿½s live content.
             const merged = normalized.map((rp) =>
               rp.id === activePageIdRef.current
                 ? { ...rp, docContent: nextDocContent, items: mergedItems }
@@ -2319,7 +2366,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             }));
           }
         } else if (remoteCPID !== activePageIdRef.current) {
-          // currentPageId changed but pages array isn�t present (legacy or partial write)
+          // currentPageId changed but pages array isnï¿½t present (legacy or partial write)
           activePageIdRef.current = remoteCPID;
           setActivePageId(remoteCPID);
           updateSurfaceStateRef(remoteSurfaceMode, (current) => ({
@@ -2856,6 +2903,83 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const handleSlideImportFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (!selectedFiles.length || !isSlidesMode || !viewerCanManagePages) return;
+
+    const imageFiles = selectedFiles.filter((file) => file.type.startsWith('image/'));
+    if (!imageFiles.length) {
+      window.alert(wsl.importSlidesError);
+      return;
+    }
+
+    const readAsDataUrl = (file: File) =>
+      new Promise<{ file: File; dataUrl: string }>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({ file, dataUrl: String(reader.result ?? '') });
+        reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      });
+
+    setPendingSlideImport(true);
+    try {
+      flushFloatingEditorBeforePageMutation();
+      const flushed = flushPages();
+      const insertionIndex = Math.max(0, flushed.findIndex((page) => page.id === activePageIdRef.current)) + 1;
+      const importedAssets = await Promise.all(imageFiles.map((file) => readAsDataUrl(file)));
+      const importedPages: WorkspacePage[] = importedAssets.map(({ file, dataUrl }, index) => ({
+        id: uid(),
+        name: stripFileExtension(file.name) || slideLabels.pageName(flushed.length + index + 1),
+        backgroundColor: '#ffffff',
+        docContent:
+          `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;margin:0;padding:0;">` +
+          `<img src="${dataUrl}" alt="" style="display:block;max-width:100%;max-height:100%;object-fit:contain;" />` +
+          `</div>`,
+        items: [],
+      }));
+      const updated = [
+        ...flushed.slice(0, insertionIndex),
+        ...importedPages,
+        ...flushed.slice(insertionIndex),
+      ];
+      const firstImportedPage = importedPages[0];
+      if (!firstImportedPage) return;
+
+      pagesRef.current = updated;
+      setPages(updated);
+      if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+      if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+      setDocHtml(firstImportedPage.docContent);
+      if (docRef.current) docRef.current.innerHTML = firstImportedPage.docContent;
+      setItems([]);
+      setSelectedId(null);
+      activePageIdRef.current = firstImportedPage.id;
+      setActivePageId(firstImportedPage.id);
+      updateSurfaceStateRef(surfaceModeRef.current, () => ({
+        pages: updated,
+        currentPageId: firstImportedPage.id,
+        docContent: firstImportedPage.docContent,
+        items: [],
+      }));
+      savePageSwitch(
+        classId,
+        updated,
+        firstImportedPage.id,
+        firstImportedPage.docContent,
+        [],
+        userId,
+        userName,
+        surfaceModeRef.current,
+      ).catch(console.error);
+    } catch (error) {
+      console.error('[WorkspaceCanvas] Failed to import slides', error);
+      window.alert(wsl.importSlidesError);
+    } finally {
+      setPendingSlideImport(false);
+    }
+  };
+
   const onPointerDown = (e: ReactPointerEvent<HTMLElement>, itemId: string, mode: 'move' | 'resize') => {
     const item = items.find((candidate) => candidate.id === itemId);
     if (!item) return;
@@ -2946,7 +3070,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   // -- Page operations ---------------------------------------------------------------
 
   /**
-   * Flush the current active page�s live content (from DOM + items state) into
+   * Flush the current active pageï¿½s live content (from DOM + items state) into
    * the pages array. Returns the flushed pages array.
    * Must be called before any operation that reads pages content (switch, save material).
    */
@@ -3084,7 +3208,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const source = flushed[idx];
     const copy: WorkspacePage = {
       id: uid(),
-      name: `${source.name} (c�pia)`,
+      name: `${source.name} (cï¿½pia)`,
       backgroundColor: source.backgroundColor ?? '#ffffff',
       docContent: source.docContent,
       items: source.items.map((it) => ({ ...it, id: uid() })),
@@ -3165,7 +3289,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const handleSaveMaterial = async () => {
     const title = saveMaterialTitle.trim();
     if (!title) return;
-    console.log('[WorkspaceCanvas] Save Material clicked � title:', title);
+    console.log('[WorkspaceCanvas] Save Material clicked ï¿½ title:', title);
     setSavingMaterial(true);
     try {
       const allPages = flushPages();
@@ -3173,7 +3297,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveSinglePageId) {
         const targetPage = allPages.find((p) => p.id === saveSinglePageId);
         if (!targetPage) {
-          throw new Error('Pï¿½gina selecionada nï¿½o foi encontrada para salvar.');
+          throw new Error('PÃ¯Â¿Â½gina selecionada nÃ¯Â¿Â½o foi encontrada para salvar.');
         }
         console.log('[WorkspaceCanvas] Saving single page:', targetPage.name);
         await saveWorkspaceAsMaterial([targetPage], { title }, userId, surfaceModeRef.current);
@@ -3228,12 +3352,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const handleLoadMaterial = async (materialId: string) => {
-    console.log('[WorkspaceCanvas] Load Material clicked � materialId:', materialId, 'userId:', userId);
+    console.log('[WorkspaceCanvas] Load Material clicked ï¿½ materialId:', materialId, 'userId:', userId);
     setLoadingMaterialId(materialId);
     try {
       console.log('[WorkspaceCanvas] Calling loadMaterialToWorkspace');
       const { pages: loadedPages, currentPageId, surfaceMode: loadedSurfaceMode } = await loadMaterialToWorkspace(materialId, classId, userName);
-      console.log('[WorkspaceCanvas] Material loaded successfully � pages:', loadedPages.length);
+      console.log('[WorkspaceCanvas] Material loaded successfully ï¿½ pages:', loadedPages.length);
       // Apply loaded material to local state immediately (before self-echo arrives).
       const normalized = normalizeWorkspacePages(loadedPages);
       const activePage = normalized.find((p) => p.id === currentPageId) ?? normalized[0];
@@ -3319,7 +3443,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
       const range = sel.getRangeAt(0);
       const rect = range.getBoundingClientRect();
-      // rect is zero when the selection is in a non-rendered node � ignore
+      // rect is zero when the selection is in a non-rendered node ï¿½ ignore
       if (rect.width === 0 && rect.height === 0) return;
 
       setVocabPopup({
@@ -3373,7 +3497,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   );
   const hasPreviousSlide = currentSlideIndex > 0;
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
-  const isPortraitViewport = viewportSize.height > viewportSize.width;
+  const isPortraitViewport = presentationViewport.height > presentationViewport.width + 4;
   const shouldRotatePresentation = presentationMode && isSlidesMode && isPortraitViewport;
   const getSlidePreviewText = useCallback((page: WorkspacePage) => {
     const docText = (page.docContent ?? '')
@@ -3643,7 +3767,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   }}
                   className="text-[9px] px-1.5 py-0.5 rounded hover:bg-slate-200 transition"
                 >
-                  👤
+                  ðŸ‘¤
                 </button>
               )}
               {isLockedByOther && (
@@ -3773,7 +3897,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <option value="">{boxFlowLabels.none}</option>
                 {assignableStudents.map((student) => (
                   <option key={student.uid} value={student.uid}>
-                    {student.label}{student.isOnline ? ' • online' : ''}
+                    {student.label}{student.isOnline ? ' â€¢ online' : ''}
                   </option>
                 ))}
               </select>
@@ -3876,6 +4000,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 >
                   {slidePanelVisible ? 'Hide Slides' : 'Show Slides'}
                 </button>
+                <button
+                  onClick={() => slideImportRef.current?.click()}
+                  disabled={pendingSlideImport}
+                  className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-wait disabled:opacity-60"
+                  title={wsl.importSlides}
+                >
+                  {pendingSlideImport ? wsl.importingSlides : 'Import Slides'}
+                </button>
                 <select
                   value={activeSlideBackgroundColor}
                   onChange={(event) => updateActiveSlideBackground(event.target.value)}
@@ -3966,6 +4098,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2"/><circle cx="7" cy="8.5" r="1.5"/><path d="M2 14l4-4 3 3 3-4 6 5"/></svg>}
             </button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+            <input ref={slideImportRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={handleSlideImportFiles} />
           </>
         )}
 
@@ -4284,8 +4417,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   position: 'absolute',
                   left: '50%',
                   top: '50%',
-                  width: '100dvh',
-                  height: '100dvw',
+                  width: `${presentationViewport.height}px`,
+                  height: `${presentationViewport.width}px`,
                   transform: 'translate(-50%, -50%) rotate(90deg)',
                   transformOrigin: 'center center',
                 }
@@ -4310,7 +4443,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   aria-label="Exit presentation mode"
                   title="Exit presentation mode"
                 >
-                  ×
+                  Ã—
                 </button>
               </div>
             </div>
@@ -4324,7 +4457,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   aria-label="Previous slide"
                   title="Previous slide"
                 >
-                  ‹
+                  â€¹
                 </button>
                 <button
                   type="button"
@@ -4334,7 +4467,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   aria-label="Next slide"
                   title="Next slide"
                 >
-                  ›
+                  â€º
                 </button>
               </>
             ) : null}
@@ -4351,7 +4484,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 : 'rounded-xl border-slate-200 bg-white shadow-sm'
             }`}
             style={{
-              minHeight: presentationMode ? (shouldRotatePresentation ? '100dvw' : '100dvh') : isSlidesMode ? 'min(72vh, 48rem)' : '60vh',
+              minHeight: presentationMode
+                ? `${shouldRotatePresentation ? presentationViewport.width : presentationViewport.height}px`
+                : isSlidesMode
+                  ? 'min(72vh, 48rem)'
+                  : '60vh',
               aspectRatio: isSlidesMode ? '16 / 9' : undefined,
               backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
             }}
@@ -4456,7 +4593,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-rose-500 hover:bg-slate-800 hover:text-white"
                   title="Close slides panel"
                 >
-                  ×
+                  Ã—
                 </button>
               </div>
             </div>
