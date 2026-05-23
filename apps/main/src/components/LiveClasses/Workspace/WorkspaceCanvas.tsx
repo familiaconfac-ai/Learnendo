@@ -28,6 +28,7 @@ import {
   saveScrollRatio,
   savePageSwitch,
   saveWorkspaceSurfaceMode,
+  saveWorkspacePresentationMode,
   normalizeWorkspacePages,
   WorkspaceItem,
   WorkspaceItemType,
@@ -1710,7 +1711,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   });
   const [slidePanelVisible, setSlidePanelVisible] = useState(true);
   const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
-  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 224, height: 520 });
+  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 192, height: 420 });
   const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const slidePanelResizeOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const getDefaultSlidePanelPosition = useCallback(() => {
@@ -1724,6 +1725,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       y: 112,
     };
   }, [slidePanelSize.width]);
+  const updatePresentationMode = useCallback((nextValue: boolean) => {
+    setPresentationMode(nextValue);
+    if (viewerCanManagePages) {
+      saveWorkspacePresentationMode(classId, nextValue, userId, userName).catch(console.error);
+    }
+  }, [classId, userId, userName, viewerCanManagePages]);
   const normalizeItemScope = useCallback(
     (item: WorkspaceItem): WorkspaceItem => ({
       ...item,
@@ -1850,9 +1857,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     if (!isSlidesMode && presentationMode) {
-      setPresentationMode(false);
+      updatePresentationMode(false);
     }
-  }, [isSlidesMode, presentationMode]);
+  }, [isSlidesMode, presentationMode, updatePresentationMode]);
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
@@ -1963,7 +1970,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        setPresentationMode(false);
+        updatePresentationMode(false);
         return;
       }
       if (event.key === 'ArrowRight') {
@@ -1979,7 +1986,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateSlides, presentationMode]);
+  }, [navigateSlides, presentationMode, updatePresentationMode]);
 
   const handleSlidePanelPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (presentationMode) return;
@@ -2031,9 +2038,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const position = slidePanelPosition ?? getDefaultSlidePanelPosition();
       if (!origin) return;
 
-      const maxWidth = Math.max(220, window.innerWidth - position.x - 24);
+      const maxWidth = Math.max(180, window.innerWidth - position.x - 24);
       const maxHeight = Math.max(240, window.innerHeight - position.y - 24);
-      const nextWidth = clamp(origin.width + (moveEvent.clientX - origin.x), 220, Math.min(420, maxWidth));
+      const nextWidth = clamp(origin.width + (moveEvent.clientX - origin.x), 180, Math.min(420, maxWidth));
       const nextHeight = clamp(origin.height + (moveEvent.clientY - origin.y), 240, Math.min(720, maxHeight));
       setSlidePanelSize({ width: nextWidth, height: nextHeight });
     };
@@ -2295,6 +2302,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const normalizedItems = (remoteActivePage?.items ?? remoteState.items ?? []).map(normalizeItemScope);
       const mergedItems = mergeRemoteItemsWithLocal(normalizedItems);
       const nextDocContent = remoteActivePage?.docContent ?? remoteState.docContent ?? '';
+      const remotePresentationMode = Boolean(data?.presentationMode) && remoteSurfaceMode === 'slides';
       console.log('[LIVECLASS WORKSPACE] snapshot', {
         role: viewerIsTeacher ? 'teacher' : viewerIsStudent ? 'student' : 'viewer',
         liveClassId: classId,
@@ -2317,6 +2325,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           docContent: nextDocContent,
           items: mergedItems,
         });
+      }
+      if (remotePresentationMode !== presentationMode) {
+        setPresentationMode(remotePresentationMode);
       }
       // Use SECTION-SPECIFIC authorship instead of a single updatedBy field.
       // Problem: updatedBy is a single field for the whole document.  If the
@@ -2426,6 +2437,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     viewerIsStudent,
     viewerIsTeacher,
     mergeRemoteItemsWithLocal,
+    presentationMode,
   ]);
 
   useEffect(() => () => {
@@ -3269,6 +3281,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const nextMode: WorkspaceSurfaceMode = surfaceModeRef.current === 'slides' ? 'document' : 'slides';
     surfaceModeRef.current = nextMode;
     setSurfaceMode(nextMode);
+    if (nextMode !== 'slides' && presentationMode) {
+      updatePresentationMode(false);
+    }
     const targetState = surfaceStatesRef.current[nextMode] ?? createDefaultSurfaceState(nextMode, uid());
     applySurfaceState(nextMode, targetState);
     saveWorkspaceSurfaceMode(classId, nextMode, userId, userName, targetState).catch(console.error);
@@ -3279,10 +3294,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     docHtml,
     flushFloatingEditorBeforePageMutation,
     items,
+    presentationMode,
     readOnly,
     userId,
     userName,
     updateSurfaceStateRef,
+    updatePresentationMode,
     viewerCanManageWorkspace,
   ]);
 
@@ -3979,7 +3996,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             {isSlidesMode && (
               <>
                 <button
-                  onClick={() => setPresentationMode((prev) => !prev)}
+                  onClick={() => updatePresentationMode(!presentationMode)}
                   className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
                     presentationMode
                       ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
@@ -4438,12 +4455,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               <div className="group/exit pointer-events-auto mt-2 flex h-16 min-w-[180px] items-start justify-center rounded-full">
                 <button
                   type="button"
-                  onClick={() => setPresentationMode(false)}
+                  onClick={() => updatePresentationMode(false)}
                   className="mt-2 rounded-full bg-black/20 px-3 py-1 text-sm font-bold text-white opacity-0 transition group-hover/exit:opacity-100 group-focus-within/exit:opacity-100 hover:bg-black/70 focus:bg-black/70 focus:opacity-100"
                   aria-label="Exit presentation mode"
                   title="Exit presentation mode"
                 >
-                  Ã—
+                  X
                 </button>
               </div>
             </div>
@@ -4457,7 +4474,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   aria-label="Previous slide"
                   title="Previous slide"
                 >
-                  â€¹
+                  {'<'}
                 </button>
                 <button
                   type="button"
@@ -4467,7 +4484,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   aria-label="Next slide"
                   title="Next slide"
                 >
-                  â€º
+                  {'>'}
                 </button>
               </>
             ) : null}

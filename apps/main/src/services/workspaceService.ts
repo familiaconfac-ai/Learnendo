@@ -81,6 +81,8 @@ export interface WorkspaceDoc {
   boardState?: WorkspaceSurfaceState;
   /** Dedicated state for the slide presentation mode. */
   slidesState?: WorkspaceSurfaceState;
+  /** Shared fullscreen presentation state for slide mode. */
+  presentationMode?: boolean;
   updatedAt: number;
   updatedBy: string;
   updatedByName: string;
@@ -232,6 +234,30 @@ export async function saveWorkspaceSurfaceMode(
   } catch {
     await setDoc(workspaceRef(classId), payload, { merge: true });
     console.log('[WS] saveWorkspaceSurfaceMode setDoc ✅');
+  }
+}
+
+/** Persist shared presentation mode for slides so viewers follow the teacher. */
+export async function saveWorkspacePresentationMode(
+  classId: string,
+  presentationMode: boolean,
+  uid: string,
+  name: string,
+): Promise<void> {
+  if (!db) return;
+  const { updateDoc, setDoc } = await import('firebase/firestore');
+  const payload = {
+    presentationMode,
+    updatedAt: Date.now(),
+    updatedBy: uid,
+    updatedByName: name,
+  };
+  try {
+    await updateDoc(workspaceRef(classId), payload);
+    console.log(`[WS] saveWorkspacePresentationMode ✅ active=${presentationMode}`);
+  } catch {
+    await setDoc(workspaceRef(classId), payload, { merge: true });
+    console.log('[WS] saveWorkspacePresentationMode setDoc ✅');
   }
 }
 
