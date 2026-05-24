@@ -70,6 +70,10 @@ function stripFileExtension(filename: string): string {
   return filename.replace(/\.[^.]+$/, '').trim();
 }
 
+function hasAcceptedSlideImageExtension(filename: string): boolean {
+  return /\.(png|jpe?g|webp|gif|bmp|svg|avif)$/i.test(filename);
+}
+
 const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
 const WORKSPACE_DOC_SYNC_DEBOUNCE_MS = 150;
 
@@ -305,9 +309,9 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     openMaterial: 'Abrir material salvo na lousa',
     exportPdf: 'Exportar como PDF',
     clearPage: 'Limpar conteï¿½do desta pï¿½gina',
-    importSlides: 'Importar slides (PNG/JPG/WebP)',
+    importSlides: 'Importar imagens como slides',
     importingSlides: 'Importando slides…',
-    importSlidesError: 'Selecione imagens PNG, JPG ou WebP para importar como slides.',
+    importSlidesError: 'Selecione imagens para importar como slides.',
     newPage: 'Nova pï¿½gina',
     placeholder: 'Clique aqui e comece a digitarï¿½',
     readonlyPh: 'Aguardando conteï¿½do do professorï¿½',
@@ -346,9 +350,9 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     saveAll: 'Save whiteboard as reusable material',
     openMaterial: 'Open saved material',
     exportPdf: 'Export as PDF',
-    importSlides: 'Import slides (PNG/JPG/WebP)',
+    importSlides: 'Import images as slides',
     importingSlides: 'Importing slidesÃ¯Â¿Â½',
-    importSlidesError: 'Select PNG, JPG, or WebP images to import as slides.',
+    importSlidesError: 'Select image files to import as slides.',
     clearPage: 'Clear this page content',
     newPage: 'New page',
     placeholder: 'Click here and start typingï¿½',
@@ -391,9 +395,9 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     clearPage: 'Limpiar esta pï¿½gina',
     newPage: 'Nueva pï¿½gina',
     placeholder: 'Haz clic aquï¿½ y comienza a escribirï¿½',
-    importSlides: 'Importar diapositivas (PNG/JPG/WebP)',
+    importSlides: 'Importar imágenes como diapositivas',
     importingSlides: 'Importando diapositivas…',
-    importSlidesError: 'Selecciona imágenes PNG, JPG o WebP para importarlas como diapositivas.',
+    importSlidesError: 'Selecciona imágenes para importarlas como diapositivas.',
     readonlyPh: 'Esperando el contenido del profesorï¿½',
     pageMenu: 'Opciones de pï¿½gina', duplicate: 'Duplicar pï¿½gina',
     savePage: 'Guardar esta pï¿½gina', deletePage: 'Eliminar pï¿½gina',
@@ -2954,7 +2958,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     event.target.value = '';
     if (!selectedFiles.length || !isSlidesMode || !viewerCanManagePages) return;
 
-    const imageFiles = selectedFiles.filter((file) => file.type.startsWith('image/'));
+    const imageFiles = selectedFiles.filter((file) =>
+      file.type.startsWith('image/') || hasAcceptedSlideImageExtension(file.name),
+    );
     if (!imageFiles.length) {
       window.alert(wsl.importSlidesError);
       return;
@@ -4160,7 +4166,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2"/><circle cx="7" cy="8.5" r="1.5"/><path d="M2 14l4-4 3 3 3-4 6 5"/></svg>}
             </button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
-            <input ref={slideImportRef} type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={handleSlideImportFiles} />
+            <input ref={slideImportRef} type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.avif" multiple className="hidden" onChange={handleSlideImportFiles} />
           </>
         )}
 
@@ -4695,83 +4701,83 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                         {pages.findIndex((entry) => entry.id === page.id) + 1}
                       </span>
                       <div
-                        className="absolute right-1.5 top-1.5 z-20"
-                        onPointerDown={(event) => event.stopPropagation()}
-                        onClick={(event) => event.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setOpenSlideMenuId((current) => (current === page.id ? null : page.id));
-                          }}
-                          className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/75 text-[11px] font-black text-white"
-                          title={surfaceLabels.pageMenu}
-                        >
-                          ...
-                        </button>
-                        {openSlideMenuId === page.id ? (
-                          <div className="absolute right-0 top-6 w-24 rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setOpenSlideMenuId(null);
-                                duplicatePage(page.id);
-                              }}
-                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
-                              title={wsl.duplicate}
-                            >
-                              Duplicate
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setOpenSlideMenuId(null);
-                                addPage();
-                              }}
-                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
-                              title={surfaceLabels.newPage}
-                            >
-                              Add slide
-                            </button>
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                setOpenSlideMenuId(null);
-                                setSaveSinglePageId(page.id);
-                                setSaveMaterialTitle('');
-                                setShowSaveModal(true);
-                              }}
-                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
-                              title={surfaceLabels.savePage}
-                            >
-                              Save
-                            </button>
-                            {pages.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setOpenSlideMenuId(null);
-                                  deletePage(page.id);
-                                }}
-                                className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-rose-300 transition hover:bg-slate-800"
-                                title={surfaceLabels.deletePage}
-                              >
-                                Delete
-                              </button>
-                            )}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div
                         className="pointer-events-none absolute left-0 top-0 h-[540px] w-[960px] origin-top-left overflow-hidden text-slate-700 [&_img]:max-h-full [&_img]:max-w-full [&_p]:m-0 [&_ul]:m-0 [&_ol]:m-0"
                         style={{ transform: 'scale(0.125)' }}
                         dangerouslySetInnerHTML={{ __html: getSlidePreviewHtml(page) }}
                       />
+                    </div>
+                    <div
+                      className="absolute right-3 top-3 z-30"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenSlideMenuId((current) => (current === page.id ? null : page.id));
+                        }}
+                        className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/75 text-[11px] font-black text-white"
+                        title={surfaceLabels.pageMenu}
+                      >
+                        ...
+                      </button>
+                      {openSlideMenuId === page.id ? (
+                        <div className="absolute right-0 top-6 w-28 rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenSlideMenuId(null);
+                              duplicatePage(page.id);
+                            }}
+                            className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
+                            title={wsl.duplicate}
+                          >
+                            Duplicate
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenSlideMenuId(null);
+                              addPage();
+                            }}
+                            className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
+                            title={surfaceLabels.newPage}
+                          >
+                            Add slide
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenSlideMenuId(null);
+                              setSaveSinglePageId(page.id);
+                              setSaveMaterialTitle('');
+                              setShowSaveModal(true);
+                            }}
+                            className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
+                            title={surfaceLabels.savePage}
+                          >
+                            Save
+                          </button>
+                          {pages.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenSlideMenuId(null);
+                                deletePage(page.id);
+                              }}
+                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-rose-300 transition hover:bg-slate-800"
+                              title={surfaceLabels.deletePage}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      ) : null}
                     </div>
                   </button>
                 );
