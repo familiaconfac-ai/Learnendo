@@ -2828,28 +2828,30 @@ const App: React.FC = () => {
             className="bg-white rounded-3xl shadow-2xl p-6 w-11/12 max-w-sm mx-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="mb-4 rounded-2xl bg-slate-50 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Access</p>
-              <p className="mt-1 text-sm font-bold text-slate-800">
-                Role: {userAccountProfile ? VIEW_MODE_LABELS[userAccountProfile.role] : 'Student'}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {availableViewModes.map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => handleViewModeChange(mode)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
-                      userViewMode === mode
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {VIEW_MODE_LABELS[mode]}
-                  </button>
-                ))}
+            {isAdmin ? (
+              <div className="mb-4 rounded-2xl bg-slate-50 p-3">
+                <div className="flex flex-wrap gap-2">
+                  {availableViewModes.map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => handleViewModeChange(mode)}
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition-colors ${
+                        userViewMode === mode
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {VIEW_MODE_LABELS[mode]}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : isTeacherAccount ? (
+              <div className="mb-4 rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-sm font-bold text-slate-800">Teacher</p>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { handleNavigate(SectionType.WORKBOOK); setMenuOpen(false); }}>Workbooks</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>

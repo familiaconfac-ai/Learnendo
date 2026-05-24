@@ -1711,7 +1711,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   });
   const [slidePanelVisible, setSlidePanelVisible] = useState(true);
   const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
-  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 156, height: 320 });
+  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 148, height: 292 });
   const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const slidePanelResizeOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const getDefaultSlidePanelPosition = useCallback(() => {
@@ -2065,6 +2065,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const overflowRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
+  const savedSelectionRangeRef = useRef<Range | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const saveItemsDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveSingleItemDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2651,6 +2652,25 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     });
   }, []);
 
+  const captureCurrentSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const root = activeFloatingElRef.current ?? docRef.current;
+    if (!root) return;
+    const container = range.commonAncestorContainer;
+    if (!root.contains(container)) return;
+    savedSelectionRangeRef.current = range.cloneRange();
+  }, []);
+
+  const restoreSavedSelection = useCallback(() => {
+    const selection = window.getSelection();
+    const savedRange = savedSelectionRangeRef.current;
+    if (!selection || !savedRange) return;
+    selection.removeAllRanges();
+    selection.addRange(savedRange);
+  }, []);
+
   const execFmt = useCallback((cmd: string, value?: string) => {
     if (activeFloatingIdRef.current && activeFloatingElRef.current) {
       // -- Floating block is the active editor -------------------------------
@@ -2660,6 +2680,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const floatingEl = activeFloatingElRef.current;
       const floatingId = activeFloatingIdRef.current;
       floatingEl.focus();
+      restoreSavedSelection();
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       document.execCommand(cmd, false, value ?? undefined);
       // execCommand may or may not fire an `input` event; save explicitly.
@@ -2677,6 +2698,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     } else {
       // -- Main document editor ----------------------------------------------
       docRef.current?.focus();
+      restoreSavedSelection();
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       document.execCommand(cmd, false, value ?? undefined);
       setTimeout(() => {
@@ -2686,7 +2708,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         scheduleDocSave(html);
       }, 50);
     }
-  }, [scheduleDocSave, scheduleItemsSave, userId, userName]);
+  }, [restoreSavedSelection, scheduleDocSave, scheduleItemsSave, userId, userName]);
 
   const applyFont = (family: string) => { setFontFamily(family); execFmt('fontName', family); };
   const applySize = (size: number) => {
@@ -3528,6 +3550,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     return (docText || boxText || page.name || surfaceLabels.currentLabel).slice(0, 96);
   }, [surfaceLabels.currentLabel]);
 
+  const getSlidePreviewHtml = useCallback((page: WorkspacePage) => {
+    const html = (page.docContent ?? '').trim();
+    if (html) return html;
+    const fallback = getSlidePreviewText(page);
+    return `<p>${fallback}</p>`;
+  }, [getSlidePreviewText]);
+
   // -- ResizeHandle ---------------------------------------------------------------
 
   const ResizeHandle: React.FC<{ onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void }> = ({ onPointerDown }) => (
@@ -4044,6 +4073,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         )}
         <select
           value={fontFamily}
+          onMouseDownCapture={captureCurrentSelection}
+          onFocus={captureCurrentSelection}
           onChange={(e) => applyFont(e.target.value)}
           disabled={toolbarDisabled}
           className="h-7 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
@@ -4056,6 +4087,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
         <select
           value={fontSize}
+          onMouseDownCapture={captureCurrentSelection}
+          onFocus={captureCurrentSelection}
           onChange={(e) => applySize(Number(e.target.value))}
           disabled={toolbarDisabled}
           className="h-7 w-14 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
@@ -4493,11 +4526,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
           {/* Main shared document */}
           <div
-            className={`relative w-full border mb-6 ${
+            className={`relative mb-6 w-full border ${
               isSlidesMode
                 ? presentationMode
-                  ? 'overflow-hidden rounded-none border-slate-700 bg-white shadow-none'
-                  : 'overflow-hidden rounded-[28px] border-slate-700 bg-white shadow-[0_25px_70px_rgba(15,23,42,0.45)]'
+                  ? 'flex overflow-hidden rounded-none border-slate-700 bg-white shadow-none'
+                  : 'flex overflow-hidden rounded-[18px] border-slate-700 bg-white shadow-[0_18px_44px_rgba(15,23,42,0.28)]'
                 : 'rounded-xl border-slate-200 bg-white shadow-sm'
             }`}
             style={{
@@ -4525,8 +4558,20 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               spellCheck
               onBlur={onDocBlur}
               onInput={onDocInput}
-              className={`w-full focus:outline-none leading-relaxed ${isSlidesMode ? `min-h-full ${presentationMode ? 'overflow-hidden' : 'overflow-auto'} px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12` : 'min-h-[60vh] p-6'}`}
-              style={{ fontFamily, fontSize: `${fontSize}px`, color: '#000000', wordBreak: 'break-word', backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff' }}
+              className={`w-full focus:outline-none leading-relaxed ${
+                isSlidesMode
+                  ? `h-full max-h-full flex-1 overflow-y-auto overflow-x-hidden px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12`
+                  : 'min-h-[60vh] p-6'
+              }`}
+              style={{
+                fontFamily,
+                fontSize: `${fontSize}px`,
+                color: '#000000',
+                wordBreak: 'break-word',
+                backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
+                scrollbarWidth: isSlidesMode ? 'thin' : undefined,
+                scrollbarColor: isSlidesMode ? 'rgba(148,163,184,0.45) transparent' : undefined,
+              }}
             />
           </div>
 
@@ -4576,7 +4621,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         {isSlidesMode && !presentationMode && viewerCanManagePages && slidePanelVisible && (
           <aside
             id="workspace-slide-panel"
-            className="fixed z-[12010] hidden rounded-2xl border border-slate-800 bg-slate-950/92 p-3 shadow-2xl lg:block"
+            className="fixed z-[12010] hidden rounded-xl border border-slate-800/80 bg-slate-950/90 p-2 shadow-[0_20px_60px_rgba(2,6,23,0.45)] lg:block"
             style={{
               left: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).x}px`,
               top: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).y}px`,
@@ -4614,7 +4659,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 </button>
               </div>
             </div>
-            <div className="flex h-[calc(100%-3.5rem)] flex-col gap-3 overflow-y-auto pr-1">
+            <div
+              className="flex h-[calc(100%-3.25rem)] flex-col gap-2 overflow-y-auto pr-0.5"
+              style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.35) transparent' }}
+            >
               {pages.map((page) => {
                 const isActive = page.id === activePageId;
                 return (
@@ -4622,35 +4670,37 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     key={page.id}
                     type="button"
                     onClick={() => switchPage(page.id)}
-                    className={`group w-full rounded-2xl border p-2 text-left transition ${
+                    className={`group w-full rounded-xl border p-1.5 text-left transition ${
                       isActive
-                        ? 'border-blue-500 bg-slate-800 shadow-[0_0_0_1px_rgba(59,130,246,0.35)]'
-                        : 'border-slate-800 bg-slate-900 hover:border-slate-600 hover:bg-slate-800/80'
+                        ? 'border-blue-500/80 bg-slate-900 shadow-[0_0_0_1px_rgba(59,130,246,0.25)]'
+                        : 'border-slate-800/80 bg-slate-900/90 hover:border-slate-600 hover:bg-slate-800/80'
                     }`}
                     title={surfaceLabels.pageNameTip(page.name)}
                   >
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="truncate text-xs font-semibold text-white">{page.name}</span>
-                      <span className="rounded-full bg-slate-700 px-2 py-0.5 text-[10px] font-bold text-slate-300">
+                    <div className="mb-1.5 flex items-center justify-between gap-1">
+                      <span className="truncate text-[11px] font-semibold text-white">{page.name}</span>
+                      <span className="rounded-full bg-slate-700 px-1.5 py-0.5 text-[9px] font-bold text-slate-300">
                         {pages.findIndex((entry) => entry.id === page.id) + 1}
                       </span>
                     </div>
                     <div
-                      className="aspect-video overflow-hidden rounded-xl border border-slate-700 p-3"
+                      className="relative aspect-video overflow-hidden rounded-lg border border-slate-800 bg-white"
                       style={{ backgroundColor: page.backgroundColor ?? '#ffffff' }}
                     >
-                      <p className="line-clamp-5 text-[11px] leading-4 text-slate-500">
-                        {getSlidePreviewText(page)}
-                      </p>
+                      <div
+                        className="pointer-events-none absolute left-0 top-0 h-[540px] w-[960px] origin-top-left overflow-hidden text-slate-700 [&_img]:max-h-full [&_img]:max-w-full [&_p]:m-0 [&_ul]:m-0 [&_ol]:m-0"
+                        style={{ transform: 'scale(0.125)' }}
+                        dangerouslySetInnerHTML={{ __html: getSlidePreviewHtml(page) }}
+                      />
                     </div>
-                    <div className="mt-2 flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
+                    <div className="mt-1.5 flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
                       <button
                         type="button"
                         onClick={(event) => {
                           event.stopPropagation();
                           duplicatePage(page.id);
                         }}
-                        className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white"
+                        className="rounded-md border border-slate-700 px-1.5 py-1 text-[9px] font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white"
                         title={wsl.duplicate}
                       >
                         Copy
@@ -4663,7 +4713,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                           setSaveMaterialTitle('');
                           setShowSaveModal(true);
                         }}
-                        className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-300 transition hover:border-emerald-500 hover:text-white"
+                        className="rounded-md border border-slate-700 px-1.5 py-1 text-[9px] font-semibold text-slate-300 transition hover:border-emerald-500 hover:text-white"
                         title={surfaceLabels.savePage}
                       >
                         Save
@@ -4675,7 +4725,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                             event.stopPropagation();
                             deletePage(page.id);
                           }}
-                          className="rounded-md border border-slate-700 px-2 py-1 text-[10px] font-semibold text-slate-300 transition hover:border-rose-500 hover:text-white"
+                          className="rounded-md border border-slate-700 px-1.5 py-1 text-[9px] font-semibold text-slate-300 transition hover:border-rose-500 hover:text-white"
                           title={surfaceLabels.deletePage}
                         >
                           Del
