@@ -160,6 +160,14 @@ function resolveZipTarget(basePath: string, targetPath: string): string {
   return normalizeZipPath([...baseSegments, targetPath].join('/'));
 }
 
+function resolveZipEntryPath(basePath: string, targetPath: string): string {
+  const normalizedTarget = normalizeZipPath(targetPath.replace(/^\/+/, ''));
+  if (normalizedTarget.startsWith('ppt/')) {
+    return normalizedTarget;
+  }
+  return resolveZipTarget(basePath, normalizedTarget);
+}
+
 function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string, string> {
   const map = new Map<string, string>();
   const xmlDoc = parseXmlDocument(xml);
@@ -3142,15 +3150,21 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         .filter(Boolean)
       : [...presentationXml.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
     const presentationRels = extractRelationshipMap(presentationRelsXml, '/slide');
+    const fallbackSlidePaths = Object.keys(zip.files)
+      .filter((path) => /^ppt\/slides\/slide\d+\.xml$/i.test(path))
+      .sort((left, right) => {
+        const leftNumber = Number(left.match(/slide(\d+)\.xml/i)?.[1] ?? 0);
+        const rightNumber = Number(right.match(/slide(\d+)\.xml/i)?.[1] ?? 0);
+        return leftNumber - rightNumber;
+      });
+    const slidePathsFromRelationships = slideOrder
+      .map((relId) => presentationRels.get(relId))
+      .filter((target): target is string => Boolean(target))
+      .map((target) => resolveZipEntryPath('ppt/presentation.xml', target));
+    const orderedSlidePaths = slidePathsFromRelationships.length > 0 ? slidePathsFromRelationships : fallbackSlidePaths;
     const importedPages: WorkspacePage[] = [];
 
-    for (const [slideOffset, relId] of slideOrder.entries()) {
-      const slideTarget = presentationRels.get(relId);
-      if (!slideTarget) continue;
-
-      const slidePath = slideTarget.startsWith('ppt/')
-        ? normalizeZipPath(slideTarget)
-        : resolveZipTarget('ppt/presentation.xml', slideTarget.replace(/^\/+/, ''));
+    for (const [slideOffset, slidePath] of orderedSlidePaths.entries()) {
       const slideXml = await zip.file(slidePath)?.async('text');
       if (!slideXml) continue;
 
@@ -3171,7 +3185,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       for (const [imageIndex, imageRelId] of imageRelIds.entries()) {
         const imageTarget = slideRels.get(imageRelId);
         if (!imageTarget) continue;
-        const imagePath = resolveZipTarget(slideRelsPath, imageTarget);
+        const imagePath = resolveZipEntryPath(slideRelsPath, imageTarget);
         const imageFile = zip.file(imagePath);
         if (!imageFile) continue;
 
@@ -3204,11 +3218,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const docContent = paragraphs.length
         ? paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')
         : '';
-
-      const hasMeaningfulContent = paragraphs.length > 0 || items.length > 0;
-      if (!hasMeaningfulContent) {
-        continue;
-      }
 
       importedPages.push({
         id: uid(),
