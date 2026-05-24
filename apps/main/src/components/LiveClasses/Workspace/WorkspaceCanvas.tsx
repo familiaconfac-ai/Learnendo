@@ -1711,7 +1711,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   });
   const [slidePanelVisible, setSlidePanelVisible] = useState(true);
   const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
-  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 148, height: 292 });
+  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 132, height: 320 });
   const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const slidePanelResizeOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const getDefaultSlidePanelPosition = useCallback(() => {
@@ -4621,48 +4621,30 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         {isSlidesMode && !presentationMode && viewerCanManagePages && slidePanelVisible && (
           <aside
             id="workspace-slide-panel"
-            className="fixed z-[12010] hidden rounded-xl border border-slate-800/80 bg-slate-950/90 p-2 shadow-[0_20px_60px_rgba(2,6,23,0.45)] lg:block"
+            className="fixed z-[12010] hidden lg:block"
             style={{
-              left: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).x}px`,
-              top: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).y}px`,
+              right: '18px',
+              top: '186px',
               width: `${slidePanelSize.width}px`,
-              height: `${slidePanelSize.height}px`,
+              height: `min(${slidePanelSize.height}px, calc(100vh - 230px))`,
             }}
           >
             <div
-              className="mb-3 flex cursor-move items-center justify-between gap-2"
-              onPointerDown={handleSlidePanelPointerDown}
-            >
-              <span className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
-                {surfaceLabels.slides}
-              </span>
-              <div className="flex items-center gap-1">
-                {viewerCanManagePages && (
-                  <button
-                    type="button"
-                    onClick={addPage}
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-blue-500 hover:bg-slate-800 hover:text-white"
-                    title={surfaceLabels.newPage}
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.25" viewBox="0 0 16 16">
-                      <line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
-                    </svg>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSlidePanelVisible(false)}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-rose-500 hover:bg-slate-800 hover:text-white"
-                  title="Close slides panel"
-                >
-                  X
-                </button>
-              </div>
-            </div>
-            <div
-              className="flex h-[calc(100%-3.25rem)] flex-col gap-2 overflow-y-auto pr-0.5"
+              className="flex h-full flex-col gap-2 overflow-y-auto pr-0.5"
               style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.35) transparent' }}
             >
+              {viewerCanManagePages && (
+                <button
+                  type="button"
+                  onClick={addPage}
+                  className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/90 text-slate-200 shadow-lg transition hover:border-blue-500 hover:bg-slate-900 hover:text-white"
+                  title={surfaceLabels.newPage}
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.25" viewBox="0 0 16 16">
+                    <line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
+                  </svg>
+                </button>
+              )}
               {pages.map((page) => {
                 const isActive = page.id === activePageId;
                 return (
@@ -4670,82 +4652,80 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     key={page.id}
                     type="button"
                     onClick={() => switchPage(page.id)}
-                    className={`group w-full rounded-xl border p-1.5 text-left transition ${
+                    className={`group relative w-full rounded-2xl p-1.5 text-left transition ${
                       isActive
-                        ? 'border-blue-500/80 bg-slate-900 shadow-[0_0_0_1px_rgba(59,130,246,0.25)]'
-                        : 'border-slate-800/80 bg-slate-900/90 hover:border-slate-600 hover:bg-slate-800/80'
+                        ? 'bg-slate-950/95 shadow-[0_0_0_1px_rgba(59,130,246,0.45)]'
+                        : 'bg-slate-950/85 hover:bg-slate-900/90'
                     }`}
                     title={surfaceLabels.pageNameTip(page.name)}
                   >
-                    <div className="mb-1.5 flex items-center justify-between gap-1">
-                      <span className="truncate text-[11px] font-semibold text-white">{page.name}</span>
-                      <span className="rounded-full bg-slate-700 px-1.5 py-0.5 text-[9px] font-bold text-slate-300">
-                        {pages.findIndex((entry) => entry.id === page.id) + 1}
-                      </span>
-                    </div>
                     <div
-                      className="relative aspect-video overflow-hidden rounded-lg border border-slate-800 bg-white"
+                      className="relative aspect-video overflow-hidden rounded-xl border border-slate-800/70 bg-white"
                       style={{ backgroundColor: page.backgroundColor ?? '#ffffff' }}
                     >
+                      <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-slate-900/80 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                        {pages.findIndex((entry) => entry.id === page.id) + 1}
+                      </span>
+                      <details
+                        className="absolute right-1.5 top-1.5 z-20"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <summary
+                          className="flex h-5 w-5 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900/75 text-[11px] font-black text-white"
+                          title={surfaceLabels.pageMenu}
+                        >
+                          ...
+                        </summary>
+                        <div className="absolute right-0 mt-1 w-24 rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              duplicatePage(page.id);
+                            }}
+                            className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
+                            title={wsl.duplicate}
+                          >
+                            Copy
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSaveSinglePageId(page.id);
+                              setSaveMaterialTitle('');
+                              setShowSaveModal(true);
+                            }}
+                            className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
+                            title={surfaceLabels.savePage}
+                          >
+                            Save
+                          </button>
+                          {pages.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                deletePage(page.id);
+                              }}
+                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-rose-300 transition hover:bg-slate-800"
+                              title={surfaceLabels.deletePage}
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </div>
+                      </details>
                       <div
                         className="pointer-events-none absolute left-0 top-0 h-[540px] w-[960px] origin-top-left overflow-hidden text-slate-700 [&_img]:max-h-full [&_img]:max-w-full [&_p]:m-0 [&_ul]:m-0 [&_ol]:m-0"
                         style={{ transform: 'scale(0.125)' }}
                         dangerouslySetInnerHTML={{ __html: getSlidePreviewHtml(page) }}
                       />
                     </div>
-                    <div className="mt-1.5 flex items-center justify-end gap-1 opacity-0 transition group-hover:opacity-100">
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          duplicatePage(page.id);
-                        }}
-                        className="rounded-md border border-slate-700 px-1.5 py-1 text-[9px] font-semibold text-slate-300 transition hover:border-blue-500 hover:text-white"
-                        title={wsl.duplicate}
-                      >
-                        Copy
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSaveSinglePageId(page.id);
-                          setSaveMaterialTitle('');
-                          setShowSaveModal(true);
-                        }}
-                        className="rounded-md border border-slate-700 px-1.5 py-1 text-[9px] font-semibold text-slate-300 transition hover:border-emerald-500 hover:text-white"
-                        title={surfaceLabels.savePage}
-                      >
-                        Save
-                      </button>
-                      {pages.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            deletePage(page.id);
-                          }}
-                          className="rounded-md border border-slate-700 px-1.5 py-1 text-[9px] font-semibold text-slate-300 transition hover:border-rose-500 hover:text-white"
-                          title={surfaceLabels.deletePage}
-                        >
-                          Del
-                        </button>
-                      )}
-                    </div>
                   </button>
                 );
               })}
             </div>
-            <button
-              type="button"
-              onPointerDown={handleSlidePanelResizePointerDown}
-              className="absolute bottom-1 right-1 flex h-5 w-5 cursor-se-resize items-center justify-center rounded-md text-slate-400 transition hover:bg-slate-800 hover:text-white"
-              title="Resize slides panel"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20">
-                <path d="M7 13l6-6M10 16l6-6M13 19l6-6" />
-              </svg>
-            </button>
           </aside>
         )}
         </div>
