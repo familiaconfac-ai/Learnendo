@@ -368,6 +368,7 @@ const App: React.FC = () => {
   const userRole = userAccountProfile?.role ?? 'student';
   const isAdmin = userRole === 'admin';
   const isTeacherAccount = userRole === 'teacher' || userRole === 'admin';
+  const canAccessTeacherDashboard = isTeacherAccount && userViewMode !== 'student';
   const canManageUsers = isAdmin;
   const canManageLiveClasses = isAdmin || (isTeacherAccount && userViewMode !== 'student');
   const liveClassViewerRole = userRole === 'teacher' && !canManageLiveClasses ? 'student' : userRole;
@@ -403,7 +404,8 @@ const App: React.FC = () => {
     hasPlacementReport ||
     localPlacementDone
   );
-  const showPlacementBanner = progressLoaded && !hasPlacementResult &&
+  const shouldPromptPlacementTest = userRole === 'student';
+  const showPlacementBanner = progressLoaded && shouldPromptPlacementTest && !hasPlacementResult &&
     !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON, SectionType.LIVE_CLASSES] as string[]).includes(currentSection);
   const isInLiveRoom =
     currentSection === SectionType.LIVE_CLASSES &&
@@ -535,10 +537,10 @@ const App: React.FC = () => {
   }, [user?.email, user?.uid]);
 
   useEffect(() => {
-    if (currentSection === SectionType.TEACHER_DASHBOARD && !isTeacherAccount) {
-        setCurrentSection(SectionType.COURSES);
-      }
-  }, [currentSection, isTeacherAccount]);
+    if (currentSection === SectionType.TEACHER_DASHBOARD && !canAccessTeacherDashboard) {
+      setCurrentSection(SectionType.COURSES);
+    }
+  }, [canAccessTeacherDashboard, currentSection]);
 
   // Keep latestProgressRef in sync with the latest progress state
   useEffect(() => {
@@ -2408,7 +2410,7 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-black text-yellow-400 mb-6">
               {uiLanguage === 'pt' ? 'Cadernos' : uiLanguage === 'es' ? 'Libros de trabajo' : 'Workbooks'}
             </h1>
-            {!hasPlacementResult && (
+            {shouldPromptPlacementTest && !hasPlacementResult && (
               <div className="mb-5 bg-amber-400/10 border border-amber-400 rounded-2xl p-4 flex items-center justify-between gap-3">
                 <p className="text-amber-300 text-sm font-semibold">
                   {uiLanguage === 'pt'
@@ -2622,21 +2624,31 @@ const App: React.FC = () => {
             <h1 className="text-2xl font-black text-white">
               {uiLanguage === 'pt' ? 'Ajuda & Suporte' : uiLanguage === 'es' ? 'Ayuda y Soporte' : 'Help & Support'}
             </h1>
-            <p className="text-slate-300 font-semibold max-w-sm">
-              {uiLanguage === 'pt'
-                ? 'Entre em contato com seu professor para tirar dúvidas ou relatar problemas.'
-                : uiLanguage === 'es'
-                ? 'Contacta a tu profesor para resolver dudas o reportar problemas.'
-                : 'Contact your teacher for questions or to report issues.'}
-            </p>
+            <div className="max-w-sm space-y-3 text-slate-300">
+              <p className="font-semibold">
+                {uiLanguage === 'pt'
+                  ? 'Precisa de ajuda? Fale direto com o suporte do Learnendo.'
+                  : uiLanguage === 'es'
+                  ? 'Necesitas ayuda? Habla directamente con el soporte de Learnendo.'
+                  : 'Need help? Talk directly to Learnendo support.'}
+              </p>
+              <p className="text-sm">WhatsApp: +55 17 99101-0930</p>
+              <p className="text-sm">Email: learnendo@gmail.com</p>
+            </div>
             <a
-              href="https://wa.me/5517991010930"
+              href="https://wa.me/5517991010930?text=Oi!%20Preciso%20de%20ajuda%20com%20o%20Learnendo."
               target="_blank"
               rel="noreferrer"
               className="flex items-center gap-3 bg-green-600 text-white font-black px-8 py-4 rounded-2xl shadow-[0_4px_0_0_#15803d] active:translate-y-1 transition-all"
             >
               <i className="fab fa-whatsapp text-2xl"></i>
-              <span>WhatsApp — Learnendo</span>
+              <span>WhatsApp - Learnendo</span>
+            </a>
+            <a
+              href="mailto:learnendo@gmail.com"
+              className="rounded-2xl border border-slate-700 px-6 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-800"
+            >
+              learnendo@gmail.com
             </a>
           </div>
         );
@@ -2676,7 +2688,7 @@ const App: React.FC = () => {
           uiLanguage={uiLanguage}
         />;
       case SectionType.TEACHER_DASHBOARD:
-        return user && isTeacherAccount ? (
+        return user && canAccessTeacherDashboard ? (
           <TeacherDashboard user={user} canManageUsers={canManageUsers} teacherUid={canManageUsers ? null : user.uid} />
         ) : (
           <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
@@ -2840,12 +2852,9 @@ const App: React.FC = () => {
             </div>
             <div className="space-y-2">
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { handleNavigate(SectionType.WORKBOOK); setMenuOpen(false); }}>Workbooks</button>
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { handleNavigate(SectionType.BATTLE); setMenuOpen(false); }}>Battle Arena</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.LIVE_CLASSES); setMenuOpen(false); }}>Live Classes</button>
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.VOCABULARY); setMenuOpen(false); }}>📖 My Vocabulary</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
-              {isTeacherAccount && (
+              {canAccessTeacherDashboard && (
                 <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>
               )}
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
@@ -2966,4 +2975,6 @@ const App: React.FC = () => {
 };
 
 export default App;
+
+
 

@@ -1711,7 +1711,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   });
   const [slidePanelVisible, setSlidePanelVisible] = useState(true);
   const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
-  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 192, height: 420 });
+  const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 156, height: 320 });
   const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const slidePanelResizeOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
   const getDefaultSlidePanelPosition = useCallback(() => {
@@ -1721,8 +1721,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
     const panelWidth = slidePanelSize.width;
     return {
-      x: Math.max(24, window.innerWidth - panelWidth - 24),
-      y: 112,
+      x: Math.max(24, window.innerWidth - panelWidth - 18),
+      y: 188,
     };
   }, [slidePanelSize.width]);
   const updatePresentationMode = useCallback((nextValue: boolean) => {
@@ -2038,9 +2038,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const position = slidePanelPosition ?? getDefaultSlidePanelPosition();
       if (!origin) return;
 
-      const maxWidth = Math.max(180, window.innerWidth - position.x - 24);
+      const maxWidth = Math.max(140, window.innerWidth - position.x - 24);
       const maxHeight = Math.max(240, window.innerHeight - position.y - 24);
-      const nextWidth = clamp(origin.width + (moveEvent.clientX - origin.x), 180, Math.min(420, maxWidth));
+      const nextWidth = clamp(origin.width + (moveEvent.clientX - origin.x), 140, Math.min(420, maxWidth));
       const nextHeight = clamp(origin.height + (moveEvent.clientY - origin.y), 240, Math.min(720, maxHeight));
       setSlidePanelSize({ width: nextWidth, height: nextHeight });
     };
@@ -4510,7 +4510,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
             }}
           >
-            {!docHtml && (
+            {!docHtml && !isSlidesMode && (
               <div
                 className={`absolute text-sm text-slate-300 pointer-events-none select-none ${isSlidesMode ? 'left-8 top-8' : 'left-6 top-6'}`}
                 style={{ fontFamily }}
@@ -4576,7 +4576,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         {isSlidesMode && !presentationMode && viewerCanManagePages && slidePanelVisible && (
           <aside
             id="workspace-slide-panel"
-            className="fixed z-[12010] hidden w-56 rounded-2xl border border-slate-800 bg-slate-950/92 p-3 shadow-2xl lg:block"
+            className="fixed z-[12010] hidden rounded-2xl border border-slate-800 bg-slate-950/92 p-3 shadow-2xl lg:block"
             style={{
               left: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).x}px`,
               top: `${(slidePanelPosition ?? getDefaultSlidePanelPosition()).y}px`,
@@ -4610,7 +4610,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   className="flex h-7 w-7 items-center justify-center rounded-lg border border-slate-700 text-slate-300 transition hover:border-rose-500 hover:bg-slate-800 hover:text-white"
                   title="Close slides panel"
                 >
-                  Ã—
+                  X
                 </button>
               </div>
             </div>
