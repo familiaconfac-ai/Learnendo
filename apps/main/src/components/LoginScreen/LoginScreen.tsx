@@ -35,7 +35,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [logoFailed, setLogoFailed] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [entryMode, setEntryMode] = useState<'student' | 'teacher'>('student');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -57,9 +56,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setIsSubmitting(true);
     try {
       if (action === 'login') {
-        await onLogin(email.trim(), password, entryMode);
+        await onLogin(email.trim(), password, 'student');
       } else {
-        await onRegister(email.trim(), password, entryMode);
+        await onRegister(email.trim(), password, 'student');
       }
     } catch (err: any) {
       setError(mapAuthError(err?.code ?? ''));
@@ -96,46 +95,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <img
               src={learnendoLogoTransparent}
               alt="Learnendo Logo"
-              style={{ width: '200px', marginBottom: '12px' }}
+              style={{ width: '200px', marginBottom: '18px' }}
               className="logo-login mx-auto"
               onError={() => setLogoFailed(true)}
             />
           )}
-          <p className="mb-8 text-sm font-semibold text-slate-600">Log in to continue learning</p>
 
           <div className="space-y-4 rounded-[28px] border border-slate-100 bg-white p-5 shadow-sm">
-            <div className="rounded-2xl bg-slate-100 p-1">
-              <div className="grid grid-cols-2 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setEntryMode('student')}
-                  className={`rounded-2xl px-3 py-3 text-sm font-bold transition-colors ${
-                    entryMode === 'student'
-                      ? 'bg-blue-600 text-white shadow-[0_4px_0_0_#1d4ed8]'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  Student
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEntryMode('teacher')}
-                  className={`rounded-2xl px-3 py-3 text-sm font-bold transition-colors ${
-                    entryMode === 'teacher'
-                      ? 'bg-slate-800 text-white shadow-[0_4px_0_0_#0f172a]'
-                      : 'text-slate-600'
-                  }`}
-                >
-                  Teacher
-                </button>
-              </div>
-              <p className="px-2 pb-1 pt-3 text-xs font-medium text-slate-500">
-                {entryMode === 'teacher'
-                  ? 'Teacher tools only open when this account has permission.'
-                  : 'Students only see the classes assigned to their email.'}
-              </p>
-            </div>
-
             {error ? (
               <div className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-600">
                 {error}

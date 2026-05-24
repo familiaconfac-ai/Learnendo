@@ -1710,6 +1710,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     height: typeof window !== 'undefined' ? window.innerHeight : 720,
   });
   const [slidePanelVisible, setSlidePanelVisible] = useState(true);
+  const [openSlideMenuId, setOpenSlideMenuId] = useState<string | null>(null);
   const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
   const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 132, height: 320 });
   const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
@@ -1987,6 +1988,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigateSlides, presentationMode, updatePresentationMode]);
+
+  useEffect(() => {
+    if (!openSlideMenuId) return undefined;
+
+    const handlePointerDown = () => {
+      setOpenSlideMenuId(null);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [openSlideMenuId]);
 
   const handleSlidePanelPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (presentationMode) return;
@@ -4633,18 +4645,34 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               className="flex h-full flex-col gap-2 overflow-y-auto pr-0.5"
               style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.35) transparent' }}
             >
-              {viewerCanManagePages && (
+              <div className="flex items-center justify-end gap-1">
                 <button
                   type="button"
-                  onClick={addPage}
-                  className="ml-auto flex h-7 w-7 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/90 text-slate-200 shadow-lg transition hover:border-blue-500 hover:bg-slate-900 hover:text-white"
-                  title={surfaceLabels.newPage}
+                  onClick={() => slideImportRef.current?.click()}
+                  disabled={pendingSlideImport}
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/90 text-slate-200 shadow-lg transition hover:border-blue-500 hover:bg-slate-900 hover:text-white disabled:opacity-50"
+                  title={wsl.importSlides}
                 >
-                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.25" viewBox="0 0 16 16">
-                    <line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/>
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 16 16">
+                    <path d="M2.5 13.5h11M8 11V2.5M8 2.5l-3 3M8 2.5l3 3" />
                   </svg>
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSaveSinglePageId(null);
+                    setSaveMaterialTitle('');
+                    setShowSaveModal(true);
+                  }}
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/90 text-slate-200 shadow-lg transition hover:border-emerald-500 hover:bg-slate-900 hover:text-white"
+                  title={isSlidesMode ? 'Save all slides' : wsl.save}
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 16 16">
+                    <path d="M3 2.5h8l2 2v9H3z" />
+                    <path d="M5 2.5v4h5v-4M5 13h6" />
+                  </svg>
+                </button>
+              </div>
               {pages.map((page) => {
                 const isActive = page.id === activePageId;
                 return (
@@ -4666,56 +4694,79 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                       <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-slate-900/80 px-1.5 py-0.5 text-[9px] font-bold text-white">
                         {pages.findIndex((entry) => entry.id === page.id) + 1}
                       </span>
-                      <details
+                      <div
                         className="absolute right-1.5 top-1.5 z-20"
+                        onPointerDown={(event) => event.stopPropagation()}
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <summary
-                          className="flex h-5 w-5 cursor-pointer list-none items-center justify-center rounded-full bg-slate-900/75 text-[11px] font-black text-white"
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenSlideMenuId((current) => (current === page.id ? null : page.id));
+                          }}
+                          className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/75 text-[11px] font-black text-white"
                           title={surfaceLabels.pageMenu}
                         >
                           ...
-                        </summary>
-                        <div className="absolute right-0 mt-1 w-24 rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              duplicatePage(page.id);
-                            }}
-                            className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
-                            title={wsl.duplicate}
-                          >
-                            Copy
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setSaveSinglePageId(page.id);
-                              setSaveMaterialTitle('');
-                              setShowSaveModal(true);
-                            }}
-                            className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
-                            title={surfaceLabels.savePage}
-                          >
-                            Save
-                          </button>
-                          {pages.length > 1 && (
+                        </button>
+                        {openSlideMenuId === page.id ? (
+                          <div className="absolute right-0 top-6 w-24 rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">
                             <button
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                deletePage(page.id);
+                                setOpenSlideMenuId(null);
+                                duplicatePage(page.id);
                               }}
-                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-rose-300 transition hover:bg-slate-800"
-                              title={surfaceLabels.deletePage}
+                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
+                              title={wsl.duplicate}
                             >
-                              Delete
+                              Duplicate
                             </button>
-                          )}
-                        </div>
-                      </details>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenSlideMenuId(null);
+                                addPage();
+                              }}
+                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
+                              title={surfaceLabels.newPage}
+                            >
+                              Add slide
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setOpenSlideMenuId(null);
+                                setSaveSinglePageId(page.id);
+                                setSaveMaterialTitle('');
+                                setShowSaveModal(true);
+                              }}
+                              className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
+                              title={surfaceLabels.savePage}
+                            >
+                              Save
+                            </button>
+                            {pages.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setOpenSlideMenuId(null);
+                                  deletePage(page.id);
+                                }}
+                                className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-rose-300 transition hover:bg-slate-800"
+                                title={surfaceLabels.deletePage}
+                              >
+                                Delete
+                              </button>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
                       <div
                         className="pointer-events-none absolute left-0 top-0 h-[540px] w-[960px] origin-top-left overflow-hidden text-slate-700 [&_img]:max-h-full [&_img]:max-w-full [&_p]:m-0 [&_ul]:m-0 [&_ol]:m-0"
                         style={{ transform: 'scale(0.125)' }}
