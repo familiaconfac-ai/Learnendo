@@ -79,6 +79,10 @@ function hasAcceptedPptxExtension(filename: string): boolean {
   return /\.(pptx|ppsx)$/i.test(filename);
 }
 
+function hasUnsupportedDeckExtension(filename: string): boolean {
+  return /\.(ppt|odp|key)$/i.test(filename);
+}
+
 function decodeHtmlEntities(raw: string): string {
   if (typeof document === 'undefined') return raw;
   const textarea = document.createElement('textarea');
@@ -103,6 +107,24 @@ function getAttributeByName(element: Element, candidates: string[]): string {
   for (const attr of Array.from(element.attributes)) {
     if (candidates.includes(attr.name) || candidates.includes(attr.localName)) {
       return attr.value;
+    }
+  }
+  return '';
+}
+
+function getNamespacedAttribute(element: Element, namespaceLocalName: string, fallbackLocalName?: string): string {
+  for (const attr of Array.from(element.attributes)) {
+    if (attr.name.endsWith(`:${namespaceLocalName}`)) {
+      return attr.value;
+    }
+  }
+  const direct = element.getAttribute(namespaceLocalName);
+  if (direct) return direct;
+  if (fallbackLocalName) {
+    for (const attr of Array.from(element.attributes)) {
+      if (attr.localName === fallbackLocalName) {
+        return attr.value;
+      }
     }
   }
   return '';
@@ -261,6 +283,8 @@ interface WsLabels {
   importSlides: string;
   importingSlides: string;
   importSlidesError: string;
+  importSlidesUnsupportedDeck: string;
+  importSlidesDeckParseError: (name: string) => string;
   clearPage: string;
   newPage: string;
   placeholder: string;
@@ -434,6 +458,8 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     importSlides: 'Importar imagens como slides',
     importingSlides: 'Importando slides…',
     importSlidesError: 'Selecione imagens para importar como slides.',
+    importSlidesUnsupportedDeck: 'Esse arquivo de apresentação não é suportado aqui ainda. Exporte como .pptx e tente novamente.',
+    importSlidesDeckParseError: (name) => `Não foi possível importar o slide "${name}". Se ele veio do Canva, PowerPoint ou LibreOffice, exporte como .pptx e tente novamente.`,
     newPage: 'Nova página',
     placeholder: 'Clique aqui e comece a digitar',
     readonlyPh: 'Aguardando conteúdo do professor',
@@ -475,6 +501,8 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     importSlides: 'Import images as slides',
     importingSlides: 'Importing slides…',
     importSlidesError: 'Select image files to import as slides.',
+    importSlidesUnsupportedDeck: 'That presentation file is not supported here yet. Export it as .pptx and try again.',
+    importSlidesDeckParseError: (name) => `Could not import the slide deck "${name}". If it came from Canva, PowerPoint, or LibreOffice, export it as .pptx and try again.`,
     clearPage: 'Clear this page content',
     newPage: 'New page',
     placeholder: 'Click here and start typing',
@@ -520,6 +548,8 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     importSlides: 'Importar imágenes como diapositivas',
     importingSlides: 'Importando diapositivas…',
     importSlidesError: 'Selecciona imágenes para importarlas como diapositivas.',
+    importSlidesUnsupportedDeck: 'Ese archivo de presentación todavía no es compatible aquí. Expórtalo como .pptx e inténtalo de nuevo.',
+    importSlidesDeckParseError: (name) => `No se pudo importar la presentación "${name}". Si vino de Canva, PowerPoint o LibreOffice, expórtala como .pptx e inténtalo de nuevo.`,
     readonlyPh: 'Esperando el contenido del profesor',
     pageMenu: 'Opciones de página', duplicate: 'Duplicar página',
     savePage: 'Guardar esta página', deletePage: 'Eliminar página',
@@ -3108,7 +3138,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     const slideOrder = presentationDoc
       ? Array.from(presentationDoc.getElementsByTagName('*'))
         .filter((node) => node.localName === 'sldId')
-        .map((node) => getAttributeByName(node, ['r:id', 'id']))
+        .map((node) => getNamespacedAttribute(node, 'id'))
         .filter(Boolean)
       : [...presentationXml.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
     const presentationRels = extractRelationshipMap(presentationRelsXml, '/slide');
@@ -3133,7 +3163,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const imageRelIds = slideDoc
         ? Array.from(slideDoc.getElementsByTagName('*'))
           .filter((node) => node.localName === 'blip')
-          .map((node) => getAttributeByName(node, ['r:embed', 'embed']))
+          .map((node) => getNamespacedAttribute(node, 'embed'))
           .filter(Boolean)
         : [...slideXml.matchAll(/<a:blip\b[^>]*r:embed="([^"]+)"/g)].map((match) => match[1]);
       const items: WorkspaceItem[] = [];
@@ -3210,6 +3240,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       || hasAcceptedPptxExtension(file.name),
     );
     if (!acceptedFiles.length) {
+      if (selectedFiles.some((file) => hasUnsupportedDeckExtension(file.name))) {
+        window.alert(wsl.importSlidesUnsupportedDeck);
+        return;
+      }
       window.alert(wsl.importSlidesError);
       return;
     }
@@ -3276,7 +3310,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ).catch(console.error);
     } catch (error) {
       console.error('[WorkspaceCanvas] Failed to import slides', error);
-      window.alert(wsl.importSlidesError);
+      const firstDeckFile = acceptedFiles.find((file) => hasAcceptedPptxExtension(file.name));
+      if (firstDeckFile) {
+        window.alert(wsl.importSlidesDeckParseError(firstDeckFile.name));
+      } else {
+        window.alert(wsl.importSlidesError);
+      }
     } finally {
       setPendingSlideImport(false);
     }
