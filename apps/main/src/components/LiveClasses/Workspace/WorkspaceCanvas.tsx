@@ -262,8 +262,8 @@ interface SurfaceModeLabels {
 }
 
 const BATTLE_LIBRARY_LANGUAGE_TABS: Array<{ value: BattleTemplateLanguage; label: string; dir?: 'ltr' | 'rtl' }> = [
-  { value: 'pt', label: 'portuguÃªs', dir: 'ltr' },
-  { value: 'es', label: 'espaÃ±ol', dir: 'ltr' },
+  { value: 'pt', label: 'português', dir: 'ltr' },
+  { value: 'es', label: 'español', dir: 'ltr' },
   { value: 'en', label: 'English', dir: 'ltr' },
   { value: 'el', label: 'Î‘Ï€Î¿Î¸Î·ÎºÎµÏ…Î¼Î­Î½ÎµÏ‚ Î¼Î¬Ï‡ÎµÏ‚', dir: 'ltr' },
   { value: 'he', label: '×§×¨×‘×•×ª ×©×ž×•×¨×™×', dir: 'rtl' },
@@ -289,9 +289,9 @@ function getBattleLibraryFolderLabel(language: BattleTemplateLanguage): string {
 function getBattleLibrarySectionTitle(language: BattleTemplateLanguage): string {
   switch (language) {
     case 'pt':
-      return 'Batalhas em PortuguÃªs';
+      return 'Batalhas em Português';
     case 'es':
-      return 'Batallas en EspaÃ±ol';
+      return 'Batallas en Español';
     case 'en':
       return 'English Battles';
     case 'el':
@@ -337,14 +337,14 @@ function getSurfaceModeLabels(
       currentCanvas: isSlides ? 'Lienzo de diapositivas' : 'Lienzo de pizarra',
       pageName: (n) => (isSlides ? `Diapositiva ${n}` : wsl.pageName(n)),
       pageNameTip: (name) => (isSlides ? `${name} - doble clic para renombrar` : wsl.pageNameTip(name)),
-      currentLabel: isSlides ? 'Diapositiva' : 'PÃ¡gina',
+      currentLabel: isSlides ? 'Diapositiva' : 'Página',
       pageMenu: isSlides ? 'Opciones de diapositiva' : wsl.pageMenu,
       savePage: isSlides ? 'Guardar esta diapositiva' : wsl.savePage,
       deletePage: isSlides ? 'Eliminar diapositiva' : wsl.deletePage,
       newPage: isSlides ? 'Nueva diapositiva' : wsl.newPage,
       clearPage: isSlides ? 'Limpiar esta diapositiva' : wsl.clearPage,
-      confirmClear: isSlides ? 'Â¿Limpiar esta diapositiva?' : wsl.confirmClear,
-      confirmDelete: isSlides ? 'Â¿Eliminar esta diapositiva?' : wsl.confirmDelete,
+      confirmClear: isSlides ? '¿Limpiar esta diapositiva?' : wsl.confirmClear,
+      confirmDelete: isSlides ? '¿Eliminar esta diapositiva?' : wsl.confirmDelete,
     };
   }
   return {
@@ -355,13 +355,13 @@ function getSurfaceModeLabels(
     currentCanvas: isSlides ? 'Tela de slides' : 'Tela da lousa',
     pageName: (n) => (isSlides ? `Slide ${n}` : wsl.pageName(n)),
     pageNameTip: (name) => (isSlides ? `${name} - duplo clique para renomear` : wsl.pageNameTip(name)),
-    currentLabel: isSlides ? 'Slide' : 'PÃ¡gina',
-    pageMenu: isSlides ? 'OpÃ§Ãµes do slide' : wsl.pageMenu,
+    currentLabel: isSlides ? 'Slide' : 'Página',
+    pageMenu: isSlides ? 'Opções do slide' : wsl.pageMenu,
     savePage: isSlides ? 'Salvar este slide' : wsl.savePage,
     deletePage: isSlides ? 'Excluir slide' : wsl.deletePage,
     newPage: isSlides ? 'Novo slide' : wsl.newPage,
-    clearPage: isSlides ? 'Limpar conteÃºdo deste slide' : wsl.clearPage,
-    confirmClear: isSlides ? 'Limpar o conteÃºdo deste slide?' : wsl.confirmClear,
+    clearPage: isSlides ? 'Limpar conteúdo deste slide' : wsl.clearPage,
+    confirmClear: isSlides ? 'Limpar o conteúdo deste slide?' : wsl.confirmClear,
     confirmDelete: isSlides ? 'Excluir este slide?' : wsl.confirmDelete,
   };
 }
@@ -371,43 +371,43 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     textSection: 'Texto', bgSection: 'Fundo', colorBtn: 'Cor do texto e fundo',
     alignLeft: 'Esquerda', alignCenter: 'Centralizar', alignRight: 'Direita', alignJustify: 'Justificar',
     alignLabel: (v) => `Alinhar: ${v}`,
-    bold: 'Negrito', italic: 'Itï¿½lico', underline: 'Sublinhado',
+    bold: 'Negrito', italic: 'Itálico', underline: 'Sublinhado',
     textBox: 'Caixa de texto flutuante',
-    image: 'Inserir imagem (PNG com transparï¿½ncia preservada)',
+    image: 'Inserir imagem (PNG com transparência preservada)',
     deleteBlock: 'Apagar bloco selecionado',
-    saveAll: 'Salvar lousa como material reutilizï¿½vel',
+    saveAll: 'Salvar lousa como material reutilizável',
     openMaterial: 'Abrir material salvo na lousa',
     exportPdf: 'Exportar como PDF',
-    clearPage: 'Limpar conteï¿½do desta pï¿½gina',
+    clearPage: 'Limpar conteúdo desta página',
     importSlides: 'Importar imagens como slides',
     importingSlides: 'Importando slides…',
     importSlidesError: 'Selecione imagens para importar como slides.',
-    newPage: 'Nova pï¿½gina',
-    placeholder: 'Clique aqui e comece a digitarï¿½',
-    readonlyPh: 'Aguardando conteï¿½do do professorï¿½',
-    pageMenu: 'Opï¿½ï¿½es da pï¿½gina', duplicate: 'Duplicar pï¿½gina',
-    savePage: 'Salvar esta pï¿½gina', deletePage: 'Excluir pï¿½gina',
-    confirmClear: 'Limpar o conteï¿½do desta pï¿½gina?',
-    confirmDelete: 'Excluir esta pï¿½gina?',
+    newPage: 'Nova página',
+    placeholder: 'Clique aqui e comece a digitar',
+    readonlyPh: 'Aguardando conteúdo do professor',
+    pageMenu: 'Opções da página', duplicate: 'Duplicar página',
+    savePage: 'Salvar esta página', deletePage: 'Excluir página',
+    confirmClear: 'Limpar o conteúdo desta página?',
+    confirmDelete: 'Excluir esta página?',
     saveModalTitle: 'Salvar como material',
-    savePageModalTitle: 'Salvar pï¿½gina como material',
+    savePageModalTitle: 'Salvar página como material',
     openModalTitle: 'Aulas e Materiais de Apoio',
-    materialTitleLabel: 'Tï¿½tulo do material',
-    materialPlaceholder: 'Ex: Vocabulï¿½rio ï¿½ Cores',
-    cancel: 'Cancelar', save: 'Salvar', saving: 'Salvandoï¿½',
+    materialTitleLabel: 'Título do material',
+    materialPlaceholder: 'Ex: Vocabulário - Cores',
+    cancel: 'Cancelar', save: 'Salvar', saving: 'Salvando…',
     noMaterials: 'Nenhum material salvo ainda.',
     noBattles: 'Nenhum battle salvo ainda.',
     noSavedFiles: 'Nenhum arquivo salvo ainda.',
-    loading: 'Carregandoï¿½', open: 'Abrir',
+    loading: 'Carregando…', open: 'Abrir',
     openBattle: 'Abrir',
-    materialsSection: 'ConteÃºdo',
+    materialsSection: 'Conteúdo',
     battlesSection: 'Battles salvos',
     exportPopupError: 'Permita popups para exportar o PDF.',
-    pageName: (n) => `Pï¿½gina ${n}`,
-    pageNameTip: (name) => `${name} ï¿½ duplo clique para renomear`,
+    pageName: (n) => `Página ${n}`,
+    pageNameTip: (name) => `${name} - duplo clique para renomear`,
     errorSave: (msg) => `Erro ao salvar material: ${msg}`,
     errorOpen: 'Erro ao abrir material. Tente novamente.',
-    vocab: 'Vocabulï¿½rio',
+    vocab: 'Vocabulário',
   },
   en: {
     textSection: 'Text', bgSection: 'Background', colorBtn: 'Text and background color',
@@ -421,12 +421,12 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     openMaterial: 'Open saved material',
     exportPdf: 'Export as PDF',
     importSlides: 'Import images as slides',
-    importingSlides: 'Importing slidesÃ¯Â¿Â½',
+    importingSlides: 'Importing slides…',
     importSlidesError: 'Select image files to import as slides.',
     clearPage: 'Clear this page content',
     newPage: 'New page',
-    placeholder: 'Click here and start typingï¿½',
-    readonlyPh: "Waiting for teacher's contentï¿½",
+    placeholder: 'Click here and start typing',
+    readonlyPh: "Waiting for teacher's content",
     pageMenu: 'Page options', duplicate: 'Duplicate page',
     savePage: 'Save this page', deletePage: 'Delete page',
     confirmClear: 'Clear this page content?',
@@ -435,18 +435,18 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     savePageModalTitle: 'Save page as material',
     openModalTitle: 'Lessons and Support Materials',
     materialTitleLabel: 'Material title',
-    materialPlaceholder: 'E.g.: Vocabulary ï¿½ Colors',
-    cancel: 'Cancel', save: 'Save', saving: 'Savingï¿½',
+    materialPlaceholder: 'E.g.: Vocabulary - Colors',
+    cancel: 'Cancel', save: 'Save', saving: 'Saving…',
     noMaterials: 'No saved materials yet.',
     noBattles: 'No saved battles yet.',
     noSavedFiles: 'No saved files yet.',
-    loading: 'Loadingï¿½', open: 'Open',
+    loading: 'Loading…', open: 'Open',
     openBattle: 'Open',
     materialsSection: 'Content',
     battlesSection: 'Saved battles',
     exportPopupError: 'Allow popups to export the PDF.',
     pageName: (n) => `Page ${n}`,
-    pageNameTip: (name) => `${name} ï¿½ double-click to rename`,
+    pageNameTip: (name) => `${name} - double-click to rename`,
     errorSave: (msg) => `Error saving material: ${msg}`,
     errorOpen: 'Error opening material. Please try again.',
     vocab: 'Vocabulary',
@@ -462,35 +462,35 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     saveAll: 'Guardar pizarra como material',
     openMaterial: 'Abrir material guardado',
     exportPdf: 'Exportar como PDF',
-    clearPage: 'Limpiar esta pï¿½gina',
-    newPage: 'Nueva pï¿½gina',
-    placeholder: 'Haz clic aquï¿½ y comienza a escribirï¿½',
+    clearPage: 'Limpiar esta página',
+    newPage: 'Nueva página',
+    placeholder: 'Haz clic aquí y comienza a escribir',
     importSlides: 'Importar imágenes como diapositivas',
     importingSlides: 'Importando diapositivas…',
     importSlidesError: 'Selecciona imágenes para importarlas como diapositivas.',
-    readonlyPh: 'Esperando el contenido del profesorï¿½',
-    pageMenu: 'Opciones de pï¿½gina', duplicate: 'Duplicar pï¿½gina',
-    savePage: 'Guardar esta pï¿½gina', deletePage: 'Eliminar pï¿½gina',
-    confirmClear: 'ï¿½Limpiar el contenido de esta pï¿½gina?',
-    confirmDelete: 'ï¿½Eliminar esta pï¿½gina?',
+    readonlyPh: 'Esperando el contenido del profesor',
+    pageMenu: 'Opciones de página', duplicate: 'Duplicar página',
+    savePage: 'Guardar esta página', deletePage: 'Eliminar página',
+    confirmClear: '¿Limpiar el contenido de esta página?',
+    confirmDelete: '¿Eliminar esta página?',
     saveModalTitle: 'Guardar como material',
-    savePageModalTitle: 'Guardar pï¿½gina como material',
+    savePageModalTitle: 'Guardar página como material',
     openModalTitle: 'Clases y Materiales de Apoyo',
-    materialTitleLabel: 'Tï¿½tulo del material',
-    materialPlaceholder: 'Ej: Vocabulario ï¿½ Colores',
-    cancel: 'Cancelar', save: 'Guardar', saving: 'Guardandoï¿½',
+    materialTitleLabel: 'Título del material',
+    materialPlaceholder: 'Ej: Vocabulario - Colores',
+    cancel: 'Cancelar', save: 'Guardar', saving: 'Guardando…',
     noMaterials: 'No hay materiales guardados.',
     noBattles: 'No hay battles guardados.',
     noSavedFiles: 'No hay archivos guardados.',
-    loading: 'Cargandoï¿½', open: 'Abrir',
+    loading: 'Cargando…', open: 'Abrir',
     openBattle: 'Abrir',
     materialsSection: 'Contenido',
     battlesSection: 'Battles guardados',
     exportPopupError: 'Permite las ventanas emergentes para exportar el PDF.',
-    pageName: (n) => `Pï¿½gina ${n}`,
-    pageNameTip: (name) => `${name} ï¿½ doble clic para renombrar`,
+    pageName: (n) => `Página ${n}`,
+    pageNameTip: (name) => `${name} - doble clic para renombrar`,
     errorSave: (msg) => `Error al guardar material: ${msg}`,
-    errorOpen: 'Error al abrir material. Intï¿½ntalo de nuevo.',
+    errorOpen: 'Error al abrir material. Inténtalo de nuevo.',
     vocab: 'Vocabulario',
   },
 };
@@ -4821,21 +4821,21 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             className="fixed z-[12010] hidden lg:block"
             style={{
               right: '18px',
-              top: '186px',
-              width: `${slidePanelSize.width}px`,
-              height: `min(${slidePanelSize.height}px, calc(100vh - 230px))`,
+              top: '170px',
+              width: `${Math.min(Math.max(slidePanelSize.width, 104), 120)}px`,
+              height: `min(${slidePanelSize.height}px, calc(100vh - 214px))`,
             }}
           >
             <div
-              className="flex h-full flex-col gap-2 overflow-y-auto pr-0.5"
-              style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.35) transparent' }}
+              className="flex h-full flex-col gap-1.5 overflow-y-auto pr-0.5"
+              style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.2) transparent' }}
             >
-              <div className="flex items-center justify-end gap-1">
+              <div className="flex items-center justify-end gap-1 pb-0.5">
                 <button
                   type="button"
                   onClick={() => slideImportRef.current?.click()}
                   disabled={pendingSlideImport}
-                  className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/90 text-slate-200 shadow-lg transition hover:border-blue-500 hover:bg-slate-900 hover:text-white disabled:opacity-50"
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/80 text-slate-300 transition hover:bg-slate-900 hover:text-white disabled:opacity-50"
                   title={wsl.importSlides}
                 >
                   <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 16 16">
@@ -4849,7 +4849,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     setSaveMaterialTitle('');
                     setShowSaveModal(true);
                   }}
-                  className="flex h-7 w-7 items-center justify-center rounded-full border border-slate-700/80 bg-slate-950/90 text-slate-200 shadow-lg transition hover:border-emerald-500 hover:bg-slate-900 hover:text-white"
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/80 text-slate-300 transition hover:bg-slate-900 hover:text-white"
                   title={isSlidesMode ? 'Save all slides' : wsl.save}
                 >
                   <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 16 16">
@@ -4865,18 +4865,20 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     key={page.id}
                     type="button"
                     onClick={() => switchPage(page.id)}
-                    className={`group relative w-full rounded-2xl p-1.5 text-left transition ${
+                    className={`group relative w-full text-left transition ${
                       isActive
-                        ? 'bg-slate-950/95 shadow-[0_0_0_1px_rgba(59,130,246,0.45)]'
-                        : 'bg-slate-950/85 hover:bg-slate-900/90'
+                        ? 'opacity-100'
+                        : 'opacity-95 hover:opacity-100'
                     }`}
                     title={surfaceLabels.pageNameTip(page.name)}
                   >
                     <div
-                      className="relative aspect-video overflow-hidden rounded-xl border border-slate-800/70 bg-white"
+                      className={`relative aspect-video overflow-hidden rounded-[14px] bg-white shadow-sm transition ${
+                        isActive ? 'ring-1 ring-blue-500/70' : 'ring-1 ring-slate-800/25'
+                      }`}
                       style={{ backgroundColor: page.backgroundColor ?? '#ffffff' }}
                     >
-                      <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-slate-900/80 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                      <span className="absolute left-1.5 top-1.5 z-10 rounded-full bg-slate-900/82 px-1.5 py-0.5 text-[8px] font-bold text-white">
                         {pages.findIndex((entry) => entry.id === page.id) + 1}
                       </span>
                       <div
@@ -4896,13 +4898,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                           event.stopPropagation();
                           setOpenSlideMenuId((current) => (current === page.id ? null : page.id));
                         }}
-                        className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/75 text-[11px] font-black text-white"
+                        className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/78 text-[10px] font-black text-white shadow-sm"
                         title={surfaceLabels.pageMenu}
                       >
                         ...
                       </button>
                       {openSlideMenuId === page.id ? (
-                        <div className="absolute right-0 top-6 w-28 rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">
+                        <div className="absolute right-0 top-6 z-[12030] w-28 rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">
                           <button
                             type="button"
                             onClick={(event) => {
@@ -4913,7 +4915,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                             className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
                             title={wsl.duplicate}
                           >
-                            Duplicate
+                            Duplicar
                           </button>
                           <button
                             type="button"
@@ -4925,7 +4927,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                             className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
                             title={surfaceLabels.newPage}
                           >
-                            Add slide
+                            Novo slide
                           </button>
                           <button
                             type="button"
@@ -4939,7 +4941,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                             className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
                             title={surfaceLabels.savePage}
                           >
-                            Save
+                            Salvar
                           </button>
                           {pages.length > 1 && (
                             <button
@@ -4952,7 +4954,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                               className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-rose-300 transition hover:bg-slate-800"
                               title={surfaceLabels.deletePage}
                             >
-                              Delete
+                              Excluir
                             </button>
                           )}
                         </div>
