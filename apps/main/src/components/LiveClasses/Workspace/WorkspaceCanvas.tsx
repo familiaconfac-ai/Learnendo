@@ -20,6 +20,7 @@ import React, {
   useCallback,
   PointerEvent as ReactPointerEvent,
 } from 'react';
+import JSZip from 'jszip';
 import {
   subscribeWorkspace,
   saveWorkspace,
@@ -72,6 +73,75 @@ function stripFileExtension(filename: string): string {
 
 function hasAcceptedSlideImageExtension(filename: string): boolean {
   return /\.(png|jpe?g|webp|gif|bmp|svg|avif)$/i.test(filename);
+}
+
+function hasAcceptedPptxExtension(filename: string): boolean {
+  return /\.(pptx|ppsx)$/i.test(filename);
+}
+
+function decodeHtmlEntities(raw: string): string {
+  if (typeof document === 'undefined') return raw;
+  const textarea = document.createElement('textarea');
+  textarea.innerHTML = raw;
+  return textarea.value;
+}
+
+function escapeHtml(raw: string): string {
+  return raw
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function normalizeZipPath(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  const segments = normalized.split('/');
+  const resolved: string[] = [];
+  for (const segment of segments) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      resolved.pop();
+      continue;
+    }
+    resolved.push(segment);
+  }
+  return resolved.join('/');
+}
+
+function resolveZipTarget(basePath: string, targetPath: string): string {
+  const baseSegments = normalizeZipPath(basePath).split('/');
+  baseSegments.pop();
+  return normalizeZipPath([...baseSegments, targetPath].join('/'));
+}
+
+function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string, string> {
+  const map = new Map<string, string>();
+  const regex = /<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"[^>]*Type="([^"]+)"[^>]*\/?>/g;
+  let match: RegExpExecArray | null;
+  while ((match = regex.exec(xml))) {
+    const [, id, target, type] = match;
+    if (!relTypeNeedle || type.includes(relTypeNeedle)) {
+      map.set(id, target);
+    }
+  }
+  return map;
+}
+
+function extractPptParagraphs(xml: string): string[] {
+  const paragraphs: string[] = [];
+  const paragraphRegex = /<a:p\b[^>]*>([\s\S]*?)<\/a:p>/g;
+  let paragraphMatch: RegExpExecArray | null;
+  while ((paragraphMatch = paragraphRegex.exec(xml))) {
+    const paragraphXml = paragraphMatch[1] ?? '';
+    const runs = [...paragraphXml.matchAll(/<a:t\b[^>]*>([\s\S]*?)<\/a:t>/g)]
+      .map((match) => decodeHtmlEntities(match[1] ?? ''))
+      .join('');
+    const trimmed = runs.replace(/\s+/g, ' ').trim();
+    if (trimmed) paragraphs.push(trimmed);
+  }
+  return paragraphs;
 }
 
 const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
@@ -2953,15 +3023,122 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const buildImageSlidePage = useCallback((file: File, dataUrl: string, pageNumber: number): WorkspacePage => ({
+    id: uid(),
+    name: stripFileExtension(file.name) || slideLabels.pageName(pageNumber),
+    backgroundColor: '#ffffff',
+    docContent: '',
+    items: [
+      normalizeItemScope({
+        id: uid(),
+        type: 'image' as WorkspaceItemType,
+        x: 8,
+        y: 10,
+        w: 84,
+        h: 72,
+        imageUrl: dataUrl,
+        updatedAt: Date.now(),
+        updatedBy: userId,
+        updatedByName: userName,
+      }),
+    ],
+  }), [normalizeItemScope, slideLabels, userId, userName]);
+
+  const importPptxSlides = useCallback(async (file: File, startIndex: number): Promise<WorkspacePage[]> => {
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const presentationXml = await zip.file('ppt/presentation.xml')?.async('text');
+    const presentationRelsXml = await zip.file('ppt/_rels/presentation.xml.rels')?.async('text');
+    if (!presentationXml || !presentationRelsXml) {
+      throw new Error('Invalid PPTX structure');
+    }
+
+    const slideOrder = [...presentationXml.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
+    const presentationRels = extractRelationshipMap(presentationRelsXml, '/slide');
+    const importedPages: WorkspacePage[] = [];
+
+    for (const [slideOffset, relId] of slideOrder.entries()) {
+      const slideTarget = presentationRels.get(relId);
+      if (!slideTarget) continue;
+
+      const slidePath = resolveZipTarget('ppt/presentation.xml', slideTarget.startsWith('ppt/') ? slideTarget : `ppt/${slideTarget}`);
+      const slideXml = await zip.file(slidePath)?.async('text');
+      if (!slideXml) continue;
+
+      const slideRelsPath = `${slidePath.slice(0, slidePath.lastIndexOf('/') + 1)}_rels/${slidePath.split('/').pop()}.rels`;
+      const slideRelsXml = await zip.file(slideRelsPath)?.async('text');
+      const slideRels = slideRelsXml ? extractRelationshipMap(slideRelsXml) : new Map<string, string>();
+
+      const paragraphs = extractPptParagraphs(slideXml);
+      const imageRelIds = [...slideXml.matchAll(/<a:blip\b[^>]*r:embed="([^"]+)"/g)].map((match) => match[1]);
+      const items: WorkspaceItem[] = [];
+
+      for (const [imageIndex, imageRelId] of imageRelIds.entries()) {
+        const imageTarget = slideRels.get(imageRelId);
+        if (!imageTarget) continue;
+        const imagePath = resolveZipTarget(slideRelsPath, imageTarget);
+        const imageFile = zip.file(imagePath);
+        if (!imageFile) continue;
+
+        const extension = imagePath.split('.').pop()?.toLowerCase() ?? 'png';
+        const mimeType =
+          extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg'
+            : extension === 'gif' ? 'image/gif'
+              : extension === 'bmp' ? 'image/bmp'
+                : extension === 'svg' ? 'image/svg+xml'
+                  : extension === 'avif' ? 'image/avif'
+                    : extension === 'webp' ? 'image/webp'
+                      : 'image/png';
+        const base64 = await imageFile.async('base64');
+        items.push(
+          normalizeItemScope({
+            id: uid(),
+            type: 'image' as WorkspaceItemType,
+            x: 8,
+            y: imageIndex === 0 ? (paragraphs.length ? 34 : 10) : 10 + imageIndex * 26,
+            w: 84,
+            h: paragraphs.length ? 30 : 72,
+            imageUrl: `data:${mimeType};base64,${base64}`,
+            updatedAt: Date.now(),
+            updatedBy: userId,
+            updatedByName: userName,
+          }),
+        );
+      }
+
+      const docContent = paragraphs.length
+        ? paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')
+        : '';
+
+      importedPages.push({
+        id: uid(),
+        name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
+        backgroundColor: '#ffffff',
+        docContent,
+        items,
+      });
+    }
+
+    if (!importedPages.length) {
+      throw new Error('No slides found in PPTX');
+    }
+
+    return importedPages.map((page, index) => ({
+      ...page,
+      name: page.name || slideLabels.pageName(startIndex + index),
+    }));
+  }, [normalizeItemScope, slideLabels, userId, userName]);
+
   const handleSlideImportFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (!selectedFiles.length || !isSlidesMode || !viewerCanManagePages) return;
 
-    const imageFiles = selectedFiles.filter((file) =>
-      file.type.startsWith('image/') || hasAcceptedSlideImageExtension(file.name),
+    const acceptedFiles = selectedFiles.filter((file) =>
+      file.type.startsWith('image/')
+      || hasAcceptedSlideImageExtension(file.name)
+      || hasAcceptedPptxExtension(file.name),
     );
-    if (!imageFiles.length) {
+    if (!acceptedFiles.length) {
       window.alert(wsl.importSlidesError);
       return;
     }
@@ -2979,17 +3156,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       flushFloatingEditorBeforePageMutation();
       const flushed = flushPages();
       const insertionIndex = Math.max(0, flushed.findIndex((page) => page.id === activePageIdRef.current)) + 1;
-      const importedAssets = await Promise.all(imageFiles.map((file) => readAsDataUrl(file)));
-      const importedPages: WorkspacePage[] = importedAssets.map(({ file, dataUrl }, index) => ({
-        id: uid(),
-        name: stripFileExtension(file.name) || slideLabels.pageName(flushed.length + index + 1),
-        backgroundColor: '#ffffff',
-        docContent:
-          `<div style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;margin:0;padding:0;">` +
-          `<img src="${dataUrl}" alt="" style="display:block;max-width:100%;max-height:100%;object-fit:contain;" />` +
-          `</div>`,
-        items: [],
-      }));
+      const importedPages: WorkspacePage[] = [];
+
+      for (const file of acceptedFiles) {
+        if (hasAcceptedPptxExtension(file.name)) {
+          const pagesFromDeck = await importPptxSlides(file, flushed.length + importedPages.length + 1);
+          importedPages.push(...pagesFromDeck);
+          continue;
+        }
+
+        const { dataUrl } = await readAsDataUrl(file);
+        importedPages.push(buildImageSlidePage(file, dataUrl, flushed.length + importedPages.length + 1));
+      }
+
       const updated = [
         ...flushed.slice(0, insertionIndex),
         ...importedPages,
@@ -3004,22 +3183,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(firstImportedPage.docContent);
       if (docRef.current) docRef.current.innerHTML = firstImportedPage.docContent;
-      setItems([]);
-      setSelectedId(null);
+      setItems(firstImportedPage.items ?? []);
+      setSelectedId(firstImportedPage.items?.[0]?.id ?? null);
       activePageIdRef.current = firstImportedPage.id;
       setActivePageId(firstImportedPage.id);
       updateSurfaceStateRef(surfaceModeRef.current, () => ({
         pages: updated,
         currentPageId: firstImportedPage.id,
         docContent: firstImportedPage.docContent,
-        items: [],
+        items: firstImportedPage.items ?? [],
       }));
       savePageSwitch(
         classId,
         updated,
         firstImportedPage.id,
         firstImportedPage.docContent,
-        [],
+        firstImportedPage.items ?? [],
         userId,
         userName,
         surfaceModeRef.current,
@@ -4166,7 +4345,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 : <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><rect x="2" y="4" width="16" height="12" rx="2"/><circle cx="7" cy="8.5" r="1.5"/><path d="M2 14l4-4 3 3 3-4 6 5"/></svg>}
             </button>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
-            <input ref={slideImportRef} type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.avif" multiple className="hidden" onChange={handleSlideImportFiles} />
+            <input ref={slideImportRef} type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.gif,.bmp,.svg,.avif,.pptx,.ppsx" multiple className="hidden" onChange={handleSlideImportFiles} />
           </>
         )}
 
