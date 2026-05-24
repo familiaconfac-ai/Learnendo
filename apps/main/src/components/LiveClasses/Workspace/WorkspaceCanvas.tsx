@@ -1472,14 +1472,14 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         zIndex: isSelected ? 50 : 10,
         pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
         boxSizing: 'border-box',
-        border: isSelected ? '2px solid #2563eb' : '1px dashed #94a3b8',
+        border: isSelected ? '2px solid #2563eb' : item.type === 'image' ? 'none' : '1px dashed #94a3b8',
         borderRadius: '6px',
         overflow: 'hidden',
         background: item.type === 'text' ? (item.styles?.bgColor || '#ffffff') : 'transparent',
         cursor: 'default',
         userSelect: 'text',
         touchAction: 'none',
-        boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : '0 2px 8px rgba(0,0,0,0.08)',
+        boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : item.type === 'image' ? 'none' : '0 2px 8px rgba(0,0,0,0.08)',
       });
     };
     update();
@@ -3118,7 +3118,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const slideTarget = presentationRels.get(relId);
       if (!slideTarget) continue;
 
-      const slidePath = resolveZipTarget('ppt/presentation.xml', slideTarget.startsWith('ppt/') ? slideTarget : `ppt/${slideTarget}`);
+      const slidePath = slideTarget.startsWith('ppt/')
+        ? normalizeZipPath(slideTarget)
+        : resolveZipTarget('ppt/presentation.xml', slideTarget.replace(/^\/+/, ''));
       const slideXml = await zip.file(slidePath)?.async('text');
       if (!slideXml) continue;
 
@@ -4891,12 +4893,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             style={{
               right: '18px',
               top: '170px',
-              width: `${Math.min(Math.max(slidePanelSize.width, 132), 150)}px`,
+              width: `${Math.min(Math.max(slidePanelSize.width, 136), 164)}px`,
               height: `min(${slidePanelSize.height}px, calc(100vh - 214px))`,
             }}
           >
             <div
-              className="flex h-full flex-col gap-1.5 overflow-y-auto pr-0.5"
+              className="flex h-full flex-col gap-1.5 overflow-y-auto overflow-x-visible pr-0.5"
               style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.2) transparent' }}
             >
               <div className="flex items-center justify-end gap-1 pb-0.5">
@@ -4952,12 +4954,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                       </span>
                       <div
                         className="pointer-events-none absolute left-0 top-0 h-[540px] w-[960px] origin-top-left overflow-hidden text-slate-700 [&_img]:max-h-full [&_img]:max-w-full [&_p]:m-0 [&_ul]:m-0 [&_ol]:m-0"
-                        style={{ transform: 'scale(0.138)' }}
+                        style={{ transform: 'scale(0.14)' }}
                         dangerouslySetInnerHTML={{ __html: getSlidePreviewHtml(page) }}
                       />
                     </div>
                     <div
-                      className="absolute right-3 top-3 z-30"
+                      className="absolute right-2 top-2 z-40"
                       onPointerDown={(event) => event.stopPropagation()}
                       onClick={(event) => event.stopPropagation()}
                     >
@@ -4967,10 +4969,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                           event.stopPropagation();
                           setOpenSlideMenuId((current) => (current === page.id ? null : page.id));
                         }}
-                        className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-900/78 text-[10px] font-black text-white shadow-sm"
+                        className="flex h-5 w-5 items-center justify-center rounded-full bg-white/96 text-[11px] font-black leading-none text-slate-700 shadow-sm ring-1 ring-slate-300/80"
                         title={surfaceLabels.pageMenu}
                       >
-                        ...
+                        ⋯
                       </button>
                       {openSlideMenuId === page.id ? (
                         <div className="absolute right-0 top-6 z-[12030] w-28 rounded-lg border border-slate-700 bg-slate-950 p-1 shadow-xl">
@@ -4984,7 +4986,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                             className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
                             title={wsl.duplicate}
                           >
-                            Duplicar
+                            {wsl.duplicate}
                           </button>
                           <button
                             type="button"
@@ -4996,7 +4998,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                             className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
                             title={surfaceLabels.newPage}
                           >
-                            Novo slide
+                            {surfaceLabels.newPage}
                           </button>
                           <button
                             type="button"
@@ -5010,7 +5012,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                             className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-slate-200 transition hover:bg-slate-800"
                             title={surfaceLabels.savePage}
                           >
-                            Salvar
+                            {surfaceLabels.savePage}
                           </button>
                           {pages.length > 1 && (
                             <button
@@ -5023,7 +5025,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                               className="block w-full rounded-md px-2 py-1.5 text-left text-[10px] font-semibold text-rose-300 transition hover:bg-slate-800"
                               title={surfaceLabels.deletePage}
                             >
-                              Excluir
+                              {surfaceLabels.deletePage}
                             </button>
                           )}
                         </div>
