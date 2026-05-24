@@ -86,6 +86,28 @@ function decodeHtmlEntities(raw: string): string {
   return textarea.value;
 }
 
+function parseXmlDocument(xml: string): Document | null {
+  if (typeof DOMParser === 'undefined') return null;
+  try {
+    return new DOMParser().parseFromString(xml, 'application/xml');
+  } catch {
+    return null;
+  }
+}
+
+function getAttributeByName(element: Element, candidates: string[]): string {
+  for (const candidate of candidates) {
+    const direct = element.getAttribute(candidate);
+    if (direct) return direct;
+  }
+  for (const attr of Array.from(element.attributes)) {
+    if (candidates.includes(attr.name) || candidates.includes(attr.localName)) {
+      return attr.value;
+    }
+  }
+  return '';
+}
+
 function escapeHtml(raw: string): string {
   return raw
     .replace(/&/g, '&amp;')
@@ -118,6 +140,21 @@ function resolveZipTarget(basePath: string, targetPath: string): string {
 
 function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string, string> {
   const map = new Map<string, string>();
+  const xmlDoc = parseXmlDocument(xml);
+  if (xmlDoc) {
+    const relationshipNodes = Array.from(xmlDoc.getElementsByTagName('*'))
+      .filter((node) => node.localName === 'Relationship');
+    for (const node of relationshipNodes) {
+      const id = getAttributeByName(node, ['Id']);
+      const target = getAttributeByName(node, ['Target']);
+      const type = getAttributeByName(node, ['Type']);
+      if (!id || !target || !type) continue;
+      if (!relTypeNeedle || type.includes(relTypeNeedle)) {
+        map.set(id, target);
+      }
+    }
+    if (map.size) return map;
+  }
   const regex = /<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"[^>]*Type="([^"]+)"[^>]*\/?>/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(xml))) {
@@ -131,6 +168,21 @@ function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string
 
 function extractPptParagraphs(xml: string): string[] {
   const paragraphs: string[] = [];
+  const xmlDoc = parseXmlDocument(xml);
+  if (xmlDoc) {
+    const paragraphNodes = Array.from(xmlDoc.getElementsByTagName('*'))
+      .filter((node) => node.localName === 'p');
+    for (const paragraphNode of paragraphNodes) {
+      const textNodes = Array.from(paragraphNode.getElementsByTagName('*'))
+        .filter((node) => node.localName === 't');
+      const runs = textNodes
+        .map((node) => decodeHtmlEntities(node.textContent ?? ''))
+        .join('');
+      const trimmed = runs.replace(/\s+/g, ' ').trim();
+      if (trimmed) paragraphs.push(trimmed);
+    }
+    if (paragraphs.length) return paragraphs;
+  }
   const paragraphRegex = /<a:p\b[^>]*>([\s\S]*?)<\/a:p>/g;
   let paragraphMatch: RegExpExecArray | null;
   while ((paragraphMatch = paragraphRegex.exec(xml))) {
@@ -3052,7 +3104,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       throw new Error('Invalid PPTX structure');
     }
 
-    const slideOrder = [...presentationXml.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
+    const presentationDoc = parseXmlDocument(presentationXml);
+    const slideOrder = presentationDoc
+      ? Array.from(presentationDoc.getElementsByTagName('*'))
+        .filter((node) => node.localName === 'sldId')
+        .map((node) => getAttributeByName(node, ['r:id', 'id']))
+        .filter(Boolean)
+      : [...presentationXml.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
     const presentationRels = extractRelationshipMap(presentationRelsXml, '/slide');
     const importedPages: WorkspacePage[] = [];
 
@@ -3069,7 +3127,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const slideRels = slideRelsXml ? extractRelationshipMap(slideRelsXml) : new Map<string, string>();
 
       const paragraphs = extractPptParagraphs(slideXml);
-      const imageRelIds = [...slideXml.matchAll(/<a:blip\b[^>]*r:embed="([^"]+)"/g)].map((match) => match[1]);
+      const slideDoc = parseXmlDocument(slideXml);
+      const imageRelIds = slideDoc
+        ? Array.from(slideDoc.getElementsByTagName('*'))
+          .filter((node) => node.localName === 'blip')
+          .map((node) => getAttributeByName(node, ['r:embed', 'embed']))
+          .filter(Boolean)
+        : [...slideXml.matchAll(/<a:blip\b[^>]*r:embed="([^"]+)"/g)].map((match) => match[1]);
       const items: WorkspaceItem[] = [];
 
       for (const [imageIndex, imageRelId] of imageRelIds.entries()) {
@@ -3108,6 +3172,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const docContent = paragraphs.length
         ? paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')
         : '';
+
+      const hasMeaningfulContent = paragraphs.length > 0 || items.length > 0;
+      if (!hasMeaningfulContent) {
+        continue;
+      }
 
       importedPages.push({
         id: uid(),
@@ -4822,7 +4891,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             style={{
               right: '18px',
               top: '170px',
-              width: `${Math.min(Math.max(slidePanelSize.width, 104), 120)}px`,
+              width: `${Math.min(Math.max(slidePanelSize.width, 132), 150)}px`,
               height: `min(${slidePanelSize.height}px, calc(100vh - 214px))`,
             }}
           >
@@ -4870,7 +4939,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                         ? 'opacity-100'
                         : 'opacity-95 hover:opacity-100'
                     }`}
-                    title={surfaceLabels.pageNameTip(page.name)}
+                    title={page.name}
                   >
                     <div
                       className={`relative aspect-video overflow-hidden rounded-[14px] bg-white shadow-sm transition ${
@@ -4883,7 +4952,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                       </span>
                       <div
                         className="pointer-events-none absolute left-0 top-0 h-[540px] w-[960px] origin-top-left overflow-hidden text-slate-700 [&_img]:max-h-full [&_img]:max-w-full [&_p]:m-0 [&_ul]:m-0 [&_ol]:m-0"
-                        style={{ transform: 'scale(0.125)' }}
+                        style={{ transform: 'scale(0.138)' }}
                         dangerouslySetInnerHTML={{ __html: getSlidePreviewHtml(page) }}
                       />
                     </div>
