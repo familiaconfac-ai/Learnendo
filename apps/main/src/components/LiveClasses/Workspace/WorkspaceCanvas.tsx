@@ -21,6 +21,7 @@ import React, {
   PointerEvent as ReactPointerEvent,
 } from 'react';
 import JSZip from 'jszip';
+import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 import {
   subscribeWorkspace,
   saveWorkspace,
@@ -37,6 +38,7 @@ import {
   type WorkspaceSurfaceState,
   type WorkspaceSurfaceMode,
 } from '../../../services/workspaceService';
+import { app } from '../../../services/firebase';
 import {
   saveWorkspaceAsMaterial,
   loadMaterialToWorkspace,
@@ -161,11 +163,32 @@ function resolveZipTarget(basePath: string, targetPath: string): string {
 }
 
 function resolveZipEntryPath(basePath: string, targetPath: string): string {
-  const normalizedTarget = normalizeZipPath(targetPath.replace(/^\/+/, ''));
+  const rawTarget = targetPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  const normalizedTarget = normalizeZipPath(rawTarget);
   if (normalizedTarget.startsWith('ppt/')) {
     return normalizedTarget;
   }
-  return resolveZipTarget(basePath, normalizedTarget);
+  return resolveZipTarget(basePath, rawTarget);
+}
+
+function getImageMimeTypeFromExtension(extension: string): string {
+  switch (extension.toLowerCase()) {
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'gif':
+      return 'image/gif';
+    case 'bmp':
+      return 'image/bmp';
+    case 'svg':
+      return 'image/svg+xml';
+    case 'avif':
+      return 'image/avif';
+    case 'webp':
+      return 'image/webp';
+    default:
+      return 'image/png';
+  }
 }
 
 function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string, string> {
@@ -1875,10 +1898,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   });
   const [slidePanelVisible, setSlidePanelVisible] = useState(true);
   const [openSlideMenuId, setOpenSlideMenuId] = useState<string | null>(null);
+  const [selectedSlideIds, setSelectedSlideIds] = useState<string[]>([]);
   const [slidePanelPosition, setSlidePanelPosition] = useState<{ x: number; y: number } | null>(null);
   const [slidePanelSize, setSlidePanelSize] = useState<{ width: number; height: number }>({ width: 132, height: 320 });
+  const slideSelectionAnchorIdRef = useRef<string | null>(null);
   const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const slidePanelResizeOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const storage = useMemo(() => getStorage(app), []);
   const getDefaultSlidePanelPosition = useCallback(() => {
     if (typeof window === 'undefined') {
       return { x: 24, y: 112 };
@@ -1896,6 +1922,28 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       saveWorkspacePresentationMode(classId, nextValue, userId, userName).catch(console.error);
     }
   }, [classId, userId, userName, viewerCanManagePages]);
+  const uploadSlideAsset = useCallback(
+    async (
+      sourceName: string,
+      bytes: Uint8Array,
+      extension: string,
+      contentType: string,
+    ): Promise<string> => {
+      const safeBase = stripFileExtension(sourceName)
+        .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '')
+        || 'slide';
+      const filePath = `liveClasses/${classId}/workspaceSlides/${Date.now()}-${uid()}-${safeBase}.${extension}`;
+      const assetRef = storageRef(storage, filePath);
+      await uploadBytes(assetRef, bytes, {
+        contentType,
+        cacheControl: 'public,max-age=31536000,immutable',
+      });
+      return getDownloadURL(assetRef);
+    },
+    [classId, storage],
+  );
   const normalizeItemScope = useCallback(
     (item: WorkspaceItem): WorkspaceItem => ({
       ...item,
@@ -1914,6 +1962,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // Refs are kept in sync manually (no useEffect delay) so closures always see latest.
   const pagesRef = useRef<WorkspacePage[]>(surfaceStatesRef.current.document.pages);
   const activePageIdRef = useRef<string>(surfaceStatesRef.current.document.currentPageId);
+  useEffect(() => {
+    setSelectedSlideIds((prev) => prev.filter((pageId) => pages.some((page) => page.id === pageId)));
+    if (slideSelectionAnchorIdRef.current && !pages.some((page) => page.id === slideSelectionAnchorIdRef.current)) {
+      slideSelectionAnchorIdRef.current = pages[0]?.id ?? null;
+    }
+  }, [pages]);
+  useEffect(() => {
+    if (!isSlidesMode) {
+      setSelectedSlideIds([]);
+      slideSelectionAnchorIdRef.current = null;
+      setOpenSlideMenuId(null);
+    }
+  }, [isSlidesMode]);
   const updateSurfaceStateRef = useCallback(
     (
       mode: WorkspaceSurfaceMode,
@@ -3113,9 +3174,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     reader.readAsDataURL(file);
   };
 
-  const buildImageSlidePage = useCallback((file: File, dataUrl: string, pageNumber: number): WorkspacePage => ({
+  const buildImageSlidePage = useCallback((sourceName: string, imageUrl: string, pageNumber: number): WorkspacePage => ({
     id: uid(),
-    name: stripFileExtension(file.name) || slideLabels.pageName(pageNumber),
+    name: stripFileExtension(sourceName) || slideLabels.pageName(pageNumber),
     backgroundColor: '#ffffff',
     docContent: '',
     items: [
@@ -3126,7 +3187,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         y: 10,
         w: 84,
         h: 72,
-        imageUrl: dataUrl,
+        imageUrl,
         updatedAt: Date.now(),
         updatedBy: userId,
         updatedByName: userName,
@@ -3195,15 +3256,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         if (!imageFile) continue;
 
         const extension = imagePath.split('.').pop()?.toLowerCase() ?? 'png';
-        const mimeType =
-          extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg'
-            : extension === 'gif' ? 'image/gif'
-              : extension === 'bmp' ? 'image/bmp'
-                : extension === 'svg' ? 'image/svg+xml'
-                  : extension === 'avif' ? 'image/avif'
-                    : extension === 'webp' ? 'image/webp'
-                      : 'image/png';
-        const base64 = await imageFile.async('base64');
+        const mimeType = getImageMimeTypeFromExtension(extension);
+        const imageBytes = await imageFile.async('uint8array');
+        const hostedImageUrl = await uploadSlideAsset(
+          `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}`,
+          imageBytes,
+          extension,
+          mimeType,
+        );
         items.push(
           normalizeItemScope({
             id: uid(),
@@ -3212,7 +3272,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             y: imageIndex === 0 ? (paragraphs.length ? 34 : 0) : 10 + imageIndex * 26,
             w: paragraphs.length ? 84 : 100,
             h: paragraphs.length ? 30 : 100,
-            imageUrl: `data:${mimeType};base64,${base64}`,
+            imageUrl: hostedImageUrl,
             updatedAt: Date.now(),
             updatedBy: userId,
             updatedByName: userName,
@@ -3241,7 +3301,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ...page,
       name: page.name || slideLabels.pageName(startIndex + index),
     }));
-  }, [normalizeItemScope, slideLabels, userId, userName]);
+  }, [normalizeItemScope, slideLabels, uploadSlideAsset, userId, userName]);
 
   const handleSlideImportFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
@@ -3285,7 +3345,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         }
 
         const { dataUrl } = await readAsDataUrl(file);
-        importedPages.push(buildImageSlidePage(file, dataUrl, flushed.length + importedPages.length + 1));
+        importedPages.push(buildImageSlidePage(file.name, dataUrl, flushed.length + importedPages.length + 1));
       }
 
       const updated = [
@@ -3310,6 +3370,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       setSelectedId(firstImportedPage.items?.[0]?.id ?? null);
       activePageIdRef.current = firstImportedPage.id;
       setActivePageId(firstImportedPage.id);
+      setSelectedSlideIds(importedPages.map((page) => page.id));
+      slideSelectionAnchorIdRef.current = firstImportedPage.id;
       updateSurfaceStateRef(surfaceModeRef.current, () => ({
         pages: updated,
         currentPageId: firstImportedPage.id,
@@ -3450,6 +3512,94 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     return flushed;
   };
 
+  const handleSlideThumbnailClick = (event: React.MouseEvent<HTMLButtonElement>, pageId: string) => {
+    if (!viewerCanManagePages) return;
+    const currentPages = pagesRef.current;
+    if (event.shiftKey && slideSelectionAnchorIdRef.current) {
+      const anchorIndex = currentPages.findIndex((page) => page.id === slideSelectionAnchorIdRef.current);
+      const targetIndex = currentPages.findIndex((page) => page.id === pageId);
+      if (anchorIndex >= 0 && targetIndex >= 0) {
+        const [start, end] = anchorIndex < targetIndex ? [anchorIndex, targetIndex] : [targetIndex, anchorIndex];
+        setSelectedSlideIds(currentPages.slice(start, end + 1).map((page) => page.id));
+      } else {
+        setSelectedSlideIds([pageId]);
+        slideSelectionAnchorIdRef.current = pageId;
+      }
+    } else {
+      setSelectedSlideIds([pageId]);
+      slideSelectionAnchorIdRef.current = pageId;
+    }
+    switchPage(pageId);
+  };
+
+  const deleteSelectedSlides = () => {
+    if (!viewerCanManagePages || selectedSlideIds.length === 0) return;
+    flushFloatingEditorBeforePageMutation();
+    const current = pagesRef.current;
+    const uniqueIds = Array.from(new Set(selectedSlideIds)).filter((pageId) => current.some((page) => page.id === pageId));
+    if (uniqueIds.length === 0) return;
+    if (!window.confirm(slideDeleteSelectionConfirm)) return;
+
+    const remaining = current.filter((page) => !uniqueIds.includes(page.id));
+    setOpenSlideMenuId(null);
+    setSelectedSlideIds([]);
+
+    if (remaining.length === 0) {
+      const freshId = uid();
+      const freshPage: WorkspacePage = {
+        id: freshId,
+        name: surfaceLabels.pageName(1),
+        backgroundColor: '#ffffff',
+        docContent: '',
+        items: [],
+      };
+      pagesRef.current = [freshPage];
+      setPages([freshPage]);
+      if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+      if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+      setDocHtml('');
+      if (docRef.current) docRef.current.innerHTML = '';
+      setItems([]);
+      setSelectedId(null);
+      activePageIdRef.current = freshId;
+      setActivePageId(freshId);
+      slideSelectionAnchorIdRef.current = freshId;
+      updateSurfaceStateRef(surfaceModeRef.current, () => ({
+        pages: [freshPage],
+        currentPageId: freshId,
+        docContent: '',
+        items: [],
+      }));
+      savePageSwitch(classId, [freshPage], freshId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
+      return;
+    }
+
+    const fallbackIndex = current.findIndex((page) => uniqueIds.includes(page.id));
+    const nextActivePage =
+      remaining.find((page) => page.id === activePageIdRef.current) ??
+      remaining[Math.min(Math.max(fallbackIndex, 0), remaining.length - 1)] ??
+      remaining[0];
+
+    pagesRef.current = remaining;
+    setPages(remaining);
+    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    setDocHtml(nextActivePage.docContent);
+    if (docRef.current) docRef.current.innerHTML = nextActivePage.docContent;
+    setItems(nextActivePage.items.map(normalizeItemScope));
+    setSelectedId(null);
+    activePageIdRef.current = nextActivePage.id;
+    setActivePageId(nextActivePage.id);
+    slideSelectionAnchorIdRef.current = nextActivePage.id;
+    updateSurfaceStateRef(surfaceModeRef.current, () => ({
+      pages: remaining,
+      currentPageId: nextActivePage.id,
+      docContent: nextActivePage.docContent,
+      items: nextActivePage.items,
+    }));
+    savePageSwitch(classId, remaining, nextActivePage.id, nextActivePage.docContent, nextActivePage.items, userId, userName, surfaceModeRef.current).catch(console.error);
+  };
+
   const switchPage = (pageId: string) => {
     if (pageId === activePageIdRef.current || !viewerCanManagePages) return;
     flushFloatingEditorBeforePageMutation();
@@ -3465,6 +3615,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setSelectedId(null);
     activePageIdRef.current = pageId;
     setActivePageId(pageId);
+    slideSelectionAnchorIdRef.current = pageId;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: flushed,
@@ -3492,6 +3643,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setSelectedId(null);
     activePageIdRef.current = newId;
     setActivePageId(newId);
+    setSelectedSlideIds([newId]);
+    slideSelectionAnchorIdRef.current = newId;
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
       pages: updated,
       currentPageId: newId,
@@ -3522,6 +3675,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       setSelectedId(null);
       activePageIdRef.current = nextPage.id;
       setActivePageId(nextPage.id);
+      setSelectedSlideIds([nextPage.id]);
+      slideSelectionAnchorIdRef.current = nextPage.id;
       updateSurfaceStateRef(surfaceModeRef.current, () => ({
         pages: remaining,
         currentPageId: nextPage.id,
@@ -3575,6 +3730,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const updated = [...flushed.slice(0, idx + 1), copy, ...flushed.slice(idx + 1)];
     pagesRef.current = updated;
     setPages(updated);
+    setSelectedSlideIds([copy.id]);
+    slideSelectionAnchorIdRef.current = copy.id;
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
@@ -3859,6 +4016,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     () => Math.max(0, pages.findIndex((page) => page.id === activePageId)),
     [activePageId, pages],
   );
+  const slideDeleteSelectionLabel = useMemo(() => {
+    if (uiLang === 'es') return 'Eliminar diapositivas seleccionadas';
+    if (uiLang === 'en') return 'Delete selected slides';
+    return 'Excluir slides selecionados';
+  }, [uiLang]);
+  const slideDeleteSelectionConfirm = useMemo(() => {
+    if (uiLang === 'es') return '¿Eliminar las diapositivas seleccionadas?';
+    if (uiLang === 'en') return 'Delete the selected slides?';
+    return 'Excluir os slides selecionados?';
+  }, [uiLang]);
   const hasPreviousSlide = currentSlideIndex > 0;
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
   const isPortraitViewport = presentationViewport.height > presentationViewport.width + 4;
@@ -3878,6 +4045,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const getSlidePreviewHtml = useCallback((page: WorkspacePage) => {
     const html = (page.docContent ?? '').trim();
     if (html) return html;
+    const firstImage = (page.items ?? []).find((item) => item.type === 'image' && item.imageUrl);
+    if (firstImage?.imageUrl) {
+      return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${page.backgroundColor ?? '#ffffff'};"><img src="${escapeHtml(firstImage.imageUrl)}" alt="" style="width:100%;height:100%;object-fit:contain;" /></div>`;
+    }
     const fallback = getSlidePreviewText(page);
     return `<p>${fallback}</p>`;
   }, [getSlidePreviewText]);
@@ -4985,14 +5156,27 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     <path d="M5 2.5v4h5v-4M5 13h6" />
                   </svg>
                 </button>
+                {selectedSlideIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={deleteSelectedSlides}
+                    className="flex h-6 w-6 items-center justify-center rounded-full bg-rose-950/80 text-rose-200 transition hover:bg-rose-900 hover:text-white"
+                    title={slideDeleteSelectionLabel}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.9" viewBox="0 0 16 16">
+                      <path d="M3.5 4.5h9M6 4.5V3.2c0-.4.3-.7.7-.7h2.6c.4 0 .7.3.7.7v1.3M5 4.5l.6 8.2c0 .4.3.8.8.8h3.2c.4 0 .8-.3.8-.8l.6-8.2" />
+                    </svg>
+                  </button>
+                )}
               </div>
               {pages.map((page) => {
                 const isActive = page.id === activePageId;
+                const isSelectedSlide = selectedSlideIds.includes(page.id);
                 return (
                   <button
                     key={page.id}
                     type="button"
-                    onClick={() => switchPage(page.id)}
+                    onClick={(event) => handleSlideThumbnailClick(event, page.id)}
                     className={`group relative w-full text-left transition ${
                       isActive
                         ? 'opacity-100'
@@ -5002,7 +5186,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   >
                     <div
                       className={`relative aspect-video overflow-hidden rounded-[14px] bg-white shadow-sm transition ${
-                        isActive ? 'ring-1 ring-blue-500/70' : 'ring-1 ring-slate-800/25'
+                        isActive
+                          ? 'ring-2 ring-blue-500/80'
+                          : isSelectedSlide
+                            ? 'ring-2 ring-amber-400/80'
+                            : 'ring-1 ring-slate-800/25'
                       }`}
                       style={{ backgroundColor: page.backgroundColor ?? '#ffffff' }}
                     >
