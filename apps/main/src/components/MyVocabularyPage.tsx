@@ -1,99 +1,107 @@
-/**
- * MyVocabularyPage
- *
- * Displays all vocabulary words the user saved from the Workspace popup.
- * Supports list view, audio playback, delete, and a flashcard mode.
- *
- * Data source: users/{userId}/vocabulary  (ordered by createdAt DESC)
- */
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  listVocabularyEntries,
   deleteVocabularyEntry,
-  VocabularyEntryDoc,
+  fetchPhoneticForPhrase,
+  listVocabularyEntries,
+  type VocabularyEntryDoc,
 } from '../services/vocabularyService';
 import { speak } from '../services/ttsService';
-
-// ── Types & constants ─────────────────────────────────────────────────────────
 
 type UILang = 'en' | 'pt' | 'es';
 type ViewMode = 'list' | 'flashcard';
 
-const LABELS: Record<UILang, {
-  title: string;
-  empty: string;
-  loading: string;
-  error: string;
-  deleteConfirm: string;
-  flashcardMode: string;
-  listMode: string;
-  showTranslation: string;
-  next: string;
-  prev: string;
-  of: string;
-  back: string;
-  wordsCount: (n: number) => string;
-  retry: string;
-  playAudio: string;
-  delete: string;
-}> = {
+const LABELS: Record<
+  UILang,
+  {
+    title: string;
+    empty: string;
+    loading: string;
+    error: string;
+    deleteConfirm: string;
+    flashcardMode: string;
+    listMode: string;
+    next: string;
+    prev: string;
+    of: string;
+    back: string;
+    backToRoom: string;
+    wordsCount: (n: number) => string;
+    retry: string;
+    playAudio: string;
+    delete: string;
+    translation: string;
+    phonetic: string;
+    grammar: string;
+    original: string;
+  }
+> = {
   en: {
     title: 'My Vocabulary',
-    empty: 'No words saved yet. Select a word in the workspace to get started.',
-    loading: 'Loading vocabulary…',
+    empty: 'No flashcards saved yet. Select text in the room to save one.',
+    loading: 'Loading vocabulary...',
     error: 'Could not load vocabulary. Please try again.',
-    deleteConfirm: 'Delete this word?',
+    deleteConfirm: 'Delete this flashcard?',
     flashcardMode: 'Flashcard',
     listMode: 'List',
-    showTranslation: 'Show translation',
     next: 'Next',
     prev: 'Previous',
     of: 'of',
     back: 'Back',
-    wordsCount: (n) => `${n} word${n !== 1 ? 's' : ''}`,
+    backToRoom: 'Back to room',
+    wordsCount: (n) => `${n} card${n === 1 ? '' : 's'}`,
     retry: 'Retry',
     playAudio: 'Play audio',
     delete: 'Delete',
+    translation: 'Translation',
+    phonetic: 'Phonetic',
+    grammar: 'Grammar',
+    original: 'Original',
   },
   pt: {
-    title: 'Meu Vocabulário',
-    empty: 'Nenhuma palavra salva ainda. Selecione uma palavra na lousa para começar.',
-    loading: 'Carregando vocabulário…',
-    error: 'Não foi possível carregar o vocabulário. Tente novamente.',
-    deleteConfirm: 'Excluir esta palavra?',
+    title: 'Meu Vocabulario',
+    empty: 'Nenhum flashcard salvo ainda. Selecione um texto na sala para salvar.',
+    loading: 'Carregando vocabulario...',
+    error: 'Nao foi possivel carregar o vocabulario. Tente novamente.',
+    deleteConfirm: 'Excluir este flashcard?',
     flashcardMode: 'Flashcard',
     listMode: 'Lista',
-    showTranslation: 'Ver tradução',
-    next: 'Próxima',
+    next: 'Proxima',
     prev: 'Anterior',
     of: 'de',
     back: 'Voltar',
-    wordsCount: (n) => `${n} palavra${n !== 1 ? 's' : ''}`,
+    backToRoom: 'Voltar para a sala',
+    wordsCount: (n) => `${n} cart${n === 1 ? 'ao' : 'oes'}`,
     retry: 'Tentar novamente',
-    playAudio: 'Ouvir',
+    playAudio: 'Ouvir audio',
     delete: 'Excluir',
+    translation: 'Traducao',
+    phonetic: 'Fonetica',
+    grammar: 'Gramatica',
+    original: 'Original',
   },
   es: {
     title: 'Mi Vocabulario',
-    empty: 'No hay palabras guardadas aún. Selecciona una palabra en la pizarra para empezar.',
-    loading: 'Cargando vocabulario…',
-    error: 'No se pudo cargar el vocabulario. Inténtalo de nuevo.',
-    deleteConfirm: '¿Eliminar esta palabra?',
-    flashcardMode: 'Flashcard',
+    empty: 'Todavia no hay flashcards guardadas. Selecciona un texto en la sala para guardar uno.',
+    loading: 'Cargando vocabulario...',
+    error: 'No se pudo cargar el vocabulario. Intentalo de nuevo.',
+    deleteConfirm: 'Eliminar esta tarjeta?',
+    flashcardMode: 'Tarjetas',
     listMode: 'Lista',
-    showTranslation: 'Ver traducción',
     next: 'Siguiente',
     prev: 'Anterior',
     of: 'de',
     back: 'Volver',
-    wordsCount: (n) => `${n} palabra${n !== 1 ? 's' : ''}`,
+    backToRoom: 'Volver a la sala',
+    wordsCount: (n) => `${n} tarjeta${n === 1 ? '' : 's'}`,
     retry: 'Reintentar',
-    playAudio: 'Escuchar',
+    playAudio: 'Escuchar audio',
     delete: 'Eliminar',
+    translation: 'Traduccion',
+    phonetic: 'Fonetica',
+    grammar: 'Gramatica',
+    original: 'Original',
   },
 };
-
-// ── Props ─────────────────────────────────────────────────────────────────────
 
 interface MyVocabularyPageProps {
   userId: string;
@@ -101,154 +109,250 @@ interface MyVocabularyPageProps {
   onBack: () => void;
 }
 
-// ── FlashCard ─────────────────────────────────────────────────────────────────
+function getVisibleTranslations(entry: VocabularyEntryDoc, uiLanguage: UILang) {
+  const pt = entry.translationPt?.trim() || '';
+  const es = entry.translationEs?.trim() || '';
+  const fallback = entry.translation?.trim() || '';
+
+  if (uiLanguage === 'es') {
+    return {
+      primary: es || fallback,
+      secondary: pt,
+    };
+  }
+
+  if (uiLanguage === 'pt') {
+    return {
+      primary: pt || fallback,
+      secondary: es,
+    };
+  }
+
+  return {
+    primary: pt || fallback,
+    secondary: es,
+  };
+}
+
+function inferGrammar(text: string, uiLanguage: UILang): { label: string; note: string } {
+  const normalized = text.trim().toLowerCase();
+
+  if (normalized.includes('___')) {
+    if (uiLanguage === 'es') {
+      return { label: 'Completar', note: 'La frase trabaja un espacio en blanco dentro de una estructura ya modelada.' };
+    }
+    if (uiLanguage === 'pt') {
+      return { label: 'Complete', note: 'A frase trabalha uma lacuna dentro de uma estrutura ja modelada.' };
+    }
+    return { label: 'Fill in the blank', note: 'This sentence focuses on completing the missing part inside a known structure.' };
+  }
+
+  if (/\?$/.test(normalized)) {
+    if (uiLanguage === 'es') {
+      return { label: 'Pregunta', note: 'La estructura esta en forma de pregunta y trabaja el orden del auxiliar.' };
+    }
+    if (uiLanguage === 'pt') {
+      return { label: 'Pergunta', note: 'A estrutura esta em forma de pergunta e trabalha a ordem do auxiliar.' };
+    }
+    return { label: 'Question form', note: 'This sentence trains question order and the use of an auxiliary verb.' };
+  }
+
+  if (/\b(had\s+\w+ed|had\s+\w+en|had\s+lost|had\s+gone|had\s+done|had\s+been)\b/.test(normalized)) {
+    if (uiLanguage === 'es') {
+      return { label: 'Past perfect', note: 'La frase presenta una accion anterior a otra accion pasada.' };
+    }
+    if (uiLanguage === 'pt') {
+      return { label: 'Past perfect', note: 'A frase apresenta uma acao anterior a outra acao passada.' };
+    }
+    return { label: 'Past perfect', note: 'The sentence shows an action completed before another past moment.' };
+  }
+
+  if (/\b(am|is|are)\b/.test(normalized)) {
+    if (uiLanguage === 'es') {
+      return { label: 'Verb to be', note: 'La frase practica el uso del verbo to be en presente.' };
+    }
+    if (uiLanguage === 'pt') {
+      return { label: 'Verb to be', note: 'A frase pratica o uso do verbo to be no presente.' };
+    }
+    return { label: 'Verb to be', note: 'The sentence practices the present form of the verb to be.' };
+  }
+
+  if (uiLanguage === 'es') {
+    return { label: 'Grammar point', note: 'Usa esta tarjeta para revisar vocabulario y la estructura general de la frase.' };
+  }
+  if (uiLanguage === 'pt') {
+    return { label: 'Ponto gramatical', note: 'Use este cartao para revisar vocabulario e a estrutura geral da frase.' };
+  }
+  return { label: 'Grammar point', note: 'Use this card to review vocabulary and the overall sentence structure.' };
+}
 
 const FlashCard: React.FC<{
   entry: VocabularyEntryDoc;
   index: number;
   total: number;
-  L: (typeof LABELS)[UILang];
+  uiLanguage: UILang;
+  labels: (typeof LABELS)[UILang];
   onPrev: () => void;
   onNext: () => void;
-}> = ({ entry, index, total, L, onPrev, onNext }) => {
+}> = ({ entry, index, total, uiLanguage, labels, onPrev, onNext }) => {
   const [showTranslation, setShowTranslation] = useState(false);
   const [showPhonetic, setShowPhonetic] = useState(false);
   const [showGrammar, setShowGrammar] = useState(false);
+  const [phonetic, setPhonetic] = useState(entry.phonetic?.trim() || '');
+  const [phoneticLoading, setPhoneticLoading] = useState(false);
 
-  // Reset all panels when card changes
+  const translations = useMemo(() => getVisibleTranslations(entry, uiLanguage), [entry, uiLanguage]);
+  const grammar = useMemo(() => {
+    const label = entry.grammarLabel?.trim() || '';
+    const note = entry.grammarNote?.trim() || '';
+    if (label || note) return { label, note };
+    return inferGrammar(entry.text, uiLanguage);
+  }, [entry, uiLanguage]);
+
   useEffect(() => {
     setShowTranslation(false);
     setShowPhonetic(false);
     setShowGrammar(false);
-  }, [entry.id]);
+    setPhonetic(entry.phonetic?.trim() || '');
+  }, [entry.id, entry.phonetic]);
 
-  const translation = entry.translation?.trim() ?? '';
-  const hasTranslation = Boolean(translation);
-
-  // Access optional fields that may exist in Firestore but are not in the typed interface
-  const raw = entry as unknown as Record<string, unknown>;
-  const phonetic = typeof raw.phonetic === 'string' ? raw.phonetic.trim() : '';
-  const hasPhonetic = Boolean(phonetic);
-  const grammarLabel = typeof raw.grammarLabel === 'string' ? raw.grammarLabel.trim() : '';
-  const grammarNote = typeof raw.grammarNote === 'string' ? raw.grammarNote.trim() : '';
-  const hasGrammar = Boolean(grammarLabel || grammarNote);
+  useEffect(() => {
+    if (!showPhonetic || phonetic) return;
+    let cancelled = false;
+    setPhoneticLoading(true);
+    fetchPhoneticForPhrase(entry.text)
+      .then((result) => {
+        if (!cancelled) setPhonetic(result.trim());
+      })
+      .finally(() => {
+        if (!cancelled) setPhoneticLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry.text, phonetic, showPhonetic]);
 
   return (
     <div className="flex flex-col items-center gap-6 py-8 px-4">
-      {/* Progress counter */}
-      <p className="text-xs text-slate-400 font-medium tracking-wide uppercase">
-        {index + 1} {L.of} {total}
-      </p>
+      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+        {index + 1} {labels.of} {total}
+      </div>
 
-      {/* Card */}
-      <div className="w-full max-w-sm bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
-        {/* Word area */}
-        <div className="flex flex-col items-center gap-4 p-8">
-          <span className="text-3xl font-bold text-slate-800 text-center break-words">
-            {entry.text}
-          </span>
+      <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+        <div className="space-y-4 px-8 py-10 text-center">
+          <div className="text-4xl font-bold text-slate-900 break-words">{entry.text}</div>
 
-          {/* Revealed panels */}
-          {showTranslation && hasTranslation && (
-            <div className="border-t border-slate-100 pt-3 w-full text-center">
-              <span className="text-lg text-blue-700 font-medium break-words">{translation}</span>
+          {showTranslation && (
+            <div className="space-y-2 border-t border-slate-100 pt-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                {labels.translation}
+              </div>
+              {translations.primary ? (
+                <div className="text-2xl font-semibold text-blue-700 break-words">{translations.primary}</div>
+              ) : null}
+              {translations.secondary ? (
+                <div className="text-base font-medium text-slate-500 break-words">{translations.secondary}</div>
+              ) : null}
+              <div className="text-sm text-slate-400 break-words">
+                {labels.original}: {entry.text}
+              </div>
             </div>
           )}
-          {showPhonetic && hasPhonetic && (
-            <div className="border-t border-slate-100 pt-3 w-full text-center">
-              <span className="text-base text-slate-500 font-mono">{phonetic}</span>
+
+          {showPhonetic && (
+            <div className="space-y-2 border-t border-slate-100 pt-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                {labels.phonetic}
+              </div>
+              <div className="text-lg font-mono text-purple-700 break-words">
+                {phoneticLoading ? labels.loading : phonetic || entry.text}
+              </div>
             </div>
           )}
-          {showGrammar && hasGrammar && (
-            <div className="border-t border-slate-100 pt-3 w-full text-center">
-              {grammarLabel ? (
-                <span className="text-xs font-bold uppercase tracking-wide text-emerald-700">{grammarLabel}</span>
-              ) : null}
-              {grammarNote ? (
-                <p className="text-sm text-slate-600 mt-1">{grammarNote}</p>
-              ) : null}
+
+          {showGrammar && (
+            <div className="space-y-2 border-t border-slate-100 pt-4">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                {labels.grammar}
+              </div>
+              <div className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                {grammar.label}
+              </div>
+              <div className="text-sm leading-relaxed text-slate-600">{grammar.note}</div>
             </div>
           )}
         </div>
 
-        {/* Action buttons */}
-        <div className="border-t border-slate-100 grid grid-cols-4 divide-x divide-slate-100">
+        <div className="grid grid-cols-4 border-t border-slate-100 divide-x divide-slate-100">
           <button
             type="button"
             onClick={() => speak(entry.text, entry.sourceLang)}
-            className="flex flex-col items-center gap-1 py-3 text-slate-500 hover:bg-slate-50 transition"
+            className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:bg-slate-50"
           >
-            <span>🔊</span>
-            <span className="text-[10px]">Audio</span>
+            <span className="text-base">🔊</span>
+            <span className="text-[10px]">{labels.playAudio}</span>
           </button>
           <button
             type="button"
-            onClick={() => setShowTranslation((v) => !v)}
-            disabled={!hasTranslation}
-            className={`flex flex-col items-center gap-1 py-3 transition disabled:opacity-30 ${
+            onClick={() => setShowTranslation((value) => !value)}
+            className={`flex flex-col items-center gap-1 py-3 transition ${
               showTranslation ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'
             }`}
           >
-            <span>🌐</span>
-            <span className="text-[10px]">Translation</span>
+            <span className="text-base">🌐</span>
+            <span className="text-[10px]">{labels.translation}</span>
           </button>
           <button
             type="button"
-            onClick={() => setShowPhonetic((v) => !v)}
-            disabled={!hasPhonetic}
-            className={`flex flex-col items-center gap-1 py-3 transition disabled:opacity-30 ${
+            onClick={() => setShowPhonetic((value) => !value)}
+            className={`flex flex-col items-center gap-1 py-3 transition ${
               showPhonetic ? 'bg-purple-50 text-purple-700' : 'text-slate-500 hover:bg-slate-50'
             }`}
           >
-            <span>🔤</span>
-            <span className="text-[10px]">Phonetic</span>
+            <span className="text-base">🔤</span>
+            <span className="text-[10px]">{labels.phonetic}</span>
           </button>
           <button
             type="button"
-            onClick={() => setShowGrammar((v) => !v)}
-            disabled={!hasGrammar}
-            className={`flex flex-col items-center gap-1 py-3 transition disabled:opacity-30 ${
+            onClick={() => setShowGrammar((value) => !value)}
+            className={`flex flex-col items-center gap-1 py-3 transition ${
               showGrammar ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50'
             }`}
           >
-            <span>📘</span>
-            <span className="text-[10px]">Grammar</span>
+            <span className="text-base">📘</span>
+            <span className="text-[10px]">{labels.grammar}</span>
           </button>
         </div>
       </div>
 
-      {/* Navigation */}
       <div className="flex items-center gap-4">
         <button
           type="button"
           onClick={onPrev}
           disabled={index === 0}
-          className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-30 transition shadow-sm"
+          className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:opacity-30"
         >
-          ← {L.prev}
+          ← {labels.prev}
         </button>
         <button
           type="button"
           onClick={onNext}
           disabled={index === total - 1}
-          className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700 disabled:opacity-30 transition shadow-sm"
+          className="rounded-xl bg-blue-600 px-4 py-2 text-sm text-white shadow-sm transition hover:bg-blue-700 disabled:opacity-30"
         >
-          {L.next} →
+          {labels.next} →
         </button>
       </div>
     </div>
   );
 };
 
-// ── Main page ─────────────────────────────────────────────────────────────────
-
 export const MyVocabularyPage: React.FC<MyVocabularyPageProps> = ({
   userId,
   uiLanguage = 'en',
   onBack,
 }) => {
-  const L = LABELS[uiLanguage] ?? LABELS.en;
-
+  const labels = LABELS[uiLanguage] ?? LABELS.en;
   const [entries, setEntries] = useState<VocabularyEntryDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -260,171 +364,180 @@ export const MyVocabularyPage: React.FC<MyVocabularyPageProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const list = await listVocabularyEntries(userId);
-      setEntries(list);
+      const nextEntries = await listVocabularyEntries(userId);
+      setEntries(nextEntries);
     } catch {
-      setError(L.error);
+      setError(labels.error);
     } finally {
       setLoading(false);
     }
-  }, [userId, L.error]);
+  }, [labels.error, userId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm(L.deleteConfirm)) return;
+    if (!window.confirm(labels.deleteConfirm)) return;
     setDeletingId(id);
     try {
       await deleteVocabularyEntry(userId, id);
-      setEntries((prev) => prev.filter((e) => e.id !== id));
-      // Keep flashcard index in bounds
-      setFlashIndex((i) => Math.max(0, Math.min(i, entries.length - 2)));
+      setEntries((previous) => previous.filter((entry) => entry.id !== id));
+      setFlashIndex((previous) => Math.max(0, Math.min(previous, entries.length - 2)));
     } finally {
       setDeletingId(null);
     }
   };
 
-  // ── Render ───────────────────────────────────────────────────────────────
-
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white border-b border-slate-200 shadow-sm">
-        <div className="flex items-center gap-3 px-4 py-3 max-w-2xl mx-auto">
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
           <button
+            type="button"
             onClick={onBack}
-            className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-slate-100 text-slate-500 transition"
-            aria-label={L.back}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            aria-label={labels.backToRoom}
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 16 16">
-              <path d="M10 3L5 8l5 5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <span aria-hidden="true">←</span>
+            <span>{labels.backToRoom}</span>
           </button>
-          <h1 className="flex-1 text-base font-bold text-slate-800">{L.title}</h1>
-          <span className="text-xs text-slate-400 font-medium">
-            {!loading && L.wordsCount(entries.length)}
-          </span>
-          {/* View mode toggle — only show when there are entries */}
+          <div className="min-w-0 flex-1">
+            <h1 className="text-base font-bold text-slate-900">{labels.title}</h1>
+            <p className="text-xs text-slate-400">{!loading ? labels.wordsCount(entries.length) : labels.loading}</p>
+          </div>
           {entries.length > 0 && !loading && (
-            <div className="flex bg-slate-100 rounded-lg p-0.5 gap-0.5">
+            <div className="flex rounded-xl bg-slate-100 p-1">
               <button
+                type="button"
                 onClick={() => setViewMode('list')}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                  viewMode === 'list' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  viewMode === 'list' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
                 }`}
               >
-                {L.listMode}
+                {labels.listMode}
               </button>
               <button
-                onClick={() => { setViewMode('flashcard'); setFlashIndex(0); }}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${
-                  viewMode === 'flashcard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+                type="button"
+                onClick={() => {
+                  setViewMode('flashcard');
+                  setFlashIndex(0);
+                }}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  viewMode === 'flashcard' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
                 }`}
               >
-                {L.flashcardMode}
+                {labels.flashcardMode}
               </button>
             </div>
           )}
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-2xl mx-auto px-4 pb-20 pt-4">
-
-        {/* Loading */}
+      <div className="mx-auto max-w-3xl px-4 pb-24 pt-4">
         {loading && (
-          <div className="flex flex-col items-center justify-center py-24 gap-3 text-slate-400">
-            <svg className="w-7 h-7 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-            </svg>
-            <span className="text-sm">{L.loading}</span>
+          <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-400">
+            <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-blue-500" />
+            <span className="text-sm">{labels.loading}</span>
           </div>
         )}
 
-        {/* Error */}
         {!loading && error && (
           <div className="mt-8 text-center">
-            <p className="text-sm text-red-500 mb-3">{error}</p>
+            <p className="mb-3 text-sm text-red-500">{error}</p>
             <button
-              onClick={load}
-              className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700 transition"
+              type="button"
+              onClick={() => void load()}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm text-white transition hover:bg-blue-700"
             >
-              {L.retry}
+              {labels.retry}
             </button>
           </div>
         )}
 
-        {/* Empty */}
         {!loading && !error && entries.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
+          <div className="flex flex-col items-center justify-center gap-4 py-24 text-center">
             <span className="text-5xl">📖</span>
-            <p className="text-sm text-slate-400 max-w-xs leading-relaxed">{L.empty}</p>
+            <p className="max-w-xs text-sm leading-relaxed text-slate-400">{labels.empty}</p>
           </div>
         )}
 
-        {/* Flashcard mode */}
         {!loading && !error && entries.length > 0 && viewMode === 'flashcard' && (
           <FlashCard
             entry={entries[flashIndex]}
             index={flashIndex}
             total={entries.length}
-            L={L}
-            onPrev={() => setFlashIndex((i) => Math.max(0, i - 1))}
-            onNext={() => setFlashIndex((i) => Math.min(entries.length - 1, i + 1))}
+            uiLanguage={uiLanguage}
+            labels={labels}
+            onPrev={() => setFlashIndex((value) => Math.max(0, value - 1))}
+            onNext={() => setFlashIndex((value) => Math.min(entries.length - 1, value + 1))}
           />
         )}
 
-        {/* List mode */}
         {!loading && !error && entries.length > 0 && viewMode === 'list' && (
-          <ul className="flex flex-col gap-2 pt-2">
-            {entries.map((entry, idx) => (
-              <li
-                key={entry.id}
-                className="flex items-center gap-3 bg-white rounded-xl px-4 py-3 border border-slate-200 shadow-sm cursor-pointer hover:border-blue-300 hover:bg-blue-50/30 transition"
-                role="button"
-                tabIndex={0}
-                onClick={() => { setFlashIndex(idx); setViewMode('flashcard'); }}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setFlashIndex(idx); setViewMode('flashcard'); } }}
-              >
-                {/* Word + translation */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-slate-800 truncate">{entry.text}</p>
-                  {entry.translation ? (
-                    <p className="text-xs text-slate-500 truncate mt-0.5">{entry.translation}</p>
-                  ) : null}
-                </div>
-
-                {/* Date badge */}
-                {entry.createdAt && (
-                  <span className="hidden sm:inline text-[10px] text-slate-300 flex-shrink-0">
-                    {entry.createdAt.toDate().toLocaleDateString()}
-                  </span>
-                )}
-
-                {/* Audio */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); speak(entry.text, entry.sourceLang); }}
-                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
-                  title={L.playAudio}
-                  aria-label={L.playAudio}
+          <ul className="flex flex-col gap-3 pt-2">
+            {entries.map((entry, index) => {
+              const translations = getVisibleTranslations(entry, uiLanguage);
+              return (
+                <li
+                  key={entry.id}
+                  className="flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-blue-300 hover:bg-blue-50/30"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setFlashIndex(index);
+                    setViewMode('flashcard');
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setFlashIndex(index);
+                      setViewMode('flashcard');
+                    }
+                  }}
                 >
-                  🔊
-                </button>
-
-                {/* Delete */}
-                <button
-                  onClick={(e) => { e.stopPropagation(); void handleDelete(entry.id); }}
-                  disabled={deletingId === entry.id}
-                  className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-red-50 text-slate-300 hover:text-red-400 transition disabled:opacity-40"
-                  title={L.delete}
-                  aria-label={L.delete}
-                >
-                  {deletingId === entry.id
-                    ? <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83"/></svg>
-                    : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 16 16"><path d="M2 4h12M5 4V2h6v2M6 7v5M10 7v5M4 4l1 9h6l1-9"/></svg>}
-                </button>
-              </li>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-slate-800">{entry.text}</p>
+                    {translations.primary ? (
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        {translations.primary}
+                        {translations.secondary ? ` · ${translations.secondary}` : ''}
+                      </p>
+                    ) : null}
+                  </div>
+                  {entry.createdAt && (
+                    <span className="hidden flex-shrink-0 text-[10px] text-slate-300 sm:inline">
+                      {entry.createdAt.toDate().toLocaleDateString()}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void speak(entry.text, entry.sourceLang);
+                    }}
+                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition hover:bg-slate-200"
+                    title={labels.playAudio}
+                    aria-label={labels.playAudio}
+                  >
+                    🔊
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleDelete(entry.id);
+                    }}
+                    disabled={deletingId === entry.id}
+                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-300 transition hover:bg-red-50 hover:text-red-400 disabled:opacity-40"
+                    title={labels.delete}
+                    aria-label={labels.delete}
+                  >
+                    {deletingId === entry.id ? '…' : '🗑'}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

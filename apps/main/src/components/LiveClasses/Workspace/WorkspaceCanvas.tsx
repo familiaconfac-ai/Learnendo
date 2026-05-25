@@ -54,7 +54,7 @@ import {
 import { getSavedBattleTemplateLanguage } from '../Battle/battleUtils';
 import type { BattleTemplateLanguage, SavedBattleTemplate } from '../Battle/battleTypes';
 import { speak } from '../../../services/ttsService';
-import { translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
+import { fetchPhoneticForPhrase, translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
 import { subscribeUserAccounts, type UserAccountProfile } from '../../../services/userRoles';
 import { MyVocabularyPage } from '../../MyVocabularyPage';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
@@ -1220,6 +1220,48 @@ const LANG_MM: Record<string, string> = {
   he: 'he',
 };
 
+function getFlashcardTargetLanguages(uiLang: string): { primary: 'pt' | 'es'; secondary: 'pt' | 'es' } {
+  if (uiLang === 'es') {
+    return { primary: 'es', secondary: 'pt' };
+  }
+  if (uiLang === 'pt') {
+    return { primary: 'pt', secondary: 'es' };
+  }
+  return { primary: 'pt', secondary: 'es' };
+}
+
+function inferFlashcardGrammar(text: string): { label: string; note: string } {
+  const normalized = text.trim().toLowerCase();
+  if (normalized.includes('___')) {
+    return {
+      label: 'Fill in the blank',
+      note: 'This sentence focuses on completing a missing word or structure in context.',
+    };
+  }
+  if (/\?$/.test(normalized)) {
+    return {
+      label: 'Question form',
+      note: 'This sentence practices question order and the use of an auxiliary verb.',
+    };
+  }
+  if (/\b(had\s+\w+ed|had\s+\w+en|had\s+lost|had\s+gone|had\s+done|had\s+been)\b/.test(normalized)) {
+    return {
+      label: 'Past perfect',
+      note: 'This sentence shows an action completed before another past moment.',
+    };
+  }
+  if (/\b(am|is|are)\b/.test(normalized)) {
+    return {
+      label: 'Verb to be',
+      note: 'This sentence practices the present form of the verb to be.',
+    };
+  }
+  return {
+    label: 'Sentence pattern',
+    note: 'Use this flashcard to review meaning, pronunciation, and sentence structure together.',
+  };
+}
+
 interface VocabState {
   text: string;
   /** Viewport-relative rect of the selection, used to position the popup. */
@@ -1233,7 +1275,7 @@ interface VocabPopupProps {
 }
 
 const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
-  const [translation, setTranslation] = useState<string | null>(null);
+  const [translations, setTranslations] = useState<{ pt: string; es: string }>({ pt: '', es: '' });
   const [loadingT, setLoadingT] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1243,17 +1285,19 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
   const uiLang = (() => {
     try { return getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY) ?? 'pt'; } catch { return 'pt'; }
   })();
-  const targetLang = LANG_MM[uiLang] ?? 'pt';
+  const { primary: primaryTarget, secondary: secondaryTarget } = getFlashcardTargetLanguages(uiLang);
+  const targetLang = primaryTarget;
+  const primaryTranslation = translations[primaryTarget] || vocab.text;
+  const secondaryTranslation = primaryTarget === secondaryTarget ? '' : translations[secondaryTarget];
 
   // Translate on mount
   useEffect(() => {
-    if (targetLang === CONTENT_LANG) {
-      setTranslation(null); // same language ï¿½ no translation needed
-      return;
-    }
     setLoadingT(true);
-    translateText(vocab.text, CONTENT_LANG, targetLang)
-      .then((t) => setTranslation(t))
+    Promise.all([
+      translateText(vocab.text, CONTENT_LANG, 'pt'),
+      translateText(vocab.text, CONTENT_LANG, 'es'),
+    ])
+      .then(([pt, es]) => setTranslations({ pt, es }))
       .finally(() => setLoadingT(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vocab.text]);
@@ -1286,11 +1330,18 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
   const handleSave = async () => {
     if (saving || saved) return;
     setSaving(true);
+    const phonetic = await fetchPhoneticForPhrase(vocab.text);
+    const grammar = inferFlashcardGrammar(vocab.text);
     const id = await saveVocabularyEntry(userId, {
       text: vocab.text,
-      translation: translation ?? '',
+      translation: primaryTranslation,
       sourceLang: CONTENT_LANG,
       targetLang,
+      translationPt: translations.pt,
+      translationEs: translations.es,
+      phonetic,
+      grammarLabel: grammar.label,
+      grammarNote: grammar.note,
     });
     setSaving(false);
     if (id) setSaved(true);
@@ -1318,15 +1369,14 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
             {wsl.translation}
           </div>
           <div className="text-sm font-semibold text-slate-800 leading-snug break-words">
-            {targetLang === CONTENT_LANG
-              ? vocab.text
-              : loadingT
-                ? wsl.loading
-                : (translation || vocab.text)}
+            {loadingT ? wsl.loading : primaryTranslation}
           </div>
-          <div className="mt-1 text-[11px] text-slate-500 break-words">
-            {vocab.text}
-          </div>
+          {secondaryTranslation ? (
+            <div className="mt-1 text-[11px] font-medium text-slate-500 break-words">
+              {secondaryTranslation}
+            </div>
+          ) : null}
+          <div className="mt-1 text-[11px] text-slate-400 break-words">{vocab.text}</div>
         </div>
         <button
           onClick={handleSpeak}
@@ -1345,7 +1395,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
         <button
           onClick={onClose}
           className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs transition"
-          title="Close"
+          title={wsl.cancel}
         >
           <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 12 12" aria-hidden="true">
             <line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" />
@@ -5262,7 +5312,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div className="flex-1" />
 
         <button
-          onClick={() => setShowVocabModal(true)}
+          onClick={() => {
+            setVocabPopup(null);
+            setShowVocabModal(true);
+          }}
           className="w-7 h-7 rounded flex items-center justify-center hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition"
           title={wsl.vocab}
           aria-label={wsl.vocab}
@@ -5699,7 +5752,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
           {visibleItems.length > 0 && !isSlidesMode && <div className="h-40" />}
         </div>
-        {isSlidesMode && !presentationMode && viewerCanManagePages && slidePanelVisible && (
+        {isSlidesMode && !presentationMode && viewerCanManagePages && slidePanelVisible && !showVocabModal && (
           <aside
             id="workspace-slide-panel"
             className="fixed z-[12010] hidden lg:block"
@@ -5881,7 +5934,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
       {/* -- My Vocabulary modal -------------------------------------------- */}
       {showVocabModal && (
-        <div className="fixed inset-0 z-[10001] bg-black/40 flex flex-col">
+        <div className="fixed inset-0 z-[13050] bg-slate-50 flex flex-col">
           <div className="flex-1 overflow-hidden">
             <MyVocabularyPage
               userId={userId}

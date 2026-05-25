@@ -28,6 +28,11 @@ export interface VocabularyEntry {
   translation: string;
   sourceLang: string;
   targetLang: string;
+  translationPt?: string;
+  translationEs?: string;
+  phonetic?: string;
+  grammarLabel?: string;
+  grammarNote?: string;
   createdAt: ReturnType<typeof serverTimestamp>;
 }
 
@@ -37,6 +42,11 @@ export interface VocabularyEntryDoc {
   translation: string;
   sourceLang: string;
   targetLang: string;
+  translationPt?: string;
+  translationEs?: string;
+  phonetic?: string;
+  grammarLabel?: string;
+  grammarNote?: string;
   createdAt: Timestamp | null;
 }
 
@@ -88,6 +98,56 @@ export async function translateText(
   }
 }
 
+const PHONETIC_CACHE = new Map<string, Promise<string>>();
+
+async function fetchWordPhonetic(word: string): Promise<string> {
+  const normalized = word.trim().toLowerCase();
+  if (!normalized) return '';
+  const cached = PHONETIC_CACHE.get(normalized);
+  if (cached) return cached;
+  const pending = (async () => {
+    try {
+      const url = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(normalized)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!Array.isArray(data)) return '';
+      for (const entry of data) {
+        if (typeof entry?.phonetic === 'string' && entry.phonetic.trim()) {
+          return entry.phonetic.trim();
+        }
+        if (Array.isArray(entry?.phonetics)) {
+          for (const phonetic of entry.phonetics) {
+            if (typeof phonetic?.text === 'string' && phonetic.text.trim()) {
+              return phonetic.text.trim();
+            }
+          }
+        }
+      }
+      return '';
+    } catch (err) {
+      console.warn('[Vocab] phonetic lookup failed:', normalized, err);
+      return '';
+    }
+  })();
+  PHONETIC_CACHE.set(normalized, pending);
+  return pending;
+}
+
+export async function fetchPhoneticForPhrase(text: string): Promise<string> {
+  const raw = text.trim();
+  if (!raw) return '';
+  const parts = raw.split(/(\b[A-Za-z]+(?:'[A-Za-z]+)?\b)/g);
+  const phoneticParts = await Promise.all(
+    parts.map(async (part) => {
+      if (!/^[A-Za-z]+(?:'[A-Za-z]+)?$/.test(part)) return part;
+      const phonetic = await fetchWordPhonetic(part);
+      return phonetic || part;
+    }),
+  );
+  return phoneticParts.join('').replace(/\s+/g, ' ').trim();
+}
+
 // ── Firestore save ─────────────────────────────────────────────────────────────
 
 /**
@@ -129,6 +189,11 @@ export async function listVocabularyEntries(userId: string): Promise<VocabularyE
       translation: pickTranslation(data),
       sourceLang: data.sourceLang ?? 'en',
       targetLang: data.targetLang ?? 'en',
+      translationPt: typeof data.translationPt === 'string' ? data.translationPt : '',
+      translationEs: typeof data.translationEs === 'string' ? data.translationEs : '',
+      phonetic: typeof data.phonetic === 'string' ? data.phonetic : '',
+      grammarLabel: typeof data.grammarLabel === 'string' ? data.grammarLabel : '',
+      grammarNote: typeof data.grammarNote === 'string' ? data.grammarNote : '',
       createdAt: (data.createdAt as Timestamp) ?? null,
     };
   });
