@@ -1947,6 +1947,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const slideSelectionAnchorIdRef = useRef<string | null>(null);
   const slidePanelDragOffsetRef = useRef<{ x: number; y: number } | null>(null);
   const slidePanelResizeOriginRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
+  const slideImportSessionRef = useRef<string | null>(null);
   const storage = useMemo(() => getStorage(app), []);
   const getDefaultSlidePanelPosition = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -1965,6 +1966,32 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       saveWorkspacePresentationMode(classId, nextValue, userId, userName).catch(console.error);
     }
   }, [classId, userId, userName, viewerCanManagePages]);
+  const logSlideImport = useCallback((stage: string, payload?: unknown) => {
+    const sessionId = slideImportSessionRef.current ?? 'no-session';
+    if (payload === undefined) {
+      console.log(`[WS PPTX IMPORT ${sessionId}] ${stage}`);
+      return;
+    }
+    console.log(`[WS PPTX IMPORT ${sessionId}] ${stage}`, payload);
+  }, []);
+  const verifyImageUrlLoads = useCallback((imageUrl: string) => new Promise<boolean>((resolve) => {
+    if (typeof Image === 'undefined') {
+      resolve(true);
+      return;
+    }
+    const probe = new Image();
+    let settled = false;
+    const finish = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(value);
+    };
+    const timeoutId = window.setTimeout(() => finish(false), 12_000);
+    probe.onload = () => finish(true);
+    probe.onerror = () => finish(false);
+    probe.src = imageUrl;
+  }), []);
   const uploadSlideAsset = useCallback(
     async (
       sourceName: string,
@@ -2597,6 +2624,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         updatedBy: data?.updatedBy ?? null,
         updatedByName: data?.updatedByName ?? null,
       });
+      if (slideImportSessionRef.current && remoteSurfaceMode === 'slides') {
+        console.log(`[WS PPTX IMPORT ${slideImportSessionRef.current}] snapshot after import`, {
+          currentPageId: remoteCurrentPageId ?? null,
+          pageCount: remotePages?.length ?? 0,
+          pageIds: (remotePages ?? []).map((page) => page.id),
+          activeDocLength: nextDocContent.length,
+          activeItemCount: mergedItems.length,
+          updatedBy: data?.updatedBy ?? null,
+          updatedByName: data?.updatedByName ?? null,
+        });
+      }
       if (remoteSurfaceMode !== surfaceModeRef.current) {
         surfaceModeRef.current = remoteSurfaceMode;
         setSurfaceMode(remoteSurfaceMode);
@@ -3239,17 +3277,29 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }), [normalizeItemScope, slideLabels, userId, userName]);
 
   const importPptxSlides = useCallback(async (file: File, startIndex: number): Promise<WorkspacePage[]> => {
-    console.log('[PPTX Import] Starting import of:', file.name);
-    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    logSlideImport('importPptxSlides called', {
+      fileName: file.name,
+      fileSize: file.size,
+      fileType: file.type || 'unknown',
+      startIndex,
+    });
+    const fileBuffer = await file.arrayBuffer();
+    logSlideImport('file read as ArrayBuffer', { byteLength: fileBuffer.byteLength });
+    const zip = await JSZip.loadAsync(fileBuffer);
+    logSlideImport('JSZip opened file', { zipEntryCount: Object.keys(zip.files).length });
     const presentationXml = await zip.file('ppt/presentation.xml')?.async('text');
     const presentationRelsXml = await zip.file('ppt/_rels/presentation.xml.rels')?.async('text');
     if (!presentationXml || !presentationRelsXml) {
+      logSlideImport('missing core PPTX files', {
+        hasPresentationXml: Boolean(presentationXml),
+        hasPresentationRelsXml: Boolean(presentationRelsXml),
+      });
       throw new Error('Invalid PPTX structure: missing presentation files');
     }
 
     // Extract slide canvas size
     const slideCanvasSize = extractPptSlideSize(presentationXml);
-    console.log('[PPTX Import] Slide canvas size:', slideCanvasSize);
+    logSlideImport('slide canvas size detected', slideCanvasSize);
 
     // Get slide order from presentation.xml relationships
     const presentationDoc = parseXmlDocument(presentationXml);
@@ -3271,11 +3321,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       slideOrder = [...presentationXml.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
     }
     
-    console.log('[PPTX Import] Slide order (relationship IDs):', slideOrder);
+    logSlideImport('slides read from presentation.xml', {
+      count: slideOrder.length,
+      slideOrder,
+    });
 
     // Get presentation relationships (maps rId to slide paths)
     const presentationRels = extractRelationshipMap(presentationRelsXml, '/slide');
-    console.log('[PPTX Import] Presentation relationships:', Array.from(presentationRels.entries()));
+    logSlideImport('presentation relationships loaded', Array.from(presentationRels.entries()));
 
     // Get all available slide files from ZIP
     const fallbackSlidePaths = Object.keys(zip.files)
@@ -3285,7 +3338,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         const rightNumber = Number(right.match(/slide(\d+)\.xml/i)?.[1] ?? 0);
         return leftNumber - rightNumber;
       });
-    console.log('[PPTX Import] Available slide files:', fallbackSlidePaths);
+    logSlideImport('ppt/slides/slide*.xml discovered inside zip', {
+      count: fallbackSlidePaths.length,
+      slideFiles: fallbackSlidePaths,
+    });
 
     // Build ordered slide paths
     const slidePathsFromRelationships = slideOrder
@@ -3293,21 +3349,24 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       .filter((target): target is string => Boolean(target))
       .map((target) => resolveZipEntryPath('ppt/presentation.xml', target));
     
-    console.log('[PPTX Import] Slide paths from relationships:', slidePathsFromRelationships);
+    logSlideImport('slide paths resolved from presentation relationships', slidePathsFromRelationships);
 
     // Use relationship paths if available, otherwise fallback to numerical order
     const orderedSlidePaths = slidePathsFromRelationships.length > 0 ? slidePathsFromRelationships : fallbackSlidePaths;
-    console.log('[PPTX Import] Final ordered slide paths:', orderedSlidePaths);
-    console.log('[PPTX Import] Total slides detected:', orderedSlidePaths.length);
+    logSlideImport('final slide list selected for import', {
+      orderedSlidePaths,
+      totalSlides: orderedSlidePaths.length,
+    });
 
     const importedPages: WorkspacePage[] = [];
 
     for (const [slideOffset, slidePath] of orderedSlidePaths.entries()) {
-      console.log(`[PPTX Import] Processing slide ${slideOffset + 1}/${orderedSlidePaths.length}: ${slidePath}`);
+      console.groupCollapsed(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? 'no-session'}] slide ${slideOffset + 1}/${orderedSlidePaths.length}`);
+      logSlideImport('processing slide', { slideIndex: slideOffset + 1, slidePath });
       
       const slideXml = await zip.file(slidePath)?.async('text');
       if (!slideXml) {
-        console.warn(`[PPTX Import] Warning: Could not load XML for slide ${slidePath}`);
+        logSlideImport('slide XML not found', { slidePath });
         // Create empty slide rather than skipping
         importedPages.push({
           id: uid(),
@@ -3316,12 +3375,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           docContent: '',
           items: [],
         });
+        console.groupEnd();
         continue;
       }
+      logSlideImport('slide XML found', { slidePath, xmlLength: slideXml.length });
 
       // Get slide relationships file
       const slideRelsPath = `${slidePath.slice(0, slidePath.lastIndexOf('/') + 1)}_rels/${slidePath.split('/').pop()}.rels`;
       const slideRelsXml = await zip.file(slideRelsPath)?.async('text');
+      logSlideImport('slide .rels lookup', {
+        slidePath,
+        slideRelsPath,
+        found: Boolean(slideRelsXml),
+      });
       const slideRels = slideRelsXml ? extractRelationshipMap(slideRelsXml) : new Map<string, string>();
 
       // Extract images referenced in slide
@@ -3347,7 +3413,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           .filter(([, target]) => /\.(png|jpe?g|gif|bmp|svg|avif|webp)$/i.test(target))
           .map(([relId]) => relId);
 
-      console.log(`[PPTX Import] Slide ${slideOffset + 1} - Found ${imageRelIds.length} blip references, ${fallbackImageRelIds.length} total images`);
+      logSlideImport('images discovered in slide', {
+        slidePath,
+        imageRelIds,
+        fallbackImageRelIds,
+        relationships: Array.from(slideRels.entries()),
+      });
 
       const items: WorkspaceItem[] = [];
       const textBoxItems: WorkspaceItem[] = [];
@@ -3355,7 +3426,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // Extract native elements (text boxes, shapes)
       if (slideDoc) {
         const shapeNodes = findDescendantsByLocalName(slideDoc.documentElement, 'sp');
-        console.log(`[PPTX Import] Slide ${slideOffset + 1} - Found ${shapeNodes.length} shape elements`);
+        logSlideImport('shape nodes discovered in slide', {
+          slidePath,
+          shapeCount: shapeNodes.length,
+        });
         
         for (const shapeNode of shapeNodes) {
           const shapeProps = findFirstDescendantByLocalName(shapeNode, 'spPr');
@@ -3458,20 +3532,41 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       for (const [imageIndex, imageRelId] of fallbackImageRelIds.entries()) {
         const imageTarget = slideRels.get(imageRelId);
         if (!imageTarget) {
-          console.warn(`[PPTX Import] Slide ${slideOffset + 1} - Image rel ID ${imageRelId} not found in relationships`);
+          logSlideImport('image relationship missing in .rels', {
+            slidePath,
+            imageRelId,
+          });
           continue;
         }
         const imagePath = resolveZipEntryPath(slidePath, imageTarget);
         const imageFile = zip.file(imagePath);
         if (!imageFile) {
-          console.warn(`[PPTX Import] Slide ${slideOffset + 1} - Image file not found: ${imagePath}`);
+          logSlideImport('image file not found in zip', {
+            slidePath,
+            imageRelId,
+            imageTarget,
+            resolvedImagePath: imagePath,
+          });
           continue;
         }
 
         const extension = imagePath.split('.').pop()?.toLowerCase() ?? 'png';
         const mimeType = getImageMimeTypeFromExtension(extension);
         const imageBytes = await imageFile.async('uint8array');
-        console.log(`[PPTX Import] Slide ${slideOffset + 1} - Uploading image ${imageIndex + 1}: ${imagePath} (${imageBytes.length} bytes, type: ${mimeType})`);
+        logSlideImport('primary image chosen for slide', {
+          slidePath,
+          imageIndex,
+          imageRelId,
+          imageTarget,
+          resolvedImagePath: imagePath,
+          byteLength: imageBytes.length,
+          mimeType,
+        });
+        logSlideImport('uploadSlideAsset started', {
+          slidePath,
+          imageIndex,
+          fileName: `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}.${extension}`,
+        });
         
         const hostedImageUrl = await uploadSlideAsset(
           `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}`,
@@ -3479,6 +3574,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           extension,
           mimeType,
         );
+        logSlideImport('uploadSlideAsset finished', {
+          slidePath,
+          imageIndex,
+          hostedImageUrl,
+        });
+        const urlLoadOk = await verifyImageUrlLoads(hostedImageUrl);
+        logSlideImport('uploaded image URL probe result', {
+          slidePath,
+          imageIndex,
+          hostedImageUrl,
+          urlLoadOk,
+        });
         items.push(
           normalizeItemScope({
             id: uid(),
@@ -3493,27 +3600,43 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             updatedByName: userName,
           }),
         );
+        logSlideImport('workspace image item created', {
+          slidePath,
+          imageIndex,
+          createdItemId: items[items.length - 1]?.id ?? null,
+          imageItemCount: items.length,
+        });
       }
 
       // Determine if slide is image-only (one large image + no text)
       const imageOnlySlide = items.length > 0 && textBoxItems.length === 0;
-      const primaryImageUrl = items[0]?.imageUrl ?? '';
-      const slideDocContent = imageOnlySlide && primaryImageUrl
-        ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${'#ffffff'};"><img src="${escapeHtml(primaryImageUrl)}" alt="" style="width:100%;height:auto;max-height:100%;display:block;object-fit:contain;" /></div>`
-        : '';
-
-      console.log(`[PPTX Import] Slide ${slideOffset + 1} - Native elements: ${textBoxItems.length} text, ${items.length} images, Image-only: ${imageOnlySlide}, Items in page: ${imageOnlySlide ? 0 : items.length + textBoxItems.length}`);
-
-      importedPages.push({
+      const finalPage: WorkspacePage = {
         id: uid(),
         name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
         backgroundColor: '#ffffff',
-        docContent: slideDocContent,
-        items: imageOnlySlide ? [] : [...items, ...textBoxItems],
+        docContent: '',
+        items: [...items, ...textBoxItems],
+      };
+      if (finalPage.items.length === 0) {
+        finalPage.docContent = `<p style="color:#b91c1c;font-size:18px;">Slide imported without visible content. Check console logs for details.</p>`;
+      }
+      logSlideImport('slide page created', {
+        slidePath,
+        pageId: finalPage.id,
+        imageOnlySlide,
+        textBoxCount: textBoxItems.length,
+        imageCount: items.length,
+        finalItemCount: finalPage.items.length,
+        docLength: finalPage.docContent.length,
       });
+      importedPages.push(finalPage);
+      console.groupEnd();
     }
 
-    console.log(`[PPTX Import] Import complete: ${importedPages.length} slides created`);
+    logSlideImport('importPptxSlides finished', {
+      createdPages: importedPages.length,
+      createdPageIds: importedPages.map((page) => page.id),
+    });
     
     if (!importedPages.length) {
       throw new Error('No slides found in PPTX');
@@ -3523,24 +3646,57 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ...page,
       name: page.name || slideLabels.pageName(startIndex + index),
     }));
-  }, [normalizeItemScope, slideLabels, uploadSlideAsset, userId, userName]);
+  }, [logSlideImport, normalizeItemScope, slideLabels, uploadSlideAsset, userId, userName, verifyImageUrlLoads]);
 
   const handleSlideImportFiles = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFiles = Array.from(event.target.files ?? []);
     event.target.value = '';
-    if (!selectedFiles.length || !isSlidesMode || !viewerCanManagePages) return;
+    const importSessionId = `imp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    slideImportSessionRef.current = importSessionId;
+    console.groupCollapsed(`[WS PPTX IMPORT ${importSessionId}] handleSlideImportFiles`);
+    logSlideImport('handler called', {
+      selectedFileCount: selectedFiles.length,
+      files: selectedFiles.map((file) => ({
+        name: file.name,
+        size: file.size,
+        type: file.type || 'unknown',
+      })),
+      isSlidesMode,
+      viewerCanManagePages,
+    });
+    if (!selectedFiles.length || !isSlidesMode || !viewerCanManagePages) {
+      logSlideImport('import aborted before processing', {
+        selectedFileCount: selectedFiles.length,
+        isSlidesMode,
+        viewerCanManagePages,
+      });
+      console.groupEnd();
+      return;
+    }
 
     const acceptedFiles = selectedFiles.filter((file) =>
       file.type.startsWith('image/')
       || hasAcceptedSlideImageExtension(file.name)
       || hasAcceptedPptxExtension(file.name),
     );
+    logSlideImport('accepted files after filtering', {
+      acceptedCount: acceptedFiles.length,
+      acceptedNames: acceptedFiles.map((file) => file.name),
+    });
     if (!acceptedFiles.length) {
       if (selectedFiles.some((file) => hasUnsupportedDeckExtension(file.name))) {
+        logSlideImport('unsupported deck extension encountered', {
+          selectedNames: selectedFiles.map((file) => file.name),
+        });
         window.alert(wsl.importSlidesUnsupportedDeck);
+        console.groupEnd();
         return;
       }
+      logSlideImport('no accepted files found', {
+        selectedNames: selectedFiles.map((file) => file.name),
+      });
       window.alert(wsl.importSlidesError);
+      console.groupEnd();
       return;
     }
 
@@ -3556,6 +3712,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     try {
       flushFloatingEditorBeforePageMutation();
       const flushed = flushPages();
+      logSlideImport('flushPages completed before import', {
+        existingPageCount: flushed.length,
+        existingPageIds: flushed.map((page) => page.id),
+        activeBeforeImport: activePageIdRef.current,
+      });
       const insertionIndex = Math.max(0, flushed.findIndex((page) => page.id === activePageIdRef.current)) + 1;
       const importedPages: WorkspacePage[] = [];
 
@@ -3567,6 +3728,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         }
 
         const { dataUrl } = await readAsDataUrl(file);
+        logSlideImport('image file read as data URL', {
+          fileName: file.name,
+          dataUrlLength: dataUrl.length,
+        });
         importedPages.push(buildImageSlidePage(file.name, dataUrl, flushed.length + importedPages.length + 1));
       }
 
@@ -3577,13 +3742,27 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ];
       const firstImportedPage = importedPages[0];
       if (!firstImportedPage) return;
+      logSlideImport('pages created by import', {
+        importedPageCount: importedPages.length,
+        importedPageIds: importedPages.map((page) => page.id),
+        firstImportedPageId: firstImportedPage.id,
+        insertionIndex,
+      });
       const importedItemIds = importedPages.flatMap((page) => (page.items ?? []).map((item) => item.id));
       if (importedItemIds.length > 0) {
         markItemsDirty(importedItemIds);
+        logSlideImport('markItemsDirty called for imported items', {
+          importedItemIds,
+          importedItemCount: importedItemIds.length,
+        });
       }
 
       pagesRef.current = updated;
       setPages(updated);
+      logSlideImport('setPages called after import', {
+        totalPageCount: updated.length,
+        totalPageIds: updated.map((page) => page.id),
+      });
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(firstImportedPage.docContent);
@@ -3594,12 +3773,21 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       setActivePageId(firstImportedPage.id);
       setSelectedSlideIds(importedPages.map((page) => page.id));
       slideSelectionAnchorIdRef.current = firstImportedPage.id;
+      logSlideImport('active page switched to first imported page', {
+        activePageId: firstImportedPage.id,
+        itemCountOnActivePage: (firstImportedPage.items ?? []).length,
+        docLengthOnActivePage: firstImportedPage.docContent.length,
+      });
       updateSurfaceStateRef(surfaceModeRef.current, () => ({
         pages: updated,
         currentPageId: firstImportedPage.id,
         docContent: firstImportedPage.docContent,
         items: firstImportedPage.items ?? [],
       }));
+      logSlideImport('savePageSwitch called after import', {
+        currentPageId: firstImportedPage.id,
+        pageCount: updated.length,
+      });
       savePageSwitch(
         classId,
         updated,
@@ -3609,9 +3797,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         userId,
         userName,
         surfaceModeRef.current,
-      ).catch(console.error);
+      )
+        .then(() => {
+          logSlideImport('savePageSwitch resolved', {
+            currentPageId: firstImportedPage.id,
+            pageCount: updated.length,
+          });
+        })
+        .catch((error) => {
+          console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? importSessionId}] savePageSwitch failed`, error);
+        });
     } catch (error) {
-      console.error('[WorkspaceCanvas] Failed to import slides', error);
+      console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? importSessionId}] Failed to import slides`, error);
       const firstDeckFile = acceptedFiles.find((file) => hasAcceptedPptxExtension(file.name));
       if (firstDeckFile) {
         window.alert(wsl.importSlidesDeckParseError(firstDeckFile.name));
@@ -3620,6 +3817,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
     } finally {
       setPendingSlideImport(false);
+      logSlideImport('import flow finished', { pendingSlideImport: false });
+      window.setTimeout(() => {
+        if (slideImportSessionRef.current === importSessionId) {
+          slideImportSessionRef.current = null;
+        }
+      }, 15_000);
+      console.groupEnd();
     }
   };
 
