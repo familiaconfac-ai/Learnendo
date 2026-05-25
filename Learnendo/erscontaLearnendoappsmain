@@ -1,0 +1,3 @@
+[33meaa3ca0[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fix: ensure firebase auth before placement test save - guarantee user exists before storing results
+[33m643783c[m fix: refine placement test questions, rebalance answers, and restore firebase save
+[33m0ae9d6c[m Fix: Clear currentLessonId after lesson completion to prevent blinking/reopening of completed lessons

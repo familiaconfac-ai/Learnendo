@@ -1,0 +1,14 @@
+{
+  "scripts": {
+    "deploy:firestore-rules": "firebase deploy --only firestore:rules"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.1",
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.2.1"
+  },
+  "dependencies": {
+    "tldraw": "^4.5.7"
+  }
+}

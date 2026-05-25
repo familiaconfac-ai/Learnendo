@@ -1,0 +1,526 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
+import {
+  LiveKitRoom,
+  VideoTrack,
+  useTracks,
+  useParticipants,
+  useLocalParticipant,
+  RoomAudioRenderer,
+  useRoomContext,
+} from '@livekit/components-react';
+import '@livekit/components-styles';
+import { Track, RoomEvent } from 'livekit-client';
+import { isTrackReference } from '@livekit/components-core';
+import { User } from 'firebase/auth';
+import { LiveClass, LiveClassSession, LiveClassPresence } from '../../../types';
+import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
+import { BattleSetupModal } from '../Battle/BattleSetupModal';
+import { BattleHostView } from '../Battle/BattleHostView';
+import { BattleSession, BattleConfig, BattleQuestion } from '../Battle/battleTypes';
+import { subscribeBattleSession, createBattleSession, deleteBattleSession } from '../Battle/battleService';
+import { buildInitialBattleParticipants, buildInitialBattleScores, buildSavedBattleTemplate, sanitizeBattleQuestions } from '../Battle/battleUtils';
+import { appendLiveClassBattleTemplate } from '../../../services/liveClassesService';
+import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode, BATTLE_STALE_THRESHOLD_MS } from '../../../services/liveClassStage';
+
+interface TeacherRoomViewProps {
+  liveClass: LiveClass;
+  user: User;
+  session: LiveClassSession;
+  presence: LiveClassPresence[];
+  assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
+  showWhiteboard: boolean;
+  setShowWhiteboard: (show: boolean) => void;
+  showExerciseSession: boolean;
+  setShowExerciseSession: (show: boolean) => void;
+  handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
+  onExit: () => void;
+}
+
+const TeacherStage: React.FC<{
+  liveClass: LiveClass;
+  session: LiveClassSession;
+  presence: LiveClassPresence[];
+  handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
+  teacherUid: string;
+  teacherName: string;
+  onExit: () => void;
+}> = ({ liveClass, session, presence, handleUpdateSession, teacherUid, teacherName, onExit }) => {
+
+  const [viewMode, setViewMode] = useState<MainStageMode>(getDefaultMainStageMode());
+  // Whether the teacher's own camera PIP is shown while in workspace mode
+  const [camVisible, setCamVisible] = useState(true);
+  const room = useRoomContext();
+  const hasAppliedInitialStageRef = useRef(false);
+  const battleWasActivatedRef = useRef(false);
+  // Track the component mount time and whether we already processed the first
+  // Firestore snapshot. Used to discard stale battle sessions from previous
+  // class meetings without blocking recovery when re-entering a live battle.
+  const mountedAtRef = useRef(Date.now());
+  // NOTE: do NOT use a boolean one-shot flag here — Firestore onSnapshot fires
+  // TWICE on subscribe (cache then server). A 1 s time-window ensures BOTH
+  // callbacks are treated as "initial state" so a stale lobby session can't
+  // auto-open the battle overlay.
+
+  // ── Battle state ─────────────────────────────────────────────────────────────────────────────
+  const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
+  const [showBattleSetup, setShowBattleSetup] = useState(false);
+
+  useEffect(() => {
+    const unsub = subscribeBattleSession(liveClass.id, (nextSession) => {
+      // ── Initial window after entering the room ─────────────────────────────
+      // Firestore fires a cache snapshot AND a server confirmation within ~200 ms.
+      // Using a 1 s window instead of a one-shot boolean ensures BOTH are treated
+      // as "current state" rather than "a new battle just started".
+      const isInInitialWindow = Date.now() - mountedAtRef.current < 1000;
+      if (isInInitialWindow) {
+        if (
+          nextSession &&
+          isActiveBattleStatus(nextSession.status) &&
+          nextSession.status !== 'lobby' &&
+          (nextSession.updatedAt || 0) > mountedAtRef.current - BATTLE_STALE_THRESHOLD_MS
+        ) {
+          battleWasActivatedRef.current = true;
+          setBattleSession(nextSession);
+        }
+        // Otherwise: stale / lobby session — ignore, leave whiteboard visible
+        return;
+      }
+
+      // ── Subsequent real-time updates ───────────────────────────────────────
+      if (!nextSession) {
+        battleWasActivatedRef.current = false;
+        setBattleSession(null);
+        return;
+      }
+
+      if (isActiveBattleStatus(nextSession.status)) {
+        battleWasActivatedRef.current = true;
+        setBattleSession(nextSession);
+        return;
+      }
+
+      if (nextSession.status === 'finished' && battleWasActivatedRef.current) {
+        setBattleSession(nextSession);
+        return;
+      }
+
+      battleWasActivatedRef.current = false;
+      setBattleSession(null);
+    });
+    return unsub;
+  }, [liveClass.id]);
+
+  async function handleLaunchBattle(config: BattleConfig, questions: BattleQuestion[]) {
+    const sanitizedQuestions = sanitizeBattleQuestions(questions);
+    if (sanitizedQuestions.length === 0) {
+      window.alert('Nenhuma pergunta valida foi encontrada para iniciar o Battle.');
+      return;
+    }
+
+    setShowBattleSetup(false);
+    const now = Date.now();
+    const optimisticSession: BattleSession = {
+      id: liveClass.id,
+      status: 'lobby',
+      config,
+      questions: sanitizedQuestions,
+      currentQuestionIndex: 0,
+      questionStartedAt: 0,
+      participants: buildInitialBattleParticipants(teacherUid, teacherName),
+      roundParticipantIds: [],
+      scores: buildInitialBattleScores(config, teacherUid, teacherName),
+      currentAnswers: {},
+      createdAt: now,
+      updatedAt: now,
+    };
+    battleWasActivatedRef.current = true;
+    setBattleSession(optimisticSession);
+
+    createBattleSession(liveClass.id, config, teacherUid, teacherName, sanitizedQuestions).catch((err) => {
+      console.error('[Battle] Firestore sync failed:', err);
+      battleWasActivatedRef.current = false;
+      setBattleSession(null);
+      setShowBattleSetup(true);
+      window.alert('Nao foi possivel iniciar o Battle. Revise a pergunta editada e tente novamente.');
+    });
+
+    const savedTemplate = buildSavedBattleTemplate(
+      config,
+      sanitizedQuestions,
+      `${liveClass.title} • Battle ${new Date().toLocaleDateString('pt-BR')}`
+    );
+    appendLiveClassBattleTemplate(liveClass.id, savedTemplate).catch((err) => {
+      console.warn('[Battle] save template failed:', err);
+    });
+  }
+
+  async function handleCloseBattle() {
+    await deleteBattleSession(liveClass.id);
+    battleWasActivatedRef.current = false;
+    setBattleSession(null);
+  }
+
+  useEffect(() => {
+    if (!hasAppliedInitialStageRef.current) {
+      hasAppliedInitialStageRef.current = true;
+      setViewMode(getDefaultMainStageMode());
+      return;
+    }
+
+    setViewMode(sanitizeMainStageMode(session.mainStageMode));
+  }, [session.mainStageMode]);
+
+  const participants = useParticipants();
+  const remoteParticipants = participants.filter((p) => !p.isLocal);
+  const allTracks = useTracks([{ source: Track.Source.Camera, withPlaceholder: true }]);
+  const { localParticipant, isCameraEnabled } = useLocalParticipant();
+  const [camError, setCamError] = useState<string | null>(null);
+
+  // ── Local camera preview via direct MediaStream ───────────────────────────
+  // VideoTrack + withPlaceholder:true can render a blank element before the
+  // track is actually published. Direct MediaStream attachment (same as
+  // StudentRoomView) is the reliable fallback.
+  const camVideoRef = useRef<HTMLVideoElement>(null);
+  const pipVideoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const attach = (el: HTMLVideoElement | null): boolean => {
+      if (!el) return true; // not in DOM — skip
+      if (!isCameraEnabled) { el.srcObject = null; return true; }
+      for (const pub of localParticipant.trackPublications.values()) {
+        if (pub.source === Track.Source.Camera && (pub as any).track?.mediaStreamTrack) {
+          el.srcObject = new MediaStream([(pub as any).track.mediaStreamTrack]);
+          el.play().catch(() => {});
+          return true;
+        }
+      }
+      return false; // track not yet available — caller should retry
+    };
+
+    const done = attach(camVideoRef.current) && attach(pipVideoRef.current);
+    if (done || !isCameraEnabled) return;
+
+    // Track not yet published — poll every 250 ms (up to 5 s)
+    const t = setInterval(() => {
+      if (attach(camVideoRef.current) && attach(pipVideoRef.current)) clearInterval(t);
+    }, 250);
+    const stop = setTimeout(() => clearInterval(t), 5000);
+    return () => { clearInterval(t); clearTimeout(stop); };
+  }, [localParticipant, isCameraEnabled, viewMode, camVisible]);
+
+  // ── Screen sharing ────────────────────────────────────────────────────────
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const screenShareTracks = useTracks([{ source: Track.Source.ScreenShare, withPlaceholder: false }]);
+  const localScreenTrack = screenShareTracks.find((t) => t.participant?.isLocal);
+
+  // Sync state if the browser-native stop button ends the share
+  useEffect(() => {
+    const sharing = !!localParticipant.getTrackPublication(Track.Source.ScreenShare);
+    const trackCount = screenShareTracks.length;
+    console.log('[ScreenShare:Teacher] Track sync:', { sharing, trackCount, hasLocalTrack: !!localScreenTrack });
+    setIsScreenSharing(sharing);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [localScreenTrack]);
+
+  // ── Camera toggle with error handling ─────────────────────────────────────
+  async function toggleCamera() {
+    console.log('[TeacherCamera] toggleCamera called, current isCameraEnabled:', isCameraEnabled);
+    try {
+      setCamError(null);
+      await localParticipant.setCameraEnabled(!isCameraEnabled);
+      console.log('[TeacherCamera] setCameraEnabled called with:', !isCameraEnabled);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('Permission denied') || msg.includes('NotAllowed') || msg.includes('NotFound')) {
+        setCamError('Permissão de câmera negada ou câmera não encontrada.');
+      } else {
+        setCamError('Câmera indisponível. Verifique as permissões do navegador.');
+      }
+      console.warn('[TeacherCamera] toggle error:', err);
+    }
+  }
+
+  async function toggleScreenShare() {
+    try {
+      if (isScreenSharing) {
+        console.log('[ScreenShare:Teacher] Stopping screen share');
+        await localParticipant.setScreenShareEnabled(false);
+        setIsScreenSharing(false);
+        console.log('[ScreenShare:Teacher] Screen share stopped');
+      } else {
+        console.log('[ScreenShare:Teacher] Starting screen share');
+        await localParticipant.setScreenShareEnabled(true, {
+          audio: true,
+          selfBrowserSurface: 'include',
+        });
+        console.log('[ScreenShare:Teacher] Screen share started');
+        setIsScreenSharing(true);
+      }
+    } catch (err: unknown) {
+      // User cancelled the picker or permission was denied — fail gracefully
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes('Permission denied') && !msg.includes('NotAllowed') && !msg.includes('cancelled')) {
+        console.warn('[ScreenShare] toggleScreenShare error:', err);
+      } else {
+        console.log('[ScreenShare:Teacher] Screen share cancelled or denied:', msg);
+      }
+      // Resync with actual track state
+      const actual = !!localParticipant.getTrackPublication(Track.Source.ScreenShare);
+      console.log('[ScreenShare:Teacher] Resyncing state:', actual);
+      setIsScreenSharing(actual);
+    }
+  }
+
+  const handleModeChange = (newMode: MainStageMode) => {
+    setViewMode(newMode);
+    handleUpdateSession({ mainStageMode: newMode });
+  };
+
+  // ── UI language & translations ──────────────────────────────────────────────────
+  const _uiLang: 'en' | 'pt' | 'es' = (() => {
+    try { return (localStorage.getItem('learnendo_base_ui_lang') as 'en' | 'pt' | 'es') ?? 'pt'; }
+    catch { return 'pt'; }
+  })();
+  const ROOM_LABELS = {
+    en: { camera: 'Camera', workspace: 'Workspace', battle: 'Battle', screen: 'Screen', pip: 'Cam' },
+    pt: { camera: 'Câmera',  workspace: 'Lousa',     battle: 'Batalha', screen: 'Tela',     pip: 'Câm' },
+    es: { camera: 'Cámara',  workspace: 'Pizarra',   battle: 'Batalla', screen: 'Pantalla', pip: 'Cám' },
+  } as const;
+  const rl = ROOM_LABELS[_uiLang] ?? ROOM_LABELS.pt;
+
+  // ── Camera button: toggle when already in camera view; switch + enable otherwise ──
+  const handleCameraButton = () => {
+    console.log('[TeacherCamera] handleCameraButton called, viewMode:', viewMode, 'isCameraEnabled:', isCameraEnabled);
+    if (viewMode !== 'camera') {
+      console.log('[TeacherCamera] Switching to camera mode');
+      handleModeChange('camera');
+      if (!isCameraEnabled) {
+        console.log('[TeacherCamera] Camera is disabled, calling toggleCamera');
+        void toggleCamera();
+      } else {
+        console.log('[TeacherCamera] Camera is already enabled');
+      }
+    } else {
+      console.log('[TeacherCamera] Already in camera mode, calling toggleCamera');
+      void toggleCamera();
+    }
+  };
+
+  return (
+    <>
+    {/* ── Mobile responsive overrides ───────────────────────────────────────── */}
+    <style>{`
+      @media (orientation: landscape) and (max-width: 767px) {
+        .teacher-stage-root { flex-direction: row !important; }
+        .teacher-stage-sidebar {
+          flex-direction: column !important;
+          width: 4rem !important;
+          height: 100% !important;
+          overflow-y: auto !important;
+          overflow-x: hidden !important;
+          border-top: none !important;
+          border-left: 1px solid rgba(30,41,59,0.8) !important;
+        }
+        .teacher-stage-sidebar .student-tile { width: 3rem !important; height: 2.25rem !important; }
+      }
+    `}</style>
+    <div className="teacher-stage-root fixed inset-0 z-50 bg-black overflow-hidden flex flex-col sm:flex-row">
+      <div className="flex-1 flex flex-col items-center justify-center min-w-0 min-h-0">
+
+        <div className="relative w-full flex-1 sm:flex-none sm:max-w-3xl sm:aspect-[16/9] overflow-hidden border border-slate-800 bg-slate-900/80 shadow-xl rounded-xl">
+          
+          {/* CAMERA */}
+          {viewMode === 'camera' && (
+            <div className="relative w-full h-full flex items-center justify-center bg-black">
+              {/* Floating mode switcher */}
+              <div className="absolute top-2 left-2 z-20 flex gap-1">
+                <button onClick={handleCameraButton} className="w-7 h-7 flex items-center justify-center rounded bg-blue-600 text-white text-sm shadow" title={rl.camera} aria-label={rl.camera}>&#x1F4F7;</button>
+                <button onClick={() => handleModeChange('workspace')} className="w-7 h-7 flex items-center justify-center rounded bg-black/50 text-white hover:bg-white/20 text-sm shadow transition" title={rl.workspace} aria-label={rl.workspace}>&#x270F;&#xFE0F;</button>
+                <button onClick={() => setShowBattleSetup(true)} className="w-7 h-7 flex items-center justify-center rounded bg-black/50 text-orange-400 hover:bg-white/20 text-sm shadow transition" title={rl.battle} aria-label={rl.battle}>&#x2694;&#xFE0F;</button>
+                <button onClick={() => void toggleScreenShare()} className={`w-7 h-7 flex items-center justify-center rounded text-sm shadow transition ${isScreenSharing ? 'bg-green-600 text-white' : 'bg-black/50 text-white hover:bg-white/20'}`} title={rl.screen} aria-label={rl.screen}>&#x1F4FA;</button>
+                {camError && <span className="text-[10px] text-red-400 bg-black/50 rounded px-1.5 flex items-center" title={camError}>&#x26A0;&#xFE0F;</span>}
+              </div>
+              {isCameraEnabled ? (
+                <video ref={camVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+              ) : camError ? (
+                <div className="flex flex-col items-center justify-center text-center gap-3 px-6">
+                  <span className="text-4xl">🚫</span>
+                  <span className="text-red-400 text-sm font-medium">{camError}</span>
+                  <button
+                    onClick={() => void toggleCamera()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-3">
+                  <span className="text-slate-500 text-4xl">🎥</span>
+                  <span className="text-slate-400 text-sm font-medium">Câmera desligada</span>
+                  <button
+                    onClick={() => void toggleCamera()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg transition"
+                  >
+                    Ligar câmera
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* WORKSPACE */}
+          {viewMode === 'workspace' && (
+            <div className="absolute inset-0 z-10 overflow-hidden">
+              <WorkspaceCanvas
+                classId={liveClass.id}
+                userId={teacherUid}
+                userName={teacherName}
+                readOnly={false}
+                toolbarLeading={<>
+                  <button onClick={onExit} className="w-7 h-7 flex items-center justify-center rounded border transition text-sm text-slate-600 border-slate-200 hover:bg-slate-100" title="Home" aria-label="Home">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M3 9.5L10 4l7 5.5V17a1 1 0 01-1 1h-4.5v-4.5h-3V18H4a1 1 0 01-1-1V9.5z"/></svg>
+                  </button>
+                  <button onClick={handleCameraButton} className="w-7 h-7 flex items-center justify-center rounded border transition text-sm text-slate-600 border-slate-200 hover:bg-slate-100" title={rl.camera} aria-label={rl.camera}>&#x1F4F7;</button>
+                  <button onClick={() => handleModeChange('workspace')} className="w-7 h-7 flex items-center justify-center rounded border transition text-sm bg-blue-600 text-white border-blue-600" title={rl.workspace} aria-label={rl.workspace}>&#x270F;&#xFE0F;</button>
+                  <button onClick={() => setShowBattleSetup(true)} className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 text-orange-600 hover:bg-orange-50 transition text-sm" title={rl.battle} aria-label={rl.battle}>&#x2694;&#xFE0F;</button>
+                  <button onClick={() => void toggleScreenShare()} className={`w-7 h-7 flex items-center justify-center rounded border transition text-sm ${isScreenSharing ? 'bg-green-600 text-white border-green-600' : 'text-slate-600 border-slate-200 hover:bg-slate-100'}`} title={rl.screen} aria-label={rl.screen}>&#x1F4FA;</button>
+                  {camError && <span className="text-[10px] text-red-500 flex items-center" title={camError}>&#x26A0;&#xFE0F;</span>}
+                </>}
+              />
+              {/* Camera PIP — teacher's own camera shown in corner while using workspace */}
+              {camVisible && (
+                <div className="absolute bottom-2 right-2 sm:right-3 w-28 sm:w-36 aspect-video rounded-xl overflow-hidden border-2 border-blue-500/60 shadow-xl z-20 bg-black flex items-center justify-center pointer-events-none">
+                  {isCameraEnabled ? (
+                    <video ref={pipVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="text-slate-500 text-[10px]">{camError ? '🚫 Câm.' : '🎥 Off'}</span>
+                  )}
+                  <div className="absolute bottom-0.5 left-0.5 text-[8px] text-white/80 bg-black/50 px-1 rounded leading-tight">
+                    Você
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SCREEN SHARE — local preview for teacher */}
+          {isScreenSharing && (
+            <div className="absolute inset-0 z-10 bg-black flex items-center justify-center">
+              {localScreenTrack && isTrackReference(localScreenTrack) ? (
+                <VideoTrack
+                  trackRef={localScreenTrack}
+                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center text-slate-300 gap-2">
+                  <span className="text-4xl">🖥️</span>
+                  <span className="text-sm">Preparando compartilhamento…</span>
+                </div>
+              )}
+              <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-orange-600/90 text-white text-xs font-bold px-3 py-1 rounded-full z-20 pointer-events-none">
+                📺 Compartilhando tela
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* SIDEBAR ALUNOS — horizontal strip on mobile portrait, vertical column on sm+ */}
+      <div className="teacher-stage-sidebar flex flex-row sm:flex-col gap-2 items-center px-2 sm:px-0 py-1 sm:py-3 bg-slate-950/80 border-t sm:border-t-0 sm:border-l border-slate-800 overflow-x-auto sm:overflow-y-auto w-full sm:w-28 md:w-36 h-14 sm:h-auto flex-shrink-0">
+        <span className="text-[9px] sm:text-[10px] uppercase text-slate-500 font-bold tracking-wider whitespace-nowrap mb-0 sm:mb-1">Alunos</span>
+        {remoteParticipants.length === 0 && (
+          <span className="text-[9px] sm:text-[10px] text-slate-600 whitespace-nowrap">Nenhum</span>
+        )}
+        {remoteParticipants.map((p) => {
+          const pTrack = allTracks.find((t) => t.participant?.sid === p.sid && !t.participant?.isLocal);
+          return (
+            <div key={p.sid} className="student-tile w-16 h-10 sm:w-24 sm:h-16 rounded-lg sm:rounded-xl bg-black border border-slate-700 overflow-hidden flex items-center justify-center relative flex-shrink-0">
+              {pTrack && isTrackReference(pTrack) ? (
+                <VideoTrack trackRef={pTrack} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <span className="text-[9px] text-slate-500">Sem cam</span>
+              )}
+              <span className="absolute bottom-0.5 left-1 text-[8px] sm:text-[9px] text-slate-300 bg-slate-800/80 px-1 rounded font-semibold truncate max-w-[90%]">
+                {p.name || p.identity}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Overlays Battle */}
+      {showBattleSetup && (
+        <BattleSetupModal
+          onStart={handleLaunchBattle}
+          onClose={() => setShowBattleSetup(false)}
+          defaultLessonId={liveClass.lessonId?.toString()}
+          defaultWorkbookId={liveClass.workbookId ?? undefined}
+          defaultCourseId={liveClass.courseId}
+        />
+      )}
+      {battleSession && (
+        <BattleHostView
+          session={battleSession}
+          classId={liveClass.id}
+          teacherUid={teacherUid}
+          activeParticipants={presence.filter((participant) => participant.isOnline).map((participant) => ({
+            uid: participant.uid,
+            name: participant.name || participant.uid,
+          }))}
+          onClose={handleCloseBattle}
+          onNewBattle={() => { void handleCloseBattle().then(() => setShowBattleSetup(true)); }}
+        />
+      )}
+    </div>
+    </>
+  );
+};
+
+export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
+  const { liveClass, user, session, presence, handleUpdateSession, onExit } = props;
+  const [token, setToken] = useState<string | null>(null);
+  const [wsUrl, setWsUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const getCreds = async () => {
+      try {
+        const creds = await requestLiveAudioCredentials({
+          classId: liveClass.id, 
+          userId: user.uid, 
+          userName: user.displayName || 'Professor', 
+          role: 'teacher',
+        });
+        setToken(creds.token);
+        setWsUrl(creds.wsUrl);
+      } catch (err) { 
+        console.error("Erro ao obter credenciais LiveKit:", err); 
+      }
+    };
+    getCreds();
+  }, [liveClass.id, user.uid, user.displayName]);
+
+  if (!token || !wsUrl) {
+    return (
+      <div className="w-screen h-screen bg-black flex items-center justify-center">
+        <div className="text-slate-500 animate-pulse">Conectando à sala...</div>
+      </div>
+    );
+  }
+
+  return (
+    <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={true} audio={true}>
+      <RoomAudioRenderer />
+      <TeacherStage
+        liveClass={liveClass}
+        session={session}
+        presence={presence}
+        handleUpdateSession={handleUpdateSession}
+        teacherUid={user.uid}
+        teacherName={user.displayName || 'Professor'}
+        onExit={onExit}
+      />
+    </LiveKitRoom>
+  );
+};

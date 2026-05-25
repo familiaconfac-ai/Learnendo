@@ -3239,22 +3239,45 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }), [normalizeItemScope, slideLabels, userId, userName]);
 
   const importPptxSlides = useCallback(async (file: File, startIndex: number): Promise<WorkspacePage[]> => {
+    console.log('[PPTX Import] Starting import of:', file.name);
     const zip = await JSZip.loadAsync(await file.arrayBuffer());
     const presentationXml = await zip.file('ppt/presentation.xml')?.async('text');
     const presentationRelsXml = await zip.file('ppt/_rels/presentation.xml.rels')?.async('text');
     if (!presentationXml || !presentationRelsXml) {
-      throw new Error('Invalid PPTX structure');
+      throw new Error('Invalid PPTX structure: missing presentation files');
     }
 
-    const presentationDoc = parseXmlDocument(presentationXml);
+    // Extract slide canvas size
     const slideCanvasSize = extractPptSlideSize(presentationXml);
-    const slideOrder = presentationDoc
-      ? Array.from(presentationDoc.getElementsByTagName('*'))
+    console.log('[PPTX Import] Slide canvas size:', slideCanvasSize);
+
+    // Get slide order from presentation.xml relationships
+    const presentationDoc = parseXmlDocument(presentationXml);
+    let slideOrder: string[] = [];
+    
+    if (presentationDoc) {
+      slideOrder = Array.from(presentationDoc.getElementsByTagName('*'))
         .filter((node) => node.localName === 'sldId')
-        .map((node) => getNamespacedAttribute(node, 'id'))
-        .filter(Boolean)
-      : [...presentationXml.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
+        .map((node) => {
+          // Look for r:id attribute which contains the relationship ID
+          const rId = getNamespacedAttribute(node, 'id', 'id');
+          return rId;
+        })
+        .filter(Boolean);
+    }
+    
+    // Fallback: if DOM parsing failed or produced no results, use regex
+    if (slideOrder.length === 0) {
+      slideOrder = [...presentationXml.matchAll(/<p:sldId\b[^>]*r:id="([^"]+)"/g)].map((match) => match[1]);
+    }
+    
+    console.log('[PPTX Import] Slide order (relationship IDs):', slideOrder);
+
+    // Get presentation relationships (maps rId to slide paths)
     const presentationRels = extractRelationshipMap(presentationRelsXml, '/slide');
+    console.log('[PPTX Import] Presentation relationships:', Array.from(presentationRels.entries()));
+
+    // Get all available slide files from ZIP
     const fallbackSlidePaths = Object.keys(zip.files)
       .filter((path) => /^ppt\/slides\/slide\d+\.xml$/i.test(path))
       .sort((left, right) => {
@@ -3262,38 +3285,78 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         const rightNumber = Number(right.match(/slide(\d+)\.xml/i)?.[1] ?? 0);
         return leftNumber - rightNumber;
       });
+    console.log('[PPTX Import] Available slide files:', fallbackSlidePaths);
+
+    // Build ordered slide paths
     const slidePathsFromRelationships = slideOrder
       .map((relId) => presentationRels.get(relId))
       .filter((target): target is string => Boolean(target))
       .map((target) => resolveZipEntryPath('ppt/presentation.xml', target));
+    
+    console.log('[PPTX Import] Slide paths from relationships:', slidePathsFromRelationships);
+
+    // Use relationship paths if available, otherwise fallback to numerical order
     const orderedSlidePaths = slidePathsFromRelationships.length > 0 ? slidePathsFromRelationships : fallbackSlidePaths;
+    console.log('[PPTX Import] Final ordered slide paths:', orderedSlidePaths);
+    console.log('[PPTX Import] Total slides detected:', orderedSlidePaths.length);
+
     const importedPages: WorkspacePage[] = [];
 
     for (const [slideOffset, slidePath] of orderedSlidePaths.entries()) {
+      console.log(`[PPTX Import] Processing slide ${slideOffset + 1}/${orderedSlidePaths.length}: ${slidePath}`);
+      
       const slideXml = await zip.file(slidePath)?.async('text');
-      if (!slideXml) continue;
+      if (!slideXml) {
+        console.warn(`[PPTX Import] Warning: Could not load XML for slide ${slidePath}`);
+        // Create empty slide rather than skipping
+        importedPages.push({
+          id: uid(),
+          name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
+          backgroundColor: '#ffffff',
+          docContent: '',
+          items: [],
+        });
+        continue;
+      }
 
+      // Get slide relationships file
       const slideRelsPath = `${slidePath.slice(0, slidePath.lastIndexOf('/') + 1)}_rels/${slidePath.split('/').pop()}.rels`;
       const slideRelsXml = await zip.file(slideRelsPath)?.async('text');
       const slideRels = slideRelsXml ? extractRelationshipMap(slideRelsXml) : new Map<string, string>();
 
+      // Extract images referenced in slide
       const slideDoc = parseXmlDocument(slideXml);
-      const imageRelIds = slideDoc
-        ? Array.from(slideDoc.getElementsByTagName('*'))
+      let imageRelIds: string[] = [];
+      
+      if (slideDoc) {
+        imageRelIds = Array.from(slideDoc.getElementsByTagName('*'))
           .filter((node) => node.localName === 'blip')
           .map((node) => getNamespacedAttribute(node, 'embed'))
-          .filter(Boolean)
-        : [...slideXml.matchAll(/<a:blip\b[^>]*r:embed="([^"]+)"/g)].map((match) => match[1]);
-      const fallbackImageRelIds = imageRelIds.length > 0
+          .filter(Boolean);
+      }
+      
+      // Fallback: use regex if DOM parsing failed
+      if (imageRelIds.length === 0) {
+        imageRelIds = [...slideXml.matchAll(/<a:blip\b[^>]*r:embed="([^"]+)"/g)].map((match) => match[1]);
+      }
+      
+      // If no blip elements found, look for all image files in slide relationships
+      let fallbackImageRelIds = imageRelIds.length > 0
         ? imageRelIds
         : Array.from(slideRels.entries())
           .filter(([, target]) => /\.(png|jpe?g|gif|bmp|svg|avif|webp)$/i.test(target))
           .map(([relId]) => relId);
+
+      console.log(`[PPTX Import] Slide ${slideOffset + 1} - Found ${imageRelIds.length} blip references, ${fallbackImageRelIds.length} total images`);
+
       const items: WorkspaceItem[] = [];
       const textBoxItems: WorkspaceItem[] = [];
 
+      // Extract native elements (text boxes, shapes)
       if (slideDoc) {
         const shapeNodes = findDescendantsByLocalName(slideDoc.documentElement, 'sp');
+        console.log(`[PPTX Import] Slide ${slideOffset + 1} - Found ${shapeNodes.length} shape elements`);
+        
         for (const shapeNode of shapeNodes) {
           const shapeProps = findFirstDescendantByLocalName(shapeNode, 'spPr');
           const xfrmNode = shapeProps ? findFirstDescendantByLocalName(shapeProps, 'xfrm') : null;
@@ -3308,6 +3371,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           const normalizedW = clamp((cx / slideCanvasSize.width) * 100, 4, 100);
           const normalizedH = clamp((cy / slideCanvasSize.height) * 100, 4, 100);
 
+          // Check for text content
           const txBodyNode = findFirstDescendantByLocalName(shapeNode, 'txBody');
           const paragraphNodes = txBodyNode ? findDescendantsByLocalName(txBodyNode, 'p') : [];
           const paragraphHtml = paragraphNodes
@@ -3352,6 +3416,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             continue;
           }
 
+          // Check for geometric shape
           const shapeTypeNode = shapeProps ? findFirstDescendantByLocalName(shapeProps, 'prstGeom') : null;
           const shapeType = shapeTypeNode ? getAttributeByName(shapeTypeNode, ['prst']) : '';
           const fillColor = extractPptColorFromElement(shapeProps ? findFirstDescendantByLocalName(shapeProps, 'solidFill') : null) ?? '#93c5fd';
@@ -3389,16 +3454,25 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         }
       }
 
+      // Extract images from relationships
       for (const [imageIndex, imageRelId] of fallbackImageRelIds.entries()) {
         const imageTarget = slideRels.get(imageRelId);
-        if (!imageTarget) continue;
+        if (!imageTarget) {
+          console.warn(`[PPTX Import] Slide ${slideOffset + 1} - Image rel ID ${imageRelId} not found in relationships`);
+          continue;
+        }
         const imagePath = resolveZipEntryPath(slidePath, imageTarget);
         const imageFile = zip.file(imagePath);
-        if (!imageFile) continue;
+        if (!imageFile) {
+          console.warn(`[PPTX Import] Slide ${slideOffset + 1} - Image file not found: ${imagePath}`);
+          continue;
+        }
 
         const extension = imagePath.split('.').pop()?.toLowerCase() ?? 'png';
         const mimeType = getImageMimeTypeFromExtension(extension);
         const imageBytes = await imageFile.async('uint8array');
+        console.log(`[PPTX Import] Slide ${slideOffset + 1} - Uploading image ${imageIndex + 1}: ${imagePath} (${imageBytes.length} bytes, type: ${mimeType})`);
+        
         const hostedImageUrl = await uploadSlideAsset(
           `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}`,
           imageBytes,
@@ -3421,11 +3495,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         );
       }
 
+      // Determine if slide is image-only (one large image + no text)
       const imageOnlySlide = items.length > 0 && textBoxItems.length === 0;
       const primaryImageUrl = items[0]?.imageUrl ?? '';
       const slideDocContent = imageOnlySlide && primaryImageUrl
         ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${'#ffffff'};"><img src="${escapeHtml(primaryImageUrl)}" alt="" style="width:100%;height:auto;max-height:100%;display:block;object-fit:contain;" /></div>`
         : '';
+
+      console.log(`[PPTX Import] Slide ${slideOffset + 1} - Native elements: ${textBoxItems.length} text, ${items.length} images, Image-only: ${imageOnlySlide}, Items in page: ${imageOnlySlide ? 0 : items.length + textBoxItems.length}`);
 
       importedPages.push({
         id: uid(),
@@ -3436,6 +3513,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       });
     }
 
+    console.log(`[PPTX Import] Import complete: ${importedPages.length} slides created`);
+    
     if (!importedPages.length) {
       throw new Error('No slides found in PPTX');
     }

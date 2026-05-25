@@ -77,6 +77,186 @@ export async function createOrUpdateUserProfile(user: User, emailOverride?: stri
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// Payment & Subscription Management
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * StudentStudyProfile interface for type safety
+ */
+export interface StudentStudyProfileData {
+  startDate?: string;
+  appAccessType?: 'free' | 'premium' | 'premium-support';
+  pdfStatus?: 'none' | 'partial' | 'full';
+  onlineClassStatus?: 'none' | 'active';
+  studyMode?: 'self-guided' | 'class-support' | 'intensive';
+}
+
+/**
+ * getStudyProfile - Retrieves the student's study profile from Firestore
+ * @param uid - User's unique identifier
+ * @returns StudentStudyProfileData or null if not found
+ */
+export async function getStudyProfile(uid: string): Promise<StudentStudyProfileData | null> {
+  if (!uid) {
+    console.error('[DB] getStudyProfile: uid is required');
+    return null;
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized');
+    return null;
+  }
+
+  try {
+    const profileRef = doc(db, `users/${uid}/profile/study`);
+    const profileSnap = await getDoc(profileRef);
+    
+    if (profileSnap.exists()) {
+      console.log('[DB] ✅ Study profile retrieved for:', uid);
+      return profileSnap.data() as StudentStudyProfileData;
+    }
+    
+    // If profile doesn't exist yet, return default
+    console.log('[DB] No study profile found for:', uid, '(will use defaults)');
+    return null;
+  } catch (error) {
+    console.error('[DB] Error retrieving study profile:', error);
+    return null;
+  }
+}
+
+/**
+ * updateStudyProfile - Updates or creates the student's study profile
+ * @param uid - User's unique identifier
+ * @param profileData - Partial or complete study profile data
+ */
+export async function updateStudyProfile(
+  uid: string,
+  profileData: StudentStudyProfileData
+): Promise<void> {
+  if (!uid) {
+    console.error('[DB] updateStudyProfile: uid is required');
+    throw new Error('uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized');
+    return;
+  }
+
+  try {
+    const profileRef = doc(db, `users/${uid}/profile/study`);
+    await setDoc(profileRef, {
+      ...profileData,
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+
+    console.log('[DB] ✅ Study profile updated:', uid, profileData);
+  } catch (error) {
+    console.error('[DB] Error updating study profile:', error);
+    throw error;
+  }
+}
+
+/**
+ * PaymentTransaction interface for recording payments
+ */
+export interface PaymentTransaction {
+  uid: string;
+  transactionId: string;
+  amount: number;
+  currency: string;
+  accessType: 'premium' | 'premium-support';
+  durationMonths: number;
+  method: 'stripe' | 'paypal' | 'manual' | 'other';
+  status: 'pending' | 'completed' | 'failed' | 'refunded';
+  startDate?: string;
+  endDate?: string;
+  notes?: string;
+}
+
+/**
+ * recordPaymentTransaction - Records a payment transaction in Firestore
+ * @param transaction - Payment transaction data
+ */
+export async function recordPaymentTransaction(transaction: PaymentTransaction): Promise<string> {
+  if (!transaction.uid) {
+    throw new Error('[DB] recordPaymentTransaction: uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized');
+    return '';
+  }
+
+  try {
+    const transactionsRef = collection(db, `users/${transaction.uid}/payments`);
+    const docRef = await addDoc(transactionsRef, {
+      ...transaction,
+      recordedAt: serverTimestamp(),
+    });
+
+    console.log('[DB] ✅ Payment transaction recorded:', docRef.id, 'for user:', transaction.uid);
+    return docRef.id;
+  } catch (error) {
+    console.error('[DB] Error recording payment transaction:', error);
+    throw error;
+  }
+}
+
+/**
+ * processPaymentUpgrade - Processes a payment and upgrades user access type
+ * @param uid - User's unique identifier
+ * @param transaction - Payment transaction data
+ */
+export async function processPaymentUpgrade(
+  uid: string,
+  transaction: Omit<PaymentTransaction, 'uid'>
+): Promise<void> {
+  if (!uid) {
+    throw new Error('[DB] processPaymentUpgrade: uid is required');
+  }
+  if (!db) {
+    console.warn('[DB] Firestore not initialized');
+    return;
+  }
+
+  try {
+    const startDate = new Date().toISOString().split('T')[0];
+    const endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + transaction.durationMonths);
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    // Record the payment transaction
+    const transactionData: PaymentTransaction = {
+      uid,
+      ...transaction,
+      status: 'completed',
+      startDate,
+      endDate: endDateStr,
+    };
+
+    await recordPaymentTransaction(transactionData);
+
+    // Update the study profile with new access type
+    await updateStudyProfile(uid, {
+      appAccessType: transaction.accessType,
+      startDate,
+    });
+
+    // Also update the main user document for quick access
+    const userRef = doc(db, 'users', uid);
+    await setDoc(userRef, {
+      appAccessType: transaction.accessType,
+      premiumSince: serverTimestamp(),
+      premiumExpiresAt: endDateStr,
+    }, { merge: true });
+
+    console.log('[DB] ✅ Payment upgrade processed for user:', uid, 'Access type:', transaction.accessType);
+  } catch (error) {
+    console.error('[DB] Error processing payment upgrade:', error);
+    throw error;
+  }
+}
+
 /**
  * createSession
  * Creates session document at /users/{uid}/sessions/{sessionId}

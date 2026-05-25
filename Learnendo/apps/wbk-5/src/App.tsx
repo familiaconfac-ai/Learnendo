@@ -1,0 +1,1014 @@
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { User, onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { Course, Day, UserProgress, SectionType, LessonLanguageCode } from './types';
+import { Dashboard } from './components/Dashboard';
+import { CoursesView } from './components/CoursesView';
+import { BottomNavigation } from './components/BottomNavigation';
+import { LoginScreen } from './components/LoginScreen';
+import { PlacementTest } from './components/PlacementTest';
+import { WorkbookView } from './components/WorkbookView';
+import { LessonView } from './components/LessonView';
+import { ExercisePractice } from './components/ExercisePractice';
+import { PronunciationTrainer } from './components/PronunciationTrainer/PronunciationTrainer';
+import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
+import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
+import { LanguageSelector } from './components/LanguageSelector';
+import { ProgressEngine } from './engine/progressEngine';
+import { PlacementEngine } from './engine/placementEngine';
+import { COURSES } from './courses/courseList';
+import { COURSE_WORKBOOKS } from './courses/courseRegistry';
+import { auth, db, loginWithEmail, registerWithEmail } from './services/firebase';
+import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getUserActivityData } from './services/db';
+import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
+import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
+import { WeekCompletionResult } from './services/db';
+import { calculateScore, ScoreResult } from './engine/scoringEngine';
+import { computeNextPath } from './engine/progressStatsService';
+import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
+import { LiveClassesPage } from './components/LiveClasses/LiveClassesPage';
+
+const DEFAULT_COURSE_ID = 'english';
+const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
+const LESSON_TEST_PREFIX = 'lesson_test_passed_';
+const LANGUAGE_STORAGE_KEY = 'learnendo_user_language';
+
+// Map courses to language codes
+const COURSE_TO_LANGUAGE: Record<string, LessonLanguageCode> = {
+  'english': 'en',
+  'portuguese_foreigners': 'pt',
+  'portuguese_native': 'pt',
+  'spanish': 'es',
+  'greek_koine': 'el',
+  'hebrew_biblical': 'he',
+};
+
+// Map language codes to course IDs
+const LANGUAGE_TO_COURSE: Record<LessonLanguageCode, string> = {
+  'en': 'english',
+  'pt': 'portuguese_foreigners',
+  'es': 'spanish',
+  'el': 'greek_koine',
+  'he': 'hebrew_biblical',
+};
+
+const COURSE_SELECTOR_OPTIONS = [
+  { id: 'english', label: 'English', flag: '🇺🇸' },
+  { id: 'portuguese_foreigners', label: 'Português', flag: '🇧🇷' },
+  { id: 'spanish', label: 'Español', flag: '🇪🇸' },
+  { id: 'greek_koine', label: 'Greek', flag: '🇬🇷' },
+  { id: 'hebrew_biblical', label: 'Hebrew', flag: '🇮🇱' },
+] as const;
+
+const getLessonNumberFromId = (lessonId: string | null | undefined) => {
+  if (!lessonId) return NaN;
+  // IDs like "wb1_l3" encode the lesson number after "_l"; extract that first.
+  const wbMatch = lessonId.match(/_l(\d+)/i);
+  if (wbMatch) return Number(wbMatch[1]);
+  // Fallback for simple IDs like "lesson2".
+  const match = lessonId.match(/(\d+)/);
+  return match ? Number(match[1]) : NaN;
+};
+
+const App: React.FC = () => {
+  // ===== LANGUAGE STATE =====
+  const [language, setLanguageState] = useState<LessonLanguageCode>(() => {
+    // Load from localStorage on initial render
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY) as LessonLanguageCode | null;
+      if (stored && ['en', 'pt', 'es', 'el', 'he'].includes(stored)) {
+        return stored;
+      }
+    }
+    return DEFAULT_LANGUAGE;
+  });
+
+  // Update localStorage and course when language changes
+  const setLanguage = useCallback((newLanguage: LessonLanguageCode) => {
+    console.log('[App] Language changed:', newLanguage);
+    setLanguageState(newLanguage);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, newLanguage);
+    }
+    // Auto-switch course to match language
+    const courseForLanguage = LANGUAGE_TO_COURSE[newLanguage];
+    if (courseForLanguage) {
+      setCurrentCourseId(courseForLanguage);
+    }
+  }, []);
+
+  // ===== APP STATE =====
+  const [progress, setProgress] = useState<UserProgress>({
+    userId: 'user1',
+    currentWorkbook: 1,
+    currentLesson: 1,
+    currentDay: 1,
+    completedActivities: [],
+    lastCompletedDate: new Date().toISOString()
+  });
+  const [currentCourseId, setCurrentCourseId] = useState<string | null>(null);
+  const [currentSection, setCurrentSection] = useState<SectionType>(SectionType.COURSES);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [courseMenuOpen, setCourseMenuOpen] = useState(false);
+  const [currentWorkbookId, setCurrentWorkbookId] = useState<number | null>(null);
+  const [currentLessonId, setCurrentLessonId] = useState<string | null>(null);
+  const [currentWorkbook, setCurrentWorkbook] = useState<any>(null);
+  const [isWorkbookLoading, setIsWorkbookLoading] = useState(false);
+  const [currentDay, setCurrentDay] = useState<Day | null>(null);
+  const [activeWeeklyTest, setActiveWeeklyTest] = useState<{ lessonNumber: number; lessonId: string } | null>(null);
+  const [lessonTestCompleted, setLessonTestCompleted] = useState<Record<number, boolean>>({});
+  const [lessonTestScores, setLessonTestScores] = useState<Record<number, number>>({});
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
+  const [showConversionModal, setShowConversionModal] = useState(false);
+  const [showResultAnimation, setShowResultAnimation] = useState(false);
+  const [conversionReason, setConversionReason] = useState<string | undefined>();
+  const [conversionSuccess, setConversionSuccess] = useState(false);
+  const isAdmin = user?.email?.toLowerCase() === 'learnendo@gmail.com';
+  const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
+  const activeCourse = COURSES.find((course) => course.id === activeCourseId) ?? null;
+  const completedLessonNumbers = (progress.completedActivities || [])
+    .filter((activityId) => activityId.startsWith(LESSON_TEST_PREFIX))
+    .map((activityId) => Number(activityId.replace(LESSON_TEST_PREFIX, '')))
+    .filter((value) => Number.isFinite(value));
+  const completedLessonSet = new Set(completedLessonNumbers);
+  const completedLessonCount = completedLessonSet.size;
+  const streak = Number((progress as any).streakCount ?? completedLessonCount);
+  const freeze = Number((progress as any).iceCount ?? 0);
+  const diamonds = Number((progress as any).diamonds ?? completedLessonCount * 10);
+  const stars = Number((progress as any).totalStars ?? (progress.completedActivities || []).length);
+  const [sessionCount, setSessionCount] = useState<number>(0);
+  const [score, setScore] = useState<ScoreResult | null>(null);
+  const activeSessionRef = useRef<{ uid: string; sessionId: string; startedAt: number } | null>(null);
+
+  const toggleMenu = () => setMenuOpen(!menuOpen);
+
+  // Sync language with course selection
+  const handleCourseChange = useCallback((courseId: string) => {
+    setCurrentCourseId(courseId);
+    const languageForCourse = COURSE_TO_LANGUAGE[courseId];
+    if (languageForCourse && languageForCourse !== language) {
+      setLanguage(languageForCourse);
+    }
+  }, [language, setLanguage]);
+
+  // Language selector handler — switches language, resets navigation to courses view
+  const handleLangSelect = useCallback((lang: LessonLanguageCode) => {
+    console.log('LANG CHANGE', lang);
+    setLanguage(lang);
+    setCurrentWorkbookId(1);
+    setCurrentWorkbook(null);
+    setCurrentLessonId(null);
+    setCurrentDay(null);
+    setCurrentSection(SectionType.COURSES);
+    setCourseMenuOpen(false);
+  }, [setLanguage]);
+
+  const triggerConversion = (reason?: string) => {
+    setConversionReason(reason);
+    setShowConversionModal(true);
+  };
+
+  const closeActiveSession = () => {
+    const activeSession = activeSessionRef.current;
+    if (!activeSession) return;
+
+    const durationSeconds = Math.max(1, Math.round((Date.now() - activeSession.startedAt) / 1000));
+    activeSessionRef.current = null;
+    void finishSession(activeSession.uid, activeSession.sessionId, durationSeconds);
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // ========== STEP 1: ENSURE AUTHENTICATION ==========
+      // Accept both anonymous and email-authenticated users
+      let authenticatedUser = firebaseUser;
+      
+      // If no user is authenticated, we need to check if this is acceptable
+      if (!authenticatedUser) {
+        setAuthLoading(false);
+        closeActiveSession();
+        setCurrentCourseId(null);
+        setCurrentSection(SectionType.COURSES);
+        setCurrentWorkbookId(null);
+        setCurrentLessonId(null);
+        setCurrentDay(null);
+        setActiveWeeklyTest(null);
+        setLessonTestCompleted({});
+        setLessonTestScores({});
+        setUser(null);
+        return;
+      }
+
+      setUser(authenticatedUser);
+      setAuthLoading(false);
+
+      // ========== STEP 2: TRACK ALL AUTHENTICATED USERS ==========
+      // This runs for EVERY authenticated user (including restricted)
+      // Tracking happens BEFORE any permission/content logic
+      console.log('[App] User authenticated:', authenticatedUser.uid, {
+        email: authenticatedUser.email,
+        isAnonymous: authenticatedUser.isAnonymous
+      });
+
+      try {
+        // Create or update user profile in Firestore
+        console.log('[App] Recording user profile...');
+        await createOrUpdateUserProfile(authenticatedUser);
+        
+        // Create session entry
+        console.log('[App] Creating session...');
+        const sessionId = await createSessionForUser(authenticatedUser);
+        
+        // Record daily access
+        console.log('[App] Recording daily access...');
+        await updateLastActive(authenticatedUser.uid);
+        await recordDailyAccess(authenticatedUser.uid);
+
+        console.log('[App] ✅ Firestore tracking complete for:', authenticatedUser.uid);
+      } catch (trackingError) {
+        console.error('[App] ❌ Firestore tracking error:', trackingError);
+        // Do NOT return - continue even if tracking fails
+      }
+
+      // ========== STEP 3: LOAD PROGRESS & CONTENT ==========
+      try {
+        const loadedProgress = ProgressEngine.loadProgress(authenticatedUser.uid);
+        if (loadedProgress) {
+          setProgress(loadedProgress);
+          setCurrentWorkbookId(loadedProgress.currentWorkbook || 1);
+        } else {
+          setCurrentWorkbookId(1);
+        }
+        setCurrentSection(SectionType.WORKBOOK);
+      } catch (progressError) {
+        console.warn('[App] Progress load error:', progressError);
+        setCurrentWorkbookId(1);
+        setCurrentSection(SectionType.WORKBOOK);
+      }
+
+      // ========== STEP 4: SESSION MANAGEMENT ==========
+      // Create/manage session reference for tracking activity
+      try {
+        const existingSession = activeSessionRef.current;
+        if (!existingSession || existingSession.uid !== authenticatedUser.uid) {
+          closeActiveSession();
+          const sessionId = await createSession(
+            authenticatedUser.uid,
+            progress.currentLesson,
+            typeof navigator !== 'undefined' ? navigator.userAgent : undefined
+          );
+
+          if (sessionId) {
+            activeSessionRef.current = {
+              uid: authenticatedUser.uid,
+              sessionId,
+              startedAt: Date.now(),
+            };
+          }
+        }
+      } catch (sessionError) {
+        console.warn('[App] Session management error:', sessionError);
+      }
+
+      // ========== STEP 5: PERMISSION & RESTRICTION LOGIC ==========
+      // Apply any permission checks or restrictions AFTER tracking
+      // (Add permission checks here if needed)
+    });
+
+    return () => {
+      unsubscribe();
+      closeActiveSession();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      void updateLastActive(user.uid);
+      void recordDailyAccess(user.uid);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      closeActiveSession();
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    getSessionCount(user.uid).then(setSessionCount).catch(() => {});
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user) return;
+    const uid = user.uid;
+    const creationTime = user.metadata?.creationTime;
+    const startDate = creationTime ? new Date(creationTime) : new Date();
+    getUserActivityData(uid)
+      .then(({ sessionDates, lessonCompletions }) => {
+        setScore(calculateScore({ sessionDates, lessonCompletions, startDate }));
+      })
+      .catch(() => {});
+  }, [user?.uid]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (!currentCourseId) {
+      setCurrentCourseId(DEFAULT_COURSE_ID);
+    }
+    if (!currentWorkbookId) {
+      setCurrentWorkbookId(progress.currentWorkbook || 1);
+    }
+  }, [user, currentCourseId, currentWorkbookId, progress.currentWorkbook]);
+
+  useEffect(() => {
+    if (!currentWorkbookId) return;
+
+    const loadWorkbook = async () => {
+      const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
+      const registry = COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+      const loader = registry[currentWorkbookId as keyof typeof registry];
+      if (!loader) {
+        setCurrentSection(SectionType.WORKBOOK);
+        return;
+      }
+
+      setIsWorkbookLoading(true);
+      try {
+        const module = await loader();
+        const resolvedWorkbook =
+          (module as any)[`workbook${currentWorkbookId}`] ||
+          (module as any).default ||
+          Object.values(module)[0] ||
+          null;
+
+        if (!resolvedWorkbook) {
+          setCurrentSection(SectionType.WORKBOOK);
+          return;
+        }
+
+        setCurrentWorkbook(resolvedWorkbook);
+        setCurrentSection(SectionType.WORKBOOK);
+      } catch {
+        setCurrentSection(SectionType.WORKBOOK);
+      } finally {
+        setIsWorkbookLoading(false);
+      }
+    };
+
+    loadWorkbook();
+  }, [currentWorkbookId, currentCourseId]);
+
+  const handleNavigate = (section: SectionType, params?: any) => {
+    setCourseMenuOpen(false);
+    setActiveWeeklyTest(null);
+
+    if (section === SectionType.DASHBOARD) {
+      setCurrentDay(null);
+      setCurrentLessonId(null);
+      const workbookId = Number(progress.currentWorkbook || 1);
+      setCurrentWorkbookId(workbookId);
+      setCurrentSection(SectionType.WORKBOOK);
+      return;
+    }
+
+    if (section === SectionType.COURSES) {
+      setCurrentSection(SectionType.COURSES);
+      return;
+    }
+
+    if (params?.lessonId) {
+      setCurrentLessonId(params.lessonId);
+    }
+
+    if (section === SectionType.WORKBOOK) {
+      const workbookId = Number(params?.workbookId || progress.currentWorkbook || 1);
+      setCurrentWorkbookId(workbookId);
+
+      if (params?.resumeCurrentDay && currentWorkbook?.lessons?.length) {
+        const lessonIndex = Math.max(0, (progress.currentLesson || 1) - 1);
+        const lesson = currentWorkbook.lessons[lessonIndex];
+        if (lesson) {
+          setCurrentLessonId(lesson.id);
+          const nextDay = lesson.days?.find((day: Day) => !progress.completedActivities.includes(day.id));
+          if (nextDay) {
+            setCurrentDay(nextDay);
+            setCurrentSection(SectionType.PRACTICE);
+            return;
+          }
+          setCurrentDay(null);
+          setCurrentSection(SectionType.LESSON);
+          return;
+        }
+      }
+
+      setCurrentSection(SectionType.WORKBOOK);
+      return;
+    }
+
+    setCurrentSection(section);
+  };
+
+  const canOpenLessonToday = (lessonNumber: number) => {
+    if (isAdmin) return true;
+    if (lessonNumber <= 1) return true;
+    if (lessonNumber <= completedLessonCount) return true;
+    if (lessonNumber > completedLessonCount + 1) return false;
+    return true;
+  };
+
+  const openLesson = (lessonId: string) => {
+    const lessonNumber = getLessonNumberFromId(lessonId);
+    if (!Number.isFinite(lessonNumber)) return;
+
+    if (!canOpenLessonToday(lessonNumber)) {
+      alert('Come back tomorrow to continue your journey.');
+      return;
+    }
+
+    setCurrentLessonId(lessonId);
+    setCurrentSection(SectionType.LESSON);
+  };
+
+  const startWeeklyTest = (lessonId: string, lessonNumber: number, day: Day) => {
+    setCurrentLessonId(lessonId);
+    setCurrentDay(day);
+    setLessonTestCompleted((prev) => ({ ...prev, [lessonNumber]: false }));
+    setActiveWeeklyTest({ lessonNumber, lessonId });
+    setCurrentSection(SectionType.PRACTICE);
+  };
+
+  const handlePlacementComplete = (score: number) => {
+    const workbook = PlacementEngine.determineWorkbook(score);
+    const updated = { ...progress, currentWorkbook: workbook, placementScore: score };
+    // Keep Firestore as the source of truth for progress state.
+    try {
+      ProgressEngine.saveProgress(updated);
+    } catch {
+      // Do not block rendering when persistence fails.
+    }
+
+    // Persist placement test result to flat progress doc
+    if (user?.uid && db) {
+      setDoc(
+        doc(db, 'progress', user.uid),
+        { tests: { placement: { score, date: new Date().toISOString() } } },
+        { merge: true },
+      ).catch(e => console.warn('[PROGRESS] placement test save failed:', e));
+    }
+
+    setCurrentSection(SectionType.WORKBOOK);
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Learnendo',
+          text: "I'm learning English with Learnendo!",
+          url: window.location.href,
+        });
+      } catch {
+        // Ignore cancellation.
+      }
+      return;
+    }
+
+    alert('Sharing not supported on this device');
+  };
+
+  const handleLogin = async (email: string, password: string) => {
+    const user = await loginWithEmail(email, password);
+    await createStudentProfile(user.uid, user.email || email, user.displayName || undefined);
+    setMenuOpen(false);
+  };
+
+  const handleRegister = async (email: string, password: string) => {
+    const fullName = email.split('@')[0];
+    const user = await registerWithEmail(email, password, fullName);
+    await createStudentProfile(user.uid, user.email || email, user.displayName || fullName);
+    setMenuOpen(false);
+  };
+
+  const handleLogout = async () => {
+    closeActiveSession();
+    await signOut(auth);
+    setMenuOpen(false);
+  };
+
+  /**
+   * Safe skip helper: reads true saved days from Firebase and navigates only.
+   * Never writes completion or gamification data.
+   */
+  const handleSkipToSavedProgress = async (lesson: { id: string; days?: Day[] }, lessonNumber: number) => {
+    if (!user?.uid || !db) {
+      console.log('[SKIP] unavailable: missing user or Firestore instance');
+      return;
+    }
+
+    const progressRef = doc(db, 'users', user.uid, 'courseProgress', 'main');
+    const snap = await getDoc(progressRef);
+    const currentCourse = currentCourseId ?? DEFAULT_COURSE_ID;
+    const currentWorkbook = currentWorkbookId ?? progress.currentWorkbook;
+
+    if (!snap.exists()) {
+      console.log('[SKIP] no saved progress found, staying on current lesson/day');
+      return;
+    }
+
+    const data = snap.data() as {
+      days?: Record<string, unknown>;
+      courseId?: string;
+      workbook?: number;
+      currentWorkbook?: number;
+    };
+
+    const savedDaysObj = data.days && typeof data.days === 'object' ? data.days : {};
+    const savedDays = Object.keys(savedDaysObj).filter((key) => savedDaysObj[key] === true);
+
+    console.log('[SKIP] savedDays:', savedDays);
+    console.log('[SKIP] context', {
+      currentCourse,
+      currentWorkbook,
+      savedCourseId: data.courseId,
+      savedWorkbook: data.currentWorkbook ?? data.workbook,
+      lessonNumber,
+    });
+
+    if (data.courseId && data.courseId !== currentCourse) {
+      console.log('[SKIP] course mismatch, staying on current lesson/day');
+      return;
+    }
+
+    if (
+      typeof (data.currentWorkbook ?? data.workbook) === 'number'
+      && (data.currentWorkbook ?? data.workbook) !== currentWorkbook
+    ) {
+      console.log('[SKIP] workbook mismatch, staying on current lesson/day');
+      return;
+    }
+
+    const lessonDays = Array.isArray(lesson.days) ? lesson.days : [];
+    const firstSixDays = lessonDays.slice(0, 6).filter(Boolean) as Day[];
+    if (!firstSixDays.length) {
+      console.log('[SKIP] no lesson day structure found, staying on current lesson/day');
+      return;
+    }
+
+    let contiguousCompleted = 0;
+    let targetDay: Day | null = null;
+
+    for (const day of firstSixDays) {
+      if (savedDaysObj[day.id] === true) {
+        contiguousCompleted += 1;
+        continue;
+      }
+      targetDay = day;
+      break;
+    }
+
+    if (contiguousCompleted === 0) {
+      console.log('[SKIP] no saved progress found, staying on current lesson/day');
+      return;
+    }
+
+    if (targetDay) {
+      console.log('[SKIP] next target:', {
+        lesson: lessonNumber,
+        dayId: targetDay.id,
+        dayNumber: contiguousCompleted + 1,
+      });
+      setCurrentDay(targetDay);
+      setActiveWeeklyTest(null);
+      setCurrentSection(SectionType.PRACTICE);
+      return;
+    }
+
+    const daySeven = lessonDays[6] ?? null;
+    if (daySeven && !completedLessonSet.has(lessonNumber)) {
+      console.log('[SKIP] next target: lesson test day 7', { lesson: lessonNumber });
+      startWeeklyTest(lesson.id, lessonNumber, daySeven);
+      return;
+    }
+
+    console.log('[SKIP] all saved steps already completed for this lesson');
+  };
+
+  const handleDayComplete = async (dayId: string, score: number) => {
+    console.log(`[App] Day "${dayId}" completed. Score: ${score}%`);
+
+    if (activeWeeklyTest) {
+      const { lessonNumber, lessonId } = activeWeeklyTest;
+      setLessonTestScores((prev) => ({ ...prev, [lessonNumber]: score }));
+      setLessonTestCompleted((prev) => ({ ...prev, [lessonNumber]: true }));
+      setCurrentDay(null);
+      setActiveWeeklyTest(null);
+
+      if (score === 100) {
+        const testMarker = `${LESSON_TEST_PREFIX}${lessonNumber}`;
+        const alreadyDone = progress.completedActivities.includes(testMarker);
+        const nextLesson = Math.min(12, lessonNumber + 1);
+        const updated: UserProgress = {
+          ...progress,
+          currentLesson: Math.max(progress.currentLesson, nextLesson),
+          completedActivities: alreadyDone
+            ? progress.completedActivities
+            : [...progress.completedActivities, testMarker],
+          lastCompletedDate: new Date().toISOString(),
+        };
+
+        // Keep Firestore as the source of truth for progress state.
+        try {
+          ProgressEngine.saveProgress(updated);
+        } catch {
+          // Keep UI responsive even if persistence fails.
+        }
+
+        // Persist lesson test result to flat progress doc (Day 7 test)
+        if (user?.uid && db) {
+          const key = `W${progress.currentWorkbook}L${lessonNumber}`;
+          setDoc(
+            doc(db, 'progress', user.uid),
+            {
+              tests: {
+                lessons: {
+                  [key]: {
+                    workbook: progress.currentWorkbook,
+                    lesson:   lessonNumber,
+                    day:      7,
+                    score,
+                    date:     new Date().toISOString(),
+                  },
+                },
+              },
+            },
+            { merge: true },
+          ).catch(e => console.warn('[PROGRESS] lesson test save failed:', e));
+        }
+
+        setCurrentLessonId(null);
+        setCurrentSection(SectionType.WORKBOOK);
+        setShowResultAnimation(true);
+        return;
+      }
+
+      setCurrentLessonId(lessonId);
+      setCurrentSection(SectionType.LESSON);
+      return;
+    }
+
+    const alreadyDone = progress.completedActivities.includes(dayId);
+
+    // Extract day/lesson numbers early so we can update the path in progress
+    const dayMatch = dayId.match(/d(\d+)/);
+    const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
+    const lessonNumber = getLessonNumberFromId(currentLessonId);
+
+    // Compute the NEXT position after completing this day
+    const nextPath = (!isNaN(dayNumber) && !isNaN(lessonNumber))
+      ? computeNextPath({
+          workbook: progress.currentWorkbook,
+          lesson: lessonNumber,
+          day: dayNumber,
+        })
+      : null;
+
+    const updated: UserProgress = {
+      ...progress,
+      completedActivities: alreadyDone
+        ? progress.completedActivities
+        : [...progress.completedActivities, dayId],
+      // Advance to next position
+      ...(nextPath && {
+        currentDay:      nextPath.day,
+        currentLesson:   nextPath.lesson,
+        currentWorkbook: nextPath.workbook,
+      }),
+      lastCompletedDate: new Date().toISOString(),
+    };
+    // Keep Firestore as the source of truth for progress state.
+    try {
+      ProgressEngine.saveProgress(updated);
+    } catch {
+      // Persistence failure should not block navigation.
+    }
+
+    // Firebase: Track day completion and check for week completion
+    if (user?.uid && currentLessonId) {
+      try {
+        if (!isNaN(lessonNumber) && !isNaN(dayNumber)) {
+          const result = await completeDayAndGetResult(
+            user.uid,
+            progress.currentWorkbook,
+            lessonNumber,
+            dayNumber
+          );
+
+          console.log('[App] Firebase day completion result:', result);
+
+          // Show week completion popup if week is complete
+          if (result.weekComplete && result.weekResult) {
+            setWeekCompletionResult(result.weekResult);
+          }
+
+          await recordLessonCompletion(user.uid, lessonNumber, {
+            completedIslands: [dayId],
+            diamondPercent: score,
+            timeSpentSeconds: 0,
+            totalCorrect: Math.round(score),
+            totalAnswers: 100,
+          });
+
+          // Write to flat "progress" collection for realtime teacher dashboard
+          if (db) {
+            setDoc(
+              doc(db, 'progress', user.uid!),
+              {
+                uid:             user.uid,
+                displayName:     user.displayName  ?? null,
+                email:           user.email        ?? null,
+                currentWorkbook: updated.currentWorkbook,
+                currentLesson:   updated.currentLesson,
+                currentDay:      updated.currentDay,
+                lastActivity:    serverTimestamp(),
+                avgAccuracy:     score,
+                daysCompleted:   updated.completedActivities.length,
+                lessonsStarted:  Math.max(updated.currentLesson, lessonNumber),
+              },
+              { merge: true },
+            ).catch(e => console.warn('[PROGRESS] flat doc write failed:', e));
+          }
+        }
+      } catch (error) {
+        console.warn('[App] Firebase day tracking failed:', error);
+        // Continue UI flow even if Firebase fails
+      }
+    }
+
+    // Return to day islands after finishing day practice.
+    setCurrentDay(null);
+    setCurrentSection(SectionType.LESSON);
+  };
+
+  const renderSection = () => {
+    switch (currentSection) {
+      case SectionType.COURSES:
+        return (
+          <CoursesView
+            courses={COURSES}
+            currentCourseId={currentCourseId}
+            currentLanguage={language}
+            onLanguageChange={setLanguage}
+            onLogoClick={() => handleNavigate(SectionType.WORKBOOK)}
+            onSelectCourse={(id) => {
+              handleCourseChange(id);
+              setCurrentWorkbookId(1);
+              setCurrentLessonId(null);
+              setCurrentDay(null);
+              setCurrentSection(SectionType.WORKBOOK);
+            }}
+          />
+        );
+      case SectionType.DASHBOARD: {
+        return (
+          <Dashboard
+            progress={progress}
+            currentCourse={activeCourse}
+            isAdmin={isAdmin}
+            onNavigate={handleNavigate}
+          />
+        );
+      }
+      case SectionType.LIVE_CLASSES:
+        return (
+          <LiveClassesPage
+            user={user}
+            isTeacher={isAdmin}
+            onBack={() => handleNavigate(SectionType.COURSES)}
+          />
+        );
+      case SectionType.PLACEMENT_TEST:
+        return <PlacementTest currentLanguage={language} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
+      case SectionType.WORKBOOK:
+        if (isWorkbookLoading) return <div className="px-4 py-6">Loading workbook...</div>;
+        if (!currentWorkbook) return <div className="px-4 py-6">Workbook unavailable for this course.</div>;
+        return (
+          <WorkbookView
+            workbookId={currentWorkbookId || progress.currentWorkbook}
+            lessons={currentWorkbook.lessons || []}
+            progress={progress}
+            onSelectLesson={openLesson}
+            isAdmin={isAdmin}
+            onBack={() => handleNavigate(SectionType.COURSES)}
+          />
+        );
+      case SectionType.LESSON: {
+        const parsedLessonNumber = getLessonNumberFromId(currentLessonId || `lesson${progress.currentLesson}`);
+        const lessonNumber = Number.isFinite(parsedLessonNumber) ? parsedLessonNumber : progress.currentLesson;
+        const lesson =
+          currentWorkbook?.lessons?.find((l: any) => l.id === currentLessonId) ||
+          currentWorkbook?.lessons?.[lessonNumber - 1] ||
+          {
+            id: `lesson${lessonNumber}`,
+            title: `Lesson ${lessonNumber}`,
+            days: [],
+          };
+        return (
+          <LessonView
+            lesson={lesson}
+            lessonNumber={lessonNumber}
+            progress={progress}
+            currentLanguage={language}
+            isAdmin={isAdmin}
+            testCompleted={lessonTestCompleted[lessonNumber] || false}
+            testScore={lessonTestScores[lessonNumber]}
+            testPassed={completedLessonSet.has(lessonNumber)}
+            onStartDay={(day: Day) => {
+              setCurrentDay(day);
+              setActiveWeeklyTest(null);
+              setCurrentSection(SectionType.PRACTICE);
+            }}
+            onSkipToSavedProgress={() => { void handleSkipToSavedProgress(lesson, lessonNumber); }}
+            onStartWeeklyTest={(day: Day) => startWeeklyTest(lesson.id, lessonNumber, day)}
+            onBack={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook })}
+          />
+        );
+      }
+      case SectionType.SETTINGS:
+      case SectionType.HELP:
+        return (
+          <div className="min-h-screen bg-blue-50 flex items-center justify-center px-6 text-center">
+            <p className="text-slate-700 font-semibold">This feature is under construction</p>
+          </div>
+        );
+      case SectionType.PRACTICE: {
+        if (!currentDay) return <div className="px-4 py-6">Day unavailable.</div>;
+        return (
+          <ExercisePractice
+            day={currentDay}
+            lessonId={currentLessonId || ''}
+            currentLanguage={language}
+            progress={progress}
+            onComplete={handleDayComplete}
+            onBack={() => {
+              setCurrentDay(null);
+              setActiveWeeklyTest(null);
+              setCurrentSection(SectionType.LESSON);
+            }}
+          />
+        );
+      }
+      case SectionType.PRONUNCIATION:
+        return <PronunciationTrainer onFinish={() => handleNavigate(SectionType.COURSES)} />;
+      case SectionType.TEACHER_DASHBOARD:
+        return user && isAdmin ? (
+          <TeacherDashboard user={user} />
+        ) : (
+          <div className="min-h-screen bg-blue-50 flex items-center justify-center px-6 text-center">
+            <p className="text-slate-700 font-semibold">Access denied. Teacher dashboard is for authorized users only.</p>
+          </div>
+        );
+      case SectionType.SHARE:
+        return <div>Share App Placeholder</div>;
+      default:
+        return (
+          <WorkbookView
+            workbookId={currentWorkbookId || progress.currentWorkbook}
+            lessons={currentWorkbook?.lessons || []}
+            progress={progress}
+            onSelectLesson={openLesson}
+            isAdmin={isAdmin}
+            onBack={() => handleNavigate(SectionType.COURSES)}
+          />
+        );
+    }
+  };
+
+  if (authLoading) {
+    return null;
+  }
+
+  if (!user) {
+    return (
+      <LoginScreen
+        menuOpen={menuOpen}
+        onToggleMenu={toggleMenu}
+        onLogin={handleLogin}
+        onRegister={handleRegister}
+      />
+    );
+  }
+
+  return (
+    <div className="app overflow-x-hidden">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-full items-center justify-between gap-1 sm:gap-2 px-2 sm:px-3 py-2 overflow-x-auto">
+          <button
+            type="button"
+            className="flex h-10 items-center rounded-lg sm:rounded-xl bg-slate-50 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-slate-700 shadow-sm active:scale-95 flex-shrink-0"
+            onClick={() => {
+              setCurrentDay(null);
+              setCurrentLessonId(null);
+              setCurrentSection(SectionType.COURSES);
+            }}
+            aria-label="Go to language selection"
+          >
+            <span className="text-base leading-none">🏠</span>
+            <span className="ml-1">Home</span>
+          </button>
+
+          <div className="flex-shrink-0">
+            <LanguageSelector current={language} onChange={handleLangSelect} />
+          </div>
+
+          <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-700 flex-shrink-0">
+            <span className="rounded-lg bg-blue-100 text-blue-700 px-1.5 py-1" title="Current Language">
+              {language.toUpperCase()}
+            </span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">🔥 {score?.streak ?? (sessionCount || streak)}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">❄️ {score?.freeze ?? freeze}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">💎 {score?.diamonds ?? diamonds}</span>
+            <span className="rounded-lg bg-slate-100 px-1.5 py-1">⭐ {score?.stars ?? stars}</span>
+          </div>
+
+          <button
+            onClick={toggleMenu}
+            className="flex h-10 w-10 items-center justify-center rounded-lg sm:rounded-xl bg-slate-50 text-[22px] sm:text-[26px] leading-none text-slate-700 shadow-sm active:scale-95 flex-shrink-0"
+            aria-label="Open menu"
+          >
+            ☰
+          </button>
+        </div>
+      </header>
+      {menuOpen && (
+        <div className="fixed inset-0 z-[1000] bg-black/30 backdrop-blur-sm flex items-center justify-center" onClick={() => setMenuOpen(false)}>
+          <div
+            className="bg-white rounded-3xl shadow-2xl p-6 w-11/12 max-w-sm mx-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="space-y-2">
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK); setMenuOpen(false); }}>Lesson Islands</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.LIVE_CLASSES); setMenuOpen(false); }}>Live Classes</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
+              {isAdmin && (
+                <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>
+              )}
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 font-medium transition-colors" onClick={handleLogout}>Logout</button>
+            </div>
+          </div>
+        </div>
+      )}
+      <main className="pt-[68px]">{renderSection()}</main>
+      {weekCompletionResult && (
+        <WeekCompletionPopup
+          result={weekCompletionResult}
+          onClose={() => setWeekCompletionResult(null)}
+        />
+      )}
+      {showResultAnimation && (
+        <ResultAnimation
+          streak={score?.streak ?? streak}
+          freeze={score?.freeze ?? freeze}
+          diamonds={score?.diamonds ?? diamonds}
+          stars={score?.stars ?? stars}
+          onClose={() => setShowResultAnimation(false)}
+        />
+      )}
+      {user && user.isAnonymous && (
+        <ConversionModal
+          user={user}
+          isOpen={showConversionModal}
+          onSuccess={() => {
+            setShowConversionModal(false);
+            setConversionSuccess(true);
+            setTimeout(() => setConversionSuccess(false), 3000);
+          }}
+          onCancel={() => setShowConversionModal(false)}
+          reason={conversionReason}
+        />
+      )}
+      {conversionSuccess && (
+        <div className="fixed bottom-24 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg z-[998] animate-pulse">
+          ✅ Account created successfully! Your progress is saved.
+        </div>
+      )}
+      <BottomNavigation currentSection={currentSection} onNavigate={handleNavigate} onShare={handleShare} />
+    </div>
+  );
+};
+
+export default App;
