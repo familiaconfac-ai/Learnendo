@@ -3190,7 +3190,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       for (const [imageIndex, imageRelId] of fallbackImageRelIds.entries()) {
         const imageTarget = slideRels.get(imageRelId);
         if (!imageTarget) continue;
-        const imagePath = resolveZipEntryPath(slideRelsPath, imageTarget);
+        const imagePath = resolveZipEntryPath(slidePath, imageTarget);
         const imageFile = zip.file(imagePath);
         if (!imageFile) continue;
 
