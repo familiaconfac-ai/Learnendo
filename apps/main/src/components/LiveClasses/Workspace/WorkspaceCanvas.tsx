@@ -249,6 +249,49 @@ function extractPptParagraphs(xml: string): string[] {
   return paragraphs;
 }
 
+function findFirstDescendantByLocalName(element: Element, localName: string): Element | null {
+  return Array.from(element.getElementsByTagName('*')).find((node) => node.localName === localName) ?? null;
+}
+
+function findDescendantsByLocalName(element: Element, localName: string): Element[] {
+  return Array.from(element.getElementsByTagName('*')).filter((node) => node.localName === localName);
+}
+
+function extractPptSlideSize(presentationXml: string): { width: number; height: number } {
+  const presentationDoc = parseXmlDocument(presentationXml);
+  if (presentationDoc) {
+    const sizeNode = Array.from(presentationDoc.getElementsByTagName('*')).find((node) => node.localName === 'sldSz');
+    if (sizeNode) {
+      const width = Number(getAttributeByName(sizeNode, ['cx']));
+      const height = Number(getAttributeByName(sizeNode, ['cy']));
+      if (width > 0 && height > 0) {
+        return { width, height };
+      }
+    }
+  }
+  const match = presentationXml.match(/<p:sldSz\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"/);
+  if (match) {
+    const width = Number(match[1]);
+    const height = Number(match[2]);
+    if (width > 0 && height > 0) {
+      return { width, height };
+    }
+  }
+  return { width: 12_192_000, height: 6_858_000 };
+}
+
+function extractPptColorFromElement(element: Element | null): string | null {
+  if (!element) return null;
+  const srgbNode = findFirstDescendantByLocalName(element, 'srgbClr');
+  const hex = srgbNode ? getAttributeByName(srgbNode, ['val']) : '';
+  if (hex) return `#${hex}`;
+  return null;
+}
+
+function buildSvgDataUrl(markup: string): string {
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(markup)}`;
+}
+
 const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
 const WORKSPACE_DOC_SYNC_DEBOUNCE_MS = 150;
 
@@ -3204,6 +3247,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }
 
     const presentationDoc = parseXmlDocument(presentationXml);
+    const slideCanvasSize = extractPptSlideSize(presentationXml);
     const slideOrder = presentationDoc
       ? Array.from(presentationDoc.getElementsByTagName('*'))
         .filter((node) => node.localName === 'sldId')
@@ -3233,7 +3277,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const slideRelsXml = await zip.file(slideRelsPath)?.async('text');
       const slideRels = slideRelsXml ? extractRelationshipMap(slideRelsXml) : new Map<string, string>();
 
-      const paragraphs = extractPptParagraphs(slideXml);
       const slideDoc = parseXmlDocument(slideXml);
       const imageRelIds = slideDoc
         ? Array.from(slideDoc.getElementsByTagName('*'))
@@ -3247,6 +3290,104 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           .filter(([, target]) => /\.(png|jpe?g|gif|bmp|svg|avif|webp)$/i.test(target))
           .map(([relId]) => relId);
       const items: WorkspaceItem[] = [];
+      const textBoxItems: WorkspaceItem[] = [];
+
+      if (slideDoc) {
+        const shapeNodes = findDescendantsByLocalName(slideDoc.documentElement, 'sp');
+        for (const shapeNode of shapeNodes) {
+          const shapeProps = findFirstDescendantByLocalName(shapeNode, 'spPr');
+          const xfrmNode = shapeProps ? findFirstDescendantByLocalName(shapeProps, 'xfrm') : null;
+          const offNode = xfrmNode ? findFirstDescendantByLocalName(xfrmNode, 'off') : null;
+          const extNode = xfrmNode ? findFirstDescendantByLocalName(xfrmNode, 'ext') : null;
+          const x = Number(offNode ? getAttributeByName(offNode, ['x']) : 0);
+          const y = Number(offNode ? getAttributeByName(offNode, ['y']) : 0);
+          const cx = Number(extNode ? getAttributeByName(extNode, ['cx']) : 0);
+          const cy = Number(extNode ? getAttributeByName(extNode, ['cy']) : 0);
+          const normalizedX = clamp((x / slideCanvasSize.width) * 100, 0, 100);
+          const normalizedY = clamp((y / slideCanvasSize.height) * 100, 0, 100);
+          const normalizedW = clamp((cx / slideCanvasSize.width) * 100, 4, 100);
+          const normalizedH = clamp((cy / slideCanvasSize.height) * 100, 4, 100);
+
+          const txBodyNode = findFirstDescendantByLocalName(shapeNode, 'txBody');
+          const paragraphNodes = txBodyNode ? findDescendantsByLocalName(txBodyNode, 'p') : [];
+          const paragraphHtml = paragraphNodes
+            .map((paragraphNode) => {
+              const text = findDescendantsByLocalName(paragraphNode, 't')
+                .map((node) => decodeHtmlEntities(node.textContent ?? ''))
+                .join('');
+              const trimmed = text.replace(/\s+/g, ' ').trim();
+              return trimmed ? `<p>${escapeHtml(trimmed)}</p>` : '';
+            })
+            .filter(Boolean)
+            .join('');
+
+          if (paragraphHtml) {
+            const runProps = txBodyNode ? findFirstDescendantByLocalName(txBodyNode, 'rPr') : null;
+            const endProps = txBodyNode ? findFirstDescendantByLocalName(txBodyNode, 'endParaRPr') : null;
+            const fontSizeRaw = Number(getAttributeByName(runProps ?? endProps ?? shapeNode, ['sz']));
+            const fontFamilyNode = runProps ? findFirstDescendantByLocalName(runProps, 'latin') : null;
+            const fontFamily = fontFamilyNode ? getAttributeByName(fontFamilyNode, ['typeface']) : '';
+            const textColor = extractPptColorFromElement(runProps ?? endProps);
+            const fillColor = extractPptColorFromElement(shapeProps ? findFirstDescendantByLocalName(shapeProps, 'solidFill') : null);
+            textBoxItems.push(
+              normalizeItemScope({
+                id: uid(),
+                type: 'text' as WorkspaceItemType,
+                boxRole: 'content',
+                x: normalizedX,
+                y: normalizedY,
+                w: normalizedW,
+                h: normalizedH,
+                content: paragraphHtml,
+                styles: {
+                  color: textColor ?? '#111827',
+                  bgColor: fillColor ?? '',
+                  fontSize: fontSizeRaw > 0 ? Math.round(fontSizeRaw / 100) : 16,
+                },
+                updatedAt: Date.now(),
+                updatedBy: userId,
+                updatedByName: userName,
+              }),
+            );
+            continue;
+          }
+
+          const shapeTypeNode = shapeProps ? findFirstDescendantByLocalName(shapeProps, 'prstGeom') : null;
+          const shapeType = shapeTypeNode ? getAttributeByName(shapeTypeNode, ['prst']) : '';
+          const fillColor = extractPptColorFromElement(shapeProps ? findFirstDescendantByLocalName(shapeProps, 'solidFill') : null) ?? '#93c5fd';
+          const lineColor = extractPptColorFromElement(shapeProps ? findFirstDescendantByLocalName(shapeProps, 'ln') : null) ?? '#1d4ed8';
+
+          if (shapeType) {
+            let svgMarkup = '';
+            if (shapeType === 'smileyFace') {
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/><circle cx="35" cy="40" r="6" fill="#111827"/><circle cx="65" cy="40" r="6" fill="#111827"/><path d="M30 62c6 10 14 15 20 15s14-5 20-15" fill="none" stroke="#111827" stroke-width="5" stroke-linecap="round"/></svg>`;
+            } else if (shapeType === 'ellipse') {
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><ellipse cx="50" cy="50" rx="46" ry="46" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+            } else if (shapeType === 'roundRect') {
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="4" y="4" width="92" height="92" rx="18" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+            } else if (shapeType === 'rect') {
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="2" y="2" width="96" height="96" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+            }
+
+            if (svgMarkup) {
+              items.push(
+                normalizeItemScope({
+                  id: uid(),
+                  type: 'image' as WorkspaceItemType,
+                  x: normalizedX,
+                  y: normalizedY,
+                  w: normalizedW,
+                  h: normalizedH,
+                  imageUrl: buildSvgDataUrl(svgMarkup),
+                  updatedAt: Date.now(),
+                  updatedBy: userId,
+                  updatedByName: userName,
+                }),
+              );
+            }
+          }
+        }
+      }
 
       for (const [imageIndex, imageRelId] of fallbackImageRelIds.entries()) {
         const imageTarget = slideRels.get(imageRelId);
@@ -3268,10 +3409,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           normalizeItemScope({
             id: uid(),
             type: 'image' as WorkspaceItemType,
-            x: paragraphs.length ? 8 : 0,
-            y: imageIndex === 0 ? (paragraphs.length ? 34 : 0) : 10 + imageIndex * 26,
-            w: paragraphs.length ? 84 : 100,
-            h: paragraphs.length ? 30 : 100,
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
             imageUrl: hostedImageUrl,
             updatedAt: Date.now(),
             updatedBy: userId,
@@ -3280,16 +3421,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         );
       }
 
-      const docContent = paragraphs.length
-        ? paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join('')
-        : '';
-
       importedPages.push({
         id: uid(),
         name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
         backgroundColor: '#ffffff',
-        docContent,
-        items,
+        docContent: '',
+        items: [...items, ...textBoxItems],
       });
     }
 
