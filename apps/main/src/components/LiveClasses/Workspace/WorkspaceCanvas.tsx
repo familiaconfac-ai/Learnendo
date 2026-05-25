@@ -191,6 +191,20 @@ function getImageMimeTypeFromExtension(extension: string): string {
   }
 }
 
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return window.btoa(binary);
+}
+
+function buildDataUrlFromBytes(bytes: Uint8Array, mimeType: string): string {
+  return `data:${mimeType};base64,${uint8ArrayToBase64(bytes)}`;
+}
+
 function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string, string> {
   const map = new Map<string, string>();
   const xmlDoc = parseXmlDocument(xml);
@@ -3553,6 +3567,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         const extension = imagePath.split('.').pop()?.toLowerCase() ?? 'png';
         const mimeType = getImageMimeTypeFromExtension(extension);
         const imageBytes = await imageFile.async('uint8array');
+        const previewDataUrl = buildDataUrlFromBytes(imageBytes, mimeType);
         logSlideImport('primary image chosen for slide', {
           slidePath,
           imageIndex,
@@ -3561,6 +3576,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           resolvedImagePath: imagePath,
           byteLength: imageBytes.length,
           mimeType,
+          previewDataUrlLength: previewDataUrl.length,
         });
         logSlideImport('uploadSlideAsset started', {
           slidePath,
@@ -3594,7 +3610,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             y: 0,
             w: 100,
             h: 100,
-            imageUrl: hostedImageUrl,
+            imageUrl: previewDataUrl,
+            assetUrl: hostedImageUrl,
             updatedAt: Date.now(),
             updatedBy: userId,
             updatedByName: userName,
@@ -3605,6 +3622,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           imageIndex,
           createdItemId: items[items.length - 1]?.id ?? null,
           imageItemCount: items.length,
+          usesLocalPreviewDataUrl: true,
         });
       }
 

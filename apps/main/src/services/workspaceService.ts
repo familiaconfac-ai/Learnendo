@@ -48,6 +48,7 @@ export interface WorkspaceItem {
   editingStartedAt?: number;
   // image block
   imageUrl?: string;  // data-URL or hosted URL
+  assetUrl?: string;  // hosted URL persisted remotely when local preview uses a temporary data URL
   // metadata
   updatedAt: number;
   updatedBy: string;
@@ -125,6 +126,21 @@ function buildSurfaceState(
   };
 }
 
+function serializeWorkspaceItemForRemote(item: WorkspaceItem): WorkspaceItem {
+  const serialized: WorkspaceItem = { ...item };
+  if (serialized.assetUrl) {
+    serialized.imageUrl = serialized.assetUrl;
+  }
+  return serialized;
+}
+
+function serializeWorkspacePagesForRemote(pages: WorkspacePage[]): WorkspacePage[] {
+  return (pages ?? []).map((page) => ({
+    ...page,
+    items: (page.items ?? []).map(serializeWorkspaceItemForRemote),
+  }));
+}
+
 /**
  * Normalize a raw pages array coming from Firestore.
  * Handles pre-Fase-2 data that may be missing the `id` field.
@@ -158,13 +174,14 @@ export async function saveDocContent(
     currentPageId && pages
       ? pages.map((page) => (page.id === currentPageId ? { ...page, docContent } : page))
       : undefined;
+  const remotePages = syncedPages ? serializeWorkspacePagesForRemote(syncedPages) : undefined;
   const nextItems =
-    currentPageId && syncedPages
-      ? syncedPages.find((page) => page.id === currentPageId)?.items ?? []
+    currentPageId && remotePages
+      ? remotePages.find((page) => page.id === currentPageId)?.items ?? []
       : [];
   const surfaceState =
-    currentPageId && syncedPages
-      ? buildSurfaceState(syncedPages, currentPageId, docContent, nextItems)
+    currentPageId && remotePages
+      ? buildSurfaceState(remotePages, currentPageId, docContent, nextItems)
       : undefined;
   const modeKey = surfaceStateKey(surfaceMode);
   const payload = {
@@ -174,7 +191,7 @@ export async function saveDocContent(
     updatedAt: Date.now(),
     updatedBy: uid,
     updatedByName: name,
-    ...(syncedPages ? { pages: syncedPages } : {}),
+    ...(remotePages ? { pages: remotePages } : {}),
   };
   try {
     await updateDoc(workspaceRef(classId), payload);
@@ -213,15 +230,23 @@ export async function saveWorkspaceSurfaceMode(
   if (!db) return;
   const { updateDoc, setDoc } = await import('firebase/firestore');
   const modeKey = surfaceStateKey(surfaceMode);
+  const remoteState = state
+    ? buildSurfaceState(
+        serializeWorkspacePagesForRemote(state.pages),
+        state.currentPageId,
+        state.docContent,
+        (state.items ?? []).map(serializeWorkspaceItemForRemote),
+      )
+    : undefined;
   const payload = {
     surfaceMode,
-    ...(state
+    ...(remoteState
       ? {
-          [modeKey]: state,
-          pages: state.pages,
-          currentPageId: state.currentPageId,
-          docContent: state.docContent,
-          items: state.items,
+          [modeKey]: remoteState,
+          pages: remoteState.pages,
+          currentPageId: remoteState.currentPageId,
+          docContent: remoteState.docContent,
+          items: remoteState.items,
         }
       : {}),
     updatedAt: Date.now(),
@@ -311,23 +336,25 @@ export async function saveWorkspace(
     currentPageId && pages
       ? pages.map((page) => (page.id === currentPageId ? { ...page, items } : page))
       : undefined;
+  const remotePages = syncedPages ? serializeWorkspacePagesForRemote(syncedPages) : undefined;
+  const remoteItems = items.map(serializeWorkspaceItemForRemote);
   const nextDocContent =
-    currentPageId && syncedPages
-      ? syncedPages.find((page) => page.id === currentPageId)?.docContent ?? ''
+    currentPageId && remotePages
+      ? remotePages.find((page) => page.id === currentPageId)?.docContent ?? ''
       : '';
   const surfaceState =
-    currentPageId && syncedPages
-      ? buildSurfaceState(syncedPages, currentPageId, nextDocContent, items)
+    currentPageId && remotePages
+      ? buildSurfaceState(remotePages, currentPageId, nextDocContent, remoteItems)
       : undefined;
   const modeKey = surfaceStateKey(surfaceMode);
   const payload = {
-    items,
+    items: remoteItems,
     itemsUpdatedBy: uid,
     ...(surfaceState ? { [modeKey]: surfaceState } : {}),
     updatedAt: Date.now(),
     updatedBy: uid,
     updatedByName: name,
-    ...(syncedPages ? { pages: syncedPages } : {}),
+    ...(remotePages ? { pages: remotePages } : {}),
   };
   try {
     await updateDoc(workspaceRef(classId), payload);
@@ -356,6 +383,7 @@ export async function saveWorkspaceItem(
   if (!db) return;
   console.log(`[WS] saveWorkspaceItem by ${name} (${uid.slice(0, 6)}) — ${item.id}`);
   const { runTransaction, setDoc, getDoc } = await import('firebase/firestore');
+  const remoteItem = serializeWorkspaceItemForRemote(item);
 
   try {
     await runTransaction(db, async (transaction) => {
@@ -374,17 +402,17 @@ export async function saveWorkspaceItem(
         currentPageId && currentPages.length > 0
           ? currentPages.map((page) =>
               page.id === currentPageId
-                ? { ...page, items: upsertWorkspaceItemByFreshness(page.items ?? [], item) }
+                ? { ...page, items: upsertWorkspaceItemByFreshness(page.items ?? [], remoteItem) }
                 : page,
             )
           : currentPages;
       const activePageId = currentSurfaceState?.currentPageId ?? currentData?.currentPageId;
       const nextItems =
         currentPageId && activePageId && activePageId === currentPageId
-          ? nextPages.find((page) => page.id === currentPageId)?.items ?? upsertWorkspaceItemByFreshness(currentItems, item)
+          ? nextPages.find((page) => page.id === currentPageId)?.items ?? upsertWorkspaceItemByFreshness(currentItems, remoteItem)
           : activePageId
             ? currentPages.find((page) => page.id === activePageId)?.items ?? currentItems
-            : upsertWorkspaceItemByFreshness(currentItems, item);
+            : upsertWorkspaceItemByFreshness(currentItems, remoteItem);
       const nextDocContent =
         currentPageId && activePageId && activePageId === currentPageId
           ? nextPages.find((page) => page.id === currentPageId)?.docContent ?? currentSurfaceState?.docContent ?? currentData?.docContent ?? ''
@@ -431,17 +459,17 @@ export async function saveWorkspaceItem(
       currentPageId && currentPages.length > 0
         ? currentPages.map((page) =>
             page.id === currentPageId
-              ? { ...page, items: upsertWorkspaceItemByFreshness(page.items ?? [], item) }
+              ? { ...page, items: upsertWorkspaceItemByFreshness(page.items ?? [], remoteItem) }
               : page,
         )
         : currentPages;
     const activePageId = currentSurfaceState?.currentPageId ?? currentData?.currentPageId;
     const nextItems =
       currentPageId && activePageId && activePageId === currentPageId
-        ? nextPages.find((page) => page.id === currentPageId)?.items ?? upsertWorkspaceItemByFreshness(currentItems, item)
+        ? nextPages.find((page) => page.id === currentPageId)?.items ?? upsertWorkspaceItemByFreshness(currentItems, remoteItem)
         : activePageId
           ? currentPages.find((page) => page.id === activePageId)?.items ?? currentItems
-          : upsertWorkspaceItemByFreshness(currentItems, item);
+          : upsertWorkspaceItemByFreshness(currentItems, remoteItem);
     const nextDocContent =
       currentPageId && activePageId && activePageId === currentPageId
         ? nextPages.find((page) => page.id === currentPageId)?.docContent ?? currentSurfaceState?.docContent ?? currentData?.docContent ?? ''
@@ -491,16 +519,18 @@ export async function savePageSwitch(
 ): Promise<void> {
   if (!db) return;
   const { updateDoc, setDoc } = await import('firebase/firestore');
-  const nextSurfaceState = buildSurfaceState(pages, currentPageId, docContent, items);
+  const remotePages = serializeWorkspacePagesForRemote(pages);
+  const remoteItems = items.map(serializeWorkspaceItemForRemote);
+  const nextSurfaceState = buildSurfaceState(remotePages, currentPageId, docContent, remoteItems);
   const modeKey = surfaceStateKey(surfaceMode);
   const payload = {
-    pages,
+    pages: remotePages,
     currentPageId,
     surfaceMode,
     [modeKey]: nextSurfaceState,
     docContent,
     docUpdatedBy: uid,
-    items,
+    items: remoteItems,
     itemsUpdatedBy: uid,
     updatedAt: Date.now(),
     updatedBy: uid,
