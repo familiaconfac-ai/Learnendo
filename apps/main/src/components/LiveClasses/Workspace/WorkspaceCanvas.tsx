@@ -3180,9 +3180,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           .map((node) => getNamespacedAttribute(node, 'embed'))
           .filter(Boolean)
         : [...slideXml.matchAll(/<a:blip\b[^>]*r:embed="([^"]+)"/g)].map((match) => match[1]);
+      const fallbackImageRelIds = imageRelIds.length > 0
+        ? imageRelIds
+        : Array.from(slideRels.entries())
+          .filter(([, target]) => /\.(png|jpe?g|gif|bmp|svg|avif|webp)$/i.test(target))
+          .map(([relId]) => relId);
       const items: WorkspaceItem[] = [];
 
-      for (const [imageIndex, imageRelId] of imageRelIds.entries()) {
+      for (const [imageIndex, imageRelId] of fallbackImageRelIds.entries()) {
         const imageTarget = slideRels.get(imageRelId);
         if (!imageTarget) continue;
         const imagePath = resolveZipEntryPath(slideRelsPath, imageTarget);
@@ -3203,10 +3208,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           normalizeItemScope({
             id: uid(),
             type: 'image' as WorkspaceItemType,
-            x: 8,
-            y: imageIndex === 0 ? (paragraphs.length ? 34 : 10) : 10 + imageIndex * 26,
-            w: 84,
-            h: paragraphs.length ? 30 : 72,
+            x: paragraphs.length ? 8 : 0,
+            y: imageIndex === 0 ? (paragraphs.length ? 34 : 0) : 10 + imageIndex * 26,
+            w: paragraphs.length ? 84 : 100,
+            h: paragraphs.length ? 30 : 100,
             imageUrl: `data:${mimeType};base64,${base64}`,
             updatedAt: Date.now(),
             updatedBy: userId,
