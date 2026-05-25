@@ -3421,12 +3421,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         );
       }
 
+      const imageOnlySlide = items.length > 0 && textBoxItems.length === 0;
+      const primaryImageUrl = items[0]?.imageUrl ?? '';
+      const slideDocContent = imageOnlySlide && primaryImageUrl
+        ? `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${'#ffffff'};"><img src="${escapeHtml(primaryImageUrl)}" alt="" style="width:100%;height:auto;max-height:100%;display:block;object-fit:contain;" /></div>`
+        : '';
+
       importedPages.push({
         id: uid(),
         name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
         backgroundColor: '#ffffff',
-        docContent: '',
-        items: [...items, ...textBoxItems],
+        docContent: slideDocContent,
+        items: imageOnlySlide ? [] : [...items, ...textBoxItems],
       });
     }
 
@@ -3671,6 +3677,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const deleteSelectedSlides = () => {
     if (!viewerCanManagePages || selectedSlideIds.length === 0) return;
+    setPendingSlideImport(false);
     flushFloatingEditorBeforePageMutation();
     const current = pagesRef.current;
     const uniqueIds = Array.from(new Set(selectedSlideIds)).filter((pageId) => current.some((page) => page.id === pageId));
