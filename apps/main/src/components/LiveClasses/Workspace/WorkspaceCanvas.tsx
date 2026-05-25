@@ -205,6 +205,21 @@ function buildDataUrlFromBytes(bytes: Uint8Array, mimeType: string): string {
   return `data:${mimeType};base64,${uint8ArrayToBase64(bytes)}`;
 }
 
+function extractRevealStepsFromHtml(html: string): number[] {
+  return [...html.matchAll(/data-reveal-step="(\d+)"/g)].map((match) => Number(match[1])).filter((value) => Number.isFinite(value));
+}
+
+function applyRevealStateToElement(root: HTMLElement | null, currentStep: number, presentationActive: boolean) {
+  if (!root) return;
+  root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
+    const revealStep = Number(el.dataset.revealStep ?? '0');
+    const isVisible = !presentationActive || revealStep <= currentStep;
+    el.style.opacity = isVisible ? '1' : '0';
+    el.style.transition = 'opacity 180ms ease';
+    el.style.pointerEvents = isVisible ? '' : 'none';
+  });
+}
+
 function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string, string> {
   const map = new Map<string, string>();
   const xmlDoc = parseXmlDocument(xml);
@@ -362,6 +377,7 @@ interface WsLabels {
   bold: string;
   italic: string;
   underline: string;
+  revealOnClick: string;
   textBox: string;
   image: string;
   deleteBlock: string;
@@ -536,6 +552,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     alignLeft: 'Esquerda', alignCenter: 'Centralizar', alignRight: 'Direita', alignJustify: 'Justificar',
     alignLabel: (v) => `Alinhar: ${v}`,
     bold: 'Negrito', italic: 'Itálico', underline: 'Sublinhado',
+    revealOnClick: 'Aparecer no clique',
     textBox: 'Caixa de texto flutuante',
     image: 'Inserir imagem (PNG com transparência preservada)',
     deleteBlock: 'Apagar bloco selecionado',
@@ -580,6 +597,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     alignLeft: 'Left', alignCenter: 'Center', alignRight: 'Right', alignJustify: 'Justify',
     alignLabel: (v) => `Align: ${v}`,
     bold: 'Bold', italic: 'Italic', underline: 'Underline',
+    revealOnClick: 'Reveal on click',
     textBox: 'Floating text box',
     image: 'Insert image (PNG transparency preserved)',
     deleteBlock: 'Delete selected block',
@@ -624,6 +642,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     alignLeft: 'Izquierda', alignCenter: 'Centrar', alignRight: 'Derecha', alignJustify: 'Justificar',
     alignLabel: (v) => `Alinear: ${v}`,
     bold: 'Negrita', italic: 'Cursiva', underline: 'Subrayado',
+    revealOnClick: 'Mostrar al hacer clic',
     textBox: 'Cuadro de texto flotante',
     image: 'Insertar imagen (PNG con transparencia)',
     deleteBlock: 'Eliminar bloque seleccionado',
@@ -1347,6 +1366,8 @@ interface StableFloatingBlockProps {
   isSelected: boolean;
   readOnly: boolean;
   isSlidesMode: boolean;
+  presentationMode: boolean;
+  presentationRevealStep: number;
   currentUserId: string;
   currentUserEmail?: string | null;
   viewerContext: WorkspaceViewerContext;
@@ -1370,6 +1391,8 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   isSelected,
   readOnly,
   isSlidesMode,
+  presentationMode,
+  presentationRevealStep,
   currentUserId,
   currentUserEmail,
   viewerContext,
@@ -1579,6 +1602,11 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   }, [autoResizeStudentBox, canEditThisContent, isLockedByOther, item.content, item.type]);
 
   useEffect(() => {
+    if (item.type !== 'text') return;
+    applyRevealStateToElement(contentRef.current, presentationRevealStep, presentationMode);
+  }, [item.type, item.content, presentationMode, presentationRevealStep]);
+
+  useEffect(() => {
     const update = () => {
       const { width, height } = getCanvasMetrics();
       setBlockStyle({
@@ -1590,14 +1618,16 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         zIndex: isSelected ? 50 : 10,
         pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
         boxSizing: 'border-box',
-        border: isSelected ? '2px solid #2563eb' : item.type === 'image' ? 'none' : '1px dashed #94a3b8',
+        border: isSlideContentBox ? 'none' : (isSelected ? '2px solid #2563eb' : item.type === 'image' ? 'none' : '1px dashed #94a3b8'),
         borderRadius: '6px',
         overflow: 'hidden',
         background: item.type === 'text' ? (item.styles?.bgColor || '#ffffff') : 'transparent',
         cursor: 'default',
         userSelect: 'text',
         touchAction: 'none',
-        boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : item.type === 'image' ? 'none' : '0 2px 8px rgba(0,0,0,0.08)',
+        boxShadow: isSlideContentBox
+          ? (isSelected ? '0 0 0 2px rgba(37,99,235,0.16)' : 'none')
+          : (isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : item.type === 'image' ? 'none' : '0 2px 8px rgba(0,0,0,0.08)'),
       });
     };
     update();
@@ -1949,6 +1979,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
+  const [presentationRevealStep, setPresentationRevealStep] = useState(0);
   const [presentationViewport, setPresentationViewport] = useState<{ width: number; height: number }>({
     width: typeof window !== 'undefined' ? window.innerWidth : 1280,
     height: typeof window !== 'undefined' ? window.innerHeight : 720,
@@ -2059,6 +2090,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       setOpenSlideMenuId(null);
     }
   }, [isSlidesMode]);
+  useEffect(() => {
+    setPresentationRevealStep(0);
+  }, [activePageId, presentationMode]);
   const updateSurfaceStateRef = useCallback(
     (
       mode: WorkspaceSurfaceMode,
@@ -2249,6 +2283,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   useEffect(() => {
     onPresentationModeChange?.(presentationMode);
   }, [onPresentationModeChange, presentationMode]);
+
+  useEffect(() => {
+    applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
+  }, [docHtml, presentationMode, presentationRevealStep]);
 
   useEffect(() => {
     if (!isSlidesMode) {
@@ -3071,6 +3109,54 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       scheduleDocSave(html);
     }, 20);
   };
+  const markSelectionToRevealOnClick = useCallback(() => {
+    const root = activeFloatingElRef.current ?? docRef.current;
+    if (!root) return;
+    root.focus();
+    restoreSavedSelection();
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return;
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    if (!root.contains(container)) return;
+    const existingSteps = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal-step]'))
+      .map((el) => Number(el.dataset.revealStep ?? '0'))
+      .filter((value) => Number.isFinite(value));
+    const nextStep = (existingSteps.reduce((max, value) => Math.max(max, value), 0) || 0) + 1;
+    const wrapper = document.createElement('span');
+    wrapper.dataset.revealStep = String(nextStep);
+    wrapper.dataset.revealMode = 'click';
+    try {
+      const extracted = range.extractContents();
+      wrapper.appendChild(extracted);
+      range.insertNode(wrapper);
+      selection.removeAllRanges();
+      const afterRange = document.createRange();
+      afterRange.selectNodeContents(wrapper);
+      afterRange.collapse(false);
+      selection.addRange(afterRange);
+      applyRevealStateToElement(root, presentationRevealStep, presentationMode);
+      if (activeFloatingIdRef.current && activeFloatingElRef.current) {
+        const floatingId = activeFloatingIdRef.current;
+        const html = activeFloatingElRef.current.innerHTML;
+        setItems((prev) => {
+          const next = prev.map((it) =>
+            it.id === floatingId
+              ? { ...it, content: html, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName }
+              : it,
+          );
+          scheduleItemsSave(next, { dirtyItemIds: [floatingId] });
+          return next;
+        });
+      } else if (docRef.current) {
+        const html = docRef.current.innerHTML;
+        setDocHtml(html);
+        scheduleDocSave(html);
+      }
+    } catch (error) {
+      console.error('[WorkspaceCanvas] failed to mark reveal-on-click selection', error);
+    }
+  }, [presentationMode, presentationRevealStep, restoreSavedSelection, scheduleDocSave, scheduleItemsSave, userId, userName]);
   const applyTextColor = (color: string) => {
     setTextColor(color);
     const hasTextSelection = Boolean(window.getSelection()?.toString().trim());
@@ -3925,6 +4011,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const onCanvasClick = (e: React.MouseEvent) => {
+    if (presentationMode && isSlidesMode) {
+      const target = e.target as HTMLElement;
+      if (target.closest('[data-presentation-control="true"]')) return;
+      if (maxRevealStep > presentationRevealStep) {
+        setPresentationRevealStep((current) => Math.min(current + 1, maxRevealStep));
+        return;
+      }
+    }
     const t = e.target as HTMLElement;
     if (t === canvasRef.current || t === overflowRef.current || t === docRef.current) {
       if (selectedId) releaseItemLock(selectedId);
@@ -4433,6 +4527,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       return isBoxOwner(viewerContext, item);
     });
   }, [assignableStudents, isSlidesMode, items, userEmail, userId, viewerContext, viewerIsStudent]);
+
+  const maxRevealStep = useMemo(() => {
+    const revealSteps = [
+      ...extractRevealStepsFromHtml(docHtml),
+      ...visibleItems
+        .filter((item) => item.type === 'text' && item.content)
+        .flatMap((item) => extractRevealStepsFromHtml(item.content ?? '')),
+    ];
+    return revealSteps.reduce((max, value) => Math.max(max, value), 0);
+  }, [docHtml, visibleItems]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -5043,6 +5147,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <button onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
           <button onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
           <button onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
+          {isSlidesMode && (
+            <button
+              onMouseDown={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
+              disabled={toolbarDisabled}
+              className="flex h-7 items-center justify-center rounded border border-amber-200 px-2 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
+              title={wsl.revealOnClick}
+            >
+              Click
+            </button>
+          )}
         </div>
 
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
@@ -5429,6 +5543,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               <div className="group/exit pointer-events-auto mt-2 flex h-16 min-w-[180px] items-start justify-center rounded-full">
                 <button
                   type="button"
+                  data-presentation-control="true"
                   onClick={() => updatePresentationMode(false)}
                   className="mt-2 rounded-full bg-black/20 px-3 py-1 text-sm font-bold text-white opacity-0 transition group-hover/exit:opacity-100 group-focus-within/exit:opacity-100 hover:bg-black/70 focus:bg-black/70 focus:opacity-100"
                   aria-label="Exit presentation mode"
@@ -5442,6 +5557,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               <>
                 <button
                   type="button"
+                  data-presentation-control="true"
                   onClick={() => navigateSlides('previous')}
                   disabled={!hasPreviousSlide}
                   className="absolute left-4 top-1/2 z-40 -translate-y-1/2 rounded-full bg-black/10 px-3 py-5 text-lg font-black text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-0"
@@ -5452,6 +5568,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 </button>
                 <button
                   type="button"
+                  data-presentation-control="true"
                   onClick={() => navigateSlides('next')}
                   disabled={!hasNextSlide}
                   className="absolute right-4 top-1/2 z-40 -translate-y-1/2 rounded-full bg-black/10 px-3 py-5 text-lg font-black text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-0"
@@ -5525,6 +5642,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 isSelected={item.id === selectedId}
                 readOnly={effectiveReadOnly}
                 isSlidesMode={isSlidesMode}
+                presentationMode={presentationMode}
+                presentationRevealStep={presentationRevealStep}
                 currentUserId={userId}
                 currentUserEmail={userEmail}
                 viewerContext={viewerContext}
