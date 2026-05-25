@@ -4,6 +4,7 @@ import {
   fetchPhoneticForPhrase,
   listVocabularyEntries,
   translateText,
+  updateVocabularyEntry,
   type VocabularyEntryDoc,
 } from '../services/vocabularyService';
 import { speak } from '../services/ttsService';
@@ -199,13 +200,16 @@ const FlashCard: React.FC<{
   total: number;
   uiLanguage: UILang;
   labels: (typeof LABELS)[UILang];
+  userId: string;
   onPrev: () => void;
   onNext: () => void;
-}> = ({ entry, index, total, uiLanguage, labels, onPrev, onNext }) => {
+}> = ({ entry, index, total, uiLanguage, labels, userId, onPrev, onNext }) => {
   const [showTranslation, setShowTranslation] = useState(false);
   const [activePanel, setActivePanel] = useState<'phonetic' | 'grammar' | null>(null);
   const [phonetic, setPhonetic] = useState(entry.phonetic?.trim() || '');
   const [phoneticLoading, setPhoneticLoading] = useState(false);
+  const [grammarDraft, setGrammarDraft] = useState(entry.grammarNote?.trim() || '');
+  const [savingGrammar, setSavingGrammar] = useState(false);
   const [dynamicTranslations, setDynamicTranslations] = useState<{ pt: string; es: string }>({
     pt: entry.translationPt?.trim() || '',
     es: entry.translationEs?.trim() || '',
@@ -228,11 +232,12 @@ const FlashCard: React.FC<{
     setShowTranslation(false);
     setActivePanel(null);
     setPhonetic(entry.phonetic?.trim() || '');
+    setGrammarDraft(entry.grammarNote?.trim() || '');
     setDynamicTranslations({
       pt: entry.translationPt?.trim() || '',
       es: entry.translationEs?.trim() || '',
     });
-  }, [entry.id, entry.phonetic]);
+  }, [entry.id, entry.phonetic, entry.grammarNote, entry.translationEs, entry.translationPt]);
 
   useEffect(() => {
     if (isUsefulTranslation(dynamicTranslations.pt, entry.text) && isUsefulTranslation(dynamicTranslations.es, entry.text)) return;
@@ -274,6 +279,23 @@ const FlashCard: React.FC<{
     };
   }, [activePanel, entry.text, phonetic]);
 
+  const saveGrammarNote = useCallback(async () => {
+    const nextNote = grammarDraft.trim();
+    if (nextNote === (entry.grammarNote?.trim() || '')) return;
+    setSavingGrammar(true);
+    try {
+      await updateVocabularyEntry(userId, entry.id, {
+        grammarLabel: grammar.label,
+        grammarNote: nextNote,
+      });
+    } finally {
+      setSavingGrammar(false);
+    }
+  }, [entry.grammarNote, entry.id, grammar.label, grammarDraft, userId]);
+
+  const showCardFront = activePanel === null && !showTranslation;
+  const showCardBack = activePanel === null && showTranslation;
+
   return (
     <div className="flex flex-col items-center gap-6 py-8 px-4">
       <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
@@ -284,22 +306,30 @@ const FlashCard: React.FC<{
         {activePanel === 'phonetic' && (
           <div className="absolute inset-x-6 top-4 z-20 rounded-2xl border border-purple-100 bg-white/98 p-4 shadow-2xl">
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-purple-400">{labels.phonetic}</div>
-            <div className="text-lg font-mono text-purple-700 break-words">{phoneticLoading ? labels.loading : phonetic || entry.text}</div>
+            <div className="text-lg font-mono leading-relaxed text-purple-700 break-words whitespace-pre-wrap">
+              {phoneticLoading ? labels.loading : phonetic || entry.text}
+            </div>
           </div>
         )}
         {activePanel === 'grammar' && (
           <div className="absolute inset-x-6 top-4 z-20 rounded-2xl border border-emerald-100 bg-white/98 p-4 shadow-2xl">
             <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-400">{labels.grammar}</div>
             <div className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">{grammar.label}</div>
-            <div className="mt-2 text-sm leading-relaxed text-slate-600">{grammar.note}</div>
+            <textarea
+              value={grammarDraft || grammar.note}
+              onChange={(event) => setGrammarDraft(event.target.value)}
+              onBlur={() => void saveGrammarNote()}
+              className="mt-2 min-h-24 w-full rounded-xl border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-sm leading-relaxed text-slate-600 outline-none transition focus:border-emerald-300 focus:bg-white"
+            />
+            <div className="mt-2 text-[11px] text-emerald-500">{savingGrammar ? labels.loading : ''}</div>
           </div>
         )}
 
         <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-          <div className="space-y-4 px-8 py-10 text-center">
-            {!showTranslation ? (
+          <div className="flex min-h-[260px] items-center justify-center px-8 py-10 text-center">
+            {showCardFront ? (
               <div className="text-4xl font-bold text-slate-900 break-words">{entry.text}</div>
-            ) : (
+            ) : showCardBack ? (
               <div className="space-y-3">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
                   {labels.translation}
@@ -311,6 +341,8 @@ const FlashCard: React.FC<{
                   <div className="text-lg font-medium text-slate-500 break-words">{translations.secondary}</div>
                 ) : null}
               </div>
+            ) : (
+              <div className="h-24" />
             )}
           </div>
 
@@ -510,6 +542,7 @@ export const MyVocabularyPage: React.FC<MyVocabularyPageProps> = ({
             total={entries.length}
             uiLanguage={uiLanguage}
             labels={labels}
+            userId={userId}
             onPrev={() => setFlashIndex((value) => Math.max(0, value - 1))}
             onNext={() => setFlashIndex((value) => Math.min(entries.length - 1, value + 1))}
           />

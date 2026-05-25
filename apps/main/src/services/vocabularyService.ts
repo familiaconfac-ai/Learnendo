@@ -18,6 +18,7 @@ import {
   query,
   serverTimestamp,
   Timestamp,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -206,4 +207,16 @@ export async function listVocabularyEntries(userId: string): Promise<VocabularyE
  */
 export async function deleteVocabularyEntry(userId: string, entryId: string): Promise<void> {
   await deleteDoc(doc(db, 'users', userId, 'vocabulary', entryId));
+}
+
+export async function updateVocabularyEntry(
+  userId: string,
+  entryId: string,
+  patch: Partial<Omit<VocabularyEntryDoc, 'id' | 'createdAt'>>,
+): Promise<void> {
+  const cleanPatch = Object.fromEntries(
+    Object.entries(patch).filter(([, value]) => value !== undefined),
+  );
+  if (!Object.keys(cleanPatch).length) return;
+  await updateDoc(doc(db, 'users', userId, 'vocabulary', entryId), cleanPatch);
 }

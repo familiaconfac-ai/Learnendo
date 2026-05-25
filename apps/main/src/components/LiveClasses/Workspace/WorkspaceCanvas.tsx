@@ -3339,6 +3339,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     [effectiveReadOnly, normalizeItemScope, scheduleItemsSave, userId, userName],
   );
 
+  const createDuplicatedItem = useCallback(
+    (sourceItem: WorkspaceItem) =>
+      normalizeItemScope({
+        ...sourceItem,
+        id: uid(),
+        x: clamp(sourceItem.x + 3, 0, Math.max(0, 100 - sourceItem.w)),
+        y: clamp(sourceItem.y + 3, 0, Math.max(0, 100 - sourceItem.h)),
+        updatedAt: Date.now(),
+        updatedBy: userId,
+        updatedByName: userName,
+      }),
+    [normalizeItemScope, userId, userName],
+  );
+
   const LOCK_TIMEOUT_MS = 60_000;
 
   const isItemLockedByOther = (item: WorkspaceItem) => {
@@ -4053,15 +4067,23 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     // Mark item editing immediately so the snapshot guard fires during the drag
     // (before scheduleItemsSave is called in onPointerUp).
     lastItemEditRef.current = Date.now();
+    let dragItem = item;
+    if (mode === 'move' && e.altKey && !effectiveReadOnly) {
+      const duplicatedItem = createDuplicatedItem(item);
+      dragItem = duplicatedItem;
+      setItems((prev) => [...prev, duplicatedItem]);
+      setSelectedId(duplicatedItem.id);
+    } else {
+      setSelectedId(itemId);
+    }
     dragRef.current = {
-      itemId, mode, startPx: e.clientX, startPy: e.clientY,
-      origX: item.x,
-      origY: item.y,
-      origW: item.w,
-      origH: item.h,
+      itemId: dragItem.id, mode, startPx: e.clientX, startPy: e.clientY,
+      origX: dragItem.x,
+      origY: dragItem.y,
+      origW: dragItem.w,
+      origH: dragItem.h,
       forceSave: effectiveReadOnly && canBypassReadonlyForBox,
     };
-    setSelectedId(itemId);
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
