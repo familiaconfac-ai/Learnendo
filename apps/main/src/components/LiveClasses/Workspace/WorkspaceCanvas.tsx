@@ -399,6 +399,7 @@ interface WsLabels {
   readonlyPh: string;
   pageMenu: string;
   duplicate: string;
+  duplicateBlock: string;
   savePage: string;
   deletePage: string;
   confirmClear: string;
@@ -577,6 +578,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     placeholder: 'Clique aqui e comece a digitar',
     readonlyPh: 'Aguardando conteúdo do professor',
     pageMenu: 'Opções da página', duplicate: 'Duplicar página',
+    duplicateBlock: 'Duplicar caixa selecionada',
     savePage: 'Salvar esta página', deletePage: 'Excluir página',
     confirmClear: 'Limpar o conteúdo desta página?',
     confirmDelete: 'Excluir esta página?',
@@ -626,6 +628,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     placeholder: 'Click here and start typing',
     readonlyPh: "Waiting for teacher's content",
     pageMenu: 'Page options', duplicate: 'Duplicate page',
+    duplicateBlock: 'Duplicate selected box',
     savePage: 'Save this page', deletePage: 'Delete page',
     confirmClear: 'Clear this page content?',
     confirmDelete: 'Delete this page?',
@@ -675,6 +678,7 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     translation: 'Traducción',
     readonlyPh: 'Esperando el contenido del profesor',
     pageMenu: 'Opciones de página', duplicate: 'Duplicar página',
+    duplicateBlock: 'Duplicar cuadro seleccionado',
     savePage: 'Guardar esta página', deletePage: 'Eliminar página',
     confirmClear: '¿Limpiar el contenido de esta página?',
     confirmDelete: '¿Eliminar esta página?',
@@ -1423,8 +1427,11 @@ interface StableResizeHandleProps {
 
 const StableResizeHandle: React.FC<StableResizeHandleProps> = ({ onPointerDown }) => (
   <div
-    onPointerDown={onPointerDown}
-    className="absolute bottom-0 right-0 z-30 flex h-5 w-5 cursor-nwse-resize items-center justify-center rounded-tl bg-blue-500/20"
+    onPointerDown={(event) => {
+      event.stopPropagation();
+      onPointerDown(event);
+    }}
+    className="absolute bottom-1 right-1 z-30 flex h-5 w-5 cursor-nwse-resize items-center justify-center rounded bg-blue-500/20 opacity-80 transition hover:bg-blue-500/35 hover:opacity-100"
   >
     <svg width="8" height="8" viewBox="0 0 8 8" fill="#2563eb"><path d="M0 8 L8 0 L8 8 Z" /></svg>
   </div>
@@ -1688,7 +1695,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
         boxSizing: 'border-box',
         border: isSlidesMode && item.type === 'text'
-          ? 'none'
+          ? (isSelected ? '2px dashed rgba(37,99,235,0.7)' : 'none')
           : (isSelected ? '2px solid #2563eb' : item.type === 'image' ? 'none' : '1px dashed #94a3b8'),
         borderRadius: '6px',
         overflow: 'hidden',
@@ -1697,7 +1704,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         userSelect: 'text',
         touchAction: 'none',
         boxShadow: isSlidesMode && item.type === 'text'
-          ? 'none'
+          ? (isSelected ? '0 0 0 3px rgba(37,99,235,0.12)' : 'none')
           : (isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : item.type === 'image' ? 'none' : '0 2px 8px rgba(0,0,0,0.08)'),
       });
     };
@@ -1756,6 +1763,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   return (
     <div
       style={blockStyle}
+      className="group"
       onClick={(e) => {
         e.stopPropagation();
         onSelect();
@@ -1771,10 +1779,11 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
             event.stopPropagation();
             onPointerDownMove(event);
           }}
-          className="pointer-events-auto absolute left-2 top-2 z-30 flex h-7 min-w-7 items-center justify-center rounded-full bg-slate-900/65 px-2 text-[10px] font-bold text-white shadow-lg transition hover:bg-slate-900"
-          title={boxFlowLabels.move}
+          className="pointer-events-auto absolute left-2 top-2 z-30 flex h-7 min-w-7 items-center justify-center rounded-full bg-slate-900/70 px-2 text-[11px] font-bold text-white opacity-0 shadow-lg transition group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-slate-900"
+          title="X"
+          aria-label="X"
         >
-          â‹®â‹®
+          X
         </button>
       ) : null}
       {!isSlideContentBox ? (
@@ -3190,9 +3199,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     const range = selection.getRangeAt(0);
     const container = range.commonAncestorContainer;
     if (!root.contains(container)) return;
-    const existingSteps = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal-step]'))
-      .map((el) => Number(el.dataset.revealStep ?? '0'))
-      .filter((value) => Number.isFinite(value));
+    const activePageSnapshot = pagesRef.current.find((page) => page.id === activePageIdRef.current) ?? null;
+    const existingSteps = [
+      ...extractRevealStepsFromHtml(docRef.current?.innerHTML ?? activePageSnapshot?.docContent ?? ''),
+      ...(activePageSnapshot?.items ?? itemsRef.current)
+        .filter((item) => item.type === 'text' && typeof item.content === 'string')
+        .flatMap((item) => extractRevealStepsFromHtml(item.content ?? '')),
+    ].filter((value) => Number.isFinite(value));
     const nextStep = (existingSteps.reduce((max, value) => Math.max(max, value), 0) || 0) + 1;
     const wrapper = document.createElement('span');
     wrapper.dataset.revealStep = String(nextStep);
@@ -3300,6 +3313,30 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       setSelectedId(null);
     },
     [scheduleItemsSave],
+  );
+
+  const duplicateItem = useCallback(
+    (id: string) => {
+      if (effectiveReadOnly) return;
+      const sourceItem = itemsRef.current.find((item) => item.id === id);
+      if (!sourceItem) return;
+      const duplicatedItem = normalizeItemScope({
+        ...sourceItem,
+        id: uid(),
+        x: clamp(sourceItem.x + 3, 0, Math.max(0, 100 - sourceItem.w)),
+        y: clamp(sourceItem.y + 3, 0, Math.max(0, 100 - sourceItem.h)),
+        updatedAt: Date.now(),
+        updatedBy: userId,
+        updatedByName: userName,
+      });
+      setItems((prev) => {
+        const next = [...prev, duplicatedItem];
+        scheduleItemsSave(next, { dirtyItemIds: [duplicatedItem.id] });
+        return next;
+      });
+      setSelectedId(duplicatedItem.id);
+    },
+    [effectiveReadOnly, normalizeItemScope, scheduleItemsSave, userId, userName],
   );
 
   const LOCK_TIMEOUT_MS = 60_000;
@@ -4048,8 +4085,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         it.id === drag.itemId
           ? {
               ...it,
-              w: clamp(drag.origW + dx, 10, Math.max(10, 100 - it.x)),
-              h: clamp(drag.origH + dy, 5, Math.max(5, 100 - it.y)),
+              w: clamp(drag.origW + dx, it.boxRole === 'content' && isSlidesMode ? 18 : 10, Math.max(it.boxRole === 'content' && isSlidesMode ? 18 : 10, 100 - it.x)),
+              h: clamp(drag.origH + dy, it.boxRole === 'content' && isSlidesMode ? 10 : 5, Math.max(it.boxRole === 'content' && isSlidesMode ? 10 : 5, 100 - it.y)),
             }
           : it));
     }
@@ -5281,6 +5318,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         {selected && canManageBox(viewerContext, selected) && (
           <>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
+            <button
+              onClick={() => duplicateItem(selected.id)}
+              className="w-7 h-7 rounded hover:bg-blue-50 text-blue-600 flex items-center justify-center transition border border-blue-200"
+              title={wsl.duplicateBlock}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20">
+                <rect x="7" y="4" width="9" height="11" rx="1.5" />
+                <rect x="4" y="7" width="9" height="11" rx="1.5" />
+              </svg>
+            </button>
             <button onClick={() => deleteItem(selected.id)} className="w-7 h-7 rounded hover:bg-red-50 text-red-500 flex items-center justify-center transition border border-red-200" title={wsl.deleteBlock}>
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20"><path d="M3 6h14M8 6V4h4v2M6 6v10a2 2 0 002 2h4a2 2 0 002-2V6"/></svg>
             </button>
