@@ -389,6 +389,10 @@ interface WsLabels {
   importSlidesError: string;
   importSlidesUnsupportedDeck: string;
   importSlidesDeckParseError: (name: string) => string;
+  flashcard: string;
+  savedFlashcard: string;
+  playAudio: string;
+  translation: string;
   clearPage: string;
   newPage: string;
   placeholder: string;
@@ -565,6 +569,10 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     importSlidesError: 'Selecione imagens para importar como slides.',
     importSlidesUnsupportedDeck: 'Esse arquivo de apresentação não é suportado aqui ainda. Exporte como .pptx e tente novamente.',
     importSlidesDeckParseError: (name) => `Não foi possível importar o slide "${name}". Se ele veio do Canva, PowerPoint ou LibreOffice, exporte como .pptx e tente novamente.`,
+    flashcard: 'Flashcard',
+    savedFlashcard: 'Flashcard salvo',
+    playAudio: 'Ouvir áudio',
+    translation: 'Tradução',
     newPage: 'Nova página',
     placeholder: 'Clique aqui e comece a digitar',
     readonlyPh: 'Aguardando conteúdo do professor',
@@ -609,6 +617,10 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     importSlidesError: 'Select image files to import as slides.',
     importSlidesUnsupportedDeck: 'That presentation file is not supported here yet. Export it as .pptx and try again.',
     importSlidesDeckParseError: (name) => `Could not import the slide deck "${name}". If it came from Canva, PowerPoint, or LibreOffice, export it as .pptx and try again.`,
+    flashcard: 'Flashcard',
+    savedFlashcard: 'Flashcard saved',
+    playAudio: 'Play audio',
+    translation: 'Translation',
     clearPage: 'Clear this page content',
     newPage: 'New page',
     placeholder: 'Click here and start typing',
@@ -657,6 +669,10 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     importSlidesError: 'Selecciona imágenes para importarlas como diapositivas.',
     importSlidesUnsupportedDeck: 'Ese archivo de presentación todavía no es compatible aquí. Expórtalo como .pptx e inténtalo de nuevo.',
     importSlidesDeckParseError: (name) => `No se pudo importar la presentación "${name}". Si vino de Canva, PowerPoint o LibreOffice, expórtala como .pptx e inténtalo de nuevo.`,
+    flashcard: 'Tarjeta',
+    savedFlashcard: 'Tarjeta guardada',
+    playAudio: 'Escuchar audio',
+    translation: 'Traducción',
     readonlyPh: 'Esperando el contenido del profesor',
     pageMenu: 'Opciones de página', duplicate: 'Duplicar página',
     savePage: 'Guardar esta página', deletePage: 'Eliminar página',
@@ -1296,41 +1312,44 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
       // Prevent the mousedown-outside handler from seeing clicks inside the popup
       onMouseDown={(e) => e.stopPropagation()}
     >
-      {/* Word / phrase */}
       <div className="flex items-start justify-between gap-2">
-        <span className="text-sm font-semibold text-slate-800 leading-snug break-words flex-1">
-          {vocab.text}
-        </span>
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            {wsl.translation}
+          </div>
+          <div className="text-sm font-semibold text-slate-800 leading-snug break-words">
+            {targetLang === CONTENT_LANG
+              ? vocab.text
+              : loadingT
+                ? wsl.loading
+                : (translation || vocab.text)}
+          </div>
+          <div className="mt-1 text-[11px] text-slate-500 break-words">
+            {vocab.text}
+          </div>
+        </div>
         <button
-          onClick={onClose}
-          className="flex-shrink-0 text-slate-400 hover:text-slate-600 mt-0.5"
-          aria-label="Close"
+          onClick={handleSpeak}
+          className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200"
+          title={wsl.playAudio}
+          aria-label={wsl.playAudio}
         >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 12 12">
-            <line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" />
+          <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path d="M11.5 4.25a.75.75 0 0 1 1.28-.53l3.34 3.34a1.75 1.75 0 0 1 0 2.48l-3.34 3.34a.75.75 0 0 1-1.28-.53V4.25ZM4.25 7.5A1.25 1.25 0 0 1 5.5 6.25h2.19a.75.75 0 0 1 .53.22l2.06 2.06a.75.75 0 0 1 .22.53v1.88a.75.75 0 0 1-.22.53l-2.06 2.06a.75.75 0 0 1-.53.22H5.5A1.25 1.25 0 0 1 4.25 13.5v-6Z" />
           </svg>
         </button>
       </div>
 
-      {/* Translation */}
-      {targetLang !== CONTENT_LANG && (
-        <div className="text-xs text-slate-500 min-h-[1.2rem]">
-          {loadingT
-            ? <span className="italic">{wsl.loading}</span>
-            : translation
-              ? <span>{translation}</span>
-              : <span className="italic text-slate-400">ï¿½</span>}
-        </div>
-      )}
-
       {/* Actions */}
       <div className="flex items-center gap-1.5 mt-0.5">
         <button
-          onClick={handleSpeak}
+          onClick={onClose}
           className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs transition"
-          title="Play audio"
+          title="Close"
         >
-          ??
+          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 12 12" aria-hidden="true">
+            <line x1="1" y1="1" x2="11" y2="11" /><line x1="11" y1="1" x2="1" y2="11" />
+          </svg>
         </button>
         <button
           onClick={handleSave}
@@ -1341,7 +1360,7 @@ const VocabPopup: React.FC<VocabPopupProps> = ({ vocab, userId, onClose }) => {
               : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50'
           }`}
         >
-          {saved ? '? Saved' : saving ? 'ï¿½' : 'Save'}
+          {saved ? wsl.savedFlashcard : saving ? wsl.loading : wsl.flashcard}
         </button>
       </div>
     </div>
@@ -1618,15 +1637,17 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         zIndex: isSelected ? 50 : 10,
         pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
         boxSizing: 'border-box',
-        border: isSlideContentBox ? 'none' : (isSelected ? '2px solid #2563eb' : item.type === 'image' ? 'none' : '1px dashed #94a3b8'),
+        border: isSlidesMode && item.type === 'text'
+          ? 'none'
+          : (isSelected ? '2px solid #2563eb' : item.type === 'image' ? 'none' : '1px dashed #94a3b8'),
         borderRadius: '6px',
         overflow: 'hidden',
         background: item.type === 'text' ? (item.styles?.bgColor || '#ffffff') : 'transparent',
         cursor: 'default',
         userSelect: 'text',
         touchAction: 'none',
-        boxShadow: isSlideContentBox
-          ? (isSelected ? '0 0 0 2px rgba(37,99,235,0.16)' : 'none')
+        boxShadow: isSlidesMode && item.type === 'text'
+          ? 'none'
           : (isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : item.type === 'image' ? 'none' : '0 2px 8px rgba(0,0,0,0.08)'),
       });
     };
