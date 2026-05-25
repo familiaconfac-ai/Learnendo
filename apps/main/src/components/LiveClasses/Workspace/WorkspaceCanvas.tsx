@@ -3295,6 +3295,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ];
       const firstImportedPage = importedPages[0];
       if (!firstImportedPage) return;
+      const importedItemIds = importedPages.flatMap((page) => (page.items ?? []).map((item) => item.id));
+      if (importedItemIds.length > 0) {
+        markItemsDirty(importedItemIds);
+      }
 
       pagesRef.current = updated;
       setPages(updated);
