@@ -5981,7 +5981,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
       {/* -- My Vocabulary modal -------------------------------------------- */}
       {showVocabModal && (
-        <div className="fixed inset-0 z-[13050] bg-slate-50 flex flex-col">
+        <div className="fixed inset-0 z-[99999] bg-slate-50 flex flex-col">
           <div className="flex-1 overflow-hidden">
             <MyVocabularyPage
               userId={userId}

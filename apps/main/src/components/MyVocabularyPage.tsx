@@ -3,6 +3,7 @@ import {
   deleteVocabularyEntry,
   fetchPhoneticForPhrase,
   listVocabularyEntries,
+  translateText,
   type VocabularyEntryDoc,
 } from '../services/vocabularyService';
 import { speak } from '../services/ttsService';
@@ -134,6 +135,12 @@ function getVisibleTranslations(entry: VocabularyEntryDoc, uiLanguage: UILang) {
   };
 }
 
+function isUsefulTranslation(value: string, original: string) {
+  const normalizedValue = value.trim().toLowerCase();
+  const normalizedOriginal = original.trim().toLowerCase();
+  return Boolean(normalizedValue) && normalizedValue !== normalizedOriginal;
+}
+
 function inferGrammar(text: string, uiLanguage: UILang): { label: string; note: string } {
   const normalized = text.trim().toLowerCase();
 
@@ -196,12 +203,20 @@ const FlashCard: React.FC<{
   onNext: () => void;
 }> = ({ entry, index, total, uiLanguage, labels, onPrev, onNext }) => {
   const [showTranslation, setShowTranslation] = useState(false);
-  const [showPhonetic, setShowPhonetic] = useState(false);
-  const [showGrammar, setShowGrammar] = useState(false);
+  const [activePanel, setActivePanel] = useState<'phonetic' | 'grammar' | null>(null);
   const [phonetic, setPhonetic] = useState(entry.phonetic?.trim() || '');
   const [phoneticLoading, setPhoneticLoading] = useState(false);
+  const [dynamicTranslations, setDynamicTranslations] = useState<{ pt: string; es: string }>({
+    pt: entry.translationPt?.trim() || '',
+    es: entry.translationEs?.trim() || '',
+  });
+  const [translationLoading, setTranslationLoading] = useState(false);
 
-  const translations = useMemo(() => getVisibleTranslations(entry, uiLanguage), [entry, uiLanguage]);
+  const translations = useMemo(() => getVisibleTranslations({
+    ...entry,
+    translationPt: dynamicTranslations.pt,
+    translationEs: dynamicTranslations.es,
+  }, uiLanguage), [dynamicTranslations.es, dynamicTranslations.pt, entry, uiLanguage]);
   const grammar = useMemo(() => {
     const label = entry.grammarLabel?.trim() || '';
     const note = entry.grammarNote?.trim() || '';
@@ -211,13 +226,40 @@ const FlashCard: React.FC<{
 
   useEffect(() => {
     setShowTranslation(false);
-    setShowPhonetic(false);
-    setShowGrammar(false);
+    setActivePanel(null);
     setPhonetic(entry.phonetic?.trim() || '');
+    setDynamicTranslations({
+      pt: entry.translationPt?.trim() || '',
+      es: entry.translationEs?.trim() || '',
+    });
   }, [entry.id, entry.phonetic]);
 
   useEffect(() => {
-    if (!showPhonetic || phonetic) return;
+    if (isUsefulTranslation(dynamicTranslations.pt, entry.text) && isUsefulTranslation(dynamicTranslations.es, entry.text)) return;
+    let cancelled = false;
+    setTranslationLoading(true);
+    Promise.all([
+      translateText(entry.text, entry.sourceLang, 'pt'),
+      translateText(entry.text, entry.sourceLang, 'es'),
+    ])
+      .then(([pt, es]) => {
+        if (!cancelled) {
+          setDynamicTranslations({
+            pt: isUsefulTranslation(pt, entry.text) ? pt.trim() : dynamicTranslations.pt,
+            es: isUsefulTranslation(es, entry.text) ? es.trim() : dynamicTranslations.es,
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTranslationLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dynamicTranslations.es, dynamicTranslations.pt, entry.sourceLang, entry.text]);
+
+  useEffect(() => {
+    if (activePanel !== 'phonetic' || phonetic) return;
     let cancelled = false;
     setPhoneticLoading(true);
     fetchPhoneticForPhrase(entry.text)
@@ -230,7 +272,7 @@ const FlashCard: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [entry.text, phonetic, showPhonetic]);
+  }, [activePanel, entry.text, phonetic]);
 
   return (
     <div className="flex flex-col items-center gap-6 py-8 px-4">
@@ -238,90 +280,89 @@ const FlashCard: React.FC<{
         {index + 1} {labels.of} {total}
       </div>
 
-      <div className="w-full max-w-xl overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
-        <div className="space-y-4 px-8 py-10 text-center">
-          <div className="text-4xl font-bold text-slate-900 break-words">{entry.text}</div>
+      <div className="relative w-full max-w-xl">
+        {activePanel === 'phonetic' && (
+          <div className="absolute inset-x-6 top-4 z-20 rounded-2xl border border-purple-100 bg-white/98 p-4 shadow-2xl">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-purple-400">{labels.phonetic}</div>
+            <div className="text-lg font-mono text-purple-700 break-words">{phoneticLoading ? labels.loading : phonetic || entry.text}</div>
+          </div>
+        )}
+        {activePanel === 'grammar' && (
+          <div className="absolute inset-x-6 top-4 z-20 rounded-2xl border border-emerald-100 bg-white/98 p-4 shadow-2xl">
+            <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-400">{labels.grammar}</div>
+            <div className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">{grammar.label}</div>
+            <div className="mt-2 text-sm leading-relaxed text-slate-600">{grammar.note}</div>
+          </div>
+        )}
 
-          {showTranslation && (
-            <div className="space-y-2 border-t border-slate-100 pt-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                {labels.translation}
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl">
+          <div className="space-y-4 px-8 py-10 text-center">
+            {!showTranslation ? (
+              <div className="text-4xl font-bold text-slate-900 break-words">{entry.text}</div>
+            ) : (
+              <div className="space-y-3">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  {labels.translation}
+                </div>
+                <div className="text-3xl font-bold text-blue-700 break-words">
+                  {translationLoading ? labels.loading : (translations.primary || entry.text)}
+                </div>
+                {translations.secondary ? (
+                  <div className="text-lg font-medium text-slate-500 break-words">{translations.secondary}</div>
+                ) : null}
               </div>
-              {translations.primary ? (
-                <div className="text-2xl font-semibold text-blue-700 break-words">{translations.primary}</div>
-              ) : null}
-              {translations.secondary ? (
-                <div className="text-base font-medium text-slate-500 break-words">{translations.secondary}</div>
-              ) : null}
-              <div className="text-sm text-slate-400 break-words">
-                {labels.original}: {entry.text}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
 
-          {showPhonetic && (
-            <div className="space-y-2 border-t border-slate-100 pt-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                {labels.phonetic}
-              </div>
-              <div className="text-lg font-mono text-purple-700 break-words">
-                {phoneticLoading ? labels.loading : phonetic || entry.text}
-              </div>
-            </div>
-          )}
-
-          {showGrammar && (
-            <div className="space-y-2 border-t border-slate-100 pt-4">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                {labels.grammar}
-              </div>
-              <div className="text-sm font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                {grammar.label}
-              </div>
-              <div className="text-sm leading-relaxed text-slate-600">{grammar.note}</div>
-            </div>
-          )}
-        </div>
-
-        <div className="grid grid-cols-4 border-t border-slate-100 divide-x divide-slate-100">
-          <button
-            type="button"
-            onClick={() => speak(entry.text, entry.sourceLang)}
-            className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:bg-slate-50"
-          >
-            <span className="text-base">🔊</span>
-            <span className="text-[10px]">{labels.playAudio}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowTranslation((value) => !value)}
-            className={`flex flex-col items-center gap-1 py-3 transition ${
-              showTranslation ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            <span className="text-base">🌐</span>
-            <span className="text-[10px]">{labels.translation}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowPhonetic((value) => !value)}
-            className={`flex flex-col items-center gap-1 py-3 transition ${
-              showPhonetic ? 'bg-purple-50 text-purple-700' : 'text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            <span className="text-base">🔤</span>
-            <span className="text-[10px]">{labels.phonetic}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowGrammar((value) => !value)}
-            className={`flex flex-col items-center gap-1 py-3 transition ${
-              showGrammar ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50'
-            }`}
-          >
-            <span className="text-base">📘</span>
-            <span className="text-[10px]">{labels.grammar}</span>
-          </button>
+          <div className="grid grid-cols-4 border-t border-slate-100 divide-x divide-slate-100">
+            <button
+              type="button"
+              onClick={() => speak(entry.text, entry.sourceLang)}
+              className="flex flex-col items-center gap-1 py-3 text-slate-500 transition hover:bg-slate-50"
+            >
+              <span className="text-base">🔊</span>
+              <span className="text-[10px]">{labels.playAudio}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActivePanel(null);
+                setShowTranslation((value) => !value);
+              }}
+              className={`flex flex-col items-center gap-1 py-3 transition ${
+                showTranslation ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-base">🌐</span>
+              <span className="text-[10px]">{labels.translation}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowTranslation(false);
+                setActivePanel((value) => (value === 'phonetic' ? null : 'phonetic'));
+              }}
+              className={`flex flex-col items-center gap-1 py-3 transition ${
+                activePanel === 'phonetic' ? 'bg-purple-50 text-purple-700' : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-base">🔤</span>
+              <span className="text-[10px]">{labels.phonetic}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowTranslation(false);
+                setActivePanel((value) => (value === 'grammar' ? null : 'grammar'));
+              }}
+              className={`flex flex-col items-center gap-1 py-3 transition ${
+                activePanel === 'grammar' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-500 hover:bg-slate-50'
+              }`}
+            >
+              <span className="text-base">📘</span>
+              <span className="text-[10px]">{labels.grammar}</span>
+            </button>
+          </div>
         </div>
       </div>
 
