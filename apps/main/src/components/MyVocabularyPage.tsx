@@ -464,17 +464,22 @@ export const MyVocabularyPage: React.FC<MyVocabularyPageProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white shadow-sm">
-        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-20 flex justify-center px-4 pt-4">
+        <div className="w-full max-w-3xl">
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
+            className="pointer-events-auto inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
             aria-label={labels.backToRoom}
           >
             <span aria-hidden="true">←</span>
             <span>{labels.backToRoom}</span>
           </button>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-3xl px-4 pb-24 pt-20">
+        <div className="mb-4 flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <h1 className="text-base font-bold text-slate-900">{labels.title}</h1>
             <p className="text-xs text-slate-400">{!loading ? labels.wordsCount(entries.length) : labels.loading}</p>
@@ -505,9 +510,6 @@ export const MyVocabularyPage: React.FC<MyVocabularyPageProps> = ({
             </div>
           )}
         </div>
-      </div>
-
-      <div className="mx-auto max-w-3xl px-4 pb-24 pt-4">
         {loading && (
           <div className="flex flex-col items-center justify-center gap-3 py-24 text-slate-400">
             <div className="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-blue-500" />

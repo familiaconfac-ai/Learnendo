@@ -20,6 +20,7 @@ import React, {
   useCallback,
   PointerEvent as ReactPointerEvent,
 } from 'react';
+import { createPortal } from 'react-dom';
 import JSZip from 'jszip';
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 import {
@@ -6002,17 +6003,18 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       )}
 
       {/* -- My Vocabulary modal -------------------------------------------- */}
-      {showVocabModal && (
-        <div className="fixed inset-0 z-[99999] bg-slate-50 flex flex-col">
-          <div className="flex-1 overflow-hidden">
-            <MyVocabularyPage
-              userId={userId}
-              uiLanguage={getScopedUiLanguage()}
-              onBack={() => setShowVocabModal(false)}
-            />
-          </div>
-        </div>
-      )}
+      {showVocabModal && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[999999] bg-slate-50">
+              <MyVocabularyPage
+                userId={userId}
+                uiLanguage={getScopedUiLanguage()}
+                onBack={() => setShowVocabModal(false)}
+              />
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 };
