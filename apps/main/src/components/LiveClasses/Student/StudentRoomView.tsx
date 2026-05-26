@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   LiveKitRoom,
   RoomAudioRenderer,
@@ -9,7 +9,7 @@ import {
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { isTrackReference } from '@livekit/components-core';
-import { RoomEvent, Track, createLocalVideoTrack } from 'livekit-client';
+import { RoomEvent, Track, createLocalAudioTrack, createLocalVideoTrack } from 'livekit-client';
 import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassChat } from '../LiveClassChat';
@@ -60,11 +60,14 @@ const StudentStage: React.FC<{
   const [chatOpen, setChatOpen] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
   const [expandedCameraId, setExpandedCameraId] = useState<string | null>(null);
+  const [microphoneBusy, setMicrophoneBusy] = useState(false);
+  const [micError, setMicError] = useState<string | null>(null);
   const [cameraBusy, setCameraBusy] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [battleSession, setBattleSession] = useState<BattleSession | null>(null);
   const [showTeacherMiniCamera, setShowTeacherMiniCamera] = useState(true);
   const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
+  const desiredMicrophoneEnabledRef = useRef(true);
 
   const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const isBattleStage = stageMode === 'battle';
@@ -377,6 +380,54 @@ const StudentStage: React.FC<{
     setShowTeacherMiniCamera(true);
   }, [teacherCameraTile?.id]);
 
+  const toggleMicrophoneWithRecovery = useCallback(
+    async (forceEnable = !isMicrophoneEnabled) => {
+      if (microphoneBusy) return;
+
+      desiredMicrophoneEnabledRef.current = forceEnable;
+      setMicrophoneBusy(true);
+      setMicError(null);
+      try {
+        if (!forceEnable) {
+          await localParticipant.setMicrophoneEnabled(false);
+          return;
+        }
+
+        await localParticipant.setMicrophoneEnabled(true);
+        const publication = localParticipant.getTrackPublication(Track.Source.Microphone);
+        const mediaTrack = (publication?.track as any)?.mediaStreamTrack as
+          | MediaStreamTrack
+          | undefined;
+
+        if (!mediaTrack || mediaTrack.readyState !== 'live') {
+          if (publication?.track) {
+            await localParticipant.unpublishTrack(publication.track).catch(() => {});
+            try {
+              publication.track.stop();
+            } catch {
+              // ignore stale cleanup
+            }
+          }
+
+          const newTrack = await createLocalAudioTrack();
+          await localParticipant.publishTrack(newTrack, { source: Track.Source.Microphone });
+        }
+      } catch (err) {
+        console.warn('[StudentRoomView] microphone toggle with recovery failed:', err);
+        setMicError('Microfone indisponivel. Verifique as permissoes do navegador.');
+      } finally {
+        setMicrophoneBusy(false);
+      }
+    },
+    [isMicrophoneEnabled, localParticipant, microphoneBusy],
+  );
+
+  useEffect(() => {
+    if (desiredMicrophoneEnabledRef.current && !isMicrophoneEnabled && !microphoneBusy) {
+      void toggleMicrophoneWithRecovery(true);
+    }
+  }, [isMicrophoneEnabled, microphoneBusy, toggleMicrophoneWithRecovery]);
+
   const toggleCameraWithRecovery = useCallback(
     async (forceEnable = !isCameraEnabled) => {
       if (cameraBusy) return;
@@ -578,15 +629,14 @@ const StudentStage: React.FC<{
         <div className="fixed bottom-0 left-0 z-50 flex w-full justify-center gap-3 border-t border-slate-800 bg-slate-950/90 py-2 backdrop-blur-sm sm:py-3">
           <button
             onClick={() => {
-              localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled).catch((err) => {
-                console.warn('[StudentRoomView] mic toggle failed:', err);
-              });
+              void toggleMicrophoneWithRecovery(!isMicrophoneEnabled);
             }}
+            disabled={microphoneBusy}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-lg shadow transition ${
               isMicrophoneEnabled
                 ? 'bg-emerald-500 text-white hover:bg-emerald-400'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}
+            } disabled:opacity-60`}
             title={isMicrophoneEnabled ? 'Desligar microfone' : 'Ligar microfone'}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
