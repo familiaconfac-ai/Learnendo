@@ -789,6 +789,13 @@ interface DragState {
   forceSave: boolean;
 }
 
+interface WorkspaceUndoSnapshot {
+  pages: WorkspacePage[];
+  currentPageId: string;
+  docContent: string;
+  items: WorkspaceItem[];
+}
+
 interface WorkspaceViewerContext {
   classId: string;
   userId: string;
@@ -2526,6 +2533,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pages: WorkspacePage[];
     currentPageId: string;
   } | null>(null);
+  const undoSnapshotRef = useRef<WorkspaceUndoSnapshot | null>(null);
   const itemsRef = useRef<WorkspaceItem[]>([]);
   const lastItemsSaveAtRef = useRef<number>(0);
   const lastSingleItemSaveAtRef = useRef<number>(0);
@@ -3306,6 +3314,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const deleteItem = useCallback(
     (id: string) => {
+      captureUndoSnapshot();
       setItems((prev) => {
         const next = prev.filter((it) => it.id !== id);
         scheduleItemsSave(next, { deletedItemIds: [id] });
@@ -3313,7 +3322,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       });
       setSelectedId(null);
     },
-    [scheduleItemsSave],
+    [captureUndoSnapshot, scheduleItemsSave],
   );
 
   const duplicateItem = useCallback(
@@ -3321,6 +3330,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (effectiveReadOnly) return;
       const sourceItem = itemsRef.current.find((item) => item.id === id);
       if (!sourceItem) return;
+      captureUndoSnapshot();
       const duplicatedItem = normalizeItemScope({
         ...sourceItem,
         id: uid(),
@@ -3337,7 +3347,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       });
       setSelectedId(duplicatedItem.id);
     },
-    [effectiveReadOnly, normalizeItemScope, scheduleItemsSave, userId, userName],
+    [captureUndoSnapshot, effectiveReadOnly, normalizeItemScope, scheduleItemsSave, userId, userName],
   );
 
   const createDuplicatedItem = useCallback(
@@ -3419,6 +3429,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const addBox = (boxRole: 'content' | 'student' = 'content') => {
     if (effectiveReadOnly || readOnly) return;
+    captureUndoSnapshot();
     const newItem = normalizeItemScope({
       id: uid(), type: 'text' as WorkspaceItemType,
       boxRole,
@@ -4181,6 +4192,59 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     return flushed;
   };
 
+  function captureUndoSnapshot() {
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const snapshotPages = pagesRef.current.map((page) => ({
+      ...page,
+      items: page.items.map((item) => ({ ...item })),
+      docContent: page.id === activePageIdRef.current ? currentDoc : page.docContent,
+    }));
+    undoSnapshotRef.current = {
+      pages: snapshotPages,
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items: itemsRef.current.map((item) => ({ ...item })),
+    };
+  }
+
+  function restoreUndoSnapshot() {
+    const snapshot = undoSnapshotRef.current;
+    if (!snapshot) return;
+    const restoredPages = snapshot.pages.map((page) => ({
+      ...page,
+      items: page.items.map((item) => normalizeItemScope({ ...item })),
+    }));
+    const activeRestoredPage =
+      restoredPages.find((page) => page.id === snapshot.currentPageId) ??
+      restoredPages[0] ??
+      null;
+    if (!activeRestoredPage) return;
+    pagesRef.current = restoredPages;
+    activePageIdRef.current = activeRestoredPage.id;
+    setPages(restoredPages);
+    setActivePageId(activeRestoredPage.id);
+    setDocHtml(activeRestoredPage.docContent);
+    if (docRef.current) docRef.current.innerHTML = activeRestoredPage.docContent;
+    setItems(activeRestoredPage.items);
+    setSelectedId(null);
+    updateSurfaceStateRef(surfaceModeRef.current, () => ({
+      pages: restoredPages,
+      currentPageId: activeRestoredPage.id,
+      docContent: activeRestoredPage.docContent,
+      items: activeRestoredPage.items,
+    }));
+    savePageSwitch(
+      classId,
+      restoredPages,
+      activeRestoredPage.id,
+      activeRestoredPage.docContent,
+      activeRestoredPage.items,
+      userId,
+      userName,
+      surfaceModeRef.current,
+    ).catch(console.error);
+  }
+
   const handleSlideThumbnailClick = (event: React.MouseEvent<HTMLButtonElement>, pageId: string) => {
     if (!viewerCanManagePages) return;
     const currentPages = pagesRef.current;
@@ -4205,6 +4269,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (!viewerCanManagePages || selectedSlideIds.length === 0) return;
     setPendingSlideImport(false);
     flushFloatingEditorBeforePageMutation();
+    captureUndoSnapshot();
     const current = pagesRef.current;
     const uniqueIds = Array.from(new Set(selectedSlideIds)).filter((pageId) => current.some((page) => page.id === pageId));
     if (uniqueIds.length === 0) return;
@@ -4299,6 +4364,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const addPage = () => {
     if (!viewerCanManagePages) return;
     flushFloatingEditorBeforePageMutation();
+    captureUndoSnapshot();
     const flushed = flushPages();
     const newId = uid();
     const newPage: WorkspacePage = { id: newId, name: surfaceLabels.pageName(flushed.length + 1), backgroundColor: '#ffffff', docContent: '', items: [] };
@@ -4327,6 +4393,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const deletePage = (pageId: string) => {
     if (!viewerCanManagePages) return;
     flushFloatingEditorBeforePageMutation();
+    captureUndoSnapshot();
     const current = pagesRef.current;
     if (current.length <= 1) return; // never delete the last page
     if (!window.confirm(surfaceLabels.confirmDelete)) return;
@@ -4386,6 +4453,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const duplicatePage = (pageId: string) => {
     if (!viewerCanManagePages) return;
     flushFloatingEditorBeforePageMutation();
+    captureUndoSnapshot();
     const flushed = flushPages();
     const idx = flushed.findIndex((p) => p.id === pageId);
     if (idx === -1) return;
@@ -4411,6 +4479,32 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+  };
+
+  const reorderPage = (draggedPageId: string, targetPageId: string) => {
+    if (!viewerCanManagePages || draggedPageId === targetPageId) return;
+    flushFloatingEditorBeforePageMutation();
+    captureUndoSnapshot();
+    const current = pagesRef.current;
+    const fromIndex = current.findIndex((page) => page.id === draggedPageId);
+    const toIndex = current.findIndex((page) => page.id === targetPageId);
+    if (fromIndex < 0 || toIndex < 0) return;
+    const reordered = [...current];
+    const [moved] = reordered.splice(fromIndex, 1);
+    reordered.splice(toIndex, 0, moved);
+    pagesRef.current = reordered;
+    setPages(reordered);
+    setSelectedSlideIds([draggedPageId]);
+    slideSelectionAnchorIdRef.current = draggedPageId;
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
+      ...currentState,
+      pages: reordered,
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items,
+    }));
+    savePageSwitch(classId, reordered, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
   const updateActiveSlideBackground = (backgroundColor: string) => {
@@ -5202,33 +5296,18 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               <>
                 <button
                   onClick={() => updatePresentationMode(!presentationMode)}
-                  className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
+                  className={`flex h-7 w-7 items-center justify-center rounded border transition ${
                     presentationMode
                       ? 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
                       : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
                   }`}
                   title={presentationMode ? 'Exit presentation mode' : 'Presentation mode'}
+                  aria-label={presentationMode ? 'Exit presentation mode' : 'Presentation mode'}
                 >
-                  {presentationMode ? 'Exit' : 'Presentation'}
-                </button>
-                <button
-                  onClick={() => setSlidePanelVisible((prev) => !prev)}
-                  className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
-                    slidePanelVisible
-                      ? 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                  }`}
-                  title={slidePanelVisible ? 'Hide slides panel' : 'Show slides panel'}
-                >
-                  {slidePanelVisible ? 'Hide Slides' : 'Show Slides'}
-                </button>
-                <button
-                  onClick={() => slideImportRef.current?.click()}
-                  disabled={pendingSlideImport}
-                  className="h-7 rounded-md border border-slate-200 bg-slate-50 px-2.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-wait disabled:opacity-60"
-                  title={wsl.importSlides}
-                >
-                  {pendingSlideImport ? wsl.importingSlides : 'Import Slides'}
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20">
+                    <rect x="3" y="4" width="14" height="10" rx="1.5" />
+                    <path d="M8 16h4M10 14v2" />
+                  </svg>
                 </button>
                 <select
                   value={activeSlideBackgroundColor}
@@ -5338,7 +5417,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </>
         )}
 
-        {selected && canManageBox(viewerContext, selected) && (
+        {selected && canManageBox(viewerContext, selected) && !isSlidesMode && (
           <>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
             <button
@@ -5406,9 +5485,25 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
         {viewerCanManageWorkspace && !readOnly && (
           <button
+            onClick={restoreUndoSnapshot}
+            disabled={!undoSnapshotRef.current}
+            className="w-7 h-7 rounded flex items-center justify-center hover:bg-amber-50 text-amber-700 border border-amber-200 transition disabled:opacity-40 disabled:hover:bg-transparent"
+            title="Undo"
+            aria-label="Undo"
+          >
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20">
+              <path d="M7 6H3v4" />
+              <path d="M3 10c1.7-3 4.2-4.5 7.5-4.5 3.9 0 6.5 2.5 6.5 6.5" />
+            </svg>
+          </button>
+        )}
+
+        {viewerCanManageWorkspace && !readOnly && (
+          <button
             onClick={() => {
               if (!window.confirm(wsl.confirmClear)) return;
               flushFloatingEditorBeforePageMutation();
+              captureUndoSnapshot();
               setItems([]); setSelectedId(null);
               if (docRef.current) docRef.current.innerHTML = '';
               setDocHtml('');
@@ -5884,7 +5979,22 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   <button
                     key={page.id}
                     type="button"
+                    draggable
                     onClick={(event) => handleSlideThumbnailClick(event, page.id)}
+                    onDragStart={(event) => {
+                      event.dataTransfer.setData('text/slide-page-id', page.id);
+                      event.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = 'move';
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const draggedPageId = event.dataTransfer.getData('text/slide-page-id');
+                      if (!draggedPageId) return;
+                      reorderPage(draggedPageId, page.id);
+                    }}
                     className={`group relative w-full text-left transition ${
                       isActive
                         ? 'opacity-100'
