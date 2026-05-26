@@ -2326,6 +2326,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
     if (!presentationMode) {
+      if (isSlidesMode && overflowRef.current && presentationScrollRestoreRef.current != null) {
+        overflowRef.current.scrollTop = presentationScrollRestoreRef.current;
+      }
+      presentationScrollRestoreRef.current = null;
       delete document.body.dataset.workspacePresentation;
       document.body.style.overflow = '';
       document.body.style.overscrollBehavior = '';
@@ -2335,6 +2339,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }
 
     document.body.dataset.workspacePresentation = 'true';
+    if (isSlidesMode && overflowRef.current) {
+      presentationScrollRestoreRef.current = overflowRef.current.scrollTop;
+      overflowRef.current.scrollTop = 0;
+    }
     const previousBodyOverflow = document.body.style.overflow;
     const previousBodyOverscroll = document.body.style.overscrollBehavior;
     const previousDocumentOverflow = document.documentElement.style.overflow;
@@ -2345,12 +2353,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     document.documentElement.style.overscrollBehavior = 'none';
     return () => {
       delete document.body.dataset.workspacePresentation;
+      if (isSlidesMode && overflowRef.current && presentationScrollRestoreRef.current != null) {
+        overflowRef.current.scrollTop = presentationScrollRestoreRef.current;
+      }
+      presentationScrollRestoreRef.current = null;
       document.body.style.overflow = previousBodyOverflow;
       document.body.style.overscrollBehavior = previousBodyOverscroll;
       document.documentElement.style.overflow = previousDocumentOverflow;
       document.documentElement.style.overscrollBehavior = previousDocumentOverscroll;
     };
-  }, [presentationMode]);
+  }, [isSlidesMode, presentationMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !presentationMode || !isSlidesMode) return undefined;
@@ -2541,6 +2553,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const fileRef = useRef<HTMLInputElement>(null);
   const slideImportRef = useRef<HTMLInputElement>(null);
   const overflowRef = useRef<HTMLDivElement>(null);
+  const presentationScrollRestoreRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const slideFrameRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
