@@ -2535,6 +2535,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
   const [showVocabModal, setShowVocabModal] = useState(false);
+  const [vocabSelectionEnabled, setVocabSelectionEnabled] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -3181,6 +3182,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, []);
 
   const execFmt = useCallback((cmd: string, value?: string) => {
+    setVocabPopup(null);
     if (activeFloatingIdRef.current && activeFloatingElRef.current) {
       // -- Floating block is the active editor -------------------------------
       // e.preventDefault() on toolbar buttons already prevented the button from
@@ -3251,6 +3253,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const markSelectionToRevealOnClick = useCallback(() => {
     const root = activeFloatingElRef.current ?? docRef.current;
     if (!root) return;
+    setVocabPopup(null);
     root.focus();
     restoreSavedSelection();
     const selection = window.getSelection();
@@ -3806,17 +3809,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           const shapeType = shapeTypeNode ? getAttributeByName(shapeTypeNode, ['prst']) : '';
           const fillColor = extractPptColorFromElement(shapeProps ? findFirstDescendantByLocalName(shapeProps, 'solidFill') : null) ?? '#93c5fd';
           const lineColor = extractPptColorFromElement(shapeProps ? findFirstDescendantByLocalName(shapeProps, 'ln') : null) ?? '#1d4ed8';
+          const svgAspectWidth = Math.max(100, Math.round((cx || 1) / Math.max(cy || 1, 1) * 100));
+          const svgAspectHeight = Math.max(100, Math.round((cy || 1) / Math.max(cx || 1, 1) * 100));
 
           if (shapeType) {
             let svgMarkup = '';
             if (shapeType === 'smileyFace') {
               svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/><circle cx="35" cy="40" r="6" fill="#111827"/><circle cx="65" cy="40" r="6" fill="#111827"/><path d="M30 62c6 10 14 15 20 15s14-5 20-15" fill="none" stroke="#111827" stroke-width="5" stroke-linecap="round"/></svg>`;
             } else if (shapeType === 'ellipse') {
-              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><ellipse cx="50" cy="50" rx="46" ry="46" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgAspectWidth} ${svgAspectHeight}"><ellipse cx="${svgAspectWidth / 2}" cy="${svgAspectHeight / 2}" rx="${Math.max(4, svgAspectWidth / 2 - 4)}" ry="${Math.max(4, svgAspectHeight / 2 - 4)}" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
             } else if (shapeType === 'roundRect') {
-              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="4" y="4" width="92" height="92" rx="18" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgAspectWidth} ${svgAspectHeight}"><rect x="4" y="4" width="${Math.max(8, svgAspectWidth - 8)}" height="${Math.max(8, svgAspectHeight - 8)}" rx="${Math.min(18, svgAspectHeight / 5)}" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
             } else if (shapeType === 'rect') {
-              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="2" y="2" width="96" height="96" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgAspectWidth} ${svgAspectHeight}"><rect x="2" y="2" width="${Math.max(4, svgAspectWidth - 4)}" height="${Math.max(4, svgAspectHeight - 4)}" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
             }
 
             if (svgMarkup) {
@@ -3864,9 +3869,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         const extension = imagePath.split('.').pop()?.toLowerCase() ?? 'png';
         const mimeType = getImageMimeTypeFromExtension(extension);
         const imageBytes = await imageFile.async('uint8array');
+        const previewDataUrl = buildDataUrlFromBytes(imageBytes, mimeType);
         const previewImageUrl =
           buildObjectUrlFromBytes(imageBytes, mimeType) ??
-          buildDataUrlFromBytes(imageBytes, mimeType);
+          previewDataUrl;
         const placement = imagePlacements.get(imageRelId);
         logSlideImport('primary image chosen for slide', {
           slidePath,
@@ -3881,6 +3887,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           placement,
         });
         let hostedImageUrl: string | undefined;
+        let persistableImageUrl: string | undefined;
         try {
           logSlideImport('uploadSlideAsset started', {
             slidePath,
@@ -3905,6 +3912,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             hostedImageUrl,
             urlLoadOk,
           });
+          persistableImageUrl = urlLoadOk ? hostedImageUrl : previewDataUrl;
         } catch (uploadError) {
           console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? 'no-session'}] uploadSlideAsset failed`, {
             slidePath,
@@ -3923,6 +3931,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             mimeType,
             byteLength: imageBytes.length,
           });
+          persistableImageUrl = previewDataUrl;
         }
         items.push(
           normalizeItemScope({
@@ -3933,7 +3942,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
             w: placement?.w ?? 100,
             h: placement?.h ?? 100,
             imageUrl: previewImageUrl,
-            assetUrl: hostedImageUrl,
+            assetUrl: persistableImageUrl,
             updatedAt: Date.now(),
             updatedBy: userId,
             updatedByName: userName,
@@ -4901,6 +4910,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
     // Ignore clicks that originated on toolbar buttons
     if (toolbarRef.current?.contains(e.target as Node)) return;
+    if (!vocabSelectionEnabled) {
+      setVocabPopup(null);
+      return;
+    }
 
     // Small delay so browser has time to settle the selection after a click
     setTimeout(() => {
@@ -4922,7 +4935,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right },
       });
     }, 80);
-  }, []);
+  }, [vocabSelectionEnabled]);
+
+  useEffect(() => {
+    if (vocabSelectionEnabled) return;
+    setVocabPopup(null);
+  }, [vocabSelectionEnabled]);
 
   const visibleItems = useMemo(() => {
     if (isSlidesMode) {
@@ -4986,6 +5004,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (uiLang === 'en') return 'Delete the selected slides?';
     return 'Excluir os slides selecionados?';
   }, [uiLang]);
+  const vocabToggleLabel = useMemo(() => {
+    if (uiLang === 'es') return vocabSelectionEnabled ? 'Desactivar traduccion Learnendo' : 'Activar traduccion Learnendo';
+    if (uiLang === 'en') return vocabSelectionEnabled ? 'Disable Learnendo translation' : 'Enable Learnendo translation';
+    return vocabSelectionEnabled ? 'Desligar traducao Learnendo' : 'Ligar traducao Learnendo';
+  }, [uiLang, vocabSelectionEnabled]);
   const hasPreviousSlide = currentSlideIndex > 0;
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
   const isPortraitViewport = presentationViewport.height > presentationViewport.width + 4;
@@ -5556,12 +5579,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
         <div className="flex items-center">
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
+          <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
+          <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
+          <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
           {isSlidesMode && (
             <button
-              onMouseDown={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
+              onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); markSelectionToRevealOnClick(); }}
               disabled={toolbarDisabled}
               className="flex h-7 items-center justify-center rounded border border-amber-200 px-2 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
               title={wsl.revealOnClick}
@@ -5569,6 +5592,22 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               Click
             </button>
           )}
+          <button
+            onMouseDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setVocabSelectionEnabled((prev) => !prev);
+            }}
+            className={`ml-1 flex h-7 w-7 items-center justify-center rounded border transition ${
+              vocabSelectionEnabled
+                ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'
+            }`}
+            title={vocabToggleLabel}
+            aria-pressed={vocabSelectionEnabled}
+          >
+            <img src="/favicon.png" alt="Learnendo translate" className="h-4 w-4 rounded-sm object-contain" />
+          </button>
         </div>
 
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
