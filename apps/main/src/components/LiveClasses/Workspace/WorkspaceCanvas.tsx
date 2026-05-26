@@ -236,6 +236,19 @@ function applyRevealStateToElement(root: HTMLElement | null, currentStep: number
     el.style.opacity = isVisible ? '1' : '0';
     el.style.transition = 'opacity 180ms ease';
     el.style.pointerEvents = isVisible ? '' : 'none';
+    if (presentationActive) {
+      el.style.backgroundColor = 'transparent';
+      el.style.color = '';
+      el.style.borderRadius = '';
+      el.style.boxShadow = 'none';
+      el.style.padding = '0';
+    } else {
+      el.style.backgroundColor = 'rgba(245, 158, 11, 0.14)';
+      el.style.color = '#b45309';
+      el.style.borderRadius = '0.18em';
+      el.style.boxShadow = 'inset 0 -2px 0 rgba(245, 158, 11, 0.7)';
+      el.style.padding = '0 0.05em';
+    }
   });
 }
 
@@ -2124,6 +2137,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     };
   }, [slidePanelSize.width]);
   const updatePresentationMode = useCallback((nextValue: boolean) => {
+    if (nextValue) {
+      setPresentationRevealStep(0);
+    }
     setPresentationMode(nextValue);
     if (viewerCanManagePages) {
       saveWorkspacePresentationMode(classId, nextValue, userId, userName).catch(console.error);
@@ -2442,30 +2458,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (!targetPage) return;
     switchPage(targetPage.id);
   }, [isSlidesMode, pages]);
-
-  useEffect(() => {
-    if (!presentationMode) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        updatePresentationMode(false);
-        return;
-      }
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        navigateSlides('next');
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        navigateSlides('previous');
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateSlides, presentationMode, updatePresentationMode]);
-
   useEffect(() => {
     if (!openSlideMenuId) return undefined;
 
@@ -5022,10 +5014,53 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (uiLang === 'en') return vocabSelectionEnabled ? 'Disable Learnendo translation' : 'Enable Learnendo translation';
     return vocabSelectionEnabled ? 'Desligar traducao Learnendo' : 'Ligar traducao Learnendo';
   }, [uiLang, vocabSelectionEnabled]);
+  const stepPresentationReveal = useCallback((direction: 'previous' | 'next') => {
+    if (!presentationMode || !isSlidesMode) return false;
+    if (direction === 'next') {
+      if (maxRevealStep > presentationRevealStep) {
+        setPresentationRevealStep((current) => Math.min(current + 1, maxRevealStep));
+        return true;
+      }
+      return false;
+    }
+    if (presentationRevealStep > 0) {
+      setPresentationRevealStep((current) => Math.max(current - 1, 0));
+      return true;
+    }
+    return false;
+  }, [isSlidesMode, maxRevealStep, presentationMode, presentationRevealStep]);
   const hasPreviousSlide = currentSlideIndex > 0;
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
+  const canRevealPreviousStep = presentationRevealStep > 0;
+  const canRevealNextStep = maxRevealStep > presentationRevealStep;
   const isPortraitViewport = presentationViewport.height > presentationViewport.width + 4;
   const shouldRotatePresentation = presentationMode && isSlidesMode && isPortraitViewport;
+  useEffect(() => {
+    if (!presentationMode) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        updatePresentationMode(false);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        if (!stepPresentationReveal('next')) {
+          navigateSlides('next');
+        }
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        if (!stepPresentationReveal('previous')) {
+          navigateSlides('previous');
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigateSlides, presentationMode, stepPresentationReveal, updatePresentationMode]);
   const getSlidePreviewText = useCallback((page: WorkspacePage) => {
     const docText = (page.docContent ?? '')
       .replace(/<[^>]+>/g, ' ')
@@ -6066,8 +6101,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <button
                   type="button"
                   data-presentation-control="true"
-                  onClick={() => navigateSlides('previous')}
-                  disabled={!hasPreviousSlide}
+                  onClick={() => {
+                    if (!stepPresentationReveal('previous')) {
+                      navigateSlides('previous');
+                    }
+                  }}
+                  disabled={!canRevealPreviousStep && !hasPreviousSlide}
                   className="absolute left-4 top-1/2 z-40 -translate-y-1/2 rounded-full bg-black/10 px-3 py-5 text-lg font-black text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-0"
                   aria-label="Previous slide"
                   title="Previous slide"
@@ -6077,8 +6116,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <button
                   type="button"
                   data-presentation-control="true"
-                  onClick={() => navigateSlides('next')}
-                  disabled={!hasNextSlide}
+                  onClick={() => {
+                    if (!stepPresentationReveal('next')) {
+                      navigateSlides('next');
+                    }
+                  }}
+                  disabled={!canRevealNextStep && !hasNextSlide}
                   className="absolute right-4 top-1/2 z-40 -translate-y-1/2 rounded-full bg-black/10 px-3 py-5 text-lg font-black text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-0"
                   aria-label="Next slide"
                   title="Next slide"
