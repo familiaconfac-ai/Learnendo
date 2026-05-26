@@ -233,18 +233,29 @@ function applyRevealStateToElement(root: HTMLElement | null, currentStep: number
   root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
     const revealStep = Number(el.dataset.revealStep ?? '0');
     const isVisible = !presentationActive || revealStep <= currentStep;
-    el.style.opacity = isVisible ? '1' : '0';
-    el.style.transition = 'opacity 180ms ease';
+    el.style.transition = 'opacity 180ms ease, color 180ms ease, border-color 180ms ease';
     el.style.pointerEvents = isVisible ? '' : 'none';
     if (presentationActive) {
+      el.style.display = 'inline-block';
       el.style.backgroundColor = 'transparent';
-      el.style.color = '';
-      el.style.borderRadius = '';
+      el.style.borderRadius = '0';
       el.style.boxShadow = 'none';
-      el.style.padding = '0';
+      el.style.padding = '0 0.05em';
+      if (isVisible) {
+        el.style.opacity = '1';
+        el.style.color = '';
+        el.style.borderBottom = '0 solid transparent';
+      } else {
+        el.style.opacity = '1';
+        el.style.color = 'transparent';
+        el.style.borderBottom = '0.12em solid rgba(148, 163, 184, 0.95)';
+      }
     } else {
+      el.style.display = '';
+      el.style.opacity = '1';
       el.style.backgroundColor = 'rgba(245, 158, 11, 0.14)';
       el.style.color = '#b45309';
+      el.style.borderBottom = '0 solid transparent';
       el.style.borderRadius = '0.18em';
       el.style.boxShadow = 'inset 0 -2px 0 rgba(245, 158, 11, 0.7)';
       el.style.padding = '0 0.05em';
