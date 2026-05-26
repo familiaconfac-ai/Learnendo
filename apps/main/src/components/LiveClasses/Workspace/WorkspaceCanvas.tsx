@@ -15,6 +15,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useCallback,
@@ -1746,7 +1747,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     autoResizeStudentBox();
   }, [autoResizeStudentBox, canEditThisContent, isLockedByOther, item.content, item.type]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (item.type !== 'text') return;
     applyRevealStateToElement(contentRef.current, presentationRevealStep, presentationMode);
   }, [item.type, item.content, presentationMode, presentationRevealStep]);
@@ -2448,7 +2449,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     onPresentationModeChange?.(presentationMode);
   }, [onPresentationModeChange, presentationMode]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
   }, [docHtml, presentationMode, presentationRevealStep]);
 
