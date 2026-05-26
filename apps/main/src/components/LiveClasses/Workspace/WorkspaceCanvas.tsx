@@ -206,6 +206,15 @@ function buildDataUrlFromBytes(bytes: Uint8Array, mimeType: string): string {
   return `data:${mimeType};base64,${uint8ArrayToBase64(bytes)}`;
 }
 
+function getImageBoxFit(naturalWidth: number, naturalHeight: number, maxWidth = 40, maxHeight = 30) {
+  const safeWidth = Math.max(naturalWidth || 1, 1);
+  const safeHeight = Math.max(naturalHeight || 1, 1);
+  const scale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight, 1);
+  const width = clamp(safeWidth * scale, 8, maxWidth);
+  const height = clamp(safeHeight * scale, 8, maxHeight);
+  return { width, height };
+}
+
 function extractRevealStepsFromHtml(html: string): number[] {
   return [...html.matchAll(/data-reveal-step="(\d+)"/g)].map((match) => Number(match[1])).filter((value) => Number.isFinite(value));
 }
@@ -2523,6 +2532,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const slideImportRef = useRef<HTMLInputElement>(null);
   const overflowRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const slideFrameRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
   const savedSelectionRangeRef = useRef<Range | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -2612,7 +2622,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   );
 
   const getCanvasMetrics = useCallback(() => {
-    const canvas = canvasRef.current;
+    const canvas = isSlidesMode ? (slideFrameRef.current ?? canvasRef.current) : canvasRef.current;
     if (!canvas) {
       return { width: 1, height: 1 };
     }
@@ -2621,7 +2631,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       width: Math.max(canvas.offsetWidth, 1),
       height: Math.max(canvas.scrollHeight, canvas.offsetHeight, 1),
     };
-  }, []);
+  }, [isSlidesMode]);
 
   const pruneItemSyncGuards = useCallback((now = Date.now()) => {
     const maxAgeMs = ITEM_GUARD_MS * 4;
@@ -3485,19 +3495,34 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         setPendingImageUpload(false);
         return;
       }
-      const newItem = normalizeItemScope({
-        id: uid(), type: 'image' as WorkspaceItemType,
-        x: 5, y: 10, w: 40, h: 30,
-        imageUrl: dataUrl,
-        updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
-      });
-      setItems((prev) => {
-        const next = [...prev, newItem];
-        scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
-        return next;
-      });
-      setSelectedId(newItem.id);
-      setPendingImageUpload(false);
+      const finalizeImageItem = (width: number, height: number) => {
+        const newItem = normalizeItemScope({
+          id: uid(), type: 'image' as WorkspaceItemType,
+          x: 5, y: 10, w: width, h: height,
+          imageUrl: dataUrl,
+          updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
+        });
+        setItems((prev) => {
+          const next = [...prev, newItem];
+          scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
+          return next;
+        });
+        setSelectedId(newItem.id);
+        setPendingImageUpload(false);
+      };
+
+      if (typeof Image === 'undefined') {
+        finalizeImageItem(40, 30);
+        return;
+      }
+
+      const probe = new Image();
+      probe.onload = () => {
+        const fit = getImageBoxFit(probe.naturalWidth, probe.naturalHeight, 40, 30);
+        finalizeImageItem(fit.width, fit.height);
+      };
+      probe.onerror = () => finalizeImageItem(40, 30);
+      probe.src = dataUrl;
     };
     reader.readAsDataURL(file);
   };
@@ -4926,10 +4951,26 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   const getSlidePreviewHtml = useCallback((page: WorkspacePage) => {
     const html = (page.docContent ?? '').trim();
-    if (html) return html;
-    const firstImage = (page.items ?? []).find((item) => item.type === 'image' && item.imageUrl);
-    if (firstImage?.imageUrl) {
-      return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${page.backgroundColor ?? '#ffffff'};"><img src="${escapeHtml(firstImage.imageUrl)}" alt="" style="width:100%;height:100%;object-fit:contain;" /></div>`;
+    const previewItems = (page.items ?? []).filter((item) => item.boxRole !== 'student');
+    if (html || previewItems.length > 0) {
+      const itemHtml = previewItems.map((item) => {
+        const commonStyle = `position:absolute;left:${item.x}%;top:${item.y}%;width:${item.w}%;height:${item.h}%;overflow:hidden;`;
+        if (item.type === 'image' && item.imageUrl) {
+          return `<div style="${commonStyle}"><img src="${escapeHtml(item.imageUrl)}" alt="" style="width:100%;height:100%;object-fit:contain;background:transparent;" /></div>`;
+        }
+        if (item.type === 'text') {
+          const bgColor = item.styles?.bgColor ? `background:${item.styles.bgColor};` : '';
+          const color = item.styles?.color ? `color:${item.styles.color};` : 'color:#0f172a;';
+          const fontSize = item.styles?.fontSize ? `font-size:${Math.max(8, Math.round(item.styles.fontSize * 0.45))}px;` : 'font-size:12px;';
+          return `<div style="${commonStyle}${bgColor}${color}${fontSize}padding:4px;line-height:1.2;word-break:break-word;">${item.content ?? ''}</div>`;
+        }
+        return '';
+      }).join('');
+
+      return `<div style="position:relative;width:100%;height:100%;background:${page.backgroundColor ?? '#ffffff'};">`
+        + `<div style="position:absolute;inset:0;padding:18px 24px;overflow:hidden;color:#0f172a;">${html}</div>`
+        + itemHtml
+        + `</div>`;
     }
     const fallback = getSlidePreviewText(page);
     return `<p>${fallback}</p>`;
@@ -5946,6 +5987,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
           {/* Main shared document */}
           <div
+            ref={slideFrameRef}
             className={`relative mb-6 w-full border ${
               isSlidesMode
                 ? presentationMode
@@ -5992,9 +6034,54 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 overflow: isSlidesMode ? 'hidden' : undefined,
               }}
             />
+
+            {isSlidesMode ? (
+              <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 10 }}>
+                {visibleItems.map((item) => (
+                  <StableFloatingBlock
+                    key={item.id}
+                    item={item}
+                    isSelected={item.id === selectedId}
+                    readOnly={effectiveReadOnly}
+                    isSlidesMode={isSlidesMode}
+                    presentationMode={presentationMode}
+                    presentationRevealStep={presentationRevealStep}
+                    currentUserId={userId}
+                    currentUserEmail={userEmail}
+                    viewerContext={viewerContext}
+                    viewerIsStudent={viewerIsStudent}
+                    canvasRef={slideFrameRef}
+                    assignableStudents={assignableStudents}
+                    boxFlowLabels={boxFlowLabels}
+                    getCanvasMetrics={getCanvasMetrics}
+                    onSelect={() => setSelectedId(item.id)}
+                    onPointerDownMove={(e) => onPointerDown(e, item.id, 'move')}
+                    onPointerDownResize={(e) => onPointerDown(e, item.id, 'resize')}
+                    onContentChange={(html) => updateItem(
+                      item.id,
+                      {
+                        content: html,
+                        editingByUserId: userId,
+                        editingByUserName: userName,
+                        editingStartedAt: Date.now(),
+                      },
+                      { forceSave: canEditResolvedBoxContent(item) },
+                    )}
+                    onUpdateItem={updateItem}
+                    onEditorFocus={requestItemEdit}
+                    onEditorBlur={() => {
+                      activeFloatingIdRef.current = null;
+                      activeFloatingElRef.current = null;
+                      handleFloatingBlur(item.id);
+                    }}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {/* Floating blocks overlay */}
+          {!isSlidesMode ? (
           <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
             {visibleItems.map((item) => (
               <StableFloatingBlock
@@ -6036,6 +6123,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               />
             ))}
           </div>
+          ) : null}
 
           {visibleItems.length > 0 && !isSlidesMode && <div className="h-40" />}
         </div>
