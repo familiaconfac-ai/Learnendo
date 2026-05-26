@@ -2577,6 +2577,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const ITEM_GUARD_MS = 1500;
   const dirtyItemTimestampsRef = useRef<Record<string, number>>({});
   const deletedItemTimestampsRef = useRef<Record<string, number>>({});
+  const localImportedPagesGuardRef = useRef<{ pageIds: string[]; expiresAt: number } | null>(null);
   const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
 
   useEffect(() => {
@@ -2798,6 +2799,23 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           updatedBy: data?.updatedBy ?? null,
           updatedByName: data?.updatedByName ?? null,
         });
+      }
+      const importGuard = localImportedPagesGuardRef.current;
+      if (importGuard && remoteSurfaceMode === 'slides') {
+        const guardStillActive = Date.now() < importGuard.expiresAt;
+        const remotePageIds = (remotePages ?? []).map((page) => page.id);
+        const guardPageIdsMissing = importGuard.pageIds.filter((pageId) => !remotePageIds.includes(pageId));
+        if (!guardStillActive || guardPageIdsMissing.length === 0) {
+          localImportedPagesGuardRef.current = null;
+        } else {
+          console.warn('[WS PPTX IMPORT GUARD] ignoring remote snapshot that would drop locally imported slides', {
+            guardedPageIds: importGuard.pageIds,
+            missingGuardedPageIds: guardPageIdsMissing,
+            remotePageIds,
+            remotePageCount: remotePages?.length ?? 0,
+          });
+          return;
+        }
       }
       if (remoteSurfaceMode !== surfaceModeRef.current) {
         surfaceModeRef.current = remoteSurfaceMode;
@@ -4065,6 +4083,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           importedItemCount: importedItemIds.length,
         });
       }
+      localImportedPagesGuardRef.current = {
+        pageIds: importedPages.map((page) => page.id),
+        expiresAt: Date.now() + 20_000,
+      };
+      logSlideImport('local import guard armed', {
+        guardedPageIds: localImportedPagesGuardRef.current.pageIds,
+        expiresAt: localImportedPagesGuardRef.current.expiresAt,
+      });
 
       pagesRef.current = updated;
       setPages(updated);
