@@ -252,6 +252,13 @@ function applyRevealStateToElement(root: HTMLElement | null, currentStep: number
   });
 }
 
+function serializeWorkspaceEditableHtml(root: HTMLElement | null): string {
+  if (!root) return '';
+  const clone = root.cloneNode(true) as HTMLElement;
+  applyRevealStateToElement(clone, Number.MAX_SAFE_INTEGER, false);
+  return clone.innerHTML;
+}
+
 function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string, string> {
   const map = new Map<string, string>();
   const xmlDoc = parseXmlDocument(xml);
@@ -3131,14 +3138,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const onDocInput = () => {
     if (!docRef.current) return;
     lastDocInputRef.current = Date.now();
-    const html = docRef.current.innerHTML;
+    const html = serializeWorkspaceEditableHtml(docRef.current);
     setDocHtml(html);
     scheduleDocSave(html);
   };
   const onDocBlur = () => {
     // On blur, flush any pending doc content immediately
     if (!docRef.current) return;
-    const html = docRef.current.innerHTML;
+    const html = serializeWorkspaceEditableHtml(docRef.current);
     setDocHtml(html);
     scheduleDocSave(html);
     if (saveDocDebounce.current) {
@@ -3200,7 +3207,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       document.execCommand(cmd, false, value ?? undefined);
       // execCommand may or may not fire an `input` event; save explicitly.
-      const html = floatingEl.innerHTML;
+      const html = serializeWorkspaceEditableHtml(floatingEl);
       lastItemEditRef.current = Date.now();
       setItems((prev) => {
         const next = prev.map((it) =>
@@ -3235,7 +3242,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         const floatingId = activeFloatingIdRef.current;
         const floatingEl = activeFloatingElRef.current;
         normalizeExecCommandFontSize(floatingEl, size);
-        const html = floatingEl.innerHTML;
+        const html = serializeWorkspaceEditableHtml(floatingEl);
         setItems((prev) => {
           const next = prev.map((it) =>
             it.id === floatingId
@@ -3250,7 +3257,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
       normalizeExecCommandFontSize(docRef.current, size);
       if (!docRef.current) return;
-      const html = docRef.current.innerHTML;
+      const html = serializeWorkspaceEditableHtml(docRef.current);
       setDocHtml(html);
       scheduleDocSave(html);
     }, 20);
@@ -3289,7 +3296,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       applyRevealStateToElement(root, presentationRevealStep, presentationMode);
       if (activeFloatingIdRef.current && activeFloatingElRef.current) {
         const floatingId = activeFloatingIdRef.current;
-        const html = activeFloatingElRef.current.innerHTML;
+        const html = serializeWorkspaceEditableHtml(activeFloatingElRef.current);
         setItems((prev) => {
           const next = prev.map((it) =>
             it.id === floatingId
@@ -3300,7 +3307,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           return next;
         });
       } else if (docRef.current) {
-        const html = docRef.current.innerHTML;
+        const html = serializeWorkspaceEditableHtml(docRef.current);
         setDocHtml(html);
         scheduleDocSave(html);
       }
@@ -4314,7 +4321,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
    * Must be called before any operation that reads pages content (switch, save material).
    */
   const flushPages = (): WorkspacePage[] => {
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = docRef.current ? serializeWorkspaceEditableHtml(docRef.current) : docHtml;
     const flushed = pagesRef.current.map((p) =>
       p.id === activePageIdRef.current ? { ...p, docContent: currentDoc, items } : p,
     );
@@ -5630,7 +5637,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
           <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
           <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
-          {isSlidesMode && (
+          {isSlidesMode && !viewerIsStudent && (
             <button
               onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); markSelectionToRevealOnClick(); }}
               disabled={toolbarDisabled}
