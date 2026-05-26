@@ -796,6 +796,18 @@ interface WorkspaceUndoSnapshot {
   items: WorkspaceItem[];
 }
 
+function cloneUndoSnapshot(snapshot: WorkspaceUndoSnapshot): WorkspaceUndoSnapshot {
+  return {
+    pages: snapshot.pages.map((page) => ({
+      ...page,
+      items: page.items.map((item) => ({ ...item })),
+    })),
+    currentPageId: snapshot.currentPageId,
+    docContent: snapshot.docContent,
+    items: snapshot.items.map((item) => ({ ...item })),
+  };
+}
+
 interface WorkspaceViewerContext {
   classId: string;
   userId: string;
@@ -2534,6 +2546,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     currentPageId: string;
   } | null>(null);
   const undoSnapshotRef = useRef<WorkspaceUndoSnapshot | null>(null);
+  const redoSnapshotRef = useRef<WorkspaceUndoSnapshot | null>(null);
   const itemsRef = useRef<WorkspaceItem[]>([]);
   const lastItemsSaveAtRef = useRef<number>(0);
   const lastSingleItemSaveAtRef = useRef<number>(0);
@@ -3597,21 +3610,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     for (const [slideOffset, slidePath] of orderedSlidePaths.entries()) {
       console.groupCollapsed(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? 'no-session'}] slide ${slideOffset + 1}/${orderedSlidePaths.length}`);
       logSlideImport('processing slide', { slideIndex: slideOffset + 1, slidePath });
-      
-      const slideXml = await zip.file(slidePath)?.async('text');
-      if (!slideXml) {
-        logSlideImport('slide XML not found', { slidePath });
-        // Create empty slide rather than skipping
-        importedPages.push({
-          id: uid(),
-          name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
-          backgroundColor: '#ffffff',
-          docContent: '',
-          items: [],
-        });
-        console.groupEnd();
-        continue;
-      }
+      try {
+        const slideXml = await zip.file(slidePath)?.async('text');
+        if (!slideXml) {
+          logSlideImport('slide XML not found', { slidePath });
+          importedPages.push({
+            id: uid(),
+            name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
+            backgroundColor: '#ffffff',
+            docContent: '<p style="color:#b91c1c;font-size:18px;">Slide XML not found during import.</p>',
+            items: [],
+          });
+          console.groupEnd();
+          continue;
+        }
       logSlideImport('slide XML found', { slidePath, xmlLength: slideXml.length });
 
       // Get slide relationships file
@@ -3798,30 +3810,50 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           mimeType,
           previewDataUrlLength: previewDataUrl.length,
         });
-        logSlideImport('uploadSlideAsset started', {
-          slidePath,
-          imageIndex,
-          fileName: `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}.${extension}`,
-        });
-        
-        const hostedImageUrl = await uploadSlideAsset(
-          `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}`,
-          imageBytes,
-          extension,
-          mimeType,
-        );
-        logSlideImport('uploadSlideAsset finished', {
-          slidePath,
-          imageIndex,
-          hostedImageUrl,
-        });
-        const urlLoadOk = await verifyImageUrlLoads(hostedImageUrl);
-        logSlideImport('uploaded image URL probe result', {
-          slidePath,
-          imageIndex,
-          hostedImageUrl,
-          urlLoadOk,
-        });
+        let hostedImageUrl: string | undefined;
+        try {
+          logSlideImport('uploadSlideAsset started', {
+            slidePath,
+            imageIndex,
+            fileName: `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}.${extension}`,
+          });
+          hostedImageUrl = await uploadSlideAsset(
+            `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}`,
+            imageBytes,
+            extension,
+            mimeType,
+          );
+          logSlideImport('uploadSlideAsset finished', {
+            slidePath,
+            imageIndex,
+            hostedImageUrl,
+          });
+          const urlLoadOk = await verifyImageUrlLoads(hostedImageUrl);
+          logSlideImport('uploaded image URL probe result', {
+            slidePath,
+            imageIndex,
+            hostedImageUrl,
+            urlLoadOk,
+          });
+        } catch (uploadError) {
+          console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? 'no-session'}] uploadSlideAsset failed`, {
+            slidePath,
+            imageIndex,
+            imageTarget,
+            resolvedImagePath: imagePath,
+            mimeType,
+            byteLength: imageBytes.length,
+            uploadError,
+          });
+          logSlideImport('uploadSlideAsset failed, keeping local preview only', {
+            slidePath,
+            imageIndex,
+            imageTarget,
+            resolvedImagePath: imagePath,
+            mimeType,
+            byteLength: imageBytes.length,
+          });
+        }
         items.push(
           normalizeItemScope({
             id: uid(),
@@ -3868,6 +3900,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         docLength: finalPage.docContent.length,
       });
       importedPages.push(finalPage);
+      } catch (slideError) {
+        console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? 'no-session'}] slide import failed`, {
+          slidePath,
+          slideIndex: slideOffset + 1,
+          slideError,
+        });
+        importedPages.push({
+          id: uid(),
+          name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
+          backgroundColor: '#ffffff',
+          docContent: `<p style="color:#b91c1c;font-size:18px;">Slide ${slideOffset + 1} could not be fully imported. Check console logs for details.</p>`,
+          items: [],
+        });
+      }
       console.groupEnd();
     }
 
@@ -4205,11 +4251,73 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       docContent: currentDoc,
       items: itemsRef.current.map((item) => ({ ...item })),
     };
+    redoSnapshotRef.current = null;
   }
 
   function restoreUndoSnapshot() {
     const snapshot = undoSnapshotRef.current;
     if (!snapshot) return;
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    redoSnapshotRef.current = {
+      pages: pagesRef.current.map((page) => ({
+        ...page,
+        items: page.items.map((item) => ({ ...item })),
+        docContent: page.id === activePageIdRef.current ? currentDoc : page.docContent,
+      })),
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items: itemsRef.current.map((item) => ({ ...item })),
+    };
+    const restoredPages = snapshot.pages.map((page) => ({
+      ...page,
+      items: page.items.map((item) => normalizeItemScope({ ...item })),
+    }));
+    const activeRestoredPage =
+      restoredPages.find((page) => page.id === snapshot.currentPageId) ??
+      restoredPages[0] ??
+      null;
+    if (!activeRestoredPage) return;
+    pagesRef.current = restoredPages;
+    activePageIdRef.current = activeRestoredPage.id;
+    setPages(restoredPages);
+    setActivePageId(activeRestoredPage.id);
+    setDocHtml(activeRestoredPage.docContent);
+    if (docRef.current) docRef.current.innerHTML = activeRestoredPage.docContent;
+    setItems(activeRestoredPage.items);
+    setSelectedId(null);
+    updateSurfaceStateRef(surfaceModeRef.current, () => ({
+      pages: restoredPages,
+      currentPageId: activeRestoredPage.id,
+      docContent: activeRestoredPage.docContent,
+      items: activeRestoredPage.items,
+    }));
+    savePageSwitch(
+      classId,
+      restoredPages,
+      activeRestoredPage.id,
+      activeRestoredPage.docContent,
+      activeRestoredPage.items,
+      userId,
+      userName,
+      surfaceModeRef.current,
+    ).catch(console.error);
+  }
+
+  function restoreRedoSnapshot() {
+    const snapshot = redoSnapshotRef.current;
+    if (!snapshot) return;
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    undoSnapshotRef.current = {
+      pages: pagesRef.current.map((page) => ({
+        ...page,
+        items: page.items.map((item) => ({ ...item })),
+        docContent: page.id === activePageIdRef.current ? currentDoc : page.docContent,
+      })),
+      currentPageId: activePageIdRef.current,
+      docContent: currentDoc,
+      items: itemsRef.current.map((item) => ({ ...item })),
+    };
+    redoSnapshotRef.current = null;
     const restoredPages = snapshot.pages.map((page) => ({
       ...page,
       items: page.items.map((item) => normalizeItemScope({ ...item })),
@@ -5494,6 +5602,21 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20">
               <path d="M7 6H3v4" />
               <path d="M3 10c1.7-3 4.2-4.5 7.5-4.5 3.9 0 6.5 2.5 6.5 6.5" />
+            </svg>
+          </button>
+        )}
+
+        {viewerCanManageWorkspace && !readOnly && (
+          <button
+            onClick={restoreRedoSnapshot}
+            disabled={!redoSnapshotRef.current}
+            className="w-7 h-7 rounded flex items-center justify-center hover:bg-orange-50 text-orange-700 border border-orange-200 transition disabled:opacity-40 disabled:hover:bg-transparent"
+            title="Redo"
+            aria-label="Redo"
+          >
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20">
+              <path d="M13 6h4v4" />
+              <path d="M17 10c-1.7-3-4.2-4.5-7.5-4.5-3.9 0-6.5 2.5-6.5 6.5" />
             </svg>
           </button>
         )}
