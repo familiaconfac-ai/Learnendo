@@ -5980,7 +5980,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               onInput={onDocInput}
               className={`w-full focus:outline-none leading-relaxed ${
                 isSlidesMode
-                  ? `h-full max-h-full flex-1 overflow-y-auto overflow-x-hidden px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12`
+                  ? `h-full max-h-full flex-1 overflow-hidden px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12`
                   : 'min-h-[60vh] p-6'
               }`}
               style={{
@@ -5989,8 +5989,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 color: '#000000',
                 wordBreak: 'break-word',
                 backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
-                scrollbarWidth: isSlidesMode ? 'thin' : undefined,
-                scrollbarColor: isSlidesMode ? 'rgba(148,163,184,0.45) transparent' : undefined,
+                overflow: isSlidesMode ? 'hidden' : undefined,
               }}
             />
           </div>
