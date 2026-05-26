@@ -206,6 +206,15 @@ function buildDataUrlFromBytes(bytes: Uint8Array, mimeType: string): string {
   return `data:${mimeType};base64,${uint8ArrayToBase64(bytes)}`;
 }
 
+function buildObjectUrlFromBytes(bytes: Uint8Array, mimeType: string): string | null {
+  if (typeof URL === 'undefined' || typeof Blob === 'undefined') return null;
+  try {
+    return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+  } catch {
+    return null;
+  }
+}
+
 function getImageBoxFit(naturalWidth: number, naturalHeight: number, maxWidth = 40, maxHeight = 30) {
   const safeWidth = Math.max(naturalWidth || 1, 1);
   const safeHeight = Math.max(naturalHeight || 1, 1);
@@ -3711,6 +3720,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
       const items: WorkspaceItem[] = [];
       const textBoxItems: WorkspaceItem[] = [];
+      const imagePlacements = new Map<string, { x: number; y: number; w: number; h: number }>();
 
       // Extract native elements (text boxes, shapes)
       if (slideDoc) {
@@ -3733,6 +3743,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           const normalizedY = clamp((y / slideCanvasSize.height) * 100, 0, 100);
           const normalizedW = clamp((cx / slideCanvasSize.width) * 100, 4, 100);
           const normalizedH = clamp((cy / slideCanvasSize.height) * 100, 4, 100);
+          const embeddedImageRelId = getNamespacedAttribute(
+            findFirstDescendantByLocalName(shapeNode, 'blip') ?? shapeNode,
+            'embed',
+          );
+          if (embeddedImageRelId) {
+            imagePlacements.set(embeddedImageRelId, {
+              x: normalizedX,
+              y: normalizedY,
+              w: normalizedW,
+              h: normalizedH,
+            });
+          }
 
           // Check for text content
           const txBodyNode = findFirstDescendantByLocalName(shapeNode, 'txBody');
@@ -3842,7 +3864,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         const extension = imagePath.split('.').pop()?.toLowerCase() ?? 'png';
         const mimeType = getImageMimeTypeFromExtension(extension);
         const imageBytes = await imageFile.async('uint8array');
-        const previewDataUrl = buildDataUrlFromBytes(imageBytes, mimeType);
+        const previewImageUrl =
+          buildObjectUrlFromBytes(imageBytes, mimeType) ??
+          buildDataUrlFromBytes(imageBytes, mimeType);
+        const placement = imagePlacements.get(imageRelId);
         logSlideImport('primary image chosen for slide', {
           slidePath,
           imageIndex,
@@ -3851,7 +3876,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           resolvedImagePath: imagePath,
           byteLength: imageBytes.length,
           mimeType,
-          previewDataUrlLength: previewDataUrl.length,
+          previewUrlType: previewImageUrl.startsWith('blob:') ? 'blob' : 'data',
+          previewUrlLength: previewImageUrl.length,
+          placement,
         });
         let hostedImageUrl: string | undefined;
         try {
@@ -3901,11 +3928,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           normalizeItemScope({
             id: uid(),
             type: 'image' as WorkspaceItemType,
-            x: 0,
-            y: 0,
-            w: 100,
-            h: 100,
-            imageUrl: previewDataUrl,
+            x: placement?.x ?? 0,
+            y: placement?.y ?? 0,
+            w: placement?.w ?? 100,
+            h: placement?.h ?? 100,
+            imageUrl: previewImageUrl,
             assetUrl: hostedImageUrl,
             updatedAt: Date.now(),
             updatedBy: userId,
@@ -3917,7 +3944,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           imageIndex,
           createdItemId: items[items.length - 1]?.id ?? null,
           imageItemCount: items.length,
-          usesLocalPreviewDataUrl: true,
+          usesLocalPreviewUrl: true,
         });
       }
 
