@@ -884,6 +884,8 @@ function cloneUndoSnapshot(snapshot: WorkspaceUndoSnapshot): WorkspaceUndoSnapsh
   };
 }
 
+const UNDO_HISTORY_LIMIT = 50;
+
 interface WorkspaceViewerContext {
   classId: string;
   userId: string;
@@ -2615,8 +2617,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pages: WorkspacePage[];
     currentPageId: string;
   } | null>(null);
-  const undoSnapshotRef = useRef<WorkspaceUndoSnapshot | null>(null);
-  const redoSnapshotRef = useRef<WorkspaceUndoSnapshot | null>(null);
+  const undoStackRef = useRef<WorkspaceUndoSnapshot[]>([]);
+  const redoStackRef = useRef<WorkspaceUndoSnapshot[]>([]);
   const itemsRef = useRef<WorkspaceItem[]>([]);
   const lastItemsSaveAtRef = useRef<number>(0);
   const lastSingleItemSaveAtRef = useRef<number>(0);
@@ -4383,20 +4385,26 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items: page.items.map((item) => ({ ...item })),
       docContent: page.id === activePageIdRef.current ? currentDoc : page.docContent,
     }));
-    undoSnapshotRef.current = {
+    const snapshot: WorkspaceUndoSnapshot = {
       pages: snapshotPages,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
       items: itemsRef.current.map((item) => ({ ...item })),
     };
-    redoSnapshotRef.current = null;
+    const previous = undoStackRef.current[undoStackRef.current.length - 1];
+    const nextSerialized = JSON.stringify(snapshot);
+    const previousSerialized = previous ? JSON.stringify(previous) : '';
+    if (nextSerialized !== previousSerialized) {
+      undoStackRef.current = [...undoStackRef.current, snapshot].slice(-UNDO_HISTORY_LIMIT);
+    }
+    redoStackRef.current = [];
   }
 
   function restoreUndoSnapshot() {
-    const snapshot = undoSnapshotRef.current;
+    const snapshot = undoStackRef.current[undoStackRef.current.length - 1];
     if (!snapshot) return;
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
-    redoSnapshotRef.current = {
+    const currentSnapshot: WorkspaceUndoSnapshot = {
       pages: pagesRef.current.map((page) => ({
         ...page,
         items: page.items.map((item) => ({ ...item })),
@@ -4406,6 +4414,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       docContent: currentDoc,
       items: itemsRef.current.map((item) => ({ ...item })),
     };
+    redoStackRef.current = [...redoStackRef.current, currentSnapshot].slice(-UNDO_HISTORY_LIMIT);
+    undoStackRef.current = undoStackRef.current.slice(0, -1);
     const restoredPages = snapshot.pages.map((page) => ({
       ...page,
       items: page.items.map((item) => normalizeItemScope({ ...item })),
@@ -4442,10 +4452,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   }
 
   function restoreRedoSnapshot() {
-    const snapshot = redoSnapshotRef.current;
+    const snapshot = redoStackRef.current[redoStackRef.current.length - 1];
     if (!snapshot) return;
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
-    undoSnapshotRef.current = {
+    const currentSnapshot: WorkspaceUndoSnapshot = {
       pages: pagesRef.current.map((page) => ({
         ...page,
         items: page.items.map((item) => ({ ...item })),
@@ -4455,7 +4465,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       docContent: currentDoc,
       items: itemsRef.current.map((item) => ({ ...item })),
     };
-    redoSnapshotRef.current = null;
+    undoStackRef.current = [...undoStackRef.current, currentSnapshot].slice(-UNDO_HISTORY_LIMIT);
+    redoStackRef.current = redoStackRef.current.slice(0, -1);
     const restoredPages = snapshot.pages.map((page) => ({
       ...page,
       items: page.items.map((item) => normalizeItemScope({ ...item })),
@@ -5859,7 +5870,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         {viewerCanManageWorkspace && !readOnly && (
           <button
             onClick={restoreUndoSnapshot}
-            disabled={!undoSnapshotRef.current}
+            disabled={undoStackRef.current.length === 0}
             className="w-7 h-7 rounded flex items-center justify-center hover:bg-amber-50 text-amber-700 border border-amber-200 transition disabled:opacity-40 disabled:hover:bg-transparent"
             title="Undo"
             aria-label="Undo"
@@ -5874,7 +5885,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         {viewerCanManageWorkspace && !readOnly && (
           <button
             onClick={restoreRedoSnapshot}
-            disabled={!redoSnapshotRef.current}
+            disabled={redoStackRef.current.length === 0}
             className="w-7 h-7 rounded flex items-center justify-center hover:bg-orange-50 text-orange-700 border border-orange-200 transition disabled:opacity-40 disabled:hover:bg-transparent"
             title="Redo"
             aria-label="Redo"
