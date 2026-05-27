@@ -260,6 +260,7 @@ function applyRevealStateToElement(root: HTMLElement | null, currentStep: number
   root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
     const revealStep = Number(el.dataset.revealStep ?? '0');
     const isVisible = !presentationActive || revealStep <= currentStep;
+    const descendants = Array.from(el.querySelectorAll<HTMLElement>('*'));
     el.style.transition = 'opacity 180ms ease, color 180ms ease, border-color 180ms ease';
     el.style.pointerEvents = isVisible ? '' : 'none';
     if (presentationActive) {
@@ -271,21 +272,36 @@ function applyRevealStateToElement(root: HTMLElement | null, currentStep: number
       if (isVisible) {
         el.style.opacity = '1';
         el.style.color = '';
+        (el.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = '';
         el.style.borderBottom = '0 solid transparent';
+        descendants.forEach((child) => {
+          child.style.color = '';
+          (child.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = '';
+        });
       } else {
         el.style.opacity = '1';
         el.style.color = 'transparent';
+        (el.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = 'transparent';
         el.style.borderBottom = '0.12em solid rgba(148, 163, 184, 0.95)';
+        descendants.forEach((child) => {
+          child.style.color = 'transparent';
+          (child.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = 'transparent';
+        });
       }
     } else {
       el.style.display = 'inline-block';
       el.style.opacity = '1';
       el.style.backgroundColor = 'transparent';
       el.style.color = 'transparent';
+      (el.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = 'transparent';
       el.style.borderBottom = '0.12em solid rgba(245, 158, 11, 0.95)';
       el.style.borderRadius = '0';
       el.style.boxShadow = 'none';
       el.style.padding = '0 0.05em';
+      descendants.forEach((child) => {
+        child.style.color = 'transparent';
+        (child.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = 'transparent';
+      });
     }
   });
 }
@@ -3357,6 +3373,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       } else if (docRef.current) {
         const html = serializeWorkspaceEditableHtml(docRef.current);
         setDocHtml(html);
+        requestAnimationFrame(() => {
+          applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
+        });
         scheduleDocSave(html);
       }
     } catch (error) {
