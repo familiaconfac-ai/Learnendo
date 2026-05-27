@@ -2497,7 +2497,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
   }, [docHtml, presentationMode, presentationRevealStep]);
 
-  const hydrateDocEditorHtml = useCallback((nextDocContent: string) => {
+  const hydrateDocEditorHtml = useCallback((nextDocContent: string, options?: { syncActivePage?: boolean }) => {
     setDocHtml(nextDocContent);
     if (docRef.current) {
       if (docRef.current.innerHTML !== nextDocContent) {
@@ -2505,7 +2505,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
       applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
     }
-    syncActivePageDocRef(nextDocContent);
+    if (options?.syncActivePage !== false) {
+      syncActivePageDocRef(nextDocContent);
+    }
   }, [presentationMode, presentationRevealStep, syncActivePageDocRef]);
 
   useEffect(() => {
@@ -4216,11 +4218,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(firstImportedPage.docContent);
-      hydrateDocEditorHtml(firstImportedPage.docContent);
-      setItems(firstImportedPage.items ?? []);
-      setSelectedId(firstImportedPage.items?.[0]?.id ?? null);
       activePageIdRef.current = firstImportedPage.id;
       setActivePageId(firstImportedPage.id);
+      hydrateDocEditorHtml(firstImportedPage.docContent, { syncActivePage: false });
+      setItems(firstImportedPage.items ?? []);
+      setSelectedId(firstImportedPage.items?.[0]?.id ?? null);
       setSelectedSlideIds(importedPages.map((page) => page.id));
       slideSelectionAnchorIdRef.current = firstImportedPage.id;
       logSlideImport('active page switched to first imported page', {
@@ -4455,7 +4457,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     activePageIdRef.current = activeRestoredPage.id;
     setPages(restoredPages);
     setActivePageId(activeRestoredPage.id);
-    hydrateDocEditorHtml(activeRestoredPage.docContent);
+    hydrateDocEditorHtml(activeRestoredPage.docContent, { syncActivePage: false });
     setItems(activeRestoredPage.items);
     setSelectedId(null);
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4505,7 +4507,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     activePageIdRef.current = activeRestoredPage.id;
     setPages(restoredPages);
     setActivePageId(activeRestoredPage.id);
-    hydrateDocEditorHtml(activeRestoredPage.docContent);
+    hydrateDocEditorHtml(activeRestoredPage.docContent, { syncActivePage: false });
     setItems(activeRestoredPage.items);
     setSelectedId(null);
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4574,11 +4576,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml('');
-      hydrateDocEditorHtml('');
-      setItems([]);
-      setSelectedId(null);
       activePageIdRef.current = freshId;
       setActivePageId(freshId);
+      hydrateDocEditorHtml('', { syncActivePage: false });
+      setItems([]);
+      setSelectedId(null);
       slideSelectionAnchorIdRef.current = freshId;
       updateSurfaceStateRef(surfaceModeRef.current, () => ({
         pages: [freshPage],
@@ -4601,11 +4603,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(nextActivePage.docContent);
-    hydrateDocEditorHtml(nextActivePage.docContent);
-    setItems(nextActivePage.items.map(normalizeItemScope));
-    setSelectedId(null);
     activePageIdRef.current = nextActivePage.id;
     setActivePageId(nextActivePage.id);
+    hydrateDocEditorHtml(nextActivePage.docContent, { syncActivePage: false });
+    setItems(nextActivePage.items.map(normalizeItemScope));
+    setSelectedId(null);
     slideSelectionAnchorIdRef.current = nextActivePage.id;
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
       pages: remaining,
@@ -4626,11 +4628,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(newPage.docContent);
-    hydrateDocEditorHtml(newPage.docContent);
-    setItems(newPage.items.map(normalizeItemScope));
-    setSelectedId(null);
     activePageIdRef.current = pageId;
     setActivePageId(pageId);
+    hydrateDocEditorHtml(newPage.docContent, { syncActivePage: false });
+    setItems(newPage.items.map(normalizeItemScope));
+    setSelectedId(null);
     slideSelectionAnchorIdRef.current = pageId;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
@@ -4655,11 +4657,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml('');
-    hydrateDocEditorHtml('');
-    setItems([]);
-    setSelectedId(null);
     activePageIdRef.current = newId;
     setActivePageId(newId);
+    hydrateDocEditorHtml('', { syncActivePage: false });
+    setItems([]);
+    setSelectedId(null);
     setSelectedSlideIds([newId]);
     slideSelectionAnchorIdRef.current = newId;
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4688,11 +4690,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(nextPage.docContent);
-      hydrateDocEditorHtml(nextPage.docContent);
-      setItems(nextPage.items.map(normalizeItemScope));
-      setSelectedId(null);
       activePageIdRef.current = nextPage.id;
       setActivePageId(nextPage.id);
+      hydrateDocEditorHtml(nextPage.docContent, { syncActivePage: false });
+      setItems(nextPage.items.map(normalizeItemScope));
+      setSelectedId(null);
       setSelectedSlideIds([nextPage.id]);
       slideSelectionAnchorIdRef.current = nextPage.id;
       updateSurfaceStateRef(surfaceModeRef.current, () => ({
