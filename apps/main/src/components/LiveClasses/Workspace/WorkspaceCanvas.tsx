@@ -5098,6 +5098,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         ? serializeWorkspaceEditableHtml(docRef.current).trim()
         : '';
     const html = (liveHtml || page.docContent || '').trim();
+    const previewRootFontSize = page.id === activePageIdRef.current ? fontSize : 16;
     const previewItems = (page.items ?? []).filter((item) => item.boxRole !== 'student');
     if (html || previewItems.length > 0) {
       const itemHtml = previewItems.map((item) => {
@@ -5115,7 +5116,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       }).join('');
 
       return `<div style="position:relative;width:100%;height:100%;background:${page.backgroundColor ?? '#ffffff'};">`
-        + `<div style="position:absolute;inset:0;padding:18px 24px;overflow:hidden;color:#0f172a;">${html}</div>`
+        + `<div style="position:absolute;inset:0;padding:18px 24px;overflow:hidden;color:#0f172a;font-size:${previewRootFontSize}px;line-height:1.3;">${html}</div>`
         + itemHtml
         + `</div>`;
     }
@@ -5589,13 +5590,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             >
               {isSlidesMode ? (
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
-                  <rect x="3" y="4" width="14" height="10" rx="1.5" />
-                  <path d="M8 16h4M10 14v2" />
+                  <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" />
+                  <path d="M4.5 15.5h11" />
+                  <path d="M6.5 7.5h7M6.5 10h4.5" />
                 </svg>
               ) : (
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
-                  <rect x="3" y="4" width="14" height="12" rx="2" />
-                  <path d="M6 8h8M6 11h5" />
+                  <rect x="3" y="4" width="14" height="10" rx="1.5" />
+                  <path d="M8 16h4M10 14v2" />
                 </svg>
               )}
             </button>
