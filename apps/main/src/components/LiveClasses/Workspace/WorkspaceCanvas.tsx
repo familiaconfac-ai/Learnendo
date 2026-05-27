@@ -5093,7 +5093,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   }, [surfaceLabels.currentLabel]);
 
   const getSlidePreviewHtml = useCallback((page: WorkspacePage) => {
-    const html = (page.docContent ?? '').trim();
+    const liveHtml =
+      page.id === activePageIdRef.current && docRef.current
+        ? serializeWorkspaceEditableHtml(docRef.current).trim()
+        : '';
+    const html = (liveHtml || page.docContent || '').trim();
     const previewItems = (page.items ?? []).filter((item) => item.boxRole !== 'student');
     if (html || previewItems.length > 0) {
       const itemHtml = previewItems.map((item) => {
@@ -5104,7 +5108,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         if (item.type === 'text') {
           const bgColor = item.styles?.bgColor ? `background:${item.styles.bgColor};` : '';
           const color = item.styles?.color ? `color:${item.styles.color};` : 'color:#0f172a;';
-          const fontSize = item.styles?.fontSize ? `font-size:${Math.max(8, Math.round(item.styles.fontSize * 0.45))}px;` : 'font-size:12px;';
+          const fontSize = item.styles?.fontSize ? `font-size:${item.styles.fontSize}px;` : 'font-size:12px;';
           return `<div style="${commonStyle}${bgColor}${color}${fontSize}padding:4px;line-height:1.2;word-break:break-word;">${item.content ?? ''}</div>`;
         }
         return '';
@@ -5575,14 +5579,25 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <>
             <button
               onClick={toggleSurfaceMode}
-              className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
+              className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
                 isSlidesMode
                   ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                   : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
               }`}
               title={isSlidesMode ? surfaceLabels.switchToDocument : surfaceLabels.switchToSlides}
+              aria-label={isSlidesMode ? surfaceLabels.switchToDocument : surfaceLabels.switchToSlides}
             >
-              {isSlidesMode ? surfaceLabels.slides : surfaceLabels.document}
+              {isSlidesMode ? (
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
+                  <rect x="3" y="4" width="14" height="10" rx="1.5" />
+                  <path d="M8 16h4M10 14v2" />
+                </svg>
+              ) : (
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
+                  <rect x="3" y="4" width="14" height="12" rx="2" />
+                  <path d="M6 8h8M6 11h5" />
+                </svg>
+              )}
             </button>
             {isSlidesMode && (
               <>
@@ -5599,6 +5614,21 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20">
                     <rect x="3" y="4" width="14" height="10" rx="1.5" />
                     <path d="M8 16h4M10 14v2" />
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setSlidePanelVisible((prev) => !prev)}
+                  className={`flex h-7 w-7 items-center justify-center rounded border transition ${
+                    slidePanelVisible
+                      ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
+                      : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                  }`}
+                  title={slidePanelVisible ? 'Hide slide panel' : 'Show slide panel'}
+                  aria-label={slidePanelVisible ? 'Hide slide panel' : 'Show slide panel'}
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
+                    <rect x="3" y="4" width="14" height="12" rx="2" />
+                    <path d="M13 4v12M6 8h3M6 11h3" />
                   </svg>
                 </button>
                 <select
@@ -5653,10 +5683,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <button
               onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); markSelectionToRevealOnClick(); }}
               disabled={toolbarDisabled}
-              className="flex h-7 items-center justify-center rounded border border-amber-200 px-2 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded border border-amber-200 text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
               title={wsl.revealOnClick}
+              aria-label={wsl.revealOnClick}
             >
-              Click
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M7.5 10.5V5.8a1.8 1.8 0 1 1 3.6 0v2.3" />
+                <path d="M11.1 8.7a1.7 1.7 0 1 1 3.4 0v2.1" />
+                <path d="M7.6 9.4L5.9 8.2a1.5 1.5 0 0 0-2.1.4 1.6 1.6 0 0 0 .3 2.2l3.4 2.9c.7.6 1.6.9 2.5.9h1.3c2 0 3.7-1.6 3.7-3.7V9.7" />
+              </svg>
             </button>
           )}
           <button
@@ -6310,6 +6345,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(148,163,184,0.2) transparent' }}
             >
               <div className="flex items-center justify-end gap-1 pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSlidePanelVisible(false)}
+                  className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/80 text-slate-300 transition hover:bg-slate-900 hover:text-white"
+                  title="Hide slide panel"
+                >
+                  <span className="text-[11px] font-bold leading-none">X</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => slideImportRef.current?.click()}
