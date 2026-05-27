@@ -2481,6 +2481,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
   }, [docHtml, presentationMode, presentationRevealStep]);
 
+  const hydrateDocEditorHtml = useCallback((nextDocContent: string) => {
+    setDocHtml(nextDocContent);
+    if (docRef.current) {
+      if (docRef.current.innerHTML !== nextDocContent) {
+        docRef.current.innerHTML = nextDocContent;
+      }
+      applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
+    }
+    syncActivePageDocRef(nextDocContent);
+  }, [presentationMode, presentationRevealStep, syncActivePageDocRef]);
+
   useEffect(() => {
     if (!isSlidesMode) {
       setSlidePanelPosition(null);
@@ -2974,11 +2985,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // Doc: suppress remote DOM writes while there is active local typing.
       const isLocallyTyping = Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
       if (!isLocallyTyping) {
-        setDocHtml(nextDocContent);
-        if (docRef.current && docRef.current.innerHTML !== nextDocContent) {
-          docRef.current.innerHTML = nextDocContent;
-        }
-        syncActivePageDocRef(nextDocContent);
+        hydrateDocEditorHtml(nextDocContent);
       }
 
       if (readOnly && data?.scrollRatio != null && overflowRef.current) {
@@ -2993,7 +3000,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     classId,
     normalizeItemScope,
     readOnly,
-    syncActivePageDocRef,
+    hydrateDocEditorHtml,
     syncActivePageItemsRef,
     updateSurfaceStateRef,
     userId,
@@ -4190,7 +4197,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(firstImportedPage.docContent);
-      if (docRef.current) docRef.current.innerHTML = firstImportedPage.docContent;
+      hydrateDocEditorHtml(firstImportedPage.docContent);
       setItems(firstImportedPage.items ?? []);
       setSelectedId(firstImportedPage.items?.[0]?.id ?? null);
       activePageIdRef.current = firstImportedPage.id;
@@ -4429,8 +4436,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     activePageIdRef.current = activeRestoredPage.id;
     setPages(restoredPages);
     setActivePageId(activeRestoredPage.id);
-    setDocHtml(activeRestoredPage.docContent);
-    if (docRef.current) docRef.current.innerHTML = activeRestoredPage.docContent;
+    hydrateDocEditorHtml(activeRestoredPage.docContent);
     setItems(activeRestoredPage.items);
     setSelectedId(null);
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4480,8 +4486,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     activePageIdRef.current = activeRestoredPage.id;
     setPages(restoredPages);
     setActivePageId(activeRestoredPage.id);
-    setDocHtml(activeRestoredPage.docContent);
-    if (docRef.current) docRef.current.innerHTML = activeRestoredPage.docContent;
+    hydrateDocEditorHtml(activeRestoredPage.docContent);
     setItems(activeRestoredPage.items);
     setSelectedId(null);
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4550,7 +4555,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml('');
-      if (docRef.current) docRef.current.innerHTML = '';
+      hydrateDocEditorHtml('');
       setItems([]);
       setSelectedId(null);
       activePageIdRef.current = freshId;
@@ -4577,7 +4582,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(nextActivePage.docContent);
-    if (docRef.current) docRef.current.innerHTML = nextActivePage.docContent;
+    hydrateDocEditorHtml(nextActivePage.docContent);
     setItems(nextActivePage.items.map(normalizeItemScope));
     setSelectedId(null);
     activePageIdRef.current = nextActivePage.id;
@@ -4602,7 +4607,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(newPage.docContent);
-    if (docRef.current) docRef.current.innerHTML = newPage.docContent;
+    hydrateDocEditorHtml(newPage.docContent);
     setItems(newPage.items.map(normalizeItemScope));
     setSelectedId(null);
     activePageIdRef.current = pageId;
@@ -4631,7 +4636,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml('');
-    if (docRef.current) docRef.current.innerHTML = '';
+    hydrateDocEditorHtml('');
     setItems([]);
     setSelectedId(null);
     activePageIdRef.current = newId;
@@ -4664,7 +4669,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(nextPage.docContent);
-      if (docRef.current) docRef.current.innerHTML = nextPage.docContent;
+      hydrateDocEditorHtml(nextPage.docContent);
       setItems(nextPage.items.map(normalizeItemScope));
       setSelectedId(null);
       activePageIdRef.current = nextPage.id;
