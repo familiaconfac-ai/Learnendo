@@ -229,6 +229,32 @@ function extractRevealStepsFromHtml(html: string): number[] {
   return [...html.matchAll(/data-reveal-step="(\d+)"/g)].map((match) => Number(match[1])).filter((value) => Number.isFinite(value));
 }
 
+function renumberRevealStepsInElement(root: HTMLElement | null, startAt = 1): number {
+  if (!root) return startAt - 1;
+  let nextStep = startAt;
+  root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
+    el.dataset.revealStep = String(nextStep);
+    nextStep += 1;
+  });
+  return nextStep - 1;
+}
+
+function stripRevealDecorations(root: HTMLElement | null) {
+  if (!root) return;
+  root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
+    el.style.transition = '';
+    el.style.pointerEvents = '';
+    el.style.display = '';
+    el.style.backgroundColor = '';
+    el.style.borderRadius = '';
+    el.style.boxShadow = '';
+    el.style.padding = '';
+    el.style.opacity = '';
+    el.style.color = '';
+    el.style.borderBottom = '';
+  });
+}
+
 function applyRevealStateToElement(root: HTMLElement | null, currentStep: number, presentationActive: boolean) {
   if (!root) return;
   root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
@@ -252,13 +278,13 @@ function applyRevealStateToElement(root: HTMLElement | null, currentStep: number
         el.style.borderBottom = '0.12em solid rgba(148, 163, 184, 0.95)';
       }
     } else {
-      el.style.display = '';
+      el.style.display = 'inline-block';
       el.style.opacity = '1';
-      el.style.backgroundColor = 'rgba(245, 158, 11, 0.14)';
-      el.style.color = '#b45309';
-      el.style.borderBottom = '0 solid transparent';
-      el.style.borderRadius = '0.18em';
-      el.style.boxShadow = 'inset 0 -2px 0 rgba(245, 158, 11, 0.7)';
+      el.style.backgroundColor = 'transparent';
+      el.style.color = 'transparent';
+      el.style.borderBottom = '0.12em solid rgba(245, 158, 11, 0.95)';
+      el.style.borderRadius = '0';
+      el.style.boxShadow = 'none';
       el.style.padding = '0 0.05em';
     }
   });
@@ -267,7 +293,7 @@ function applyRevealStateToElement(root: HTMLElement | null, currentStep: number
 function serializeWorkspaceEditableHtml(root: HTMLElement | null): string {
   if (!root) return '';
   const clone = root.cloneNode(true) as HTMLElement;
-  applyRevealStateToElement(clone, Number.MAX_SAFE_INTEGER, false);
+  stripRevealDecorations(clone);
   return clone.innerHTML;
 }
 
@@ -3300,6 +3326,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const extracted = range.extractContents();
       wrapper.appendChild(extracted);
       range.insertNode(wrapper);
+      renumberRevealStepsInElement(root, 1);
       selection.removeAllRanges();
       const afterRange = document.createRange();
       afterRange.selectNodeContents(wrapper);
@@ -4310,7 +4337,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const onCanvasClick = (e: React.MouseEvent) => {
-    if (presentationMode && isSlidesMode) {
+    if (presentationMode && isSlidesMode && viewerCanManagePages) {
       const target = e.target as HTMLElement;
       if (target.closest('[data-presentation-control="true"]')) return;
       if (maxRevealStep > presentationRevealStep) {
@@ -5034,7 +5061,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     return vocabSelectionEnabled ? 'Desligar traducao Learnendo' : 'Ligar traducao Learnendo';
   }, [uiLang, vocabSelectionEnabled]);
   const stepPresentationReveal = useCallback((direction: 'previous' | 'next') => {
-    if (!presentationMode || !isSlidesMode) return false;
+    if (!presentationMode || !isSlidesMode || !viewerCanManagePages) return false;
     if (direction === 'next') {
       if (maxRevealStep > presentationRevealStep) {
         setPresentationRevealStep((current) => Math.min(current + 1, maxRevealStep));
@@ -5047,7 +5074,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       return true;
     }
     return false;
-  }, [isSlidesMode, maxRevealStep, presentationMode, presentationRevealStep]);
+  }, [isSlidesMode, maxRevealStep, presentationMode, presentationRevealStep, viewerCanManagePages]);
   const hasPreviousSlide = currentSlideIndex > 0;
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
   const canRevealPreviousStep = presentationRevealStep > 0;
@@ -5062,6 +5089,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         updatePresentationMode(false);
         return;
       }
+      if (!viewerCanManagePages) return;
       if (event.key === 'ArrowRight') {
         event.preventDefault();
         if (!stepPresentationReveal('next')) {
@@ -5079,7 +5107,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateSlides, presentationMode, stepPresentationReveal, updatePresentationMode]);
+  }, [navigateSlides, presentationMode, stepPresentationReveal, updatePresentationMode, viewerCanManagePages]);
   const getSlidePreviewText = useCallback((page: WorkspacePage) => {
     const docText = (page.docContent ?? '')
       .replace(/<[^>]+>/g, ' ')
@@ -6152,7 +6180,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 </button>
               </div>
             </div>
-            {pages.length > 1 ? (
+            {pages.length > 1 && viewerCanManagePages ? (
               <>
                 <button
                   type="button"
