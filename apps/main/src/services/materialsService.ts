@@ -172,6 +172,51 @@ export async function saveWorkspaceAsMaterial(
   return materialId;
 }
 
+export async function updateWorkspaceMaterial(
+  materialId: string,
+  pages: WorkspacePage[],
+  options?: Partial<SaveMaterialOptions>,
+  surfaceMode: WorkspaceSurfaceMode = 'document',
+): Promise<void> {
+  if (!db) throw new Error('Firestore not initialized');
+  if (!materialId) throw new Error('Material id is required');
+
+  const snap = await getDoc(materialDocRef(materialId));
+  if (!snap.exists()) {
+    throw new Error(`Material ${materialId} not found`);
+  }
+
+  const current = snap.data() as Omit<WorkspaceMaterial, 'id'>;
+  const safePages: WorkspaceMaterialPage[] = pages.map((page, i) => ({
+    id: page.id ?? `pg_${i}_${Math.random().toString(36).slice(2, 6)}`,
+    name: page.name,
+    backgroundColor: page.backgroundColor ?? '#ffffff',
+    docContent: page.docContent,
+    items: page.items.map((item) => {
+      if (item.type === 'image' && item.imageUrl?.startsWith('data:')) {
+        console.warn('[Materials] stripping base64 imageUrl from item during update', item.id, '— upload to Storage first');
+        return { ...item, imageUrl: item.assetUrl ?? '' };
+      }
+      return item;
+    }),
+  }));
+
+  const payload: Omit<WorkspaceMaterial, 'id'> = {
+    ...current,
+    title: options?.title?.trim() || current.title,
+    description: options?.description ?? current.description ?? '',
+    language: options?.language ?? current.language ?? '',
+    level: options?.level ?? current.level ?? '',
+    tags: options?.tags ?? current.tags ?? [],
+    pages: safePages,
+    surfaceMode,
+    updatedAt: Date.now(),
+  };
+
+  await setDoc(materialDocRef(materialId), payload, { merge: true });
+  console.log(`[Materials] updateWorkspaceMaterial ✅ — materialId=${materialId} pages=${safePages.length}`);
+}
+
 // ── FUNCIONALIDADE 2: Abrir material na lousa ao vivo ────────────────────────
 
 /**
@@ -186,7 +231,7 @@ export async function loadMaterialToWorkspace(
   materialId: string,
   classId: string,
   name: string,
-): Promise<{ pages: WorkspaceMaterialPage[]; currentPageId: string; surfaceMode: WorkspaceSurfaceMode }> {
+): Promise<{ pages: WorkspaceMaterialPage[]; currentPageId: string; surfaceMode: WorkspaceSurfaceMode; title: string }> {
   console.log('[Materials] loadMaterialToWorkspace CALLED with materialId:', materialId, 'classId:', classId);
 
   const uid = auth.currentUser?.uid;
@@ -243,7 +288,7 @@ export async function loadMaterialToWorkspace(
     { merge: true },
   );
   console.log(`[Materials] LOAD TO WORKSPACE SUCCESS ✅ — materialId=${materialId} written to classId=${classId}`);
-  return { pages, currentPageId: firstPage.id, surfaceMode: targetSurfaceMode };
+  return { pages, currentPageId: firstPage.id, surfaceMode: targetSurfaceMode, title: material.title };
 }
 
 // ── FUNCIONALIDADE 3: Duplicar material ─────────────────────────────────────

@@ -43,6 +43,7 @@ import {
 import { app } from '../../../services/firebase';
 import {
   saveWorkspaceAsMaterial,
+  updateWorkspaceMaterial,
   loadMaterialToWorkspace,
   getMaterialsByUser,
   deleteMaterialFromLibrary,
@@ -519,6 +520,11 @@ interface WsLabels {
   errorSave: (msg: string) => string;
   errorOpen: string;
   vocab: string;
+  autosaveUnsaved: string;
+  autosaveSaving: string;
+  autosaveSaved: string;
+  autosaveError: string;
+  autosaveCurrentFile: string;
 }
 
 interface SurfaceModeLabels {
@@ -694,6 +700,11 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Erro ao salvar material: ${msg}`,
     errorOpen: 'Erro ao abrir material. Tente novamente.',
     vocab: 'Vocabulário',
+    autosaveUnsaved: 'Alterações não salvas',
+    autosaveSaving: 'Salvando...',
+    autosaveSaved: 'Salvo',
+    autosaveError: 'Erro ao salvar',
+    autosaveCurrentFile: 'Arquivo atual',
   },
   en: {
     textSection: 'Text', bgSection: 'Background', colorBtn: 'Text and background color',
@@ -744,6 +755,11 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Error saving material: ${msg}`,
     errorOpen: 'Error opening material. Please try again.',
     vocab: 'Vocabulary',
+    autosaveUnsaved: 'Unsaved changes',
+    autosaveSaving: 'Saving...',
+    autosaveSaved: 'Saved',
+    autosaveError: 'Save error',
+    autosaveCurrentFile: 'Current file',
   },
   es: {
     textSection: 'Texto', bgSection: 'Fondo', colorBtn: 'Color de texto y fondo',
@@ -794,6 +810,11 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Error al guardar material: ${msg}`,
     errorOpen: 'Error al abrir material. Inténtalo de nuevo.',
     vocab: 'Vocabulario',
+    autosaveUnsaved: 'Cambios no guardados',
+    autosaveSaving: 'Guardando...',
+    autosaveSaved: 'Guardado',
+    autosaveError: 'Error al guardar',
+    autosaveCurrentFile: 'Archivo actual',
   },
 };
 
@@ -2354,7 +2375,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ...current,
       pages: nextPages,
       currentPageId: activePageIdRef.current,
-      docContent: docRef.current?.innerHTML ?? docHtml,
+      docContent: docRef.current ? serializeWorkspaceEditableHtml(docRef.current) : docHtml,
       items: nextItems,
     }));
     if (shouldUpdateState) {
@@ -2378,6 +2399,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [deletingBattleTemplateId, setDeletingBattleTemplateId] = useState<string | null>(null);
   const [saveSinglePageId, setSaveSinglePageId] = useState<string | null>(null);
   const [openLibraryTab, setOpenLibraryTab] = useState<'materials' | BattleTemplateLanguage>('materials');
+  const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(null);
+  const [currentMaterialTitle, setCurrentMaterialTitle] = useState('');
+  const [projectSaveStatus, setProjectSaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
+  const [projectSaveError, setProjectSaveError] = useState<string | null>(null);
+  const projectSaveLabel = projectSaveStatus === 'saving'
+    ? wsl.autosaveSaving
+    : projectSaveStatus === 'saved'
+      ? wsl.autosaveSaved
+      : projectSaveStatus === 'error'
+        ? wsl.autosaveError
+        : projectSaveStatus === 'unsaved'
+          ? wsl.autosaveUnsaved
+          : '';
   const battleTemplatesByLanguage = useMemo(() => {
     return BATTLE_LIBRARY_LANGUAGE_TABS.reduce<Record<BattleTemplateLanguage, StoredBattleTemplate[]>>(
       (accumulator, languageTab) => {
@@ -2395,6 +2429,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       },
     );
   }, [battleTemplatesList]);
+
+  useEffect(() => {
+    currentMaterialIdRef.current = currentMaterialId;
+  }, [currentMaterialId]);
+
+  useEffect(() => {
+    currentMaterialTitleRef.current = currentMaterialTitle;
+  }, [currentMaterialTitle]);
+
+  useEffect(() => {
+    if (currentMaterialId) return;
+    setProjectSaveStatus('idle');
+    setProjectSaveError(null);
+  }, [currentMaterialId]);
 
   useEffect(() => {
     if (!isSlidesMode && presentationMode) {
@@ -2646,6 +2694,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pages: WorkspacePage[];
     currentPageId: string;
   } | null>(null);
+  const projectAutosaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const currentMaterialIdRef = useRef<string | null>(null);
+  const currentMaterialTitleRef = useRef('');
   const undoStackRef = useRef<WorkspaceUndoSnapshot[]>([]);
   const redoStackRef = useRef<WorkspaceUndoSnapshot[]>([]);
   const itemsRef = useRef<WorkspaceItem[]>([]);
@@ -3033,10 +3084,34 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (saveSingleItemDebounce.current) clearTimeout(saveSingleItemDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
+    if (projectAutosaveDebounceRef.current) clearTimeout(projectAutosaveDebounceRef.current);
     pendingItemsSaveRef.current = null;
     pendingSingleItemSaveRef.current = {};
     pendingDocSaveRef.current = null;
   }, []);
+
+  useEffect(() => {
+    const flushProjectIfNeeded = () => {
+      if (projectAutosaveDebounceRef.current) {
+        clearTimeout(projectAutosaveDebounceRef.current);
+        projectAutosaveDebounceRef.current = null;
+        void flushCurrentMaterialSave();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushProjectIfNeeded();
+      }
+    };
+
+    window.addEventListener('beforeunload', flushProjectIfNeeded);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('beforeunload', flushProjectIfNeeded);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [flushCurrentMaterialSave]);
 
   const flushPendingItemsSave = useCallback(() => {
     const pending = pendingItemsSaveRef.current;
@@ -3118,6 +3193,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         pages: syncedPages,
         currentPageId: activePageIdRef.current,
       };
+      scheduleCurrentMaterialSave();
 
       if (saveItemsDebounce.current) return;
 
@@ -3138,6 +3214,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       markItemDeleted,
       markItemsDirty,
       normalizeItemScope,
+      scheduleCurrentMaterialSave,
       syncActivePageItemsRef,
     ],
   );
@@ -3152,6 +3229,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         currentPageId: activePageIdRef.current,
         forceSave: options?.forceSave,
       };
+      scheduleCurrentMaterialSave();
 
       if (saveSingleItemDebounce.current) return;
 
@@ -3171,6 +3249,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       flushPendingSingleItemSaves,
       markItemDirty,
       normalizeItemScope,
+      scheduleCurrentMaterialSave,
     ],
   );
 
@@ -3183,6 +3262,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         pages: syncedPages,
         currentPageId: activePageIdRef.current,
       };
+      scheduleCurrentMaterialSave();
 
       if (saveDocDebounce.current) return;
 
@@ -3197,7 +3277,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         flushPendingDocSave();
       }, WORKSPACE_DOC_SYNC_DEBOUNCE_MS - elapsedMs);
     },
-    [effectiveReadOnly, flushPendingDocSave, syncActivePageDocRef],
+    [effectiveReadOnly, flushPendingDocSave, scheduleCurrentMaterialSave, syncActivePageDocRef],
   );
 
   const onDocInput = () => {
@@ -4274,6 +4354,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         .catch((error) => {
           console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? importSessionId}] savePageSwitch failed`, error);
         });
+      scheduleCurrentMaterialSave();
     } catch (error) {
       console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? importSessionId}] Failed to import slides`, error);
       const firstDeckFile = acceptedFiles.find((file) => hasAcceptedPptxExtension(file.name));
@@ -4404,10 +4485,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
    * the pages array. Returns the flushed pages array.
    * Must be called before any operation that reads pages content (switch, save material).
    */
+  const getCurrentSerializedDocHtml = useCallback(() => (
+    docRef.current ? serializeWorkspaceEditableHtml(docRef.current) : docHtml
+  ), [docHtml]);
+
   const flushPages = (): WorkspacePage[] => {
-    const currentDoc = docRef.current ? serializeWorkspaceEditableHtml(docRef.current) : docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
+    const currentItems = itemsRef.current;
     const flushed = pagesRef.current.map((p) =>
-      p.id === activePageIdRef.current ? { ...p, docContent: currentDoc, items } : p,
+      p.id === activePageIdRef.current ? { ...p, docContent: currentDoc, items: currentItems } : p,
     );
     pagesRef.current = flushed;
     setPages(flushed);
@@ -4416,13 +4502,47 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       pages: flushed,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
-      items,
+      items: currentItems,
     }));
     return flushed;
   };
 
+  async function flushCurrentMaterialSave() {
+    const materialId = currentMaterialIdRef.current;
+    if (!materialId || effectiveReadOnly) return;
+    const flushed = flushPages();
+    setProjectSaveStatus('saving');
+    setProjectSaveError(null);
+    try {
+      await updateWorkspaceMaterial(
+        materialId,
+        flushed,
+        { title: currentMaterialTitleRef.current || undefined },
+        surfaceModeRef.current,
+      );
+      setProjectSaveStatus('saved');
+    } catch (error) {
+      console.error('[WorkspaceCanvas] project autosave failed:', error);
+      setProjectSaveStatus('error');
+      setProjectSaveError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function scheduleCurrentMaterialSave() {
+    if (!currentMaterialIdRef.current || effectiveReadOnly) return;
+    setProjectSaveStatus('unsaved');
+    setProjectSaveError(null);
+    if (projectAutosaveDebounceRef.current) {
+      clearTimeout(projectAutosaveDebounceRef.current);
+    }
+    projectAutosaveDebounceRef.current = setTimeout(() => {
+      projectAutosaveDebounceRef.current = null;
+      void flushCurrentMaterialSave();
+    }, 700);
+  }
+
   function captureUndoSnapshot() {
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
     const snapshotPages = pagesRef.current.map((page) => ({
       ...page,
       items: page.items.map((item) => ({ ...item })),
@@ -4446,7 +4566,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   function restoreUndoSnapshot() {
     const snapshot = undoStackRef.current[undoStackRef.current.length - 1];
     if (!snapshot) return;
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
     const currentSnapshot: WorkspaceUndoSnapshot = {
       pages: pagesRef.current.map((page) => ({
         ...page,
@@ -4491,12 +4611,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       userName,
       surfaceModeRef.current,
     ).catch(console.error);
+    scheduleCurrentMaterialSave();
   }
 
   function restoreRedoSnapshot() {
     const snapshot = redoStackRef.current[redoStackRef.current.length - 1];
     if (!snapshot) return;
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
     const currentSnapshot: WorkspaceUndoSnapshot = {
       pages: pagesRef.current.map((page) => ({
         ...page,
@@ -4541,6 +4662,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       userName,
       surfaceModeRef.current,
     ).catch(console.error);
+    scheduleCurrentMaterialSave();
   }
 
   const handleSlideThumbnailClick = (event: React.MouseEvent<HTMLButtonElement>, pageId: string) => {
@@ -4603,7 +4725,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         docContent: '',
         items: [],
       }));
-      savePageSwitch(classId, [freshPage], freshId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
+    savePageSwitch(classId, [freshPage], freshId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
+    scheduleCurrentMaterialSave();
       return;
     }
 
@@ -4631,6 +4754,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items: nextActivePage.items,
     }));
     savePageSwitch(classId, remaining, nextActivePage.id, nextActivePage.docContent, nextActivePage.items, userId, userName, surfaceModeRef.current).catch(console.error);
+    scheduleCurrentMaterialSave();
   };
 
   const switchPage = (pageId: string) => {
@@ -4639,9 +4763,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const flushed = flushPages();
     const newPage = flushed.find((p) => p.id === pageId);
     if (!newPage) return;
-    // Cancel debounced saves to avoid stale writes after the switch.
-    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
-    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    // CORRIGIDO: Fazer flush dos dados pendentes ANTES de cancelar os timeouts
+    if (saveItemsDebounce.current) {
+      clearTimeout(saveItemsDebounce.current);
+      saveItemsDebounce.current = null;
+      flushPendingItemsSave();
+    }
+    if (saveDocDebounce.current) {
+      clearTimeout(saveDocDebounce.current);
+      saveDocDebounce.current = null;
+      flushPendingDocSave();
+    }
     setDocHtml(newPage.docContent);
     activePageIdRef.current = pageId;
     setActivePageId(pageId);
@@ -4686,6 +4818,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items: [],
     }));
     savePageSwitch(classId, updated, newId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
+    scheduleCurrentMaterialSave();
   };
 
   const deletePage = (pageId: string) => {
@@ -4719,8 +4852,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         items: nextPage.items,
       }));
       savePageSwitch(classId, remaining, nextPage.id, nextPage.docContent, nextPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
+      scheduleCurrentMaterialSave();
     } else {
-      const currentDoc = docRef.current?.innerHTML ?? docHtml;
+      const currentDoc = getCurrentSerializedDocHtml();
       updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
         ...currentState,
         pages: remaining,
@@ -4729,6 +4863,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         items,
       }));
       savePageSwitch(classId, remaining, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+      scheduleCurrentMaterialSave();
     }
   };
 
@@ -4737,7 +4872,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const updated = pagesRef.current.map((p) => (p.id === pageId ? { ...p, name: newName } : p));
     pagesRef.current = updated;
     setPages(updated);
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: updated,
@@ -4746,6 +4881,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+    scheduleCurrentMaterialSave();
   };
 
   const duplicatePage = (pageId: string) => {
@@ -4768,7 +4904,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setPages(updated);
     setSelectedSlideIds([copy.id]);
     slideSelectionAnchorIdRef.current = copy.id;
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: updated,
@@ -4777,6 +4913,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+    scheduleCurrentMaterialSave();
   };
 
   const reorderPage = (draggedPageId: string, targetPageId: string) => {
@@ -4794,7 +4931,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setPages(reordered);
     setSelectedSlideIds([draggedPageId]);
     slideSelectionAnchorIdRef.current = draggedPageId;
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
     updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
       ...currentState,
       pages: reordered,
@@ -4803,6 +4940,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, reordered, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+    scheduleCurrentMaterialSave();
   };
 
   const updateActiveSlideBackground = (backgroundColor: string) => {
@@ -4812,7 +4950,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     );
     pagesRef.current = updated;
     setPages(updated);
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: updated,
@@ -4821,13 +4959,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+    scheduleCurrentMaterialSave();
   };
 
   const toggleSurfaceMode = useCallback(() => {
     if (!viewerCanManageWorkspace || readOnly) return;
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
-    const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentDoc = getCurrentSerializedDocHtml();
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
       pages: flushed,
       currentPageId: activePageIdRef.current,
@@ -4844,6 +4983,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       userName,
       surfaceModeRef.current,
     ).catch(console.error);
+    scheduleCurrentMaterialSave();
     const nextMode: WorkspaceSurfaceMode = surfaceModeRef.current === 'slides' ? 'document' : 'slides';
     surfaceModeRef.current = nextMode;
     setSurfaceMode(nextMode);
@@ -4886,7 +5026,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         await saveWorkspaceAsMaterial([targetPage], { title }, userId, surfaceModeRef.current);
       } else {
         console.log('[WorkspaceCanvas] Saving all pages');
-        await saveWorkspaceAsMaterial(allPages, { title }, userId, surfaceModeRef.current);
+        const materialId = await saveWorkspaceAsMaterial(allPages, { title }, userId, surfaceModeRef.current);
+        setCurrentMaterialId(materialId);
+        setCurrentMaterialTitle(title);
+        setProjectSaveStatus('saved');
+        setProjectSaveError(null);
       }
       console.log('[WorkspaceCanvas] Save completed successfully, closing modal');
       // Refresh the materials list if the open modal is currently shown
@@ -4905,6 +5049,31 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       setSavingMaterial(false);
     }
   };
+
+  const handleSaveCurrentMaterial = useCallback(async () => {
+    if (!currentMaterialIdRef.current) {
+      setShowSaveModal(true);
+      return;
+    }
+    flushFloatingEditorBeforePageMutation();
+    if (saveItemsDebounce.current) {
+      clearTimeout(saveItemsDebounce.current);
+      saveItemsDebounce.current = null;
+      flushPendingItemsSave();
+    }
+    if (saveDocDebounce.current) {
+      clearTimeout(saveDocDebounce.current);
+      saveDocDebounce.current = null;
+      flushPendingDocSave();
+    }
+    setProjectSaveStatus('saving');
+    setProjectSaveError(null);
+    try {
+      await flushCurrentMaterialSave();
+    } catch (error) {
+      console.error('[WorkspaceCanvas] manual project save failed:', error);
+    }
+  }, [flushCurrentMaterialSave, flushFloatingEditorBeforePageMutation, flushPendingDocSave, flushPendingItemsSave]);
 
   const reloadSavedLibraries = async () => {
     const [materials, battles] = await Promise.all([
@@ -4938,8 +5107,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     console.log('[WorkspaceCanvas] Load Material clicked ï¿½ materialId:', materialId, 'userId:', userId);
     setLoadingMaterialId(materialId);
     try {
+      if (projectAutosaveDebounceRef.current) {
+        clearTimeout(projectAutosaveDebounceRef.current);
+        projectAutosaveDebounceRef.current = null;
+        await flushCurrentMaterialSave();
+      }
       console.log('[WorkspaceCanvas] Calling loadMaterialToWorkspace');
-      const { pages: loadedPages, currentPageId, surfaceMode: loadedSurfaceMode } = await loadMaterialToWorkspace(materialId, classId, userName);
+      const { pages: loadedPages, currentPageId, surfaceMode: loadedSurfaceMode, title } = await loadMaterialToWorkspace(materialId, classId, userName);
       console.log('[WorkspaceCanvas] Material loaded successfully ï¿½ pages:', loadedPages.length);
       // Apply loaded material to local state immediately (before self-echo arrives).
       const normalized = normalizeWorkspacePages(loadedPages);
@@ -4954,6 +5128,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           items: activePage.items,
         });
       }
+      setCurrentMaterialId(materialId);
+      setCurrentMaterialTitle(title);
+      setProjectSaveStatus('saved');
+      setProjectSaveError(null);
       setSelectedId(null);
       setShowOpenModal(false);
     } catch (err) {
@@ -5865,13 +6043,37 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
             <button
-              onClick={() => { setSaveMaterialTitle(''); setShowSaveModal(true); }}
+              onClick={() => {
+                if (currentMaterialId) {
+                  void handleSaveCurrentMaterial();
+                  return;
+                }
+                setSaveSinglePageId(null);
+                setSaveMaterialTitle('');
+                setShowSaveModal(true);
+              }}
               className="w-7 h-7 rounded flex items-center justify-center hover:bg-green-50 text-green-700 border border-green-200 transition"
               title={wsl.saveAll}
               aria-label={wsl.saveAll}
             >
               <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M17 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1h9l4 4z"/><path d="M13 4v4H7V4"/><path d="M7 12h6"/></svg>
             </button>
+            {currentMaterialId && (
+              <div
+                className={`ml-1 inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold ${
+                  projectSaveStatus === 'error'
+                    ? 'bg-rose-50 text-rose-700'
+                    : projectSaveStatus === 'saved'
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : projectSaveStatus === 'saving'
+                        ? 'bg-amber-50 text-amber-700'
+                        : 'bg-slate-100 text-slate-600'
+                }`}
+                title={projectSaveError || currentMaterialTitle || wsl.autosaveCurrentFile}
+              >
+                {projectSaveLabel}
+              </div>
+            )}
             <button
               onClick={handleOpenMaterialsList}
               className="w-7 h-7 rounded flex items-center justify-center hover:bg-blue-50 text-blue-700 border border-blue-200 transition"
@@ -5960,6 +6162,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 items: [],
               }));
               savePageSwitch(classId, updated, activePageIdRef.current, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
+              scheduleCurrentMaterialSave();
             }}
             className="w-7 h-7 rounded flex items-center justify-center hover:bg-red-50 text-red-500 border border-red-200 transition"
             title={surfaceLabels.clearPage}
@@ -6449,6 +6652,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <button
                   type="button"
                   onClick={() => {
+                    if (currentMaterialId) {
+                      void handleSaveCurrentMaterial();
+                      return;
+                    }
                     setSaveSinglePageId(null);
                     setSaveMaterialTitle('');
                     setShowSaveModal(true);
