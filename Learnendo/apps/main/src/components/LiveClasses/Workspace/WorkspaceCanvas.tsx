@@ -975,6 +975,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     setFontSize(size);
     execFmt('fontSize', '7');
     setTimeout(() => {
+      // CORRIGIDO: Salvar fontSize em item.styles se há um elemento flutuante selecionado
+      if (activeFloatingIdRef.current && selectedId) {
+        const item = items.find((i) => i.id === selectedId);
+        if (item) {
+          updateItem(selectedId, { styles: { ...(item.styles ?? {}), fontSize: size } });
+        }
+      }
       docRef.current?.querySelectorAll('font[size="7"]').forEach((el) => {
         (el as HTMLElement).removeAttribute('size');
         (el as HTMLElement).style.fontSize = `${size}px`;
@@ -1065,6 +1072,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     acquireItemLock(item);
     activeFloatingIdRef.current = itemId;
     activeFloatingElRef.current = el;
+    // CORRIGIDO: Sincronizar fontSize com o tamanho do elemento selecionado
+    if (item.styles?.fontSize) {
+      setFontSize(item.styles.fontSize);
+    } else {
+      setFontSize(16); // Padrão se não houver fontSize definido
+    }
   };
 
   const handleFloatingBlur = (itemId: string) => {
