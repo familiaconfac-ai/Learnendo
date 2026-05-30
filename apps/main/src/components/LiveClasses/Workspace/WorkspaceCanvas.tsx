@@ -1665,6 +1665,16 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         (item.ownerUserId && item.ownerUserId !== currentUserId) ||
         (!item.ownerUserId && resolvedOwnerEmail && currentUserEmail && normalizeEmail(resolvedOwnerEmail) !== normalizeEmail(currentUserEmail))
       ),
+
+  // Simplified permissions for stability
+  const isTeacher = viewerContext.isTeacherView;
+  const canEditThisContent = isTeacher || !readOnly;
+  const canMoveThisBox = isTeacher || !readOnly;
+  const canResizeThisBox = isTeacher || !readOnly;
+  const isLockedByOther = Boolean(
+    item.editingByUserId &&
+    item.editingByUserId !== currentUserId &&
+    Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS
   );
 
   const [blockStyle, setBlockStyle] = useState<React.CSSProperties>({});
@@ -1828,6 +1838,8 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         height: `${(item.h / 100) * height}px`,
         zIndex: isSelected ? 50 : 10,
         pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
+        zIndex: isSelected ? 100 : 1,
+        pointerEvents: readOnly && !isTeacher ? 'none' : 'auto',
         boxSizing: 'border-box',
         border: isSlidesMode && item.type === 'text'
           ? (isSelected ? '2px dashed rgba(37,99,235,0.7)' : 'none')
@@ -2091,6 +2103,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           color: item.styles?.color ?? '#1e293b',
           paddingTop: isSlideContentBox ? '0.75rem' : isSelected ? '2.1rem' : '0.5rem',
           cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
+          paddingTop: isSelected ? '1.5rem' : '0.5rem',
           wordBreak: 'break-word',
           opacity: isOwnedByOther ? 0.65 : isLockedByOther ? 0.85 : 1,
         }}
@@ -3193,7 +3206,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         pages: syncedPages,
         currentPageId: activePageIdRef.current,
       };
-      scheduleCurrentMaterialSave();
 
       if (saveItemsDebounce.current) return;
 
@@ -3229,7 +3241,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         currentPageId: activePageIdRef.current,
         forceSave: options?.forceSave,
       };
-      scheduleCurrentMaterialSave();
 
       if (saveSingleItemDebounce.current) return;
 
@@ -3262,7 +3273,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         pages: syncedPages,
         currentPageId: activePageIdRef.current,
       };
-      scheduleCurrentMaterialSave();
 
       if (saveDocDebounce.current) return;
 
@@ -3278,6 +3288,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }, WORKSPACE_DOC_SYNC_DEBOUNCE_MS - elapsedMs);
     },
     [effectiveReadOnly, flushPendingDocSave, scheduleCurrentMaterialSave, syncActivePageDocRef],
+    [effectiveReadOnly, flushPendingDocSave, syncActivePageDocRef],
   );
 
   const onDocInput = () => {
@@ -3391,14 +3402,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         setItems((prev) => {
           const next = prev.map((it) => {
             if (it.id !== floatingId) return it;
-            // CORRIGIDO: Salvar fontSize em item.styles além do content
             return {
               ...it,
               content: html,
-              styles: {
-                ...(it.styles ?? {}),
-                fontSize: size,
-              },
               updatedAt: Date.now(),
               updatedBy: userId,
               updatedByName: userName,
@@ -3628,6 +3634,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (!item || item.type !== 'text') return;
     const canEditThisItem = canEditResolvedBoxContent(item);
     if (!canEditThisItem || (effectiveReadOnly && !canEditThisItem) || isItemLockedByOther(item)) {
+    if (effectiveReadOnly || isItemLockedByOther(item) || !acquireItemLock(item)) {
       el.blur();
       return;
     }
@@ -3637,12 +3644,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }
     activeFloatingIdRef.current = itemId;
     activeFloatingElRef.current = el;
-    // CORRIGIDO: Sincronizar fontSize com o tamanho do elemento selecionado
-    if (item.styles?.fontSize) {
-      setFontSize(item.styles.fontSize);
-    } else {
-      setFontSize(16); // Padrão se não houver fontSize definido
-    }
   };
 
   const handleFloatingBlur = (itemId: string) => {
@@ -4354,7 +4355,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         .catch((error) => {
           console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? importSessionId}] savePageSwitch failed`, error);
         });
-      scheduleCurrentMaterialSave();
     } catch (error) {
       console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? importSessionId}] Failed to import slides`, error);
       const firstDeckFile = acceptedFiles.find((file) => hasAcceptedPptxExtension(file.name));
@@ -4611,7 +4611,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       userName,
       surfaceModeRef.current,
     ).catch(console.error);
-    scheduleCurrentMaterialSave();
   }
 
   function restoreRedoSnapshot() {
@@ -4662,7 +4661,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       userName,
       surfaceModeRef.current,
     ).catch(console.error);
-    scheduleCurrentMaterialSave();
   }
 
   const handleSlideThumbnailClick = (event: React.MouseEvent<HTMLButtonElement>, pageId: string) => {
@@ -4726,7 +4724,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         items: [],
       }));
     savePageSwitch(classId, [freshPage], freshId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
-    scheduleCurrentMaterialSave();
       return;
     }
 
@@ -4754,7 +4751,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items: nextActivePage.items,
     }));
     savePageSwitch(classId, remaining, nextActivePage.id, nextActivePage.docContent, nextActivePage.items, userId, userName, surfaceModeRef.current).catch(console.error);
-    scheduleCurrentMaterialSave();
   };
 
   const switchPage = (pageId: string) => {
@@ -4818,7 +4814,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items: [],
     }));
     savePageSwitch(classId, updated, newId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
-    scheduleCurrentMaterialSave();
   };
 
   const deletePage = (pageId: string) => {
@@ -4852,7 +4847,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         items: nextPage.items,
       }));
       savePageSwitch(classId, remaining, nextPage.id, nextPage.docContent, nextPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
-      scheduleCurrentMaterialSave();
     } else {
       const currentDoc = getCurrentSerializedDocHtml();
       updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
@@ -4863,7 +4857,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         items,
       }));
       savePageSwitch(classId, remaining, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
-      scheduleCurrentMaterialSave();
     }
   };
 
@@ -4881,7 +4874,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
-    scheduleCurrentMaterialSave();
   };
 
   const duplicatePage = (pageId: string) => {
@@ -4913,7 +4905,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
-    scheduleCurrentMaterialSave();
   };
 
   const reorderPage = (draggedPageId: string, targetPageId: string) => {
@@ -4940,7 +4931,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, reordered, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
-    scheduleCurrentMaterialSave();
   };
 
   const updateActiveSlideBackground = (backgroundColor: string) => {
@@ -4959,7 +4949,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items,
     }));
     savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
-    scheduleCurrentMaterialSave();
   };
 
   const toggleSurfaceMode = useCallback(() => {
@@ -4983,7 +4972,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       userName,
       surfaceModeRef.current,
     ).catch(console.error);
-    scheduleCurrentMaterialSave();
     const nextMode: WorkspaceSurfaceMode = surfaceModeRef.current === 'slides' ? 'document' : 'slides';
     surfaceModeRef.current = nextMode;
     setSurfaceMode(nextMode);
@@ -5816,6 +5804,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       className={`group flex h-full w-full flex-col overflow-hidden ${presentationMode ? 'fixed inset-0 z-[12000] bg-slate-950' : 'bg-slate-100'}`}
       style={{ fontFamily: 'Arial, sans-serif' }}
     >
+    <div className="flex h-full w-full flex-col overflow-hidden bg-slate-100" style={{ fontFamily: 'Arial, sans-serif' }}>
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
       {!presentationMode && (
@@ -6162,7 +6151,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 items: [],
               }));
               savePageSwitch(classId, updated, activePageIdRef.current, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
-              scheduleCurrentMaterialSave();
             }}
             className="w-7 h-7 rounded flex items-center justify-center hover:bg-red-50 text-red-500 border border-red-200 transition"
             title={surfaceLabels.clearPage}
@@ -6837,4 +6825,3 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     </div>
   );
 };
-
