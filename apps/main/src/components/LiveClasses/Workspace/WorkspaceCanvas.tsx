@@ -3309,11 +3309,21 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         normalizeExecCommandFontSize(floatingEl, size);
         const html = serializeWorkspaceEditableHtml(floatingEl);
         setItems((prev) => {
-          const next = prev.map((it) =>
-            it.id === floatingId
-              ? { ...it, content: html, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName }
-              : it,
-          );
+          const next = prev.map((it) => {
+            if (it.id !== floatingId) return it;
+            // CORRIGIDO: Salvar fontSize em item.styles além do content
+            return {
+              ...it,
+              content: html,
+              styles: {
+                ...(it.styles ?? {}),
+                fontSize: size,
+              },
+              updatedAt: Date.now(),
+              updatedBy: userId,
+              updatedByName: userName,
+            };
+          });
           scheduleItemsSave(next, { dirtyItemIds: [floatingId] });
           return next;
         });
@@ -3362,6 +3372,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       applyRevealStateToElement(root, presentationRevealStep, presentationMode);
       if (activeFloatingIdRef.current && activeFloatingElRef.current) {
         const floatingId = activeFloatingIdRef.current;
+        lastItemEditRef.current = Date.now();
         const html = serializeWorkspaceEditableHtml(activeFloatingElRef.current);
         setItems((prev) => {
           const next = prev.map((it) =>
@@ -3373,11 +3384,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           return next;
         });
       } else if (docRef.current) {
+        lastDocInputRef.current = Date.now();
         const html = serializeWorkspaceEditableHtml(docRef.current);
-        setDocHtml(html);
-        requestAnimationFrame(() => {
-          applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
-        });
+        hydrateDocEditorHtml(html);
         scheduleDocSave(html);
       }
     } catch (error) {
@@ -3548,6 +3557,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }
     activeFloatingIdRef.current = itemId;
     activeFloatingElRef.current = el;
+    // CORRIGIDO: Sincronizar fontSize com o tamanho do elemento selecionado
+    if (item.styles?.fontSize) {
+      setFontSize(item.styles.fontSize);
+    } else {
+      setFontSize(16); // Padrão se não houver fontSize definido
+    }
   };
 
   const handleFloatingBlur = (itemId: string) => {
