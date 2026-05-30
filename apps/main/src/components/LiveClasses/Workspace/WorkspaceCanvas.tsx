@@ -1654,27 +1654,14 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       getEmailLocalPart(resolvedOwnerEmail) === getEmailLocalPart(viewerContext.userEmail)
     );
   const canBypassReadonlyForBox = canManageThisBox || isOwner;
-  const canEditThisContent = (canManageThisBox || isOwner) && (!readOnly || canBypassReadonlyForBox);
   const canRenameThisBox = canRenameBox(viewerContext, item);
   const canAssignThisBox = canAssignBoxOwner(viewerContext, item);
-  const canMoveThisBox = canMoveBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
-  const canResizeThisBox = canResizeBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
   const isOwnedByOther = Boolean(
     !canManageThisBox &&
       (
         (item.ownerUserId && item.ownerUserId !== currentUserId) ||
         (!item.ownerUserId && resolvedOwnerEmail && currentUserEmail && normalizeEmail(resolvedOwnerEmail) !== normalizeEmail(currentUserEmail))
       ),
-
-  // Simplified permissions for stability
-  const isTeacher = viewerContext.isTeacherView;
-  const canEditThisContent = isTeacher || !readOnly;
-  const canMoveThisBox = isTeacher || !readOnly;
-  const canResizeThisBox = isTeacher || !readOnly;
-  const isLockedByOther = Boolean(
-    item.editingByUserId &&
-    item.editingByUserId !== currentUserId &&
-    Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS
   );
 
   const [blockStyle, setBlockStyle] = useState<React.CSSProperties>({});
@@ -1688,6 +1675,11 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   const canEditThisContent = isTeacher || !readOnly;
   const canMoveThisBox = isTeacher || !readOnly;
   const canResizeThisBox = isTeacher || !readOnly;
+  const isLockedByOther = Boolean(
+    item.editingByUserId &&
+    item.editingByUserId !== currentUserId &&
+    Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS
+  );
 
   const ownerBadgeLabel =
     item.ownerName?.trim() ||
@@ -1842,9 +1834,6 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         top: `${(item.y / 100) * height}px`,
         width: `${(item.w / 100) * width}px`,
         height: `${(item.h / 100) * height}px`,
-        zIndex: isSelected ? 50 : 10,
-        pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
-        zIndex: isSelected ? 100 : 1,
         zIndex: isSelected ? 100 : 10,
         pointerEvents: readOnly && !isTeacher ? 'none' : 'auto',
         boxSizing: 'border-box',
