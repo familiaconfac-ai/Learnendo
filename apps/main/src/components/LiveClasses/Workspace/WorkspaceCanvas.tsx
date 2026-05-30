@@ -1683,6 +1683,12 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   const [assigningOwner, setAssigningOwner] = useState(false);
   const [ownerQuery, setOwnerQuery] = useState('');
 
+  // Simplified permissions for stability
+  const isTeacher = viewerContext.isTeacherView;
+  const canEditThisContent = isTeacher || !readOnly;
+  const canMoveThisBox = isTeacher || !readOnly;
+  const canResizeThisBox = isTeacher || !readOnly;
+
   const ownerBadgeLabel =
     item.ownerName?.trim() ||
     resolvedOwner?.label?.trim() ||
@@ -1839,6 +1845,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         zIndex: isSelected ? 50 : 10,
         pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
         zIndex: isSelected ? 100 : 1,
+        zIndex: isSelected ? 100 : 10,
         pointerEvents: readOnly && !isTeacher ? 'none' : 'auto',
         boxSizing: 'border-box',
         border: isSlidesMode && item.type === 'text'
@@ -2101,6 +2108,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           fontFamily: 'Arial, sans-serif',
           fontSize: `${item.styles?.fontSize ?? 14}px`,
           color: item.styles?.color ?? '#1e293b',
+          cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
           paddingTop: isSlideContentBox ? '0.75rem' : isSelected ? '2.1rem' : '0.5rem',
           cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
           paddingTop: isSelected ? '1.5rem' : '0.5rem',
