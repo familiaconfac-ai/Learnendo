@@ -1670,17 +1670,6 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   const [assigningOwner, setAssigningOwner] = useState(false);
   const [ownerQuery, setOwnerQuery] = useState('');
 
-  // Simplified permissions for stability
-  const isTeacher = viewerContext.isTeacherView;
-  const canEditThisContent = isTeacher || !readOnly;
-  const canMoveThisBox = isTeacher || !readOnly;
-  const canResizeThisBox = isTeacher || !readOnly;
-  const isLockedByOther = Boolean(
-    item.editingByUserId &&
-    item.editingByUserId !== currentUserId &&
-    Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS
-  );
-
   const ownerBadgeLabel =
     item.ownerName?.trim() ||
     resolvedOwner?.label?.trim() ||
@@ -3629,13 +3618,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const requestItemEdit = (itemId: string, el: HTMLElement) => {
     const item = items.find((it) => it.id === itemId);
     if (!item || item.type !== 'text') return;
-    const canEditThisItem = canEditResolvedBoxContent(item);
-    if (!canEditThisItem || (effectiveReadOnly && !canEditThisItem) || isItemLockedByOther(item)) {
     if (effectiveReadOnly || isItemLockedByOther(item) || !acquireItemLock(item)) {
-      el.blur();
-      return;
-    }
-    if (!acquireItemLock(item)) {
       el.blur();
       return;
     }
