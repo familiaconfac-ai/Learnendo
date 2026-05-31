@@ -58,7 +58,6 @@ import { speak } from '../../../services/ttsService';
 import { fetchPhoneticForPhrase, translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
 import { subscribeUserAccounts, type UserAccountProfile } from '../../../services/userRoles';
 import { MyVocabularyPage } from '../../MyVocabularyPage';
-import { learnendoLogo } from '../../../assets/branding';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
 
 // -- Helpers -------------------------------------------------------------------
@@ -400,6 +399,19 @@ function getWordHitAtPoint(x: number, y: number): VocabState | null {
     text,
     rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right },
   };
+}
+
+function stripEmbeddedImagesFromHtml(html: string): { cleanedHtml: string; imageUrls: string[] } {
+  if (typeof document === 'undefined' || !html) {
+    return { cleanedHtml: html, imageUrls: [] };
+  }
+  const wrapper = document.createElement('div');
+  wrapper.innerHTML = html;
+  const imageUrls = Array.from(wrapper.querySelectorAll('img'))
+    .map((img) => img.getAttribute('src')?.trim() ?? '')
+    .filter(Boolean);
+  wrapper.querySelectorAll('img').forEach((img) => img.remove());
+  return { cleanedHtml: wrapper.innerHTML, imageUrls };
 }
 
 const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
@@ -2307,7 +2319,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     setActivePageId(resolvedState.currentPageId);
     setDocHtml(resolvedState.docContent);
     if (docRef.current) docRef.current.innerHTML = resolvedState.docContent;
-    setItems(resolvedState.items.map(normalizeItemScope));
+    const scopedActiveItems = resolvedState.items.map(normalizeItemScope);
+    itemsRef.current = scopedActiveItems;
+    setItems(scopedActiveItems);
     setSelectedId(null);
   }, [createDefaultSurfaceState, normalizeItemScope]);
   const syncActivePageDocRef = useCallback((html: string) => {
@@ -3164,16 +3178,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const onDocInput = () => {
     if (!docRef.current) return;
     lastDocInputRef.current = Date.now();
-    const html = docRef.current.innerHTML;
-    setDocHtml(html);
-    scheduleDocSave(html);
+    sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });
   };
   const onDocBlur = () => {
     // On blur, flush any pending doc content immediately
     if (!docRef.current) return;
-    const html = docRef.current.innerHTML;
-    setDocHtml(html);
-    scheduleDocSave(html);
+    sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });
     if (saveDocDebounce.current) {
       clearTimeout(saveDocDebounce.current);
       saveDocDebounce.current = null;
@@ -3391,6 +3401,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           });
           return updatedItem;
         });
+        itemsRef.current = next;
         syncActivePageItemsRef(next);
         if (updatedItem) {
           scheduleSingleItemSave(updatedItem, options);
@@ -3406,6 +3417,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       captureUndoSnapshot();
       setItems((prev) => {
         const next = prev.filter((it) => it.id !== id);
+        itemsRef.current = next;
         scheduleItemsSave(next, { deletedItemIds: [id] });
         return next;
       });
@@ -3431,6 +3443,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       });
       setItems((prev) => {
         const next = [...prev, duplicatedItem];
+        itemsRef.current = next;
         scheduleItemsSave(next, { dirtyItemIds: [duplicatedItem.id] });
         return next;
       });
@@ -3540,6 +3553,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     });
     setItems((prev) => {
       const next = [...prev, newItem];
+      itemsRef.current = next;
       scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
       return next;
     });
@@ -3549,28 +3563,59 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const addTextBox = () => addBox('content');
   const addStudentBox = () => addBox('student');
 
+  const createImageWorkspaceItem = useCallback((imageUrl: string) => normalizeItemScope({
+    id: uid(),
+    type: 'image' as WorkspaceItemType,
+    x: 5,
+    y: 10,
+    w: 40,
+    h: 30,
+    imageUrl,
+    updatedAt: Date.now(),
+    updatedBy: userId,
+    updatedByName: userName,
+  }), [normalizeItemScope, userId, userName]);
+
   const insertImageItem = useCallback((imageUrl: string) => {
     if (effectiveReadOnly || readOnly) return;
     captureUndoSnapshot();
-    const newItem = normalizeItemScope({
-      id: uid(),
-      type: 'image' as WorkspaceItemType,
-      x: 5,
-      y: 10,
-      w: 40,
-      h: 30,
-      imageUrl,
-      updatedAt: Date.now(),
-      updatedBy: userId,
-      updatedByName: userName,
-    });
+    const newItem = createImageWorkspaceItem(imageUrl);
     setItems((prev) => {
       const next = [...prev, newItem];
+      itemsRef.current = next;
       scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
       return next;
     });
     setSelectedId(newItem.id);
-  }, [captureUndoSnapshot, effectiveReadOnly, normalizeItemScope, readOnly, scheduleItemsSave, userId, userName]);
+  }, [captureUndoSnapshot, createImageWorkspaceItem, effectiveReadOnly, readOnly, scheduleItemsSave]);
+
+  const sanitizeDocumentHtml = useCallback((rawHtml: string, options?: { persist?: boolean }) => {
+    const { cleanedHtml, imageUrls } = stripEmbeddedImagesFromHtml(rawHtml);
+
+    if (imageUrls.length > 0) {
+      const currentItems = itemsRef.current;
+      const missingUrls = imageUrls.filter((url) => !currentItems.some((item) => item.type === 'image' && (item.imageUrl === url || item.assetUrl === url)));
+      if (missingUrls.length > 0) {
+        const newItems = missingUrls.map((url) => createImageWorkspaceItem(url));
+        setItems((prev) => {
+          const next = [...prev, ...newItems];
+          itemsRef.current = next;
+          scheduleItemsSave(next, { dirtyItemIds: newItems.map((item) => item.id) });
+          return next;
+        });
+        setSelectedId((current) => current ?? newItems[newItems.length - 1]?.id ?? null);
+      }
+    }
+
+    if (docRef.current && docRef.current.innerHTML !== cleanedHtml) {
+      docRef.current.innerHTML = cleanedHtml;
+    }
+    setDocHtml(cleanedHtml);
+    if (options?.persist) {
+      scheduleDocSave(cleanedHtml);
+    }
+    return cleanedHtml;
+  }, [createImageWorkspaceItem, scheduleDocSave, scheduleItemsSave]);
 
   const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -3608,6 +3653,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     };
     reader.readAsDataURL(file);
   }, [effectiveReadOnly, insertImageItem, readOnly, viewerCanEditSharedDocument]);
+
+  useEffect(() => {
+    if (!docHtml || !/<img[\s>]/i.test(docHtml)) return;
+    sanitizeDocumentHtml(docHtml, { persist: true });
+  }, [docHtml, sanitizeDocumentHtml]);
 
   const buildImageSlidePage = useCallback((sourceName: string, imageUrl: string, pageNumber: number): WorkspacePage => ({
     id: uid(),
@@ -4345,6 +4395,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setActivePageId(activeRestoredPage.id);
     setDocHtml(activeRestoredPage.docContent);
     if (docRef.current) docRef.current.innerHTML = activeRestoredPage.docContent;
+    itemsRef.current = activeRestoredPage.items;
     setItems(activeRestoredPage.items);
     setSelectedId(null);
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4466,7 +4517,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(newPage.docContent);
     if (docRef.current) docRef.current.innerHTML = newPage.docContent;
-    setItems(newPage.items.map(normalizeItemScope));
+    const scopedNewPageItems = newPage.items.map(normalizeItemScope);
+    itemsRef.current = scopedNewPageItems;
+    setItems(scopedNewPageItems);
     setSelectedId(null);
     activePageIdRef.current = pageId;
     setActivePageId(pageId);
@@ -4495,6 +4548,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml('');
     if (docRef.current) docRef.current.innerHTML = '';
+    itemsRef.current = [];
     setItems([]);
     setSelectedId(null);
     activePageIdRef.current = newId;
@@ -4528,7 +4582,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(nextPage.docContent);
       if (docRef.current) docRef.current.innerHTML = nextPage.docContent;
-      setItems(nextPage.items.map(normalizeItemScope));
+      const scopedNextPageItems = nextPage.items.map(normalizeItemScope);
+      itemsRef.current = scopedNextPageItems;
+      setItems(scopedNextPageItems);
       setSelectedId(null);
       activePageIdRef.current = nextPage.id;
       setActivePageId(nextPage.id);
@@ -4580,7 +4636,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const source = flushed[idx];
     const copy: WorkspacePage = {
       id: uid(),
-      name: `${source.name} (cï¿½pia)`,
+      name: `${source.name} (copia)`,
       backgroundColor: source.backgroundColor ?? '#ffffff',
       docContent: source.docContent,
       items: source.items.map((it) => ({ ...it, id: uid() })),
@@ -5600,7 +5656,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           title={wsl.clickTranslator}
           aria-label={wsl.clickTranslator}
         >
-          <img src={learnendoLogo} alt="" className="h-5 w-5 object-contain" />
+          <img src="/apple-touch-icon.png" alt="" className="h-6 w-6 object-contain" />
         </button>
 
         <button
@@ -5648,6 +5704,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               if (!window.confirm(wsl.confirmClear)) return;
               flushFloatingEditorBeforePageMutation();
               captureUndoSnapshot();
+              itemsRef.current = [];
               setItems([]); setSelectedId(null);
               if (docRef.current) docRef.current.innerHTML = '';
               setDocHtml('');
