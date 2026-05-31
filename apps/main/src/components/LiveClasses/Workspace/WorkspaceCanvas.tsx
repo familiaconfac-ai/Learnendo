@@ -58,6 +58,7 @@ import { speak } from '../../../services/ttsService';
 import { fetchPhoneticForPhrase, translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
 import { subscribeUserAccounts, type UserAccountProfile } from '../../../services/userRoles';
 import { MyVocabularyPage } from '../../MyVocabularyPage';
+import { learnendoLogoTransparent } from '../../../assets/branding';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
 
 // -- Helpers -------------------------------------------------------------------
@@ -322,6 +323,85 @@ function buildSvgDataUrl(markup: string): string {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(markup)}`;
 }
 
+function getCaretRangeAtPoint(x: number, y: number): Range | null {
+  if (typeof document === 'undefined') return null;
+  if (typeof document.caretRangeFromPoint === 'function') {
+    return document.caretRangeFromPoint(x, y);
+  }
+  if (typeof document.caretPositionFromPoint === 'function') {
+    const position = document.caretPositionFromPoint(x, y);
+    if (!position) return null;
+    const range = document.createRange();
+    range.setStart(position.offsetNode, position.offset);
+    range.collapse(true);
+    return range;
+  }
+  return null;
+}
+
+function isWordCharacter(char: string): boolean {
+  return /[\p{L}\p{N}'’-]/u.test(char);
+}
+
+function resolveTextNodeFromCaret(range: Range): { node: Text; offset: number } | null {
+  const { startContainer, startOffset } = range;
+  if (startContainer.nodeType === Node.TEXT_NODE) {
+    return { node: startContainer as Text, offset: startOffset };
+  }
+  if (startContainer.nodeType !== Node.ELEMENT_NODE) return null;
+
+  const element = startContainer as Element;
+  const childAtOffset = element.childNodes[startOffset] ?? element.childNodes[Math.max(0, startOffset - 1)];
+  if (childAtOffset?.nodeType === Node.TEXT_NODE) {
+    const textNode = childAtOffset as Text;
+    const offset = childAtOffset === element.childNodes[startOffset]
+      ? 0
+      : (textNode.textContent?.length ?? 0);
+    return { node: textNode, offset };
+  }
+
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  const firstText = walker.nextNode();
+  return firstText ? { node: firstText as Text, offset: 0 } : null;
+}
+
+function getWordHitAtPoint(x: number, y: number): VocabState | null {
+  const caretRange = getCaretRangeAtPoint(x, y);
+  if (!caretRange) return null;
+  const resolved = resolveTextNodeFromCaret(caretRange);
+  if (!resolved) return null;
+
+  const { node } = resolved;
+  const source = node.textContent ?? '';
+  if (!source.trim()) return null;
+
+  let index = clamp(resolved.offset, 0, source.length);
+  if (index === source.length && index > 0) index -= 1;
+  if (!isWordCharacter(source[index] ?? '') && index > 0 && isWordCharacter(source[index - 1] ?? '')) {
+    index -= 1;
+  }
+  if (!isWordCharacter(source[index] ?? '')) return null;
+
+  let start = index;
+  let end = index + 1;
+  while (start > 0 && isWordCharacter(source[start - 1])) start -= 1;
+  while (end < source.length && isWordCharacter(source[end])) end += 1;
+
+  const text = source.slice(start, end).trim();
+  if (!text || text.length > 60) return null;
+
+  const range = document.createRange();
+  range.setStart(node, start);
+  range.setEnd(node, end);
+  const rect = range.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return null;
+
+  return {
+    text,
+    rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right },
+  };
+}
+
 const WORKSPACE_ITEMS_SYNC_DEBOUNCE_MS = 150;
 const WORKSPACE_DOC_SYNC_DEBOUNCE_MS = 150;
 
@@ -427,6 +507,8 @@ interface WsLabels {
   errorSave: (msg: string) => string;
   errorOpen: string;
   vocab: string;
+  clickTranslator: string;
+  savedVocab: string;
 }
 
 interface SurfaceModeLabels {
@@ -602,6 +684,8 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Erro ao salvar material: ${msg}`,
     errorOpen: 'Erro ao abrir material. Tente novamente.',
     vocab: 'Vocabulário',
+    clickTranslator: 'Tradutor por clique',
+    savedVocab: 'Flashcards salvos',
   },
   en: {
     textSection: 'Text', bgSection: 'Background', colorBtn: 'Text and background color',
@@ -652,6 +736,8 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Error saving material: ${msg}`,
     errorOpen: 'Error opening material. Please try again.',
     vocab: 'Vocabulary',
+    clickTranslator: 'Click translator',
+    savedVocab: 'Saved flashcards',
   },
   es: {
     textSection: 'Texto', bgSection: 'Fondo', colorBtn: 'Color de texto y fondo',
@@ -702,6 +788,8 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Error al guardar material: ${msg}`,
     errorOpen: 'Error al abrir material. Inténtalo de nuevo.',
     vocab: 'Vocabulario',
+    clickTranslator: 'Traductor por clic',
+    savedVocab: 'Tarjetas guardadas',
   },
 };
 
@@ -2505,6 +2593,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
   const [showVocabModal, setShowVocabModal] = useState(false);
+  const [clickTranslatorMode, setClickTranslatorMode] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
@@ -4713,30 +4802,29 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
    * is NOT inside the toolbar (so bold/italic clicks don't trigger it).
    */
   const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
-    // Ignore clicks that originated on toolbar buttons
     if (toolbarRef.current?.contains(e.target as Node)) return;
 
-    // Small delay so browser has time to settle the selection after a click
     setTimeout(() => {
       const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-      const text = sel.toString().trim();
-      // Ignore empty, whitespace-only, or excessively long selections
-      if (!text || text.length > 60) return;
-      // Ignore selections that include newlines (multi-paragraph grabs)
-      if (/[\r\n]/.test(text)) return;
+      const text = sel?.toString().trim() ?? '';
+      if (text && text.length <= 60 && !/[\r\n]/.test(text) && sel && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        if (rect.width !== 0 || rect.height !== 0) {
+          setVocabPopup({
+            text,
+            rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right },
+          });
+          return;
+        }
+      }
 
-      const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      // rect is zero when the selection is in a non-rendered node ï¿½ ignore
-      if (rect.width === 0 && rect.height === 0) return;
-
-      setVocabPopup({
-        text,
-        rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right },
-      });
+      if (!clickTranslatorMode) return;
+      const hit = getWordHitAtPoint(e.clientX, e.clientY);
+      if (!hit) return;
+      setVocabPopup(hit);
     }, 80);
-  }, []);
+  }, [clickTranslatorMode]);
 
   const visibleItems = useMemo(() => {
     if (isSlidesMode) {
@@ -5361,10 +5449,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <button
               onMouseDown={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
               disabled={toolbarDisabled}
-              className="flex h-7 items-center justify-center rounded border border-amber-200 px-2 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
+              className="flex h-7 w-7 items-center justify-center rounded border border-amber-200 text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
               title={wsl.revealOnClick}
+              aria-label={wsl.revealOnClick}
             >
-              Click
+              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <path d="M7.4 9.2V4.9a1.1 1.1 0 012.2 0v2.7" />
+                <path d="M9.6 7.4a1.1 1.1 0 112.2 0v1.2" />
+                <path d="M11.8 7.9a1.1 1.1 0 112.2 0v1.4" />
+                <path d="M14 8.9a1.1 1.1 0 112.2 0v3.2c0 2.6-1.9 4.7-4.2 4.7H9.7c-1.6 0-2.4-.9-3-1.9L5 11.7a1 1 0 011.7-1l.7 1.1V9.2Z" />
+              </svg>
             </button>
           )}
         </div>
@@ -5461,13 +5555,32 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div className="flex-1" />
 
         <button
+          type="button"
           onClick={() => {
             setVocabPopup(null);
+            setShowVocabModal(false);
+            setClickTranslatorMode((current) => !current);
+          }}
+          className={`w-7 h-7 rounded flex items-center justify-center border transition ${
+            clickTranslatorMode
+              ? 'border-emerald-300 bg-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.18)]'
+              : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+          }`}
+          title={wsl.clickTranslator}
+          aria-label={wsl.clickTranslator}
+        >
+          <img src={learnendoLogoTransparent} alt="" className="h-4 w-4 object-contain" />
+        </button>
+
+        <button
+          onClick={() => {
+            setVocabPopup(null);
+            setClickTranslatorMode(false);
             setShowVocabModal(true);
           }}
           className="w-7 h-7 rounded flex items-center justify-center hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition"
-          title={wsl.vocab}
-          aria-label={wsl.vocab}
+          title={wsl.savedVocab}
+          aria-label={wsl.savedVocab}
         >
           <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20">
             <rect x="3" y="2" width="10" height="14" rx="1.5"/>
