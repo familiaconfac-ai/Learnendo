@@ -195,7 +195,9 @@ const mapMessage = (id: string, data: Record<string, any>): LiveClassMessage => 
 });
 
 export function getLiveClassMeetLink(liveClass: Pick<LiveClass, 'meetUrl' | 'meetingLink'>): string {
-  return (liveClass.meetUrl ?? liveClass.meetingLink ?? '').trim();
+  const backupMeetUrl = liveClass.meetUrl?.trim() ?? '';
+  const fixedMeetLink = liveClass.meetingLink?.trim() ?? '';
+  return backupMeetUrl || fixedMeetLink;
 }
 
 export interface LiveClassViewer {
