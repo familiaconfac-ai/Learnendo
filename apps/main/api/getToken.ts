@@ -19,10 +19,13 @@ interface TokenRequestBody {
 }
 
 const requiredLiveKitEnvKeys = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] as const;
+const defaultTokenTtlSeconds = 6 * 60 * 60;
+const defaultTokenTtlLabel = '6h';
 
 interface LiveKitDiagnostics {
   apiKeyConfigured: boolean;
   apiSecretConfigured: boolean;
+  apiKeyPrefix: string;
   apiKeySuffix: string;
   url: string;
   urlHost: string;
@@ -69,6 +72,11 @@ function getKeySuffix(value?: string) {
   return value.slice(-4);
 }
 
+function getKeyPrefix(value?: string) {
+  if (!value) return '';
+  return value.slice(0, 4);
+}
+
 function buildDiagnostics(wsUrl?: string, apiKey?: string, apiSecret?: string): LiveKitDiagnostics {
   let url = '';
   let urlHost = '';
@@ -86,10 +94,56 @@ function buildDiagnostics(wsUrl?: string, apiKey?: string, apiSecret?: string): 
   return {
     apiKeyConfigured: Boolean(apiKey),
     apiSecretConfigured: Boolean(apiSecret),
+    apiKeyPrefix: getKeyPrefix(apiKey),
     apiKeySuffix: getKeySuffix(apiKey),
     url,
     urlHost,
   };
+}
+
+function resolveRuntimeEnvironment() {
+  return {
+    deploymentTarget: process.env.VERCEL ? 'vercel' : 'local',
+    nodeEnv: process.env.NODE_ENV || 'unknown',
+    vercelEnv: process.env.VERCEL_ENV || 'local',
+  };
+}
+
+function safeParseMetadata(metadata: string) {
+  if (!metadata.trim()) {
+    return {
+      role: 'unknown',
+      classId: '',
+      userId: '',
+      metadataJsonValid: false,
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(metadata) as {
+      role?: string;
+      classId?: string;
+      userId?: string;
+    };
+
+    return {
+      role: parsed.role?.trim() || 'unknown',
+      classId: parsed.classId?.trim() || '',
+      userId: parsed.userId?.trim() || '',
+      metadataJsonValid: true,
+    };
+  } catch {
+    return {
+      role: 'unknown',
+      classId: '',
+      userId: '',
+      metadataJsonValid: false,
+    };
+  }
+}
+
+function getExpectedExpirationIso(nowMs: number, ttlSeconds: number) {
+  return new Date(nowMs + ttlSeconds * 1000).toISOString();
 }
 
 function validateLiveKitUrl(wsUrl: string): { ok: true; host: string } | { ok: false; reason: string } {
@@ -118,8 +172,13 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
   const apiSecret = process.env.LIVEKIT_API_SECRET?.trim();
   const missingEnv = requiredLiveKitEnvKeys.filter((key) => !process.env[key]?.trim());
   const diagnostics = buildDiagnostics(wsUrl, apiKey, apiSecret);
+  const runtimeEnvironment = resolveRuntimeEnvironment();
 
-  console.info('[LiveKit][getToken] environment diagnostics', diagnostics);
+  console.info('[LiveKit][getToken] environment diagnostics', {
+    timestamp: new Date().toISOString(),
+    ...runtimeEnvironment,
+    ...diagnostics,
+  });
 
   if (missingEnv.length > 0 || !wsUrl || !apiKey || !apiSecret) {
     sendJson(res, 500, {
@@ -149,6 +208,9 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     const username = rawBody.username?.trim() || '';
     const participantIdentity = rawBody.participantIdentity?.trim() || toSafeIdentity(username);
     const metadata = rawBody.metadata?.trim() || '';
+    const metadataDetails = safeParseMetadata(metadata);
+    const issuedAtMs = Date.now();
+    const expectedExpirationIso = getExpectedExpirationIso(issuedAtMs, defaultTokenTtlSeconds);
 
     if (!room || !username) {
       sendJson(res, 400, { error: 'room and username are required.' });
@@ -156,17 +218,27 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     }
 
     console.info('[LiveKit][getToken] issuing token', {
+      timestamp: new Date(issuedAtMs).toISOString(),
+      ...runtimeEnvironment,
       room,
       participantIdentity,
       participantName: username,
+      role: metadataDetails.role,
+      classId: metadataDetails.classId,
+      userId: metadataDetails.userId,
+      metadataJsonValid: metadataDetails.metadataJsonValid,
       urlHost: diagnostics.urlHost || urlValidation.host,
+      apiKeyPrefix: diagnostics.apiKeyPrefix,
       apiKeySuffix: diagnostics.apiKeySuffix,
+      ttl: defaultTokenTtlLabel,
+      expiresAt: expectedExpirationIso,
     });
 
     const token = new AccessToken(apiKey, apiSecret, {
       identity: participantIdentity,
       name: username,
       metadata,
+      ttl: defaultTokenTtlLabel,
     });
 
     token.addGrant({
@@ -177,8 +249,21 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       canPublishData: false,
     });
 
+    const jwt = await token.toJwt();
+    console.info('[LiveKit][getToken] token issued successfully', {
+      timestamp: new Date().toISOString(),
+      ...runtimeEnvironment,
+      room,
+      participantIdentity,
+      role: metadataDetails.role,
+      urlHost: diagnostics.urlHost || urlValidation.host,
+      ttl: defaultTokenTtlLabel,
+      expiresAt: expectedExpirationIso,
+      tokenLength: jwt.length,
+    });
+
     sendJson(res, 200, {
-      token: await token.toJwt(),
+      token: jwt,
       url: wsUrl,
       room,
       participantIdentity,
@@ -188,6 +273,8 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     const message = error instanceof Error ? error.message : 'Unable to create LiveKit token.';
     console.warn('[LiveKit][getToken] token generation failed', {
       message,
+      timestamp: new Date().toISOString(),
+      ...runtimeEnvironment,
       diagnostics,
     });
     sendJson(res, 500, { error: message });

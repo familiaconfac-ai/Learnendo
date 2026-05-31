@@ -34,6 +34,9 @@ const buildFallbackNameById = (ids: string[], names: string[]) => {
   return mapping;
 };
 
+const fieldCardClassName = 'rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 text-sm text-slate-200';
+const fieldLabelClassName = 'mb-2 block text-xs font-black uppercase tracking-wide text-slate-400';
+
 export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
   initialValue,
   onCancel,
@@ -157,13 +160,19 @@ export const LiveClassGroupForm: React.FC<LiveClassGroupFormProps> = ({
         placeholder="Group name"
       />
 
-      <input
-        type="url"
-        value={form.whatsappLink ?? ''}
-        onChange={(event) => setField('whatsappLink', event.target.value)}
-        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="WhatsApp group link (optional)"
-      />
+      <div className={fieldCardClassName}>
+        <label className={fieldLabelClassName} htmlFor="live-class-group-whatsapp-link">
+          WhatsApp Group Link
+        </label>
+        <input
+          id="live-class-group-whatsapp-link"
+          type="url"
+          value={form.whatsappLink ?? ''}
+          onChange={(event) => setField('whatsappLink', event.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
+          placeholder="Optional group link used as default when creating classes from this group"
+        />
+      </div>
 
       <StudentRosterPicker
         students={participants}

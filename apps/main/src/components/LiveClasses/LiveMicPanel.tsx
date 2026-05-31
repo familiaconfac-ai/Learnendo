@@ -9,6 +9,7 @@ import {
 } from 'livekit-client';
 import { LiveClassRole, LiveClassSession } from '../../types';
 import { requestLiveAudioCredentials } from '../../services/liveAudioService';
+import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../services/liveKitDebug';
 
 interface LiveMicPanelProps {
   classId: string;
@@ -392,7 +393,13 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     let requestedWsUrl = '';
 
     try {
-      const credentials = await requestLiveAudioCredentials({ classId, userId, userName, role });
+      const credentials = await requestLiveAudioCredentials({
+        classId,
+        userId,
+        userName,
+        role,
+        debugSource: 'LiveMicPanel',
+      });
       requestedWsUrl = credentials.wsUrl;
       console.info('[LiveMicPanel] joining live audio room', {
         classId,
@@ -405,6 +412,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
           }
         })(),
       });
+      const roomInstanceNumber = nextLiveKitDebugCounter('live_mic_panel_room_instance');
       const nextRoom = new Room({
         adaptiveStream: true,
         dynacast: true,
@@ -413,6 +421,12 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
           echoCancellation: true,
           noiseSuppression: true,
         },
+      });
+      logLiveKitDebug(`Room instance created #${roomInstanceNumber}`, {
+        source: 'LiveMicPanel',
+        role,
+        classId,
+        roomState: nextRoom.state,
       });
 
       nextRoom.on(RoomEvent.ConnectionStateChanged, (state) => {
@@ -505,6 +519,20 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
         setTransportError('Microphone or camera access failed. Check browser permission and device settings.');
       });
 
+      const connectAttemptNumber = nextLiveKitDebugCounter('live_mic_panel_connect_attempt');
+      logLiveKitDebug(`connect attempt #${connectAttemptNumber}`, {
+        source: 'LiveMicPanel',
+        role,
+        classId,
+        roomState: nextRoom.state,
+        wsUrlHost: (() => {
+          try {
+            return new URL(credentials.wsUrl).host;
+          } catch {
+            return credentials.wsUrl;
+          }
+        })(),
+      });
       await nextRoom.connect(credentials.wsUrl, credentials.token);
       await nextRoom.startAudio();
 

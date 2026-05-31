@@ -1,4 +1,5 @@
 import { auth } from './firebase';
+import { logLiveKitDebug, nextLiveKitDebugCounter } from './liveKitDebug';
 import { LiveClassRole } from '../types';
 
 export interface LiveAudioCredentials {
@@ -26,9 +27,11 @@ interface RequestLiveAudioCredentialsParams {
   userId: string;
   userName: string;
   role: LiveClassRole;
+  debugSource?: string;
 }
 
 const DEFAULT_TOKEN_ENDPOINT = '/api/getToken';
+const LIVEKIT_TAB_ID_STORAGE_KEY = 'learnendo_livekit_tab_id';
 
 export function getLiveAudioRoomName(classId: string): string {
   return `learnendo-live-${classId}`;
@@ -61,15 +64,49 @@ function validateReturnedLiveKitUrl(wsUrl: string) {
   }
 }
 
+function createLiveKitTabId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().slice(0, 8);
+  }
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function getLiveKitParticipantIdentity(role: LiveClassRole, userId: string) {
+  const baseIdentity = `${role}:${userId}`;
+  if (typeof window === 'undefined') return baseIdentity;
+  try {
+    const existing = window.sessionStorage.getItem(LIVEKIT_TAB_ID_STORAGE_KEY)?.trim();
+    const tabId = existing || createLiveKitTabId();
+    if (!existing) {
+      window.sessionStorage.setItem(LIVEKIT_TAB_ID_STORAGE_KEY, tabId);
+    }
+    return `${baseIdentity}:${tabId}`;
+  } catch {
+    return baseIdentity;
+  }
+}
+
 export async function requestLiveAudioCredentials({
   classId,
   userId,
   userName,
   role,
+  debugSource = 'unknown',
 }: RequestLiveAudioCredentialsParams): Promise<LiveAudioCredentials> {
   const endpoint = getLiveAudioTokenEndpoint();
   const idToken = await auth.currentUser?.getIdToken?.().catch(() => '');
   const roomName = getLiveAudioRoomName(classId);
+  const participantIdentity = getLiveKitParticipantIdentity(role, userId);
+  const tokenRequestCount = nextLiveKitDebugCounter('token_request');
+
+  logLiveKitDebug(`token request #${tokenRequestCount}`, {
+    source: debugSource,
+    classId,
+    role,
+    roomName,
+    participantIdentity,
+    endpoint,
+  });
 
   let response;
   try {
@@ -82,7 +119,7 @@ export async function requestLiveAudioCredentials({
       body: JSON.stringify({
         room: roomName,
         username: userName,
-        participantIdentity: `${role}:${userId}`,
+        participantIdentity,
         metadata: JSON.stringify({ classId, userId, role }),
       }),
     });
@@ -166,11 +203,27 @@ export async function requestLiveAudioCredentials({
 
   validateReturnedLiveKitUrl(wsUrl);
 
+  const tokenGeneratedCount = nextLiveKitDebugCounter('token_generated');
+  logLiveKitDebug(`token generated #${tokenGeneratedCount}`, {
+    source: debugSource,
+    classId,
+    role,
+    roomName: resolvedRoomName,
+    wsUrlHost: (() => {
+      try {
+        return new URL(wsUrl).host;
+      } catch {
+        return wsUrl;
+      }
+    })(),
+    participantIdentity: payload.participantIdentity ?? participantIdentity,
+  });
+
   return {
     token: payload.token,
     wsUrl,
     roomName: resolvedRoomName,
-    participantIdentity: payload.participantIdentity ?? `${role}:${userId}`,
+    participantIdentity: payload.participantIdentity ?? participantIdentity,
     participantName: payload.participantName ?? userName,
   };
 }

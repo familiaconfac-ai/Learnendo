@@ -32,9 +32,5 @@ const rootElement = document.getElementById("root");
 if (!rootElement) {
   console.error("Fatal Error: Root element '#root' not found in document.");
 } else {
-  ReactDOM.createRoot(rootElement).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>
-  );
+  ReactDOM.createRoot(rootElement).render(<App />);
 }

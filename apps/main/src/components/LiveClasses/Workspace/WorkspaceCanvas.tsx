@@ -5976,11 +5976,16 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 const isActive = page.id === activePageId;
                 const isSelectedSlide = selectedSlideIds.includes(page.id);
                 return (
-                  <button
+                  <div
                     key={page.id}
-                    type="button"
                     draggable
                     onClick={(event) => handleSlideThumbnailClick(event, page.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleSlideThumbnailClick(event as unknown as React.MouseEvent<HTMLElement>, page.id);
+                      }
+                    }}
                     onDragStart={(event) => {
                       event.dataTransfer.setData('text/slide-page-id', page.id);
                       event.dataTransfer.effectAllowed = 'move';
@@ -6001,6 +6006,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                         : 'opacity-95 hover:opacity-100'
                     }`}
                     title={page.name}
+                    role="button"
+                    tabIndex={0}
                   >
                     <div
                       className={`relative aspect-video overflow-hidden rounded-[14px] bg-white shadow-sm transition ${
@@ -6094,7 +6101,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                         </div>
                       ) : null}
                     </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>

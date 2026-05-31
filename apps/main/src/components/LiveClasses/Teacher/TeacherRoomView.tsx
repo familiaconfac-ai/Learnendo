@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  LiveKitRoom,
+  RoomContext,
   RoomAudioRenderer,
   VideoTrack,
   useLocalParticipant,
@@ -9,15 +9,24 @@ import {
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { isTrackReference } from '@livekit/components-core';
-import { Track, createLocalAudioTrack, createLocalVideoTrack } from 'livekit-client';
+import { ConnectionState, Room, RoomEvent, Track, createLocalAudioTrack, createLocalVideoTrack } from 'livekit-client';
 import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavigation';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
+import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../../services/liveKitDebug';
+import { getLiveClassMeetLink } from '../../../services/liveClassesService';
 import type { SavedBattleTemplate } from '../Battle/battleTypes';
 import type { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
+
+function openExternalLink(rawUrl: string) {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) return;
+  const target = /^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  window.open(target, '_blank', 'noopener,noreferrer');
+}
 
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
@@ -50,6 +59,8 @@ const TeacherStage: React.FC<{
   onOpenPreviewTab: (role: 'teacher' | 'student') => void;
   onOpenTrackTab: () => void;
   onExit: () => void;
+  ensureLiveRoomConnected: () => Promise<void>;
+  liveKitError: string | null;
 }> = ({
   liveClass,
   session,
@@ -63,7 +74,11 @@ const TeacherStage: React.FC<{
   onOpenPreviewTab,
   onOpenTrackTab,
   onExit,
+  ensureLiveRoomConnected,
+  liveKitError,
 }) => {
+  const meetLink = getLiveClassMeetLink(liveClass);
+  const whatsappLink = (liveClass.whatsappLink ?? '').trim();
   const participants = useParticipants();
   const remoteParticipants = participants.filter((participant) => !participant.isLocal);
   const cameraTrackRefs = useTracks([{ source: Track.Source.Camera, withPlaceholder: false }]).filter(
@@ -82,10 +97,7 @@ const TeacherStage: React.FC<{
   const [cameraBusy, setCameraBusy] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
-  const [cameraRecoveryAttempts, setCameraRecoveryAttempts] = useState(0);
   const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
-  const desiredCameraEnabledRef = useRef(true);
-  const desiredMicrophoneEnabledRef = useRef(true);
 
   useEffect(() => {
     setStudentEditingEnabled(session.studentEditingEnabled ?? true);
@@ -181,127 +193,141 @@ const TeacherStage: React.FC<{
     });
   }, [assignedRoster.length, liveClass.id, teacherEmail, teacherUid]);
 
+  const waitForLiveLocalTrack = useCallback(
+    async (source: Track.Source.Camera | Track.Source.Microphone, timeoutMs = 1500) => {
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < timeoutMs) {
+        const publication = localParticipant.getTrackPublication(source);
+        const mediaTrack = (publication?.track as any)?.mediaStreamTrack as
+          | MediaStreamTrack
+          | undefined;
+        if (publication?.track && mediaTrack?.readyState === 'live') {
+          return true;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 150));
+      }
+
+      const publication = localParticipant.getTrackPublication(source);
+      const mediaTrack = (publication?.track as any)?.mediaStreamTrack as
+        | MediaStreamTrack
+        | undefined;
+      return Boolean(publication?.track && mediaTrack?.readyState === 'live');
+    },
+    [localParticipant],
+  );
+
+  const republishLocalTrack = useCallback(
+    async (source: Track.Source.Camera | Track.Source.Microphone) => {
+      const publication = localParticipant.getTrackPublication(source);
+      if (publication?.track) {
+        await localParticipant.unpublishTrack(publication.track).catch(() => {});
+        try {
+          publication.track.stop();
+        } catch {
+          // ignore stale cleanup
+        }
+      }
+
+      const newTrack =
+        source === Track.Source.Camera
+          ? await createLocalVideoTrack()
+          : await createLocalAudioTrack();
+      await localParticipant.publishTrack(newTrack, { source });
+    },
+    [localParticipant],
+  );
+
   const toggleCameraWithRecovery = useCallback(async (forceEnable = !isCameraEnabled) => {
     if (cameraBusy) return;
 
-    desiredCameraEnabledRef.current = forceEnable;
     setCameraBusy(true);
     setCamError(null);
     try {
       if (!forceEnable) {
-        setCameraRecoveryAttempts(0);
         await localParticipant.setCameraEnabled(false);
+        console.info('[TeacherRoomView][media] toggleCamera disabled');
         return;
       }
 
-      setCameraRecoveryAttempts(0);
+      await ensureLiveRoomConnected();
+      console.info('[TeacherRoomView][media] toggleCamera start', {
+        forceEnable,
+        isCameraEnabled,
+        participantIdentity: localParticipant.identity,
+      });
       await localParticipant.setCameraEnabled(true);
-      const publication = localParticipant.getTrackPublication(Track.Source.Camera);
-      const mediaTrack = (publication?.track as any)?.mediaStreamTrack as
-        | MediaStreamTrack
-        | undefined;
-
-      if (!mediaTrack || mediaTrack.readyState !== 'live') {
-        if (publication?.track) {
-          await localParticipant.unpublishTrack(publication.track).catch(() => {});
-          try {
-            publication.track.stop();
-          } catch {
-            // ignore stale cleanup
-          }
+      const becameLive = await waitForLiveLocalTrack(Track.Source.Camera);
+      console.info('[TeacherRoomView][media] toggleCamera after setCameraEnabled', {
+        becameLive,
+      });
+      if (!becameLive) {
+        await republishLocalTrack(Track.Source.Camera);
+        const recovered = await waitForLiveLocalTrack(Track.Source.Camera);
+        console.info('[TeacherRoomView][media] toggleCamera after republish', {
+          recovered,
+        });
+        if (!recovered) {
+          throw new Error('camera-track-not-live');
         }
-
-        const newTrack = await createLocalVideoTrack();
-        await localParticipant.publishTrack(newTrack, { source: Track.Source.Camera });
       }
     } catch (error) {
       console.warn('[TeacherRoomView] camera toggle with recovery failed:', error);
-      setCamError('Camera indisponivel. Verifique as permissoes do navegador.');
+      console.error('[TeacherRoomView][media] toggleCamera error', error);
+      setCamError(
+        liveKitError
+          ? 'Camera indisponivel porque a sala de audio/video nao conectou.'
+          : 'Camera indisponivel. Verifique as permissoes do navegador.',
+      );
     } finally {
       setCameraBusy(false);
     }
-  }, [localParticipant]);
-
-  useEffect(() => {
-    if (!desiredCameraEnabledRef.current) {
-      setCameraRecoveryAttempts(0);
-      return undefined;
-    }
-    if (hasLiveLocalCamera) {
-      setCameraRecoveryAttempts(0);
-      return undefined;
-    }
-    if (cameraBusy || cameraRecoveryAttempts >= 5) return undefined;
-
-    const recoveryTimer = window.setTimeout(() => {
-      setCameraRecoveryAttempts((current) => current + 1);
-      void toggleCameraWithRecovery(true);
-    }, cameraRecoveryAttempts === 0 ? 300 : 1000);
-
-    return () => {
-      window.clearTimeout(recoveryTimer);
-    };
-  }, [cameraBusy, cameraRecoveryAttempts, hasLiveLocalCamera, toggleCameraWithRecovery]);
-
-  // Auto-enable camera on mount
-  useEffect(() => {
-    if (
-      desiredCameraEnabledRef.current &&
-      !isCameraEnabled &&
-      !cameraBusy &&
-      cameraRecoveryAttempts === 0
-    ) {
-      console.info('[TeacherRoomView] Auto-enabling camera on room initialization');
-      void toggleCameraWithRecovery(true);
-    }
-  }, [isCameraEnabled, cameraBusy, cameraRecoveryAttempts, toggleCameraWithRecovery]);
+  }, [cameraBusy, ensureLiveRoomConnected, isCameraEnabled, liveKitError, localParticipant, republishLocalTrack, waitForLiveLocalTrack]);
 
   const toggleMicrophoneWithRecovery = useCallback(async (forceEnable = !isMicrophoneEnabled) => {
     if (microphoneBusy) return;
 
-    desiredMicrophoneEnabledRef.current = forceEnable;
     setMicrophoneBusy(true);
     setMicError(null);
     try {
       if (!forceEnable) {
         await localParticipant.setMicrophoneEnabled(false);
+        console.info('[TeacherRoomView][media] toggleMicrophone disabled');
         return;
       }
 
+      await ensureLiveRoomConnected();
+      console.info('[TeacherRoomView][media] toggleMicrophone start', {
+        forceEnable,
+        isMicrophoneEnabled,
+        participantIdentity: localParticipant.identity,
+      });
       await localParticipant.setMicrophoneEnabled(true);
-      const publication = localParticipant.getTrackPublication(Track.Source.Microphone);
-      const mediaTrack = (publication?.track as any)?.mediaStreamTrack as
-        | MediaStreamTrack
-        | undefined;
-
-      if (!mediaTrack || mediaTrack.readyState !== 'live') {
-        if (publication?.track) {
-          await localParticipant.unpublishTrack(publication.track).catch(() => {});
-          try {
-            publication.track.stop();
-          } catch {
-            // ignore stale cleanup
-          }
+      const becameLive = await waitForLiveLocalTrack(Track.Source.Microphone);
+      console.info('[TeacherRoomView][media] toggleMicrophone after setMicrophoneEnabled', {
+        becameLive,
+      });
+      if (!becameLive) {
+        await republishLocalTrack(Track.Source.Microphone);
+        const recovered = await waitForLiveLocalTrack(Track.Source.Microphone);
+        console.info('[TeacherRoomView][media] toggleMicrophone after republish', {
+          recovered,
+        });
+        if (!recovered) {
+          throw new Error('microphone-track-not-live');
         }
-
-        const newTrack = await createLocalAudioTrack();
-        await localParticipant.publishTrack(newTrack, { source: Track.Source.Microphone });
       }
     } catch (error) {
       console.warn('[TeacherRoomView] microphone toggle with recovery failed:', error);
-      setMicError('Microfone indisponivel. Verifique as permissoes do navegador.');
+      console.error('[TeacherRoomView][media] toggleMicrophone error', error);
+      setMicError(
+        liveKitError
+          ? 'Microfone indisponivel porque a sala de audio/video nao conectou.'
+          : 'Microfone indisponivel. Verifique as permissoes do navegador.',
+      );
     } finally {
       setMicrophoneBusy(false);
     }
-  }, [localParticipant, isMicrophoneEnabled, microphoneBusy]);
-
-  // Auto-enable microphone on mount
-  useEffect(() => {
-    if (desiredMicrophoneEnabledRef.current && !isMicrophoneEnabled && !microphoneBusy) {
-      console.info('[TeacherRoomView] Auto-enabling microphone on room initialization');
-      void toggleMicrophoneWithRecovery(true);
-    }
-  }, [isMicrophoneEnabled, microphoneBusy, toggleMicrophoneWithRecovery]);
+  }, [ensureLiveRoomConnected, isMicrophoneEnabled, liveKitError, localParticipant, microphoneBusy, republishLocalTrack, waitForLiveLocalTrack]);
 
   const toggleScreenShare = async () => {
     try {
@@ -311,6 +337,7 @@ const TeacherStage: React.FC<{
         return;
       }
 
+      await ensureLiveRoomConnected();
       await localParticipant.setScreenShareEnabled(true, {
         audio: true,
         selfBrowserSurface: 'include',
@@ -570,6 +597,34 @@ const TeacherStage: React.FC<{
             </svg>
           </button>
 
+          <button
+            type="button"
+            onClick={() => openExternalLink(meetLink)}
+            disabled={!meetLink}
+            className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-black shadow transition ${
+              meetLink
+                ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
+                : 'bg-slate-800 text-slate-500'
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+            title={meetLink ? 'Abrir Meet em nova aba' : 'Configure o link fixo do Meet nesta aula'}
+          >
+            M
+          </button>
+
+          <button
+            type="button"
+            onClick={() => openExternalLink(whatsappLink)}
+            disabled={!whatsappLink}
+            className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-black shadow transition ${
+              whatsappLink
+                ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
+                : 'bg-slate-800 text-slate-500'
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+            title={whatsappLink ? 'Abrir WhatsApp em nova aba' : 'Configure o grupo do WhatsApp desta aula'}
+          >
+            W
+          </button>
+
           <BottomNavigationBattleButton
             isActive={false}
             onClick={onOpenBattleHub}
@@ -597,6 +652,165 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
   const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onOpenPreviewTab, onOpenTrackTab, onExit } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
+  const [liveKitError, setLiveKitError] = useState<string | null>(null);
+  const [roomInstance] = useState(
+    () => {
+      const instanceNumber = nextLiveKitDebugCounter('teacher_room_instance');
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+        audioCaptureDefaults: {
+          autoGainControl: true,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      });
+      logLiveKitDebug(`Room instance created #${instanceNumber}`, {
+        source: 'TeacherRoomView',
+        role: 'teacher',
+        classId: liveClass.id,
+        roomState: room.state,
+      });
+      return room;
+    },
+  );
+  const connectPromiseRef = useRef<Promise<void> | null>(null);
+  const lastConnectKeyRef = useRef<string | null>(null);
+
+  const ensureLiveRoomConnected = useCallback(async () => {
+    if (!token || !wsUrl) {
+      logLiveKitDebug('connect skipped: missing credentials', {
+        source: 'TeacherRoomView',
+        role: 'teacher',
+        classId: liveClass.id,
+        roomState: roomInstance.state,
+      });
+      throw new Error('livekit-credentials-missing');
+    }
+
+    const connectKey = `${liveClass.id}|teacher|${wsUrl}|${token}`;
+
+    if (roomInstance.state === ConnectionState.Connected && lastConnectKeyRef.current === connectKey) {
+      logLiveKitDebug('connect skipped: already connected', {
+        source: 'TeacherRoomView',
+        role: 'teacher',
+        classId: liveClass.id,
+        roomState: roomInstance.state,
+      });
+      await roomInstance.startAudio().catch(() => {});
+      setLiveKitError(null);
+      return;
+    }
+
+    if (connectPromiseRef.current) {
+      logLiveKitDebug('connect skipped: already connecting', {
+        source: 'TeacherRoomView',
+        role: 'teacher',
+        classId: liveClass.id,
+        roomState: roomInstance.state,
+      });
+      return connectPromiseRef.current;
+    }
+
+    if (
+      roomInstance.state === ConnectionState.Connecting ||
+      roomInstance.state === ConnectionState.Reconnecting ||
+      roomInstance.state === ConnectionState.SignalReconnecting
+    ) {
+      logLiveKitDebug('connect skipped: room state is mid-connection', {
+        source: 'TeacherRoomView',
+        role: 'teacher',
+        classId: liveClass.id,
+        roomState: roomInstance.state,
+      });
+      return;
+    }
+
+    const connectPromise = (async () => {
+      const attemptNumber = nextLiveKitDebugCounter('teacher_connect_attempt');
+      try {
+        if (roomInstance.state === ConnectionState.Connected && lastConnectKeyRef.current !== connectKey) {
+          logLiveKitDebug('connect reset: connected with a different key', {
+            source: 'TeacherRoomView',
+            role: 'teacher',
+            classId: liveClass.id,
+            roomState: roomInstance.state,
+          });
+          roomInstance.disconnect();
+        } else if (roomInstance.state !== ConnectionState.Disconnected) {
+          logLiveKitDebug('connect reset: disconnecting non-disconnected room before reconnect', {
+            source: 'TeacherRoomView',
+            role: 'teacher',
+            classId: liveClass.id,
+            roomState: roomInstance.state,
+          });
+          roomInstance.disconnect();
+        }
+        logLiveKitDebug(`connect attempt #${attemptNumber}`, {
+          source: 'TeacherRoomView',
+          role: 'teacher',
+          classId: liveClass.id,
+          roomState: roomInstance.state,
+          wsUrlHost: (() => {
+            try {
+              return new URL(wsUrl).host;
+            } catch {
+              return wsUrl;
+            }
+          })(),
+        });
+        console.info('[TeacherRoomView][LiveKitRoom] connecting manually', {
+          classId: liveClass.id,
+          wsUrl,
+        });
+        await roomInstance.connect(wsUrl, token);
+        await roomInstance.startAudio().catch(() => {});
+        lastConnectKeyRef.current = connectKey;
+        setLiveKitError(null);
+        logLiveKitDebug(`connect success #${attemptNumber}`, {
+          source: 'TeacherRoomView',
+          role: 'teacher',
+          classId: liveClass.id,
+          roomState: roomInstance.state,
+        });
+      } catch (error) {
+        console.error('[TeacherRoomView][LiveKitRoom] connect error', error);
+        setLiveKitError('Nao foi possivel conectar a sala de audio/video. Tente novamente em alguns segundos.');
+        logLiveKitDebug(`connect failed #${attemptNumber}`, {
+          source: 'TeacherRoomView',
+          role: 'teacher',
+          classId: liveClass.id,
+          roomState: roomInstance.state,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      } finally {
+        connectPromiseRef.current = null;
+      }
+    })();
+
+    connectPromiseRef.current = connectPromise;
+    return connectPromise;
+  }, [liveClass.id, roomInstance, token, wsUrl]);
+
+  useEffect(() => {
+    const handleConnected = () => {
+      setLiveKitError(null);
+    };
+    const handleDisconnected = () => {
+      if (roomInstance.state === ConnectionState.Disconnected) {
+        setLiveKitError('A conexao de audio/video caiu. Tente ligar a camera ou o microfone de novo.');
+      }
+    };
+
+    roomInstance.on(RoomEvent.Connected, handleConnected);
+    roomInstance.on(RoomEvent.Disconnected, handleDisconnected);
+
+    return () => {
+      roomInstance.off(RoomEvent.Connected, handleConnected);
+      roomInstance.off(RoomEvent.Disconnected, handleDisconnected);
+    };
+  }, [roomInstance]);
 
   useEffect(() => {
     const getCreds = async () => {
@@ -606,6 +820,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
           userId: user.uid,
           userName: user.displayName || 'Professor',
           role: 'teacher',
+          debugSource: 'TeacherRoomView',
         });
         setToken(creds.token);
         setWsUrl(creds.wsUrl);
@@ -617,6 +832,17 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
     void getCreds();
   }, [liveClass.id, user.displayName, user.uid]);
 
+  useEffect(() => {
+    if (!token || !wsUrl) return;
+    void ensureLiveRoomConnected().catch(() => {});
+  }, [ensureLiveRoomConnected, token, wsUrl]);
+
+  useEffect(() => {
+    return () => {
+      roomInstance.disconnect();
+    };
+  }, [roomInstance]);
+
   if (!token || !wsUrl) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-black">
@@ -626,22 +852,26 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
   }
 
   return (
-    <LiveKitRoom serverUrl={wsUrl} token={token} connect={true} video={true} audio={true}>
-      <RoomAudioRenderer />
-      <TeacherStage
-        liveClass={liveClass}
-        session={session}
-        assignedRoster={assignedRoster}
-        handleUpdateSession={handleUpdateSession}
-        teacherUid={user.uid}
-        teacherName={user.displayName || 'Professor'}
-        teacherEmail={user.email}
-        onOpenBattleHub={onOpenBattleHub}
-        onOpenBattleTemplate={onOpenBattleTemplate}
-        onOpenPreviewTab={onOpenPreviewTab}
-        onOpenTrackTab={onOpenTrackTab}
-        onExit={onExit}
-      />
-    </LiveKitRoom>
+    <div className="lk-room-container">
+      <RoomContext.Provider value={roomInstance}>
+        <RoomAudioRenderer />
+        <TeacherStage
+          liveClass={liveClass}
+          session={session}
+          assignedRoster={assignedRoster}
+          handleUpdateSession={handleUpdateSession}
+          teacherUid={user.uid}
+          teacherName={user.displayName || 'Professor'}
+          teacherEmail={user.email}
+          onOpenBattleHub={onOpenBattleHub}
+          onOpenBattleTemplate={onOpenBattleTemplate}
+          onOpenPreviewTab={onOpenPreviewTab}
+          onOpenTrackTab={onOpenTrackTab}
+          onExit={onExit}
+          ensureLiveRoomConnected={ensureLiveRoomConnected}
+          liveKitError={liveKitError}
+        />
+      </RoomContext.Provider>
+    </div>
   );
 };

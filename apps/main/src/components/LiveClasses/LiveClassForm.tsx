@@ -50,6 +50,9 @@ const buildFallbackNameById = (ids: string[], names: string[]) => {
   return mapping;
 };
 
+const fieldCardClassName = 'rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-3 text-sm text-slate-200';
+const fieldLabelClassName = 'mb-2 block text-xs font-black uppercase tracking-wide text-slate-400';
+
 export const LiveClassForm: React.FC<LiveClassFormProps> = ({
   initialValue,
   onCancel,
@@ -222,29 +225,53 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         />
       </div>
 
-      <input
-        type="url"
-        value={form.meetingLink}
-        onChange={(e) => setField('meetingLink', e.target.value)}
-        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="Google Meet link"
-      />
+      <div className={fieldCardClassName}>
+        <label className={fieldLabelClassName} htmlFor="live-class-meeting-link">
+          Fixed Meet Link
+        </label>
+        <input
+          id="live-class-meeting-link"
+          type="url"
+          value={form.meetingLink}
+          onChange={(e) => setField('meetingLink', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
+          placeholder="Paste the Google Meet link you always use for this class"
+        />
+        <p className="mt-2 text-xs text-slate-400">
+          This is the fixed Meet link used by the <span className="font-bold text-slate-200">Open Meet</span> button inside the class.
+        </p>
+      </div>
 
-      <input
-        type="url"
-        value={form.meetUrl ?? ''}
-        onChange={(e) => setField('meetUrl', e.target.value)}
-        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="Backup Meet URL (optional)"
-      />
+      <div className={fieldCardClassName}>
+        <label className={fieldLabelClassName} htmlFor="live-class-meet-backup-link">
+          Backup Meet URL
+        </label>
+        <input
+          id="live-class-meet-backup-link"
+          type="url"
+          value={form.meetUrl ?? ''}
+          onChange={(e) => setField('meetUrl', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
+          placeholder="Optional second Meet URL"
+        />
+        <p className="mt-2 text-xs text-slate-400">
+          Optional. If left empty, the main Meet link above is used automatically.
+        </p>
+      </div>
 
-      <input
-        type="url"
-        value={form.presentationUrl ?? ''}
-        onChange={(e) => setField('presentationUrl', e.target.value)}
-        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="Material link (Google Slides, Canva, PowerPoint Web, YouTube, PDF, image, video)"
-      />
+      <div className={fieldCardClassName}>
+        <label className={fieldLabelClassName} htmlFor="live-class-presentation-link">
+          Lesson Material Link
+        </label>
+        <input
+          id="live-class-presentation-link"
+          type="url"
+          value={form.presentationUrl ?? ''}
+          onChange={(e) => setField('presentationUrl', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
+          placeholder="Google Slides, Canva, PowerPoint Web, YouTube, PDF, image, video..."
+        />
+      </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2 text-sm text-slate-200">
@@ -322,13 +349,22 @@ export const LiveClassForm: React.FC<LiveClassFormProps> = ({
         placeholder="Assigned participant names (comma separated, optional)"
       />
 
-      <input
-        type="url"
-        value={form.whatsappLink ?? ''}
-        onChange={(e) => setField('whatsappLink', e.target.value)}
-        className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
-        placeholder="WhatsApp group link"
-      />
+      <div className={fieldCardClassName}>
+        <label className={fieldLabelClassName} htmlFor="live-class-whatsapp-link">
+          WhatsApp Group Link
+        </label>
+        <input
+          id="live-class-whatsapp-link"
+          type="url"
+          value={form.whatsappLink ?? ''}
+          onChange={(e) => setField('whatsappLink', e.target.value)}
+          className="w-full rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder:text-slate-400"
+          placeholder="Paste the WhatsApp group link for this class"
+        />
+        <p className="mt-2 text-xs text-slate-400">
+          This is the link used by the <span className="font-bold text-slate-200">Share on WhatsApp</span> button inside the class.
+        </p>
+      </div>
 
       <textarea
         value={form.description ?? ''}

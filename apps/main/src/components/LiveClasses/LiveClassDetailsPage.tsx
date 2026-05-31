@@ -2,7 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../types';
 import { isLivePresenceActive, subscribeLivePresence, subscribeLiveSession } from '../../services/liveSessionService';
-import { AssignedStudentDirectoryEntry, getLiveClassPresentationLink, resolveAssignedStudentRoster } from '../../services/liveClassesService';
+import {
+  AssignedStudentDirectoryEntry,
+  getLiveClassMeetLink,
+  getLiveClassPresentationLink,
+  resolveAssignedStudentRoster,
+} from '../../services/liveClassesService';
 import { LiveClassChat } from './LiveClassChat';
 import { TeacherLiveControlPanel } from './TeacherLiveControlPanel';
 import { BattlePracticeView } from './Battle/BattlePracticeView';
@@ -38,12 +43,6 @@ const openExternalLink = (rawUrl: string) => {
 const buildRoomShareLink = (classId: string) => {
   if (typeof window === 'undefined') return '';
   return `${window.location.origin}/live-class/${encodeURIComponent(classId)}`;
-};
-
-const buildWhatsappShareUrl = (liveClass: LiveClass) => {
-  const roomLink = buildRoomShareLink(liveClass.id);
-  const message = `Join "${liveClass.title}" on Learnendo: ${roomLink}`;
-  return `https://wa.me/?text=${encodeURIComponent(message)}`;
 };
 
 export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
@@ -94,9 +93,10 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
   }, [liveClass.id]);
 
   const presentationLink = useMemo(() => getLiveClassPresentationLink(liveClass), [liveClass]);
+  const meetLink = useMemo(() => getLiveClassMeetLink(liveClass), [liveClass]);
   const roomShareLink = useMemo(() => buildRoomShareLink(liveClass.id), [liveClass.id]);
-  const whatsappShareLink = useMemo(() => buildWhatsappShareUrl(liveClass), [liveClass]);
   const canOpenPresentation = useMemo(() => !!presentationLink, [presentationLink]);
+  const canOpenMeet = useMemo(() => !!meetLink, [meetLink]);
   const canOpenWhatsapp = useMemo(() => !!(liveClass.whatsappLink ?? '').trim(), [liveClass.whatsappLink]);
   const onlinePresence = useMemo(
     () => presence.filter((item) => isLivePresenceActive(item)),
@@ -161,6 +161,16 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
             Material: {presentationLink}
           </p>
         )}
+        {!meetLink && isTeacher ? (
+          <p className="mt-3 rounded-xl border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-xs font-semibold text-amber-100">
+            Open Meet is disabled because this class still has no fixed Meet link saved in Teacher Settings.
+          </p>
+        ) : null}
+        {!canOpenWhatsapp && isTeacher ? (
+          <p className="mt-3 rounded-xl border border-emerald-500/30 bg-emerald-950/20 px-3 py-2 text-xs font-semibold text-emerald-100">
+            Share on WhatsApp is disabled because this class still has no WhatsApp group link saved in Teacher Settings.
+          </p>
+        ) : null}
         {liveClass.isPrivate && !hasRoomAccess && (
           <p className="mt-3 rounded-xl border border-rose-500/40 bg-rose-950/40 px-3 py-2 text-xs font-semibold text-rose-200">
             Private class. You are not assigned to this room.
@@ -191,15 +201,15 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
 
           <button
             type="button"
-            onClick={() => openExternalLink(liveClass.whatsappLink ?? '')}
-            disabled={!canOpenWhatsapp}
+            onClick={() => openExternalLink(meetLink)}
+            disabled={!canOpenMeet}
             className={`rounded-xl px-3 py-2 text-center text-sm font-black ${
-              canOpenWhatsapp
+              canOpenMeet
                 ? 'bg-emerald-600 text-white shadow-[0_4px_0_0_#047857]'
                 : 'bg-slate-700 text-slate-400'
             }`}
           >
-            Share on Group
+            Open Meet
           </button>
 
           <button
@@ -212,7 +222,8 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
 
           <button
             type="button"
-            onClick={() => openExternalLink(whatsappShareLink)}
+            onClick={() => openExternalLink(liveClass.whatsappLink ?? '')}
+            disabled={!canOpenWhatsapp}
             className="rounded-xl bg-green-600 px-3 py-2 text-center text-sm font-black text-white shadow-[0_4px_0_0_#047857]"
           >
             Share on WhatsApp
