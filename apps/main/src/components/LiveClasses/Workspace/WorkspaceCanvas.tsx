@@ -15,7 +15,6 @@
 import React, {
   useState,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useCallback,
@@ -43,7 +42,6 @@ import {
 import { app } from '../../../services/firebase';
 import {
   saveWorkspaceAsMaterial,
-  updateWorkspaceMaterial,
   loadMaterialToWorkspace,
   getMaterialsByUser,
   deleteMaterialFromLibrary,
@@ -208,52 +206,8 @@ function buildDataUrlFromBytes(bytes: Uint8Array, mimeType: string): string {
   return `data:${mimeType};base64,${uint8ArrayToBase64(bytes)}`;
 }
 
-function buildObjectUrlFromBytes(bytes: Uint8Array, mimeType: string): string | null {
-  if (typeof URL === 'undefined' || typeof Blob === 'undefined') return null;
-  try {
-    return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
-  } catch {
-    return null;
-  }
-}
-
-function getImageBoxFit(naturalWidth: number, naturalHeight: number, maxWidth = 40, maxHeight = 30) {
-  const safeWidth = Math.max(naturalWidth || 1, 1);
-  const safeHeight = Math.max(naturalHeight || 1, 1);
-  const scale = Math.min(maxWidth / safeWidth, maxHeight / safeHeight, 1);
-  const width = clamp(safeWidth * scale, 8, maxWidth);
-  const height = clamp(safeHeight * scale, 8, maxHeight);
-  return { width, height };
-}
-
 function extractRevealStepsFromHtml(html: string): number[] {
   return [...html.matchAll(/data-reveal-step="(\d+)"/g)].map((match) => Number(match[1])).filter((value) => Number.isFinite(value));
-}
-
-function renumberRevealStepsInElement(root: HTMLElement | null, startAt = 1): number {
-  if (!root) return startAt - 1;
-  let nextStep = startAt;
-  root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
-    el.dataset.revealStep = String(nextStep);
-    nextStep += 1;
-  });
-  return nextStep - 1;
-}
-
-function stripRevealDecorations(root: HTMLElement | null) {
-  if (!root) return;
-  root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
-    el.style.transition = '';
-    el.style.pointerEvents = '';
-    el.style.display = '';
-    el.style.backgroundColor = '';
-    el.style.borderRadius = '';
-    el.style.boxShadow = '';
-    el.style.padding = '';
-    el.style.opacity = '';
-    el.style.color = '';
-    el.style.borderBottom = '';
-  });
 }
 
 function applyRevealStateToElement(root: HTMLElement | null, currentStep: number, presentationActive: boolean) {
@@ -261,57 +215,10 @@ function applyRevealStateToElement(root: HTMLElement | null, currentStep: number
   root.querySelectorAll<HTMLElement>('[data-reveal-step]').forEach((el) => {
     const revealStep = Number(el.dataset.revealStep ?? '0');
     const isVisible = !presentationActive || revealStep <= currentStep;
-    const descendants = Array.from(el.querySelectorAll<HTMLElement>('*'));
-    el.style.transition = 'opacity 180ms ease, color 180ms ease, border-color 180ms ease';
+    el.style.opacity = isVisible ? '1' : '0';
+    el.style.transition = 'opacity 180ms ease';
     el.style.pointerEvents = isVisible ? '' : 'none';
-    if (presentationActive) {
-      el.style.display = 'inline-block';
-      el.style.backgroundColor = 'transparent';
-      el.style.borderRadius = '0';
-      el.style.boxShadow = 'none';
-      el.style.padding = '0 0.05em';
-      if (isVisible) {
-        el.style.opacity = '1';
-        el.style.color = '';
-        (el.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = '';
-        el.style.borderBottom = '0 solid transparent';
-        descendants.forEach((child) => {
-          child.style.color = '';
-          (child.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = '';
-        });
-      } else {
-        el.style.opacity = '1';
-        el.style.color = 'transparent';
-        (el.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = 'transparent';
-        el.style.borderBottom = '0.12em solid rgba(148, 163, 184, 0.95)';
-        descendants.forEach((child) => {
-          child.style.color = 'transparent';
-          (child.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = 'transparent';
-        });
-      }
-    } else {
-      el.style.display = 'inline-block';
-      el.style.opacity = '1';
-      el.style.backgroundColor = 'transparent';
-      el.style.color = 'transparent';
-      (el.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = 'transparent';
-      el.style.borderBottom = '0.12em solid rgba(245, 158, 11, 0.95)';
-      el.style.borderRadius = '0';
-      el.style.boxShadow = 'none';
-      el.style.padding = '0 0.05em';
-      descendants.forEach((child) => {
-        child.style.color = 'transparent';
-        (child.style as CSSStyleDeclaration & { webkitTextFillColor?: string }).webkitTextFillColor = 'transparent';
-      });
-    }
   });
-}
-
-function serializeWorkspaceEditableHtml(root: HTMLElement | null): string {
-  if (!root) return '';
-  const clone = root.cloneNode(true) as HTMLElement;
-  stripRevealDecorations(clone);
-  return clone.innerHTML;
 }
 
 function extractRelationshipMap(xml: string, relTypeNeedle?: string): Map<string, string> {
@@ -520,11 +427,6 @@ interface WsLabels {
   errorSave: (msg: string) => string;
   errorOpen: string;
   vocab: string;
-  autosaveUnsaved: string;
-  autosaveSaving: string;
-  autosaveSaved: string;
-  autosaveError: string;
-  autosaveCurrentFile: string;
 }
 
 interface SurfaceModeLabels {
@@ -700,11 +602,6 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Erro ao salvar material: ${msg}`,
     errorOpen: 'Erro ao abrir material. Tente novamente.',
     vocab: 'Vocabulário',
-    autosaveUnsaved: 'Alterações não salvas',
-    autosaveSaving: 'Salvando...',
-    autosaveSaved: 'Salvo',
-    autosaveError: 'Erro ao salvar',
-    autosaveCurrentFile: 'Arquivo atual',
   },
   en: {
     textSection: 'Text', bgSection: 'Background', colorBtn: 'Text and background color',
@@ -755,11 +652,6 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Error saving material: ${msg}`,
     errorOpen: 'Error opening material. Please try again.',
     vocab: 'Vocabulary',
-    autosaveUnsaved: 'Unsaved changes',
-    autosaveSaving: 'Saving...',
-    autosaveSaved: 'Saved',
-    autosaveError: 'Save error',
-    autosaveCurrentFile: 'Current file',
   },
   es: {
     textSection: 'Texto', bgSection: 'Fondo', colorBtn: 'Color de texto y fondo',
@@ -810,11 +702,6 @@ const WS_LABELS: Record<'en' | 'pt' | 'es', WsLabels> = {
     errorSave: (msg) => `Error al guardar material: ${msg}`,
     errorOpen: 'Error al abrir material. Inténtalo de nuevo.',
     vocab: 'Vocabulario',
-    autosaveUnsaved: 'Cambios no guardados',
-    autosaveSaving: 'Guardando...',
-    autosaveSaved: 'Guardado',
-    autosaveError: 'Error al guardar',
-    autosaveCurrentFile: 'Archivo actual',
   },
 };
 
@@ -908,20 +795,6 @@ interface WorkspaceUndoSnapshot {
   docContent: string;
   items: WorkspaceItem[];
 }
-
-function cloneUndoSnapshot(snapshot: WorkspaceUndoSnapshot): WorkspaceUndoSnapshot {
-  return {
-    pages: snapshot.pages.map((page) => ({
-      ...page,
-      items: page.items.map((item) => ({ ...item })),
-    })),
-    currentPageId: snapshot.currentPageId,
-    docContent: snapshot.docContent,
-    items: snapshot.items.map((item) => ({ ...item })),
-  };
-}
-
-const UNDO_HISTORY_LIMIT = 50;
 
 interface WorkspaceViewerContext {
   classId: string;
@@ -1654,8 +1527,11 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       getEmailLocalPart(resolvedOwnerEmail) === getEmailLocalPart(viewerContext.userEmail)
     );
   const canBypassReadonlyForBox = canManageThisBox || isOwner;
+  const canEditThisContent = (canManageThisBox || isOwner) && (!readOnly || canBypassReadonlyForBox);
   const canRenameThisBox = canRenameBox(viewerContext, item);
   const canAssignThisBox = canAssignBoxOwner(viewerContext, item);
+  const canMoveThisBox = canMoveBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
+  const canResizeThisBox = canResizeBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
   const isOwnedByOther = Boolean(
     !canManageThisBox &&
       (
@@ -1809,7 +1685,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     autoResizeStudentBox();
   }, [autoResizeStudentBox, canEditThisContent, isLockedByOther, item.content, item.type]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     if (item.type !== 'text') return;
     applyRevealStateToElement(contentRef.current, presentationRevealStep, presentationMode);
   }, [item.type, item.content, presentationMode, presentationRevealStep]);
@@ -1823,8 +1699,8 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         top: `${(item.y / 100) * height}px`,
         width: `${(item.w / 100) * width}px`,
         height: `${(item.h / 100) * height}px`,
-        zIndex: isSelected ? 100 : 10,
-        pointerEvents: readOnly && !isTeacher ? 'none' : 'auto',
+        zIndex: isSelected ? 50 : 10,
+        pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
         boxSizing: 'border-box',
         border: isSlidesMode && item.type === 'text'
           ? (isSelected ? '2px dashed rgba(37,99,235,0.7)' : 'none')
@@ -2086,10 +1962,8 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           fontFamily: 'Arial, sans-serif',
           fontSize: `${item.styles?.fontSize ?? 14}px`,
           color: item.styles?.color ?? '#1e293b',
-          cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
           paddingTop: isSlideContentBox ? '0.75rem' : isSelected ? '2.1rem' : '0.5rem',
           cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
-          paddingTop: isSelected ? '1.5rem' : '0.5rem',
           wordBreak: 'break-word',
           opacity: isOwnedByOther ? 0.65 : isLockedByOther ? 0.85 : 1,
         }}
@@ -2220,9 +2094,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     };
   }, [slidePanelSize.width]);
   const updatePresentationMode = useCallback((nextValue: boolean) => {
-    if (nextValue) {
-      setPresentationRevealStep(0);
-    }
     setPresentationMode(nextValue);
     if (viewerCanManagePages) {
       saveWorkspacePresentationMode(classId, nextValue, userId, userName).catch(console.error);
@@ -2374,7 +2245,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ...current,
       pages: nextPages,
       currentPageId: activePageIdRef.current,
-      docContent: docRef.current ? serializeWorkspaceEditableHtml(docRef.current) : docHtml,
+      docContent: docRef.current?.innerHTML ?? docHtml,
       items: nextItems,
     }));
     if (shouldUpdateState) {
@@ -2398,19 +2269,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [deletingBattleTemplateId, setDeletingBattleTemplateId] = useState<string | null>(null);
   const [saveSinglePageId, setSaveSinglePageId] = useState<string | null>(null);
   const [openLibraryTab, setOpenLibraryTab] = useState<'materials' | BattleTemplateLanguage>('materials');
-  const [currentMaterialId, setCurrentMaterialId] = useState<string | null>(null);
-  const [currentMaterialTitle, setCurrentMaterialTitle] = useState('');
-  const [projectSaveStatus, setProjectSaveStatus] = useState<'idle' | 'unsaved' | 'saving' | 'saved' | 'error'>('idle');
-  const [projectSaveError, setProjectSaveError] = useState<string | null>(null);
-  const projectSaveLabel = projectSaveStatus === 'saving'
-    ? wsl.autosaveSaving
-    : projectSaveStatus === 'saved'
-      ? wsl.autosaveSaved
-      : projectSaveStatus === 'error'
-        ? wsl.autosaveError
-        : projectSaveStatus === 'unsaved'
-          ? wsl.autosaveUnsaved
-          : '';
   const battleTemplatesByLanguage = useMemo(() => {
     return BATTLE_LIBRARY_LANGUAGE_TABS.reduce<Record<BattleTemplateLanguage, StoredBattleTemplate[]>>(
       (accumulator, languageTab) => {
@@ -2430,20 +2288,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [battleTemplatesList]);
 
   useEffect(() => {
-    currentMaterialIdRef.current = currentMaterialId;
-  }, [currentMaterialId]);
-
-  useEffect(() => {
-    currentMaterialTitleRef.current = currentMaterialTitle;
-  }, [currentMaterialTitle]);
-
-  useEffect(() => {
-    if (currentMaterialId) return;
-    setProjectSaveStatus('idle');
-    setProjectSaveError(null);
-  }, [currentMaterialId]);
-
-  useEffect(() => {
     if (!isSlidesMode && presentationMode) {
       updatePresentationMode(false);
     }
@@ -2452,10 +2296,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
     if (!presentationMode) {
-      if (isSlidesMode && overflowRef.current && presentationScrollRestoreRef.current != null) {
-        overflowRef.current.scrollTop = presentationScrollRestoreRef.current;
-      }
-      presentationScrollRestoreRef.current = null;
       delete document.body.dataset.workspacePresentation;
       document.body.style.overflow = '';
       document.body.style.overscrollBehavior = '';
@@ -2465,10 +2305,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }
 
     document.body.dataset.workspacePresentation = 'true';
-    if (isSlidesMode && overflowRef.current) {
-      presentationScrollRestoreRef.current = overflowRef.current.scrollTop;
-      overflowRef.current.scrollTop = 0;
-    }
     const previousBodyOverflow = document.body.style.overflow;
     const previousBodyOverscroll = document.body.style.overscrollBehavior;
     const previousDocumentOverflow = document.documentElement.style.overflow;
@@ -2479,16 +2315,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     document.documentElement.style.overscrollBehavior = 'none';
     return () => {
       delete document.body.dataset.workspacePresentation;
-      if (isSlidesMode && overflowRef.current && presentationScrollRestoreRef.current != null) {
-        overflowRef.current.scrollTop = presentationScrollRestoreRef.current;
-      }
-      presentationScrollRestoreRef.current = null;
       document.body.style.overflow = previousBodyOverflow;
       document.body.style.overscrollBehavior = previousBodyOverscroll;
       document.documentElement.style.overflow = previousDocumentOverflow;
       document.documentElement.style.overscrollBehavior = previousDocumentOverscroll;
     };
-  }, [isSlidesMode, presentationMode]);
+  }, [presentationMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !presentationMode || !isSlidesMode) return undefined;
@@ -2540,22 +2372,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     onPresentationModeChange?.(presentationMode);
   }, [onPresentationModeChange, presentationMode]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
   }, [docHtml, presentationMode, presentationRevealStep]);
-
-  const hydrateDocEditorHtml = useCallback((nextDocContent: string, options?: { syncActivePage?: boolean }) => {
-    setDocHtml(nextDocContent);
-    if (docRef.current) {
-      if (docRef.current.innerHTML !== nextDocContent) {
-        docRef.current.innerHTML = nextDocContent;
-      }
-      applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
-    }
-    if (options?.syncActivePage !== false) {
-      syncActivePageDocRef(nextDocContent);
-    }
-  }, [presentationMode, presentationRevealStep, syncActivePageDocRef]);
 
   useEffect(() => {
     if (!isSlidesMode) {
@@ -2581,6 +2400,30 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (!targetPage) return;
     switchPage(targetPage.id);
   }, [isSlidesMode, pages]);
+
+  useEffect(() => {
+    if (!presentationMode) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        updatePresentationMode(false);
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        navigateSlides('next');
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        navigateSlides('previous');
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigateSlides, presentationMode, updatePresentationMode]);
+
   useEffect(() => {
     if (!openSlideMenuId) return undefined;
 
@@ -2662,15 +2505,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // -- Vocabulary popup state --------------------------------------------------
   const [vocabPopup, setVocabPopup] = useState<VocabState | null>(null);
   const [showVocabModal, setShowVocabModal] = useState(false);
-  const [vocabSelectionEnabled, setVocabSelectionEnabled] = useState(false);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   const fileRef = useRef<HTMLInputElement>(null);
   const slideImportRef = useRef<HTMLInputElement>(null);
   const overflowRef = useRef<HTMLDivElement>(null);
-  const presentationScrollRestoreRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
-  const slideFrameRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
   const savedSelectionRangeRef = useRef<Range | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -2693,11 +2533,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pages: WorkspacePage[];
     currentPageId: string;
   } | null>(null);
-  const projectAutosaveDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentMaterialIdRef = useRef<string | null>(null);
-  const currentMaterialTitleRef = useRef('');
-  const undoStackRef = useRef<WorkspaceUndoSnapshot[]>([]);
-  const redoStackRef = useRef<WorkspaceUndoSnapshot[]>([]);
+  const undoSnapshotRef = useRef<WorkspaceUndoSnapshot | null>(null);
   const itemsRef = useRef<WorkspaceItem[]>([]);
   const lastItemsSaveAtRef = useRef<number>(0);
   const lastSingleItemSaveAtRef = useRef<number>(0);
@@ -2718,7 +2554,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const ITEM_GUARD_MS = 1500;
   const dirtyItemTimestampsRef = useRef<Record<string, number>>({});
   const deletedItemTimestampsRef = useRef<Record<string, number>>({});
-  const localImportedPagesGuardRef = useRef<{ pageIds: string[]; expiresAt: number } | null>(null);
   const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
 
   useEffect(() => {
@@ -2764,7 +2599,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   );
 
   const getCanvasMetrics = useCallback(() => {
-    const canvas = isSlidesMode ? (slideFrameRef.current ?? canvasRef.current) : canvasRef.current;
+    const canvas = canvasRef.current;
     if (!canvas) {
       return { width: 1, height: 1 };
     }
@@ -2773,7 +2608,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       width: Math.max(canvas.offsetWidth, 1),
       height: Math.max(canvas.scrollHeight, canvas.offsetHeight, 1),
     };
-  }, [isSlidesMode]);
+  }, []);
 
   const pruneItemSyncGuards = useCallback((now = Date.now()) => {
     const maxAgeMs = ITEM_GUARD_MS * 4;
@@ -2941,23 +2776,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           updatedByName: data?.updatedByName ?? null,
         });
       }
-      const importGuard = localImportedPagesGuardRef.current;
-      if (importGuard && remoteSurfaceMode === 'slides') {
-        const guardStillActive = Date.now() < importGuard.expiresAt;
-        const remotePageIds = (remotePages ?? []).map((page) => page.id);
-        const guardPageIdsMissing = importGuard.pageIds.filter((pageId) => !remotePageIds.includes(pageId));
-        if (!guardStillActive || guardPageIdsMissing.length === 0) {
-          localImportedPagesGuardRef.current = null;
-        } else {
-          console.warn('[WS PPTX IMPORT GUARD] ignoring remote snapshot that would drop locally imported slides', {
-            guardedPageIds: importGuard.pageIds,
-            missingGuardedPageIds: guardPageIdsMissing,
-            remotePageIds,
-            remotePageCount: remotePages?.length ?? 0,
-          });
-          return;
-        }
-      }
       if (remoteSurfaceMode !== surfaceModeRef.current) {
         surfaceModeRef.current = remoteSurfaceMode;
         setSurfaceMode(remoteSurfaceMode);
@@ -3053,7 +2871,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // Doc: suppress remote DOM writes while there is active local typing.
       const isLocallyTyping = Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
       if (!isLocallyTyping) {
-        hydrateDocEditorHtml(nextDocContent);
+        setDocHtml(nextDocContent);
+        if (docRef.current && docRef.current.innerHTML !== nextDocContent) {
+          docRef.current.innerHTML = nextDocContent;
+        }
+        syncActivePageDocRef(nextDocContent);
       }
 
       if (readOnly && data?.scrollRatio != null && overflowRef.current) {
@@ -3068,7 +2890,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     classId,
     normalizeItemScope,
     readOnly,
-    hydrateDocEditorHtml,
+    syncActivePageDocRef,
     syncActivePageItemsRef,
     updateSurfaceStateRef,
     userId,
@@ -3083,34 +2905,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (saveSingleItemDebounce.current) clearTimeout(saveSingleItemDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
-    if (projectAutosaveDebounceRef.current) clearTimeout(projectAutosaveDebounceRef.current);
     pendingItemsSaveRef.current = null;
     pendingSingleItemSaveRef.current = {};
     pendingDocSaveRef.current = null;
   }, []);
-
-  useEffect(() => {
-    const flushProjectIfNeeded = () => {
-      if (projectAutosaveDebounceRef.current) {
-        clearTimeout(projectAutosaveDebounceRef.current);
-        projectAutosaveDebounceRef.current = null;
-        void flushCurrentMaterialSave();
-      }
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        flushProjectIfNeeded();
-      }
-    };
-
-    window.addEventListener('beforeunload', flushProjectIfNeeded);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => {
-      window.removeEventListener('beforeunload', flushProjectIfNeeded);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [flushCurrentMaterialSave]);
 
   const flushPendingItemsSave = useCallback(() => {
     const pending = pendingItemsSaveRef.current;
@@ -3212,7 +3010,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       markItemDeleted,
       markItemsDirty,
       normalizeItemScope,
-      scheduleCurrentMaterialSave,
       syncActivePageItemsRef,
     ],
   );
@@ -3246,7 +3043,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       flushPendingSingleItemSaves,
       markItemDirty,
       normalizeItemScope,
-      scheduleCurrentMaterialSave,
     ],
   );
 
@@ -3273,21 +3069,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         flushPendingDocSave();
       }, WORKSPACE_DOC_SYNC_DEBOUNCE_MS - elapsedMs);
     },
-    [effectiveReadOnly, flushPendingDocSave, scheduleCurrentMaterialSave, syncActivePageDocRef],
     [effectiveReadOnly, flushPendingDocSave, syncActivePageDocRef],
   );
 
   const onDocInput = () => {
     if (!docRef.current) return;
     lastDocInputRef.current = Date.now();
-    const html = serializeWorkspaceEditableHtml(docRef.current);
+    const html = docRef.current.innerHTML;
     setDocHtml(html);
     scheduleDocSave(html);
   };
   const onDocBlur = () => {
     // On blur, flush any pending doc content immediately
     if (!docRef.current) return;
-    const html = serializeWorkspaceEditableHtml(docRef.current);
+    const html = docRef.current.innerHTML;
     setDocHtml(html);
     scheduleDocSave(html);
     if (saveDocDebounce.current) {
@@ -3336,7 +3131,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, []);
 
   const execFmt = useCallback((cmd: string, value?: string) => {
-    setVocabPopup(null);
     if (activeFloatingIdRef.current && activeFloatingElRef.current) {
       // -- Floating block is the active editor -------------------------------
       // e.preventDefault() on toolbar buttons already prevented the button from
@@ -3349,7 +3143,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       document.execCommand(cmd, false, value ?? undefined);
       // execCommand may or may not fire an `input` event; save explicitly.
-      const html = serializeWorkspaceEditableHtml(floatingEl);
+      const html = floatingEl.innerHTML;
       lastItemEditRef.current = Date.now();
       setItems((prev) => {
         const next = prev.map((it) =>
@@ -3384,18 +3178,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         const floatingId = activeFloatingIdRef.current;
         const floatingEl = activeFloatingElRef.current;
         normalizeExecCommandFontSize(floatingEl, size);
-        const html = serializeWorkspaceEditableHtml(floatingEl);
+        const html = floatingEl.innerHTML;
         setItems((prev) => {
-          const next = prev.map((it) => {
-            if (it.id !== floatingId) return it;
-            return {
-              ...it,
-              content: html,
-              updatedAt: Date.now(),
-              updatedBy: userId,
-              updatedByName: userName,
-            };
-          });
+          const next = prev.map((it) =>
+            it.id === floatingId
+              ? { ...it, content: html, updatedAt: Date.now(), updatedBy: userId, updatedByName: userName }
+              : it,
+          );
           scheduleItemsSave(next, { dirtyItemIds: [floatingId] });
           return next;
         });
@@ -3404,7 +3193,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
       normalizeExecCommandFontSize(docRef.current, size);
       if (!docRef.current) return;
-      const html = serializeWorkspaceEditableHtml(docRef.current);
+      const html = docRef.current.innerHTML;
       setDocHtml(html);
       scheduleDocSave(html);
     }, 20);
@@ -3412,7 +3201,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const markSelectionToRevealOnClick = useCallback(() => {
     const root = activeFloatingElRef.current ?? docRef.current;
     if (!root) return;
-    setVocabPopup(null);
     root.focus();
     restoreSavedSelection();
     const selection = window.getSelection();
@@ -3435,7 +3223,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const extracted = range.extractContents();
       wrapper.appendChild(extracted);
       range.insertNode(wrapper);
-      renumberRevealStepsInElement(root, 1);
       selection.removeAllRanges();
       const afterRange = document.createRange();
       afterRange.selectNodeContents(wrapper);
@@ -3444,8 +3231,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       applyRevealStateToElement(root, presentationRevealStep, presentationMode);
       if (activeFloatingIdRef.current && activeFloatingElRef.current) {
         const floatingId = activeFloatingIdRef.current;
-        lastItemEditRef.current = Date.now();
-        const html = serializeWorkspaceEditableHtml(activeFloatingElRef.current);
+        const html = activeFloatingElRef.current.innerHTML;
         setItems((prev) => {
           const next = prev.map((it) =>
             it.id === floatingId
@@ -3456,9 +3242,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           return next;
         });
       } else if (docRef.current) {
-        lastDocInputRef.current = Date.now();
-        const html = serializeWorkspaceEditableHtml(docRef.current);
-        hydrateDocEditorHtml(html);
+        const html = docRef.current.innerHTML;
+        setDocHtml(html);
         scheduleDocSave(html);
       }
     } catch (error) {
@@ -3618,7 +3403,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const requestItemEdit = (itemId: string, el: HTMLElement) => {
     const item = items.find((it) => it.id === itemId);
     if (!item || item.type !== 'text') return;
-    if (effectiveReadOnly || isItemLockedByOther(item) || !acquireItemLock(item)) {
+    const canEditThisItem = canEditResolvedBoxContent(item);
+    if (!canEditThisItem || (effectiveReadOnly && !canEditThisItem) || isItemLockedByOther(item)) {
+      el.blur();
+      return;
+    }
+    if (!acquireItemLock(item)) {
       el.blur();
       return;
     }
@@ -3682,34 +3472,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         setPendingImageUpload(false);
         return;
       }
-      const finalizeImageItem = (width: number, height: number) => {
-        const newItem = normalizeItemScope({
-          id: uid(), type: 'image' as WorkspaceItemType,
-          x: 5, y: 10, w: width, h: height,
-          imageUrl: dataUrl,
-          updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
-        });
-        setItems((prev) => {
-          const next = [...prev, newItem];
-          scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
-          return next;
-        });
-        setSelectedId(newItem.id);
-        setPendingImageUpload(false);
-      };
-
-      if (typeof Image === 'undefined') {
-        finalizeImageItem(40, 30);
-        return;
-      }
-
-      const probe = new Image();
-      probe.onload = () => {
-        const fit = getImageBoxFit(probe.naturalWidth, probe.naturalHeight, 40, 30);
-        finalizeImageItem(fit.width, fit.height);
-      };
-      probe.onerror = () => finalizeImageItem(40, 30);
-      probe.src = dataUrl;
+      const newItem = normalizeItemScope({
+        id: uid(), type: 'image' as WorkspaceItemType,
+        x: 5, y: 10, w: 40, h: 30,
+        imageUrl: dataUrl,
+        updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
+      });
+      setItems((prev) => {
+        const next = [...prev, newItem];
+        scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
+        return next;
+      });
+      setSelectedId(newItem.id);
+      setPendingImageUpload(false);
     };
     reader.readAsDataURL(file);
   };
@@ -3822,20 +3597,21 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     for (const [slideOffset, slidePath] of orderedSlidePaths.entries()) {
       console.groupCollapsed(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? 'no-session'}] slide ${slideOffset + 1}/${orderedSlidePaths.length}`);
       logSlideImport('processing slide', { slideIndex: slideOffset + 1, slidePath });
-      try {
-        const slideXml = await zip.file(slidePath)?.async('text');
-        if (!slideXml) {
-          logSlideImport('slide XML not found', { slidePath });
-          importedPages.push({
-            id: uid(),
-            name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
-            backgroundColor: '#ffffff',
-            docContent: '<p style="color:#b91c1c;font-size:18px;">Slide XML not found during import.</p>',
-            items: [],
-          });
-          console.groupEnd();
-          continue;
-        }
+      
+      const slideXml = await zip.file(slidePath)?.async('text');
+      if (!slideXml) {
+        logSlideImport('slide XML not found', { slidePath });
+        // Create empty slide rather than skipping
+        importedPages.push({
+          id: uid(),
+          name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
+          backgroundColor: '#ffffff',
+          docContent: '',
+          items: [],
+        });
+        console.groupEnd();
+        continue;
+      }
       logSlideImport('slide XML found', { slidePath, xmlLength: slideXml.length });
 
       // Get slide relationships file
@@ -3880,7 +3656,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
       const items: WorkspaceItem[] = [];
       const textBoxItems: WorkspaceItem[] = [];
-      const imagePlacements = new Map<string, { x: number; y: number; w: number; h: number }>();
 
       // Extract native elements (text boxes, shapes)
       if (slideDoc) {
@@ -3903,18 +3678,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           const normalizedY = clamp((y / slideCanvasSize.height) * 100, 0, 100);
           const normalizedW = clamp((cx / slideCanvasSize.width) * 100, 4, 100);
           const normalizedH = clamp((cy / slideCanvasSize.height) * 100, 4, 100);
-          const embeddedImageRelId = getNamespacedAttribute(
-            findFirstDescendantByLocalName(shapeNode, 'blip') ?? shapeNode,
-            'embed',
-          );
-          if (embeddedImageRelId) {
-            imagePlacements.set(embeddedImageRelId, {
-              x: normalizedX,
-              y: normalizedY,
-              w: normalizedW,
-              h: normalizedH,
-            });
-          }
 
           // Check for text content
           const txBodyNode = findFirstDescendantByLocalName(shapeNode, 'txBody');
@@ -3966,19 +3729,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           const shapeType = shapeTypeNode ? getAttributeByName(shapeTypeNode, ['prst']) : '';
           const fillColor = extractPptColorFromElement(shapeProps ? findFirstDescendantByLocalName(shapeProps, 'solidFill') : null) ?? '#93c5fd';
           const lineColor = extractPptColorFromElement(shapeProps ? findFirstDescendantByLocalName(shapeProps, 'ln') : null) ?? '#1d4ed8';
-          const svgAspectWidth = Math.max(100, Math.round((cx || 1) / Math.max(cy || 1, 1) * 100));
-          const svgAspectHeight = Math.max(100, Math.round((cy || 1) / Math.max(cx || 1, 1) * 100));
 
           if (shapeType) {
             let svgMarkup = '';
             if (shapeType === 'smileyFace') {
               svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/><circle cx="35" cy="40" r="6" fill="#111827"/><circle cx="65" cy="40" r="6" fill="#111827"/><path d="M30 62c6 10 14 15 20 15s14-5 20-15" fill="none" stroke="#111827" stroke-width="5" stroke-linecap="round"/></svg>`;
             } else if (shapeType === 'ellipse') {
-              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgAspectWidth} ${svgAspectHeight}"><ellipse cx="${svgAspectWidth / 2}" cy="${svgAspectHeight / 2}" rx="${Math.max(4, svgAspectWidth / 2 - 4)}" ry="${Math.max(4, svgAspectHeight / 2 - 4)}" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><ellipse cx="50" cy="50" rx="46" ry="46" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
             } else if (shapeType === 'roundRect') {
-              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgAspectWidth} ${svgAspectHeight}"><rect x="4" y="4" width="${Math.max(8, svgAspectWidth - 8)}" height="${Math.max(8, svgAspectHeight - 8)}" rx="${Math.min(18, svgAspectHeight / 5)}" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="4" y="4" width="92" height="92" rx="18" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
             } else if (shapeType === 'rect') {
-              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgAspectWidth} ${svgAspectHeight}"><rect x="2" y="2" width="${Math.max(4, svgAspectWidth - 4)}" height="${Math.max(4, svgAspectHeight - 4)}" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
+              svgMarkup = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect x="2" y="2" width="96" height="96" fill="${fillColor}" stroke="${lineColor}" stroke-width="4"/></svg>`;
             }
 
             if (svgMarkup) {
@@ -4027,10 +3788,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         const mimeType = getImageMimeTypeFromExtension(extension);
         const imageBytes = await imageFile.async('uint8array');
         const previewDataUrl = buildDataUrlFromBytes(imageBytes, mimeType);
-        const previewImageUrl =
-          buildObjectUrlFromBytes(imageBytes, mimeType) ??
-          previewDataUrl;
-        const placement = imagePlacements.get(imageRelId);
         logSlideImport('primary image chosen for slide', {
           slidePath,
           imageIndex,
@@ -4039,67 +3796,42 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           resolvedImagePath: imagePath,
           byteLength: imageBytes.length,
           mimeType,
-          previewUrlType: previewImageUrl.startsWith('blob:') ? 'blob' : 'data',
-          previewUrlLength: previewImageUrl.length,
-          placement,
+          previewDataUrlLength: previewDataUrl.length,
         });
-        let hostedImageUrl: string | undefined;
-        let persistableImageUrl: string | undefined;
-        try {
-          logSlideImport('uploadSlideAsset started', {
-            slidePath,
-            imageIndex,
-            fileName: `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}.${extension}`,
-          });
-          hostedImageUrl = await uploadSlideAsset(
-            `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}`,
-            imageBytes,
-            extension,
-            mimeType,
-          );
-          logSlideImport('uploadSlideAsset finished', {
-            slidePath,
-            imageIndex,
-            hostedImageUrl,
-          });
-          const urlLoadOk = await verifyImageUrlLoads(hostedImageUrl);
-          logSlideImport('uploaded image URL probe result', {
-            slidePath,
-            imageIndex,
-            hostedImageUrl,
-            urlLoadOk,
-          });
-          persistableImageUrl = urlLoadOk ? hostedImageUrl : previewDataUrl;
-        } catch (uploadError) {
-          console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? 'no-session'}] uploadSlideAsset failed`, {
-            slidePath,
-            imageIndex,
-            imageTarget,
-            resolvedImagePath: imagePath,
-            mimeType,
-            byteLength: imageBytes.length,
-            uploadError,
-          });
-          logSlideImport('uploadSlideAsset failed, keeping local preview only', {
-            slidePath,
-            imageIndex,
-            imageTarget,
-            resolvedImagePath: imagePath,
-            mimeType,
-            byteLength: imageBytes.length,
-          });
-          persistableImageUrl = previewDataUrl;
-        }
+        logSlideImport('uploadSlideAsset started', {
+          slidePath,
+          imageIndex,
+          fileName: `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}.${extension}`,
+        });
+        
+        const hostedImageUrl = await uploadSlideAsset(
+          `${stripFileExtension(file.name) || 'slide'}-${slideOffset + 1}-${imageIndex + 1}`,
+          imageBytes,
+          extension,
+          mimeType,
+        );
+        logSlideImport('uploadSlideAsset finished', {
+          slidePath,
+          imageIndex,
+          hostedImageUrl,
+        });
+        const urlLoadOk = await verifyImageUrlLoads(hostedImageUrl);
+        logSlideImport('uploaded image URL probe result', {
+          slidePath,
+          imageIndex,
+          hostedImageUrl,
+          urlLoadOk,
+        });
         items.push(
           normalizeItemScope({
             id: uid(),
             type: 'image' as WorkspaceItemType,
-            x: placement?.x ?? 0,
-            y: placement?.y ?? 0,
-            w: placement?.w ?? 100,
-            h: placement?.h ?? 100,
-            imageUrl: previewImageUrl,
-            assetUrl: persistableImageUrl,
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
+            imageUrl: previewDataUrl,
+            assetUrl: hostedImageUrl,
             updatedAt: Date.now(),
             updatedBy: userId,
             updatedByName: userName,
@@ -4110,7 +3842,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           imageIndex,
           createdItemId: items[items.length - 1]?.id ?? null,
           imageItemCount: items.length,
-          usesLocalPreviewUrl: true,
+          usesLocalPreviewDataUrl: true,
         });
       }
 
@@ -4136,20 +3868,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         docLength: finalPage.docContent.length,
       });
       importedPages.push(finalPage);
-      } catch (slideError) {
-        console.error(`[WS PPTX IMPORT ${slideImportSessionRef.current ?? 'no-session'}] slide import failed`, {
-          slidePath,
-          slideIndex: slideOffset + 1,
-          slideError,
-        });
-        importedPages.push({
-          id: uid(),
-          name: `${stripFileExtension(file.name) || 'Slides'} ${slideOffset + 1}`,
-          backgroundColor: '#ffffff',
-          docContent: `<p style="color:#b91c1c;font-size:18px;">Slide ${slideOffset + 1} could not be fully imported. Check console logs for details.</p>`,
-          items: [],
-        });
-      }
       console.groupEnd();
     }
 
@@ -4276,14 +3994,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           importedItemCount: importedItemIds.length,
         });
       }
-      localImportedPagesGuardRef.current = {
-        pageIds: importedPages.map((page) => page.id),
-        expiresAt: Date.now() + 20_000,
-      };
-      logSlideImport('local import guard armed', {
-        guardedPageIds: localImportedPagesGuardRef.current.pageIds,
-        expiresAt: localImportedPagesGuardRef.current.expiresAt,
-      });
 
       pagesRef.current = updated;
       setPages(updated);
@@ -4294,11 +4004,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(firstImportedPage.docContent);
-      activePageIdRef.current = firstImportedPage.id;
-      setActivePageId(firstImportedPage.id);
-      hydrateDocEditorHtml(firstImportedPage.docContent, { syncActivePage: false });
+      if (docRef.current) docRef.current.innerHTML = firstImportedPage.docContent;
       setItems(firstImportedPage.items ?? []);
       setSelectedId(firstImportedPage.items?.[0]?.id ?? null);
+      activePageIdRef.current = firstImportedPage.id;
+      setActivePageId(firstImportedPage.id);
       setSelectedSlideIds(importedPages.map((page) => page.id));
       slideSelectionAnchorIdRef.current = firstImportedPage.id;
       logSlideImport('active page switched to first imported page', {
@@ -4443,7 +4153,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   };
 
   const onCanvasClick = (e: React.MouseEvent) => {
-    if (presentationMode && isSlidesMode && viewerCanManagePages) {
+    if (presentationMode && isSlidesMode) {
       const target = e.target as HTMLElement;
       if (target.closest('[data-presentation-control="true"]')) return;
       if (maxRevealStep > presentationRevealStep) {
@@ -4465,15 +4175,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
    * the pages array. Returns the flushed pages array.
    * Must be called before any operation that reads pages content (switch, save material).
    */
-  const getCurrentSerializedDocHtml = useCallback(() => (
-    docRef.current ? serializeWorkspaceEditableHtml(docRef.current) : docHtml
-  ), [docHtml]);
-
   const flushPages = (): WorkspacePage[] => {
-    const currentDoc = getCurrentSerializedDocHtml();
-    const currentItems = itemsRef.current;
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
     const flushed = pagesRef.current.map((p) =>
-      p.id === activePageIdRef.current ? { ...p, docContent: currentDoc, items: currentItems } : p,
+      p.id === activePageIdRef.current ? { ...p, docContent: currentDoc, items } : p,
     );
     pagesRef.current = flushed;
     setPages(flushed);
@@ -4482,83 +4187,29 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       pages: flushed,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
-      items: currentItems,
+      items,
     }));
     return flushed;
   };
 
-  async function flushCurrentMaterialSave() {
-    const materialId = currentMaterialIdRef.current;
-    if (!materialId || effectiveReadOnly) return;
-    const flushed = flushPages();
-    setProjectSaveStatus('saving');
-    setProjectSaveError(null);
-    try {
-      await updateWorkspaceMaterial(
-        materialId,
-        flushed,
-        { title: currentMaterialTitleRef.current || undefined },
-        surfaceModeRef.current,
-      );
-      setProjectSaveStatus('saved');
-    } catch (error) {
-      console.error('[WorkspaceCanvas] project autosave failed:', error);
-      setProjectSaveStatus('error');
-      setProjectSaveError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  function scheduleCurrentMaterialSave() {
-    if (!currentMaterialIdRef.current || effectiveReadOnly) return;
-    setProjectSaveStatus('unsaved');
-    setProjectSaveError(null);
-    if (projectAutosaveDebounceRef.current) {
-      clearTimeout(projectAutosaveDebounceRef.current);
-    }
-    projectAutosaveDebounceRef.current = setTimeout(() => {
-      projectAutosaveDebounceRef.current = null;
-      void flushCurrentMaterialSave();
-    }, 700);
-  }
-
   function captureUndoSnapshot() {
-    const currentDoc = getCurrentSerializedDocHtml();
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
     const snapshotPages = pagesRef.current.map((page) => ({
       ...page,
       items: page.items.map((item) => ({ ...item })),
       docContent: page.id === activePageIdRef.current ? currentDoc : page.docContent,
     }));
-    const snapshot: WorkspaceUndoSnapshot = {
+    undoSnapshotRef.current = {
       pages: snapshotPages,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
       items: itemsRef.current.map((item) => ({ ...item })),
     };
-    const previous = undoStackRef.current[undoStackRef.current.length - 1];
-    const nextSerialized = JSON.stringify(snapshot);
-    const previousSerialized = previous ? JSON.stringify(previous) : '';
-    if (nextSerialized !== previousSerialized) {
-      undoStackRef.current = [...undoStackRef.current, snapshot].slice(-UNDO_HISTORY_LIMIT);
-    }
-    redoStackRef.current = [];
   }
 
   function restoreUndoSnapshot() {
-    const snapshot = undoStackRef.current[undoStackRef.current.length - 1];
+    const snapshot = undoSnapshotRef.current;
     if (!snapshot) return;
-    const currentDoc = getCurrentSerializedDocHtml();
-    const currentSnapshot: WorkspaceUndoSnapshot = {
-      pages: pagesRef.current.map((page) => ({
-        ...page,
-        items: page.items.map((item) => ({ ...item })),
-        docContent: page.id === activePageIdRef.current ? currentDoc : page.docContent,
-      })),
-      currentPageId: activePageIdRef.current,
-      docContent: currentDoc,
-      items: itemsRef.current.map((item) => ({ ...item })),
-    };
-    redoStackRef.current = [...redoStackRef.current, currentSnapshot].slice(-UNDO_HISTORY_LIMIT);
-    undoStackRef.current = undoStackRef.current.slice(0, -1);
     const restoredPages = snapshot.pages.map((page) => ({
       ...page,
       items: page.items.map((item) => normalizeItemScope({ ...item })),
@@ -4572,57 +4223,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     activePageIdRef.current = activeRestoredPage.id;
     setPages(restoredPages);
     setActivePageId(activeRestoredPage.id);
-    hydrateDocEditorHtml(activeRestoredPage.docContent, { syncActivePage: false });
-    setItems(activeRestoredPage.items);
-    setSelectedId(null);
-    updateSurfaceStateRef(surfaceModeRef.current, () => ({
-      pages: restoredPages,
-      currentPageId: activeRestoredPage.id,
-      docContent: activeRestoredPage.docContent,
-      items: activeRestoredPage.items,
-    }));
-    savePageSwitch(
-      classId,
-      restoredPages,
-      activeRestoredPage.id,
-      activeRestoredPage.docContent,
-      activeRestoredPage.items,
-      userId,
-      userName,
-      surfaceModeRef.current,
-    ).catch(console.error);
-  }
-
-  function restoreRedoSnapshot() {
-    const snapshot = redoStackRef.current[redoStackRef.current.length - 1];
-    if (!snapshot) return;
-    const currentDoc = getCurrentSerializedDocHtml();
-    const currentSnapshot: WorkspaceUndoSnapshot = {
-      pages: pagesRef.current.map((page) => ({
-        ...page,
-        items: page.items.map((item) => ({ ...item })),
-        docContent: page.id === activePageIdRef.current ? currentDoc : page.docContent,
-      })),
-      currentPageId: activePageIdRef.current,
-      docContent: currentDoc,
-      items: itemsRef.current.map((item) => ({ ...item })),
-    };
-    undoStackRef.current = [...undoStackRef.current, currentSnapshot].slice(-UNDO_HISTORY_LIMIT);
-    redoStackRef.current = redoStackRef.current.slice(0, -1);
-    const restoredPages = snapshot.pages.map((page) => ({
-      ...page,
-      items: page.items.map((item) => normalizeItemScope({ ...item })),
-    }));
-    const activeRestoredPage =
-      restoredPages.find((page) => page.id === snapshot.currentPageId) ??
-      restoredPages[0] ??
-      null;
-    if (!activeRestoredPage) return;
-    pagesRef.current = restoredPages;
-    activePageIdRef.current = activeRestoredPage.id;
-    setPages(restoredPages);
-    setActivePageId(activeRestoredPage.id);
-    hydrateDocEditorHtml(activeRestoredPage.docContent, { syncActivePage: false });
+    setDocHtml(activeRestoredPage.docContent);
+    if (docRef.current) docRef.current.innerHTML = activeRestoredPage.docContent;
     setItems(activeRestoredPage.items);
     setSelectedId(null);
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4691,11 +4293,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml('');
-      activePageIdRef.current = freshId;
-      setActivePageId(freshId);
-      hydrateDocEditorHtml('', { syncActivePage: false });
+      if (docRef.current) docRef.current.innerHTML = '';
       setItems([]);
       setSelectedId(null);
+      activePageIdRef.current = freshId;
+      setActivePageId(freshId);
       slideSelectionAnchorIdRef.current = freshId;
       updateSurfaceStateRef(surfaceModeRef.current, () => ({
         pages: [freshPage],
@@ -4703,7 +4305,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         docContent: '',
         items: [],
       }));
-    savePageSwitch(classId, [freshPage], freshId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
+      savePageSwitch(classId, [freshPage], freshId, '', [], userId, userName, surfaceModeRef.current).catch(console.error);
       return;
     }
 
@@ -4718,11 +4320,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(nextActivePage.docContent);
-    activePageIdRef.current = nextActivePage.id;
-    setActivePageId(nextActivePage.id);
-    hydrateDocEditorHtml(nextActivePage.docContent, { syncActivePage: false });
+    if (docRef.current) docRef.current.innerHTML = nextActivePage.docContent;
     setItems(nextActivePage.items.map(normalizeItemScope));
     setSelectedId(null);
+    activePageIdRef.current = nextActivePage.id;
+    setActivePageId(nextActivePage.id);
     slideSelectionAnchorIdRef.current = nextActivePage.id;
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
       pages: remaining,
@@ -4739,23 +4341,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const flushed = flushPages();
     const newPage = flushed.find((p) => p.id === pageId);
     if (!newPage) return;
-    // CORRIGIDO: Fazer flush dos dados pendentes ANTES de cancelar os timeouts
-    if (saveItemsDebounce.current) {
-      clearTimeout(saveItemsDebounce.current);
-      saveItemsDebounce.current = null;
-      flushPendingItemsSave();
-    }
-    if (saveDocDebounce.current) {
-      clearTimeout(saveDocDebounce.current);
-      saveDocDebounce.current = null;
-      flushPendingDocSave();
-    }
+    // Cancel debounced saves to avoid stale writes after the switch.
+    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml(newPage.docContent);
-    activePageIdRef.current = pageId;
-    setActivePageId(pageId);
-    hydrateDocEditorHtml(newPage.docContent, { syncActivePage: false });
+    if (docRef.current) docRef.current.innerHTML = newPage.docContent;
     setItems(newPage.items.map(normalizeItemScope));
     setSelectedId(null);
+    activePageIdRef.current = pageId;
+    setActivePageId(pageId);
     slideSelectionAnchorIdRef.current = pageId;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
@@ -4780,11 +4374,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     setDocHtml('');
-    activePageIdRef.current = newId;
-    setActivePageId(newId);
-    hydrateDocEditorHtml('', { syncActivePage: false });
+    if (docRef.current) docRef.current.innerHTML = '';
     setItems([]);
     setSelectedId(null);
+    activePageIdRef.current = newId;
+    setActivePageId(newId);
     setSelectedSlideIds([newId]);
     slideSelectionAnchorIdRef.current = newId;
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4813,11 +4407,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
       setDocHtml(nextPage.docContent);
-      activePageIdRef.current = nextPage.id;
-      setActivePageId(nextPage.id);
-      hydrateDocEditorHtml(nextPage.docContent, { syncActivePage: false });
+      if (docRef.current) docRef.current.innerHTML = nextPage.docContent;
       setItems(nextPage.items.map(normalizeItemScope));
       setSelectedId(null);
+      activePageIdRef.current = nextPage.id;
+      setActivePageId(nextPage.id);
       setSelectedSlideIds([nextPage.id]);
       slideSelectionAnchorIdRef.current = nextPage.id;
       updateSurfaceStateRef(surfaceModeRef.current, () => ({
@@ -4828,7 +4422,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       }));
       savePageSwitch(classId, remaining, nextPage.id, nextPage.docContent, nextPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
     } else {
-      const currentDoc = getCurrentSerializedDocHtml();
+      const currentDoc = docRef.current?.innerHTML ?? docHtml;
       updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
         ...currentState,
         pages: remaining,
@@ -4845,7 +4439,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const updated = pagesRef.current.map((p) => (p.id === pageId ? { ...p, name: newName } : p));
     pagesRef.current = updated;
     setPages(updated);
-    const currentDoc = getCurrentSerializedDocHtml();
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: updated,
@@ -4876,7 +4470,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setPages(updated);
     setSelectedSlideIds([copy.id]);
     slideSelectionAnchorIdRef.current = copy.id;
-    const currentDoc = getCurrentSerializedDocHtml();
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: updated,
@@ -4902,7 +4496,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setPages(reordered);
     setSelectedSlideIds([draggedPageId]);
     slideSelectionAnchorIdRef.current = draggedPageId;
-    const currentDoc = getCurrentSerializedDocHtml();
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
     updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
       ...currentState,
       pages: reordered,
@@ -4920,7 +4514,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     );
     pagesRef.current = updated;
     setPages(updated);
-    const currentDoc = getCurrentSerializedDocHtml();
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: updated,
@@ -4935,7 +4529,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (!viewerCanManageWorkspace || readOnly) return;
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
-    const currentDoc = getCurrentSerializedDocHtml();
+    const currentDoc = docRef.current?.innerHTML ?? docHtml;
     updateSurfaceStateRef(surfaceModeRef.current, () => ({
       pages: flushed,
       currentPageId: activePageIdRef.current,
@@ -4994,11 +4588,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         await saveWorkspaceAsMaterial([targetPage], { title }, userId, surfaceModeRef.current);
       } else {
         console.log('[WorkspaceCanvas] Saving all pages');
-        const materialId = await saveWorkspaceAsMaterial(allPages, { title }, userId, surfaceModeRef.current);
-        setCurrentMaterialId(materialId);
-        setCurrentMaterialTitle(title);
-        setProjectSaveStatus('saved');
-        setProjectSaveError(null);
+        await saveWorkspaceAsMaterial(allPages, { title }, userId, surfaceModeRef.current);
       }
       console.log('[WorkspaceCanvas] Save completed successfully, closing modal');
       // Refresh the materials list if the open modal is currently shown
@@ -5017,31 +4607,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       setSavingMaterial(false);
     }
   };
-
-  const handleSaveCurrentMaterial = useCallback(async () => {
-    if (!currentMaterialIdRef.current) {
-      setShowSaveModal(true);
-      return;
-    }
-    flushFloatingEditorBeforePageMutation();
-    if (saveItemsDebounce.current) {
-      clearTimeout(saveItemsDebounce.current);
-      saveItemsDebounce.current = null;
-      flushPendingItemsSave();
-    }
-    if (saveDocDebounce.current) {
-      clearTimeout(saveDocDebounce.current);
-      saveDocDebounce.current = null;
-      flushPendingDocSave();
-    }
-    setProjectSaveStatus('saving');
-    setProjectSaveError(null);
-    try {
-      await flushCurrentMaterialSave();
-    } catch (error) {
-      console.error('[WorkspaceCanvas] manual project save failed:', error);
-    }
-  }, [flushCurrentMaterialSave, flushFloatingEditorBeforePageMutation, flushPendingDocSave, flushPendingItemsSave]);
 
   const reloadSavedLibraries = async () => {
     const [materials, battles] = await Promise.all([
@@ -5075,13 +4640,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     console.log('[WorkspaceCanvas] Load Material clicked ï¿½ materialId:', materialId, 'userId:', userId);
     setLoadingMaterialId(materialId);
     try {
-      if (projectAutosaveDebounceRef.current) {
-        clearTimeout(projectAutosaveDebounceRef.current);
-        projectAutosaveDebounceRef.current = null;
-        await flushCurrentMaterialSave();
-      }
       console.log('[WorkspaceCanvas] Calling loadMaterialToWorkspace');
-      const { pages: loadedPages, currentPageId, surfaceMode: loadedSurfaceMode, title } = await loadMaterialToWorkspace(materialId, classId, userName);
+      const { pages: loadedPages, currentPageId, surfaceMode: loadedSurfaceMode } = await loadMaterialToWorkspace(materialId, classId, userName);
       console.log('[WorkspaceCanvas] Material loaded successfully ï¿½ pages:', loadedPages.length);
       // Apply loaded material to local state immediately (before self-echo arrives).
       const normalized = normalizeWorkspacePages(loadedPages);
@@ -5096,10 +4656,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           items: activePage.items,
         });
       }
-      setCurrentMaterialId(materialId);
-      setCurrentMaterialTitle(title);
-      setProjectSaveStatus('saved');
-      setProjectSaveError(null);
       setSelectedId(null);
       setShowOpenModal(false);
     } catch (err) {
@@ -5159,10 +4715,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
     // Ignore clicks that originated on toolbar buttons
     if (toolbarRef.current?.contains(e.target as Node)) return;
-    if (!vocabSelectionEnabled) {
-      setVocabPopup(null);
-      return;
-    }
 
     // Small delay so browser has time to settle the selection after a click
     setTimeout(() => {
@@ -5184,12 +4736,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         rect: { top: rect.top, left: rect.left, bottom: rect.bottom, right: rect.right },
       });
     }, 80);
-  }, [vocabSelectionEnabled]);
-
-  useEffect(() => {
-    if (vocabSelectionEnabled) return;
-    setVocabPopup(null);
-  }, [vocabSelectionEnabled]);
+  }, []);
 
   const visibleItems = useMemo(() => {
     if (isSlidesMode) {
@@ -5253,59 +4800,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (uiLang === 'en') return 'Delete the selected slides?';
     return 'Excluir os slides selecionados?';
   }, [uiLang]);
-  const vocabToggleLabel = useMemo(() => {
-    if (uiLang === 'es') return vocabSelectionEnabled ? 'Desactivar traduccion Learnendo' : 'Activar traduccion Learnendo';
-    if (uiLang === 'en') return vocabSelectionEnabled ? 'Disable Learnendo translation' : 'Enable Learnendo translation';
-    return vocabSelectionEnabled ? 'Desligar traducao Learnendo' : 'Ligar traducao Learnendo';
-  }, [uiLang, vocabSelectionEnabled]);
-  const stepPresentationReveal = useCallback((direction: 'previous' | 'next') => {
-    if (!presentationMode || !isSlidesMode || !viewerCanManagePages) return false;
-    if (direction === 'next') {
-      if (maxRevealStep > presentationRevealStep) {
-        setPresentationRevealStep((current) => Math.min(current + 1, maxRevealStep));
-        return true;
-      }
-      return false;
-    }
-    if (presentationRevealStep > 0) {
-      setPresentationRevealStep((current) => Math.max(current - 1, 0));
-      return true;
-    }
-    return false;
-  }, [isSlidesMode, maxRevealStep, presentationMode, presentationRevealStep, viewerCanManagePages]);
   const hasPreviousSlide = currentSlideIndex > 0;
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
-  const canRevealPreviousStep = presentationRevealStep > 0;
-  const canRevealNextStep = maxRevealStep > presentationRevealStep;
   const isPortraitViewport = presentationViewport.height > presentationViewport.width + 4;
   const shouldRotatePresentation = presentationMode && isSlidesMode && isPortraitViewport;
-  useEffect(() => {
-    if (!presentationMode) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        updatePresentationMode(false);
-        return;
-      }
-      if (!viewerCanManagePages) return;
-      if (event.key === 'ArrowRight') {
-        event.preventDefault();
-        if (!stepPresentationReveal('next')) {
-          navigateSlides('next');
-        }
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        event.preventDefault();
-        if (!stepPresentationReveal('previous')) {
-          navigateSlides('previous');
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateSlides, presentationMode, stepPresentationReveal, updatePresentationMode, viewerCanManagePages]);
   const getSlidePreviewText = useCallback((page: WorkspacePage) => {
     const docText = (page.docContent ?? '')
       .replace(/<[^>]+>/g, ' ')
@@ -5319,32 +4817,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   }, [surfaceLabels.currentLabel]);
 
   const getSlidePreviewHtml = useCallback((page: WorkspacePage) => {
-    const liveHtml =
-      page.id === activePageIdRef.current && docRef.current
-        ? serializeWorkspaceEditableHtml(docRef.current).trim()
-        : '';
-    const html = (liveHtml || page.docContent || '').trim();
-    const previewRootFontSize = page.id === activePageIdRef.current ? fontSize : 16;
-    const previewItems = (page.items ?? []).filter((item) => item.boxRole !== 'student');
-    if (html || previewItems.length > 0) {
-      const itemHtml = previewItems.map((item) => {
-        const commonStyle = `position:absolute;left:${item.x}%;top:${item.y}%;width:${item.w}%;height:${item.h}%;overflow:hidden;`;
-        if (item.type === 'image' && item.imageUrl) {
-          return `<div style="${commonStyle}"><img src="${escapeHtml(item.imageUrl)}" alt="" style="width:100%;height:100%;object-fit:contain;background:transparent;" /></div>`;
-        }
-        if (item.type === 'text') {
-          const bgColor = item.styles?.bgColor ? `background:${item.styles.bgColor};` : '';
-          const color = item.styles?.color ? `color:${item.styles.color};` : 'color:#0f172a;';
-          const fontSize = item.styles?.fontSize ? `font-size:${item.styles.fontSize}px;` : 'font-size:12px;';
-          return `<div style="${commonStyle}${bgColor}${color}${fontSize}padding:4px;line-height:1.2;word-break:break-word;">${item.content ?? ''}</div>`;
-        }
-        return '';
-      }).join('');
-
-      return `<div style="position:relative;width:100%;height:100%;background:${page.backgroundColor ?? '#ffffff'};">`
-        + `<div style="position:absolute;inset:0;padding:18px 24px;overflow:hidden;color:#0f172a;font-size:${previewRootFontSize}px;line-height:1.3;">${html}</div>`
-        + itemHtml
-        + `</div>`;
+    const html = (page.docContent ?? '').trim();
+    if (html) return html;
+    const firstImage = (page.items ?? []).find((item) => item.type === 'image' && item.imageUrl);
+    if (firstImage?.imageUrl) {
+      return `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;background:${page.backgroundColor ?? '#ffffff'};"><img src="${escapeHtml(firstImage.imageUrl)}" alt="" style="width:100%;height:100%;object-fit:contain;" /></div>`;
     }
     const fallback = getSlidePreviewText(page);
     return `<p>${fallback}</p>`;
@@ -5784,7 +5261,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       className={`group flex h-full w-full flex-col overflow-hidden ${presentationMode ? 'fixed inset-0 z-[12000] bg-slate-950' : 'bg-slate-100'}`}
       style={{ fontFamily: 'Arial, sans-serif' }}
     >
-    <div className="flex h-full w-full flex-col overflow-hidden bg-slate-100" style={{ fontFamily: 'Arial, sans-serif' }}>
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
       {!presentationMode && (
@@ -5807,26 +5283,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <>
             <button
               onClick={toggleSurfaceMode}
-              className={`flex h-7 w-7 items-center justify-center rounded-md border transition ${
+              className={`h-7 rounded-md border px-2.5 text-[11px] font-semibold transition ${
                 isSlidesMode
                   ? 'border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
                   : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
               }`}
               title={isSlidesMode ? surfaceLabels.switchToDocument : surfaceLabels.switchToSlides}
-              aria-label={isSlidesMode ? surfaceLabels.switchToDocument : surfaceLabels.switchToSlides}
             >
-              {isSlidesMode ? (
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
-                  <rect x="2.5" y="3.5" width="15" height="10" rx="1.5" />
-                  <path d="M4.5 15.5h11" />
-                  <path d="M6.5 7.5h7M6.5 10h4.5" />
-                </svg>
-              ) : (
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
-                  <rect x="3" y="4" width="14" height="10" rx="1.5" />
-                  <path d="M8 16h4M10 14v2" />
-                </svg>
-              )}
+              {isSlidesMode ? surfaceLabels.slides : surfaceLabels.document}
             </button>
             {isSlidesMode && (
               <>
@@ -5843,21 +5307,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20">
                     <rect x="3" y="4" width="14" height="10" rx="1.5" />
                     <path d="M8 16h4M10 14v2" />
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setSlidePanelVisible((prev) => !prev)}
-                  className={`flex h-7 w-7 items-center justify-center rounded border transition ${
-                    slidePanelVisible
-                      ? 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'
-                      : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                  }`}
-                  title={slidePanelVisible ? 'Hide slide panel' : 'Show slide panel'}
-                  aria-label={slidePanelVisible ? 'Hide slide panel' : 'Show slide panel'}
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
-                    <rect x="3" y="4" width="14" height="12" rx="2" />
-                    <path d="M13 4v12M6 8h3M6 11h3" />
                   </svg>
                 </button>
                 <select
@@ -5905,40 +5354,19 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
         <div className="flex items-center">
-          <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
-          <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
-          <button onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
-          {isSlidesMode && !viewerIsStudent && (
+          <button onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
+          <button onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
+          <button onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
+          {isSlidesMode && (
             <button
-              onMouseDown={(e) => { e.preventDefault(); captureCurrentSelection(); markSelectionToRevealOnClick(); }}
+              onMouseDown={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
               disabled={toolbarDisabled}
-              className="flex h-7 w-7 items-center justify-center rounded border border-amber-200 text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
+              className="flex h-7 items-center justify-center rounded border border-amber-200 px-2 text-[10px] font-semibold text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
               title={wsl.revealOnClick}
-              aria-label={wsl.revealOnClick}
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20" aria-hidden="true">
-                <path d="M7.5 10.5V5.8a1.8 1.8 0 1 1 3.6 0v2.3" />
-                <path d="M11.1 8.7a1.7 1.7 0 1 1 3.4 0v2.1" />
-                <path d="M7.6 9.4L5.9 8.2a1.5 1.5 0 0 0-2.1.4 1.6 1.6 0 0 0 .3 2.2l3.4 2.9c.7.6 1.6.9 2.5.9h1.3c2 0 3.7-1.6 3.7-3.7V9.7" />
-              </svg>
+              Click
             </button>
           )}
-          <button
-            onMouseDown={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setVocabSelectionEnabled((prev) => !prev);
-            }}
-            className={`ml-1 flex h-7 w-7 items-center justify-center rounded border transition ${
-              vocabSelectionEnabled
-                ? 'border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'
-            }`}
-            title={vocabToggleLabel}
-            aria-pressed={vocabSelectionEnabled}
-          >
-            <img src="/favicon.png" alt="Learnendo translate" className="h-4 w-4 rounded-sm object-contain" />
-          </button>
         </div>
 
         <div className="w-px h-5 bg-slate-200 mx-0.5" />
@@ -6012,37 +5440,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
             <button
-              onClick={() => {
-                if (currentMaterialId) {
-                  void handleSaveCurrentMaterial();
-                  return;
-                }
-                setSaveSinglePageId(null);
-                setSaveMaterialTitle('');
-                setShowSaveModal(true);
-              }}
+              onClick={() => { setSaveMaterialTitle(''); setShowSaveModal(true); }}
               className="w-7 h-7 rounded flex items-center justify-center hover:bg-green-50 text-green-700 border border-green-200 transition"
               title={wsl.saveAll}
               aria-label={wsl.saveAll}
             >
               <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M17 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1h9l4 4z"/><path d="M13 4v4H7V4"/><path d="M7 12h6"/></svg>
             </button>
-            {currentMaterialId && (
-              <div
-                className={`ml-1 inline-flex items-center rounded-full px-2 py-1 text-[10px] font-semibold ${
-                  projectSaveStatus === 'error'
-                    ? 'bg-rose-50 text-rose-700'
-                    : projectSaveStatus === 'saved'
-                      ? 'bg-emerald-50 text-emerald-700'
-                      : projectSaveStatus === 'saving'
-                        ? 'bg-amber-50 text-amber-700'
-                        : 'bg-slate-100 text-slate-600'
-                }`}
-                title={projectSaveError || currentMaterialTitle || wsl.autosaveCurrentFile}
-              >
-                {projectSaveLabel}
-              </div>
-            )}
             <button
               onClick={handleOpenMaterialsList}
               className="w-7 h-7 rounded flex items-center justify-center hover:bg-blue-50 text-blue-700 border border-blue-200 transition"
@@ -6082,7 +5486,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         {viewerCanManageWorkspace && !readOnly && (
           <button
             onClick={restoreUndoSnapshot}
-            disabled={undoStackRef.current.length === 0}
+            disabled={!undoSnapshotRef.current}
             className="w-7 h-7 rounded flex items-center justify-center hover:bg-amber-50 text-amber-700 border border-amber-200 transition disabled:opacity-40 disabled:hover:bg-transparent"
             title="Undo"
             aria-label="Undo"
@@ -6090,21 +5494,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20">
               <path d="M7 6H3v4" />
               <path d="M3 10c1.7-3 4.2-4.5 7.5-4.5 3.9 0 6.5 2.5 6.5 6.5" />
-            </svg>
-          </button>
-        )}
-
-        {viewerCanManageWorkspace && !readOnly && (
-          <button
-            onClick={restoreRedoSnapshot}
-            disabled={redoStackRef.current.length === 0}
-            className="w-7 h-7 rounded flex items-center justify-center hover:bg-orange-50 text-orange-700 border border-orange-200 transition disabled:opacity-40 disabled:hover:bg-transparent"
-            title="Redo"
-            aria-label="Redo"
-          >
-            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 20 20">
-              <path d="M13 6h4v4" />
-              <path d="M17 10c-1.7-3-4.2-4.5-7.5-4.5-3.9 0-6.5 2.5-6.5 6.5" />
             </svg>
           </button>
         )}
@@ -6403,17 +5792,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 </button>
               </div>
             </div>
-            {pages.length > 1 && viewerCanManagePages ? (
+            {pages.length > 1 ? (
               <>
                 <button
                   type="button"
                   data-presentation-control="true"
-                  onClick={() => {
-                    if (!stepPresentationReveal('previous')) {
-                      navigateSlides('previous');
-                    }
-                  }}
-                  disabled={!canRevealPreviousStep && !hasPreviousSlide}
+                  onClick={() => navigateSlides('previous')}
+                  disabled={!hasPreviousSlide}
                   className="absolute left-4 top-1/2 z-40 -translate-y-1/2 rounded-full bg-black/10 px-3 py-5 text-lg font-black text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-0"
                   aria-label="Previous slide"
                   title="Previous slide"
@@ -6423,12 +5808,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <button
                   type="button"
                   data-presentation-control="true"
-                  onClick={() => {
-                    if (!stepPresentationReveal('next')) {
-                      navigateSlides('next');
-                    }
-                  }}
-                  disabled={!canRevealNextStep && !hasNextSlide}
+                  onClick={() => navigateSlides('next')}
+                  disabled={!hasNextSlide}
                   className="absolute right-4 top-1/2 z-40 -translate-y-1/2 rounded-full bg-black/10 px-3 py-5 text-lg font-black text-white opacity-0 transition group-hover:opacity-100 hover:bg-black/60 disabled:cursor-not-allowed disabled:opacity-0"
                   aria-label="Next slide"
                   title="Next slide"
@@ -6442,7 +5823,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
           {/* Main shared document */}
           <div
-            ref={slideFrameRef}
             className={`relative mb-6 w-full border ${
               isSlidesMode
                 ? presentationMode
@@ -6477,7 +5857,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               onInput={onDocInput}
               className={`w-full focus:outline-none leading-relaxed ${
                 isSlidesMode
-                  ? `h-full max-h-full flex-1 overflow-hidden px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12`
+                  ? `h-full max-h-full flex-1 overflow-y-auto overflow-x-hidden px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12`
                   : 'min-h-[60vh] p-6'
               }`}
               style={{
@@ -6486,57 +5866,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 color: '#000000',
                 wordBreak: 'break-word',
                 backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
-                overflow: isSlidesMode ? 'hidden' : undefined,
+                scrollbarWidth: isSlidesMode ? 'thin' : undefined,
+                scrollbarColor: isSlidesMode ? 'rgba(148,163,184,0.45) transparent' : undefined,
               }}
             />
-
-            {isSlidesMode ? (
-              <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 10 }}>
-                {visibleItems.map((item) => (
-                  <StableFloatingBlock
-                    key={item.id}
-                    item={item}
-                    isSelected={item.id === selectedId}
-                    readOnly={effectiveReadOnly}
-                    isSlidesMode={isSlidesMode}
-                    presentationMode={presentationMode}
-                    presentationRevealStep={presentationRevealStep}
-                    currentUserId={userId}
-                    currentUserEmail={userEmail}
-                    viewerContext={viewerContext}
-                    viewerIsStudent={viewerIsStudent}
-                    canvasRef={slideFrameRef}
-                    assignableStudents={assignableStudents}
-                    boxFlowLabels={boxFlowLabels}
-                    getCanvasMetrics={getCanvasMetrics}
-                    onSelect={() => setSelectedId(item.id)}
-                    onPointerDownMove={(e) => onPointerDown(e, item.id, 'move')}
-                    onPointerDownResize={(e) => onPointerDown(e, item.id, 'resize')}
-                    onContentChange={(html) => updateItem(
-                      item.id,
-                      {
-                        content: html,
-                        editingByUserId: userId,
-                        editingByUserName: userName,
-                        editingStartedAt: Date.now(),
-                      },
-                      { forceSave: canEditResolvedBoxContent(item) },
-                    )}
-                    onUpdateItem={updateItem}
-                    onEditorFocus={requestItemEdit}
-                    onEditorBlur={() => {
-                      activeFloatingIdRef.current = null;
-                      activeFloatingElRef.current = null;
-                      handleFloatingBlur(item.id);
-                    }}
-                  />
-                ))}
-              </div>
-            ) : null}
           </div>
 
           {/* Floating blocks overlay */}
-          {!isSlidesMode ? (
           <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 10 }}>
             {visibleItems.map((item) => (
               <StableFloatingBlock
@@ -6578,7 +5914,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               />
             ))}
           </div>
-          ) : null}
 
           {visibleItems.length > 0 && !isSlidesMode && <div className="h-40" />}
         </div>
@@ -6600,14 +5935,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               <div className="flex items-center justify-end gap-1 pb-0.5">
                 <button
                   type="button"
-                  onClick={() => setSlidePanelVisible(false)}
-                  className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/80 text-slate-300 transition hover:bg-slate-900 hover:text-white"
-                  title="Hide slide panel"
-                >
-                  <span className="text-[11px] font-bold leading-none">X</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => slideImportRef.current?.click()}
                   disabled={pendingSlideImport}
                   className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/80 text-slate-300 transition hover:bg-slate-900 hover:text-white disabled:opacity-50"
@@ -6620,10 +5947,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 <button
                   type="button"
                   onClick={() => {
-                    if (currentMaterialId) {
-                      void handleSaveCurrentMaterial();
-                      return;
-                    }
                     setSaveSinglePageId(null);
                     setSaveMaterialTitle('');
                     setShowSaveModal(true);
@@ -6805,3 +6128,4 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     </div>
   );
 };
+
