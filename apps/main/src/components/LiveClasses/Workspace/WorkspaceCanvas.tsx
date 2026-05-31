@@ -58,7 +58,7 @@ import { speak } from '../../../services/ttsService';
 import { fetchPhoneticForPhrase, translateText, saveVocabularyEntry } from '../../../services/vocabularyService';
 import { subscribeUserAccounts, type UserAccountProfile } from '../../../services/userRoles';
 import { MyVocabularyPage } from '../../MyVocabularyPage';
-import { learnendoLogoTransparent } from '../../../assets/branding';
+import { learnendoLogo } from '../../../assets/branding';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
 
 // -- Helpers -------------------------------------------------------------------
@@ -1121,7 +1121,7 @@ const AlignDropdown: React.FC<{
       <button
         onMouseDown={(e) => { e.preventDefault(); if (!disabled) setOpen((o) => !o); }}
         disabled={disabled}
-        className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 border border-slate-200 disabled:opacity-40 transition"
+        className="w-7 h-7 rounded flex items-center justify-center border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-40 transition"
         title={wsl.alignLabel(labels[current])}
         aria-label={wsl.alignLabel(labels[current])}
       >
@@ -3549,6 +3549,29 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const addTextBox = () => addBox('content');
   const addStudentBox = () => addBox('student');
 
+  const insertImageItem = useCallback((imageUrl: string) => {
+    if (effectiveReadOnly || readOnly) return;
+    captureUndoSnapshot();
+    const newItem = normalizeItemScope({
+      id: uid(),
+      type: 'image' as WorkspaceItemType,
+      x: 5,
+      y: 10,
+      w: 40,
+      h: 30,
+      imageUrl,
+      updatedAt: Date.now(),
+      updatedBy: userId,
+      updatedByName: userName,
+    });
+    setItems((prev) => {
+      const next = [...prev, newItem];
+      scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
+      return next;
+    });
+    setSelectedId(newItem.id);
+  }, [captureUndoSnapshot, effectiveReadOnly, normalizeItemScope, readOnly, scheduleItemsSave, userId, userName]);
+
   const handleImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -3561,22 +3584,30 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         setPendingImageUpload(false);
         return;
       }
-      const newItem = normalizeItemScope({
-        id: uid(), type: 'image' as WorkspaceItemType,
-        x: 5, y: 10, w: 40, h: 30,
-        imageUrl: dataUrl,
-        updatedAt: Date.now(), updatedBy: userId, updatedByName: userName,
-      });
-      setItems((prev) => {
-        const next = [...prev, newItem];
-        scheduleItemsSave(next, { dirtyItemIds: [newItem.id] });
-        return next;
-      });
-      setSelectedId(newItem.id);
+      insertImageItem(dataUrl);
       setPendingImageUpload(false);
     };
     reader.readAsDataURL(file);
   };
+
+  const handleDocPaste = useCallback((event: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!viewerCanEditSharedDocument || effectiveReadOnly || readOnly) return;
+    const clipboardItems = Array.from(event.clipboardData?.items ?? []);
+    const imageItem = clipboardItems.find((item) => item.type.startsWith('image/'));
+    if (!imageItem) return;
+
+    const file = imageItem.getAsFile();
+    if (!file) return;
+
+    event.preventDefault();
+    const reader = new FileReader();
+    reader.onload = (loadEvent) => {
+      const dataUrl = loadEvent.target?.result;
+      if (typeof dataUrl !== 'string') return;
+      insertImageItem(dataUrl);
+    };
+    reader.readAsDataURL(file);
+  }, [effectiveReadOnly, insertImageItem, readOnly, viewerCanEditSharedDocument]);
 
   const buildImageSlidePage = useCallback((sourceName: string, imageUrl: string, pageNumber: number): WorkspacePage => ({
     id: uid(),
@@ -5569,7 +5600,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           title={wsl.clickTranslator}
           aria-label={wsl.clickTranslator}
         >
-          <img src={learnendoLogoTransparent} alt="" className="h-4 w-4 object-contain" />
+          <img src={learnendoLogo} alt="" className="h-5 w-5 object-contain" />
         </button>
 
         <button
@@ -5968,6 +5999,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               spellCheck
               onBlur={onDocBlur}
               onInput={onDocInput}
+              onPaste={handleDocPaste}
               className={`w-full focus:outline-none leading-relaxed ${
                 isSlidesMode
                   ? `h-full max-h-full flex-1 overflow-y-auto overflow-x-hidden px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12`
