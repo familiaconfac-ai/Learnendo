@@ -214,7 +214,6 @@ export default defineConfig(({ mode }) => {
         rollupOptions: {
           input: {
             main: path.resolve(__dirname, 'index.html'),
-            livekitSmoke: path.resolve(__dirname, 'livekit-smoke.html'),
           },
         },
       },
