@@ -150,7 +150,57 @@ const TeacherStage: React.FC<{
         : uiLang === 'es'
           ? 'La previsualizacion local queda oculta aqui para evitar el efecto de pantalla infinita.'
           : 'A pre-visualizacao local fica oculta aqui para evitar o efeito de tela infinita.',
+    liveFallbackTitle:
+      uiLang === 'en'
+        ? 'In-app audio/video is unavailable right now.'
+        : uiLang === 'es'
+          ? 'El audio/video interno no esta disponible ahora.'
+          : 'O audio/video interno nao esta disponivel agora.',
+    liveFallbackBody:
+      uiLang === 'en'
+        ? 'Keep the whiteboard and battle here, and use Meet as a backup room for voice.'
+        : uiLang === 'es'
+          ? 'Mantengan la pizarra y la batalla aqui, y usen Meet como sala de respaldo para voz.'
+          : 'Mantenham a lousa e a batalha aqui, e usem o Meet como sala de backup para voz.',
+    liveFallbackMeet:
+      uiLang === 'en' ? 'Open Meet backup' : uiLang === 'es' ? 'Abrir Meet de respaldo' : 'Abrir Meet de backup',
+    liveFallbackNoMeet:
+      uiLang === 'en'
+        ? 'Add the fixed Meet link in Teacher Settings to enable the backup room.'
+        : uiLang === 'es'
+          ? 'Agrega el enlace fijo de Meet en Teacher Settings para habilitar la sala de respaldo.'
+          : 'Adicione o link fixo do Meet em Teacher Settings para habilitar a sala de backup.',
+    liveFallbackEcho:
+      uiLang === 'en'
+        ? 'Do not leave the in-app mic open together with Meet audio, or echo can happen.'
+        : uiLang === 'es'
+          ? 'No dejen el micro interno activo junto con el audio de Meet, o puede haber eco.'
+          : 'Nao deixe o microfone interno aberto junto com o audio do Meet, ou pode dar eco.',
   };
+
+  const liveFallbackBanner = liveKitError ? (
+    <div className="rounded-2xl border border-amber-400/40 bg-amber-950/30 px-4 py-3 text-amber-50 shadow-lg backdrop-blur-sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-black">{labels.liveFallbackTitle}</p>
+          <p className="mt-1 text-xs font-medium text-amber-100/90">{liveKitError}</p>
+          <p className="mt-2 text-xs text-amber-100/80">{labels.liveFallbackBody}</p>
+          <p className="mt-1 text-[11px] text-amber-200/80">{labels.liveFallbackEcho}</p>
+        </div>
+        {meetLink ? (
+          <button
+            type="button"
+            onClick={() => openExternalLink(meetLink)}
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-cyan-400 px-4 text-sm font-black text-slate-950 transition hover:bg-cyan-300"
+          >
+            {labels.liveFallbackMeet}
+          </button>
+        ) : (
+          <div className="max-w-xs text-xs font-semibold text-amber-100/80">{labels.liveFallbackNoMeet}</div>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   const cameraTiles = [
     {
@@ -361,6 +411,7 @@ const TeacherStage: React.FC<{
       title={liveClass.title}
       exitLabel={labels.exit}
       onExit={onExit}
+      statusBanner={liveFallbackBanner}
       immersiveMode={workspacePresentationActive}
       mainContent={
         <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">

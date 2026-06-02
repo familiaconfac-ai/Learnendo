@@ -4384,8 +4384,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
    */
   const flushPages = (): WorkspacePage[] => {
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentItems = itemsRef.current;
     const flushed = pagesRef.current.map((p) =>
-      p.id === activePageIdRef.current ? { ...p, docContent: currentDoc, items } : p,
+      p.id === activePageIdRef.current ? { ...p, docContent: currentDoc, items: currentItems } : p,
     );
     pagesRef.current = flushed;
     setPages(flushed);
@@ -4394,7 +4395,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       pages: flushed,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
-      items,
+      items: currentItems,
     }));
     return flushed;
   };
@@ -4636,14 +4637,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       savePageSwitch(classId, remaining, nextPage.id, nextPage.docContent, nextPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
     } else {
       const currentDoc = docRef.current?.innerHTML ?? docHtml;
+      const currentItems = itemsRef.current;
       updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
         ...currentState,
         pages: remaining,
         currentPageId: activePageIdRef.current,
         docContent: currentDoc,
-        items,
+        items: currentItems,
       }));
-      savePageSwitch(classId, remaining, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+      savePageSwitch(classId, remaining, activePageIdRef.current, currentDoc, currentItems, userId, userName, surfaceModeRef.current).catch(console.error);
     }
   };
 
@@ -4653,14 +4655,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     pagesRef.current = updated;
     setPages(updated);
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentItems = itemsRef.current;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: updated,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
-      items,
+      items: currentItems,
     }));
-    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, currentItems, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
   const duplicatePage = (pageId: string) => {
@@ -4684,14 +4687,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setSelectedSlideIds([copy.id]);
     slideSelectionAnchorIdRef.current = copy.id;
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentItems = itemsRef.current;
     updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
       ...current,
       pages: updated,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
-      items,
+      items: currentItems,
     }));
-    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+    savePageSwitch(classId, updated, activePageIdRef.current, currentDoc, currentItems, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
   const reorderPage = (draggedPageId: string, targetPageId: string) => {
@@ -4710,14 +4714,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setSelectedSlideIds([draggedPageId]);
     slideSelectionAnchorIdRef.current = draggedPageId;
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
+    const currentItems = itemsRef.current;
     updateSurfaceStateRef(surfaceModeRef.current, (currentState) => ({
       ...currentState,
       pages: reordered,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
-      items,
+      items: currentItems,
     }));
-    savePageSwitch(classId, reordered, activePageIdRef.current, currentDoc, items, userId, userName, surfaceModeRef.current).catch(console.error);
+    savePageSwitch(classId, reordered, activePageIdRef.current, currentDoc, currentItems, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
   const updateActiveSlideBackground = (backgroundColor: string) => {
