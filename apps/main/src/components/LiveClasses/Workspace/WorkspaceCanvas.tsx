@@ -4885,13 +4885,18 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   // -- Vocabulary selection detection -----------------------------------------
   /**
    * Called on mouseup anywhere in the canvas scrollable area.
-   * Opens the vocab popup when the user has a non-trivial text selection that
-   * is NOT inside the toolbar (so bold/italic clicks don't trigger it).
+   * The vocab popup should only appear while translator mode is active, either
+   * for a short text selection or for a direct click on a word.
    */
   const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
     if (toolbarRef.current?.contains(e.target as Node)) return;
 
     setTimeout(() => {
+      if (!clickTranslatorMode) {
+        setVocabPopup(null);
+        return;
+      }
+
       const sel = window.getSelection();
       const text = sel?.toString().trim() ?? '';
       if (text && text.length <= 60 && !/[\r\n]/.test(text) && sel && sel.rangeCount > 0) {
@@ -4906,7 +4911,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         }
       }
 
-      if (!clickTranslatorMode) return;
       const hit = getWordHitAtPoint(e.clientX, e.clientY);
       if (!hit) return;
       setVocabPopup(hit);
