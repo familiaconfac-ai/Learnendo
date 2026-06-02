@@ -1566,6 +1566,7 @@ interface StableFloatingBlockProps {
   onPointerDownResize: (e: ReactPointerEvent<HTMLElement>) => void;
   onContentChange: (html: string) => void;
   onUpdateItem: (id: string, patch: Partial<WorkspaceItem>, options?: { forceSave?: boolean }) => void;
+  onDuplicate: () => void;
   onEditorTyping?: () => void;
   onEditorFocus: (id: string, el: HTMLElement) => void;
   onEditorBlur: () => void;
@@ -1591,6 +1592,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   onPointerDownResize,
   onContentChange,
   onUpdateItem,
+  onDuplicate,
   onEditorTyping,
   onEditorFocus,
   onEditorBlur,
@@ -1652,6 +1654,13 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     resolvedOwner?.label?.trim() ||
     resolvedOwnerEmail?.trim() ||
     (resolvedOwnerUid ? resolvedOwnerUid.slice(0, 6) : '');
+  const hasCustomStudentLabel = Boolean(
+    item.label?.trim() && normalizeLooseText(item.label) !== normalizeLooseText(boxFlowLabels.studentBox),
+  );
+  const headerLabel =
+    item.boxRole === 'student'
+      ? ownerBadgeLabel || (hasCustomStudentLabel ? item.label!.trim() : boxFlowLabels.selectStudent)
+      : (item.label?.trim() || boxFlowLabels.boxLabel);
   const boxRoleBadgeLabel =
     item.boxRole === 'student'
       ? boxFlowLabels.studentBadge
@@ -1907,10 +1916,10 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
             {!editingLabel ? (
               <span
                 data-box-no-drag="true"
-                onClick={canRenameThisBox ? () => setEditingLabel(true) : undefined}
-                className={canRenameThisBox ? 'cursor-pointer' : ''}
+                onClick={item.boxRole !== 'student' && canRenameThisBox ? () => setEditingLabel(true) : undefined}
+                className={item.boxRole !== 'student' && canRenameThisBox ? 'cursor-pointer' : ''}
               >
-                {item.label?.trim() ? item.label : boxFlowLabels.boxLabel}
+                {headerLabel}
               </span>
             ) : (
               <input
@@ -1925,18 +1934,40 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
                 className="flex-1 rounded border border-slate-300 bg-white px-1 py-0 text-[11px] font-semibold text-slate-700"
               />
             )}
-            {boxRoleBadgeLabel ? (
+            {item.boxRole !== 'student' && boxRoleBadgeLabel ? (
               <span className={`rounded px-1.5 py-0.5 text-[9px] ${item.boxRole === 'student' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700'}`}>
                 {boxRoleBadgeLabel}
               </span>
             ) : null}
-            {(resolvedOwnerUid || item.ownerUserId) && ownerBadgeLabel ? (
+            {item.boxRole !== 'student' && (resolvedOwnerUid || item.ownerUserId) && ownerBadgeLabel ? (
               <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">
                 {ownerBadgeLabel}
               </span>
             ) : null}
           </div>
           <div className="flex items-center gap-1">
+            {canManageThisBox && isSelected ? (
+              <button
+                data-box-no-drag="true"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onDuplicate();
+                }}
+                className="rounded px-1.5 py-0.5 text-[9px] transition hover:bg-blue-100 text-blue-600"
+                type="button"
+                title={getWsl().duplicateBlock}
+              >
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 20 20">
+                  <rect x="7" y="4" width="9" height="11" rx="1.5" />
+                  <rect x="4" y="7" width="9" height="11" rx="1.5" />
+                </svg>
+              </button>
+            ) : null}
             {canAssignThisBox && isSelected ? (
               <button
                 data-box-no-drag="true"
@@ -1949,10 +1980,15 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
                   e.stopPropagation();
                   setAssigningOwner((prev) => !prev);
                 }}
-                className="rounded px-1.5 py-0.5 text-[9px] transition hover:bg-slate-200"
+                className="rounded px-1.5 py-0.5 text-[9px] transition hover:bg-slate-200 text-slate-600"
                 type="button"
+                title={boxFlowLabels.selectStudent}
               >
-                ðŸ‘¤
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20">
+                  <circle cx="8" cy="7" r="3" />
+                  <path d="M2.5 16c.8-2.5 3-4 5.5-4 1.2 0 2.4.3 3.3.9" />
+                  <path d="M13 8h5m-2.5-2.5L18 8l-2.5 2.5" />
+                </svg>
               </button>
             ) : null}
             {isLockedByOther ? (
@@ -6147,6 +6183,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 onSelect={() => setSelectedId(item.id)}
                 onPointerDownMove={(e) => onPointerDown(e, item.id, 'move')}
                 onPointerDownResize={(e) => onPointerDown(e, item.id, 'resize')}
+                onDuplicate={() => duplicateItem(item.id)}
                 onContentChange={(html) => updateItem(
                   item.id,
                   {
