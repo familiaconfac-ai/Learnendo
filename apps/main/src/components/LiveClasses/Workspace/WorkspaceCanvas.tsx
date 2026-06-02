@@ -912,6 +912,7 @@ interface AssignableStudentOption {
 }
 
 const WORKSPACE_ADMIN_EMAIL = 'learnendo@gmail.com';
+const WORKSPACE_BOX_LOCK_TIMEOUT_MS = 10_000;
 
 function normalizeEmail(email?: string | null): string {
   return (email ?? '').trim().toLowerCase();
@@ -1599,7 +1600,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   const inputRef = useRef<HTMLInputElement>(null);
   const ownerMenuRef = useRef<HTMLDivElement>(null);
   const FLOATING_GUARD_MS = 1500;
-  const LOCK_TIMEOUT_MS = 60_000;
+  const LOCK_TIMEOUT_MS = WORKSPACE_BOX_LOCK_TIMEOUT_MS;
 
   const isLockedByOther = Boolean(
     item.editingByUserId &&
@@ -3466,7 +3467,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     [normalizeItemScope, userId, userName],
   );
 
-  const LOCK_TIMEOUT_MS = 60_000;
+  const LOCK_TIMEOUT_MS = WORKSPACE_BOX_LOCK_TIMEOUT_MS;
 
   const isItemLockedByOther = (item: WorkspaceItem) => {
     if (!item.editingByUserId || item.editingByUserId === userId) return false;
@@ -4949,6 +4950,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   }, [selectedId, visibleItems]);
 
   const selected = visibleItems.find((i) => i.id === selectedId) ?? null;
+  const selectedResolvedOwner = useMemo(
+    () => (selected ? resolveAssignableOwner(selected, assignableStudents) : null),
+    [assignableStudents, selected],
+  );
   const activePage = useMemo(
     () => pages.find((page) => page.id === activePageId) ?? null,
     [activePageId, pages],
@@ -5043,7 +5048,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     // suppressed for FLOATING_GUARD_MS after the last input.
     const lastTypedAtRef = useRef<number>(0);
     const FLOATING_GUARD_MS = 1500;
-    const LOCK_TIMEOUT_MS = 60_000;
+    const LOCK_TIMEOUT_MS = WORKSPACE_BOX_LOCK_TIMEOUT_MS;
     const isLockedByOther = Boolean(
       item.editingByUserId && item.editingByUserId !== currentUserId &&
       Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS,
@@ -5605,6 +5610,48 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         {selected && canManageBox(viewerContext, selected) && !isSlidesMode && (
           <>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
+            {selected.boxRole === 'student' && (
+              <select
+                value={selected.ownerUserId ?? selectedResolvedOwner?.uid ?? ''}
+                onChange={(e) => {
+                  const nextOwnerId = e.target.value;
+                  if (!nextOwnerId) {
+                    updateItem(selected.id, {
+                      ownerUserId: undefined,
+                      ownerName: undefined,
+                      ownerEmail: undefined,
+                    });
+                    return;
+                  }
+
+                  const selectedStudent = assignableStudents.find((student) => student.uid === nextOwnerId);
+                  if (!selectedStudent) return;
+
+                  const normalizedCurrentLabel = normalizeLooseText(selected.label);
+                  const normalizedCurrentOwnerName = normalizeLooseText(selected.ownerName);
+                  const shouldReplaceLabel =
+                    !selected.label?.trim() ||
+                    normalizedCurrentLabel === normalizeLooseText(boxFlowLabels.studentBox) ||
+                    (selected.ownerName?.trim() && normalizedCurrentLabel === normalizedCurrentOwnerName);
+
+                  updateItem(selected.id, {
+                    ownerUserId: selectedStudent.uid,
+                    ownerName: selectedStudent.label,
+                    ownerEmail: selectedStudent.email ?? undefined,
+                    ...(shouldReplaceLabel ? { label: selectedStudent.label } : {}),
+                  });
+                }}
+                className="h-7 max-w-[12rem] rounded border border-emerald-200 bg-white px-2 text-[11px] font-medium text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                title={boxFlowLabels.selectStudent}
+              >
+                <option value="">{boxFlowLabels.selectStudent}</option>
+                {assignableStudents.map((student) => (
+                  <option key={student.uid} value={student.uid}>
+                    {student.label}{student.isOnline ? ' - online' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
             <button
               onClick={() => duplicateItem(selected.id)}
               className="w-7 h-7 rounded hover:bg-blue-50 text-blue-600 flex items-center justify-center transition border border-blue-200"
