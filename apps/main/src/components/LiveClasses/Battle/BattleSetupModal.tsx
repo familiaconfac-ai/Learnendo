@@ -15,6 +15,7 @@ import { getBattleQuestions } from './battleQuestions';
 import {
   buildSavedBattleTemplate,
   getBattleCourseIdForLanguage,
+  getBattleCorrectAnswerLabel,
   getBattleLanguage,
   getBattleQuestionDuration,
   getSavedBattleTemplateLanguage,
@@ -24,6 +25,7 @@ import {
 } from './battleUtils';
 import { BOT_AVATAR_OPTIONS, DEFAULT_BOT_AVATAR_ID, normalizeBotAvatarId } from './botAvatars';
 import { translateText } from '../../../services/vocabularyService';
+import { downloadBattleTemplatePdf } from '../../../services/battlePdfService';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 function buildExcludedKey(params: {
@@ -180,40 +182,40 @@ const BATTLE_IMPORT_COPY: Record<BattleUILanguage, {
   placeholder: string;
   button: string;
   success: (count: number) => string;
-  missingAnswerWarning?: (count: number) => string;
+  answerRequiredError?: (count: number) => string;
   emptyError: string;
   explanationLabel: string;
   explanationPlaceholder: string;
 }> = {
   en: {
     title: 'Paste multiple questions',
-    description: 'Paste a full block with prompt, options, answer and optional explanation. The battle will split everything automatically.',
+    description: 'Paste one complete block per question and always finish it with "Answer: X". The battle only imports when every question has a valid correct answer line.',
     placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nAnswer: B\nExplanation: The movie started before we arrived.',
     button: 'Generate interactive quiz',
     success: (count) => `${count} question(s) imported into the battle.`,
-    missingAnswerWarning: (count) => `${count} question(s) were imported without "Answer:". Review the correct option before saving.`,
+    answerRequiredError: (count) => `${count} question(s) are missing a valid "Answer:" line. Ask the AI to place the correct answer below the options and try again.`,
     emptyError: 'Paste at least one valid multiple-choice question block.',
     explanationLabel: 'Explanation after answer',
     explanationPlaceholder: 'Optional explanation shown after the student answers.',
   },
   pt: {
     title: 'Colar varias perguntas',
-    description: 'Cole um bloco inteiro com enunciado, alternativas, resposta e explicacao opcional. O battle separa tudo automaticamente.',
+    description: 'Cole um bloco completo por pergunta e sempre termine com "Resposta: X". O battle so importa quando todas as perguntas trazem uma linha valida com a resposta certa.',
     placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nResposta: B\nExplicacao: O filme comecou antes de nos chegarmos.',
     button: 'Gerar quiz interativo',
     success: (count) => `${count} pergunta(s) importada(s) para o battle.`,
-    missingAnswerWarning: (count) => `${count} pergunta(s) foram importadas sem "Resposta:". Revise a alternativa correta antes de salvar.`,
+    answerRequiredError: (count) => `${count} pergunta(s) estao sem uma linha valida de "Resposta:". Peca para a IA colocar a resposta certa logo abaixo das alternativas e tente de novo.`,
     emptyError: 'Cole pelo menos um bloco valido de multipla escolha.',
     explanationLabel: 'Explicacao apos a resposta',
     explanationPlaceholder: 'Explicacao opcional mostrada depois da resposta do aluno.',
   },
   es: {
     title: 'Pegar varias preguntas',
-    description: 'Pega un bloque completo con enunciado, opciones, respuesta y explicacion opcional. La batalla separa todo automaticamente.',
+    description: 'Pega un bloque completo por pregunta y termina siempre con "Respuesta: X". La batalla solo importa cuando cada pregunta trae una respuesta correcta valida.',
     placeholder: '1. By the time we arrived, the movie:\nA) started\nB) had started\nRespuesta: B\nExplicacion: La pelicula empezo antes de que llegaramos.',
     button: 'Generar quiz interactivo',
     success: (count) => `${count} pregunta(s) importada(s) a la batalla.`,
-    missingAnswerWarning: (count) => `${count} pregunta(s) se importaron sin "Respuesta:". Revisa la opcion correcta antes de guardar.`,
+    answerRequiredError: (count) => `${count} pregunta(s) no tienen una linea valida de "Respuesta:". Pide a la IA que deje la respuesta correcta debajo de las opciones y vuelve a intentar.`,
     emptyError: 'Pega al menos un bloque valido de opcion multiple.',
     explanationLabel: 'Explicacion despues de la respuesta',
     explanationPlaceholder: 'Explicacion opcional que se muestra despues de responder.',
@@ -247,30 +249,34 @@ const BATTLE_DUPLICATE_PROMPT_COPY: Record<BattleUILanguage, {
   button: string;
   emptyError: string;
   countMismatch: (expected: number, received: number) => string;
+  answerRequiredError?: (count: number) => string;
 }> = {
   en: {
     title: 'Duplicate and replace content',
-    description: 'Paste a new version of the exercise in the same order. The duplicate keeps images, timing and structure, and only replaces the question content.',
+    description: 'Paste the new exercise in the same order and always include an "Answer:" line below the options. The duplicate keeps images, timing and structure, and only replaces the question content.',
     placeholder: 'I am a teacher.\na) Eu sou um professor.\nb) Eu sou uma professora.\nc) Eu sou um medico.\nd) Eu sou um doutor.\nResposta: A, B',
     button: 'Duplicate replacing content',
     emptyError: 'Paste the new exercise content first.',
     countMismatch: (expected, received) => `The duplicated battle has ${expected} question(s), but the pasted content has ${received}. Keep the same order and the same number of questions.`,
+    answerRequiredError: (count) => `${count} question(s) are missing a valid "Answer:" line. Ask the AI to put the correct answer below each set of options before duplicating.`,
   },
   pt: {
     title: 'Duplicar e substituir conteudo',
-    description: 'Cole uma nova versao do exercicio na mesma ordem. O duplicado mantem imagens, tempo e estrutura, e troca apenas o conteudo das perguntas.',
+    description: 'Cole a nova versao do exercicio na mesma ordem e sempre inclua uma linha de "Resposta:" logo abaixo das alternativas. O duplicado mantem imagens, tempo e estrutura, e troca apenas o conteudo das perguntas.',
     placeholder: 'I am a teacher.\na) Eu sou um professor.\nb) Eu sou uma professora.\nc) Eu sou um medico.\nd) Eu sou um doutor.\nResposta: A, B',
     button: 'Duplicar substituindo conteudo',
     emptyError: 'Cole primeiro o novo conteudo do exercicio.',
     countMismatch: (expected, received) => `A battle duplicada tem ${expected} pergunta(s), mas o conteudo colado tem ${received}. Mantenha a mesma ordem e a mesma quantidade de perguntas.`,
+    answerRequiredError: (count) => `${count} pergunta(s) estao sem uma linha valida de "Resposta:". Peca para a IA colocar a resposta certa embaixo de cada conjunto de alternativas antes de duplicar.`,
   },
   es: {
     title: 'Duplicar y reemplazar contenido',
-    description: 'Pega una nueva version del ejercicio en el mismo orden. El duplicado mantiene imagenes, tiempo y estructura, y solo cambia el contenido.',
+    description: 'Pega una nueva version del ejercicio en el mismo orden y agrega siempre una linea de "Respuesta:" debajo de las opciones. El duplicado mantiene imagenes, tiempo y estructura, y solo cambia el contenido.',
     placeholder: 'I am a teacher.\na) Eu sou um professor.\nb) Eu sou uma professora.\nc) Eu sou um medico.\nd) Eu sou um doutor.\nRespuesta: A, B',
     button: 'Duplicar reemplazando contenido',
     emptyError: 'Pega primero el nuevo contenido del ejercicio.',
     countMismatch: (expected, received) => `La batalla duplicada tiene ${expected} pregunta(s), pero el contenido pegado tiene ${received}. Mantiene el mismo orden y la misma cantidad de preguntas.`,
+    answerRequiredError: (count) => `${count} pregunta(s) no tienen una linea valida de "Respuesta:". Pide a la IA que deje la respuesta correcta debajo de cada grupo de opciones antes de duplicar.`,
   },
   el: {
     title: 'Duplicate and replace content',
@@ -289,6 +295,194 @@ const BATTLE_DUPLICATE_PROMPT_COPY: Record<BattleUILanguage, {
     countMismatch: (expected, received) => `The duplicated battle has ${expected} question(s), but the pasted content has ${received}. Keep the same order and the same number of questions.`,
   },
 };
+
+const BATTLE_SOURCE_COPY: Record<'en' | 'pt' | 'es', {
+  title: string;
+  pdfTitle: string;
+  pdfDesc: string;
+  textPromptTitle: string;
+  textPromptDesc: string;
+  grammarPromptTitle: string;
+  grammarPromptDesc: string;
+  copied: string;
+  copyFailed: string;
+  pdfDone: string;
+  closePreview: string;
+  copyFromPreview: string;
+}> = {
+  en: {
+    title: 'Battle Source',
+    pdfTitle: 'Create a PDF of this battle',
+    pdfDesc: 'Download the current battle with all questions, options and correct answers.',
+    textPromptTitle: 'Prompt to create a text',
+    textPromptDesc: 'Copy a ready prompt to ask an AI for a mini-text based on this battle.',
+    grammarPromptTitle: 'Prompt to create grammar points',
+    grammarPromptDesc: 'Copy a ready prompt to ask an AI for grammar teaching points from this battle.',
+    copied: 'Prompt copied.',
+    copyFailed: 'Could not copy the prompt.',
+    pdfDone: 'PDF downloaded.',
+    closePreview: 'Close',
+    copyFromPreview: 'Copy text',
+  },
+  pt: {
+    title: 'Battle Source',
+    pdfTitle: 'Create a PDF of this battle',
+    pdfDesc: 'Baixe o battle atual com todas as perguntas, alternativas e respostas certas.',
+    textPromptTitle: 'Prompt para criar um texto',
+    textPromptDesc: 'Copia um prompt pronto para pedir a uma IA um mini-texto com base neste battle.',
+    grammarPromptTitle: 'Prompt para criar pontos gramaticais',
+    grammarPromptDesc: 'Copia um prompt pronto para pedir a uma IA conteudo gramatical com base neste battle.',
+    copied: 'Prompt copiado.',
+    copyFailed: 'Nao foi possivel copiar o prompt.',
+    pdfDone: 'PDF baixado.',
+    closePreview: 'Fechar',
+    copyFromPreview: 'Copiar texto',
+  },
+  es: {
+    title: 'Battle Source',
+    pdfTitle: 'Create a PDF of this battle',
+    pdfDesc: 'Descarga la batalla actual con todas las preguntas, opciones y respuestas correctas.',
+    textPromptTitle: 'Prompt para crear un texto',
+    textPromptDesc: 'Copia un prompt listo para pedir a una IA un mini-texto basado en esta batalla.',
+    grammarPromptTitle: 'Prompt para crear puntos gramaticales',
+    grammarPromptDesc: 'Copia un prompt listo para pedir a una IA contenido gramatical basado en esta batalla.',
+    copied: 'Prompt copiado.',
+    copyFailed: 'No se pudo copiar el prompt.',
+    pdfDone: 'PDF descargado.',
+    closePreview: 'Cerrar',
+    copyFromPreview: 'Copiar texto',
+  },
+};
+
+function buildBattleQuestionsDigest(questions: BattleQuestion[]): string {
+  return questions.map((question, index) => {
+    const prompt = repairBattleTextEncoding(question.text)?.trim() || `Question ${index + 1}`;
+    const options = (question.options ?? [])
+      .map((option, optionIndex) => `${String.fromCharCode(65 + optionIndex)}) ${repairBattleTextEncoding(option)?.trim() || option}`)
+      .join('\n');
+    const correctAnswer = getBattleCorrectAnswerLabel(question).trim() || '-';
+    const hint = repairBattleTextEncoding(question.hint)?.trim();
+
+    return [
+      `${index + 1}. ${prompt}`,
+      options,
+      `Correct answer: ${correctAnswer}`,
+      hint ? `Explanation: ${hint}` : '',
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+}
+
+function buildBattleSourcePromptHeader(
+  language: BattleUILanguage,
+  kind: 'text' | 'grammar',
+  title: string,
+): string[] {
+  switch (language) {
+    case 'pt':
+      return kind === 'text'
+        ? [
+            'Use a batalha abaixo para criar um mini-texto didatico para alunos de idiomas.',
+            'Requisitos:',
+            '- Mantenha o foco gramatical da batalha.',
+            '- Escreva um texto curto usando as mesmas estruturas e vocabulario.',
+            '- Depois do texto, liste os pontos gramaticais trabalhados.',
+            '- Mantenha tudo em portugues se a batalha estiver em portugues, ou na lingua da batalha quando for outro idioma.',
+            '',
+            `Titulo da batalha: ${title}`,
+          ]
+        : [
+            'Use a batalha abaixo para preparar uma mini-aula de gramatica.',
+            'Requisitos:',
+            '- Identifique o ponto ou os pontos gramaticais principais da batalha.',
+            '- Explique cada ponto de forma simples para alunos.',
+            '- Dê exemplos extras.',
+            '- Sugira uma pratica curta de sala de aula.',
+            '- Mantenha tudo na mesma lingua da batalha.',
+            '',
+            `Titulo da batalha: ${title}`,
+          ];
+    case 'es':
+      return kind === 'text'
+        ? [
+            'Usa la batalla de abajo para crear un mini-texto didactico para estudiantes de idiomas.',
+            'Requisitos:',
+            '- Mantén el foco gramatical de la batalla.',
+            '- Escribe un texto corto usando las mismas estructuras y vocabulario.',
+            '- Después del texto, enumera los puntos gramaticales trabajados.',
+            '- Mantén todo en el mismo idioma de la batalla.',
+            '',
+            `Titulo de la batalla: ${title}`,
+          ]
+        : [
+            'Usa la batalla de abajo para preparar una mini-clase de gramática.',
+            'Requisitos:',
+            '- Identifica el punto o los puntos gramaticales principales de la batalla.',
+            '- Explica cada punto de forma simple para estudiantes.',
+            '- Da ejemplos extra.',
+            '- Sugiere una práctica corta de clase.',
+            '- Mantén todo en el mismo idioma de la batalla.',
+            '',
+            `Titulo de la batalla: ${title}`,
+          ];
+    default:
+      return kind === 'text'
+        ? [
+            'Use the battle below to create a short didactic text for language learners.',
+            'Requirements:',
+            '- Keep the grammar focus of the original battle.',
+            '- Write one short text using the same structures and vocabulary.',
+            '- After the text, list the target grammar patterns used.',
+            '- Keep the output in the same language as the battle.',
+            '',
+            `Battle title: ${title}`,
+          ]
+        : [
+            'Use the battle below to prepare a grammar mini-lesson.',
+            'Requirements:',
+            '- Identify the main grammar point or points practiced in the battle.',
+            '- Explain each point in a simple way for students.',
+            '- Give extra examples.',
+            '- Suggest a short classroom practice activity.',
+            '- Keep the output in the same language as the battle.',
+            '',
+            `Battle title: ${title}`,
+          ];
+  }
+}
+
+async function copyTextWithFallback(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fallback below
+    }
+  }
+
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  try {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', 'true');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    textarea.style.pointerEvents = 'none';
+    textarea.style.left = '-9999px';
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+    const copied = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return copied;
+  } catch {
+    return false;
+  }
+}
 
 const IMPORT_OPTION_PATTERN = /^(?:[-*•]\s*)?([A-H])[\)\].:-]\s*(.+)$/i;
 const IMPORT_ANSWER_PATTERN = /^(?:resposta(?:\s+correta)?|gabarito|answer|correct answer|correct|respuesta(?:\s+correcta)?)\s*[:\-]\s*(.+)$/i;
@@ -355,10 +549,10 @@ function resolveImportedCorrectIndexes(answerRaw: string, options: string[]): nu
   return [];
 }
 
-function parseBulkBattleQuestions(rawText: string): { questions: BattleQuestion[]; missingAnswerCount: number } {
+function parseBulkBattleQuestions(rawText: string): { questions: BattleQuestion[]; reviewAnswerCount: number } {
   const lines = rawText.replace(/\r/g, '').split('\n');
   const parsed: BattleQuestion[] = [];
-  let missingAnswerCount = 0;
+  let reviewAnswerCount = 0;
   let promptLines: string[] = [];
   let options: string[] = [];
   let answerRaw = '';
@@ -378,7 +572,7 @@ function parseBulkBattleQuestions(rawText: string): { questions: BattleQuestion[
     const text = promptLines.join(' ').trim();
     const correctIndexes = resolveImportedCorrectIndexes(answerRaw, options);
     if (!answerRaw.trim() || correctIndexes.length === 0) {
-      missingAnswerCount += 1;
+      reviewAnswerCount += 1;
     }
     const question = sanitizeBattleQuestion({
       id: `imported_${Date.now()}_${parsed.length + 1}`,
@@ -462,7 +656,7 @@ function parseBulkBattleQuestions(rawText: string): { questions: BattleQuestion[
   flushQuestion();
   return {
     questions: sanitizeBattleQuestions(parsed),
-    missingAnswerCount,
+    reviewAnswerCount,
   };
 }
 
@@ -764,6 +958,9 @@ export const BattleSetupModal: React.FC<Props> = ({
   const actionCopy = BATTLE_ACTION_COPY[effectiveUiLanguage] ?? BATTLE_ACTION_COPY.en;
   const importCopy = BATTLE_IMPORT_COPY[effectiveUiLanguage] ?? BATTLE_IMPORT_COPY.en;
   const duplicatePromptCopy = BATTLE_DUPLICATE_PROMPT_COPY[effectiveUiLanguage] ?? BATTLE_DUPLICATE_PROMPT_COPY.en;
+  const battleSourceCopy = BATTLE_SOURCE_COPY[
+    effectiveUiLanguage === 'pt' || effectiveUiLanguage === 'es' ? effectiveUiLanguage : 'en'
+  ];
   const copy = useMemo(() => {
     switch (effectiveUiLanguage) {
       case 'pt':
@@ -1234,6 +1431,7 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [bulkImportText, setBulkImportText] = useState('');
   const [bulkImportKind, setBulkImportKind] = useState<BattleQuestionKind>('multiple-choice');
   const [bulkImportError, setBulkImportError] = useState<string | null>(null);
+  const [promptPreview, setPromptPreview] = useState<{ title: string; text: string } | null>(null);
   const hasTrackedChangesRef = useRef(false);
   const questionCardRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const exclusionStorageKey = useMemo(
@@ -1425,7 +1623,14 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   function handleBulkImport() {
     try {
-      const { questions: parsedQuestions, missingAnswerCount } = parseBulkBattleQuestions(bulkImportText);
+      const { questions: parsedQuestions, reviewAnswerCount } = parseBulkBattleQuestions(bulkImportText);
+      if (reviewAnswerCount > 0) {
+        setBulkImportError(
+          importCopy.answerRequiredError?.(reviewAnswerCount)
+            ?? `${reviewAnswerCount} imported question(s) need a valid answer line before continuing.`
+        );
+        return;
+      }
       const importedQuestions = sanitizeBattleQuestions(
         parsedQuestions.map((question) => convertImportedQuestionKind(question, bulkImportKind))
       );
@@ -1440,12 +1645,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       setEditDraft(null);
       setBulkImportText('');
       setBulkImportError(null);
-      setSaveMessage(
-        missingAnswerCount > 0
-          ? (importCopy.missingAnswerWarning?.(missingAnswerCount)
-            ?? `${missingAnswerCount} imported question(s) need the correct answer reviewed before saving.`)
-          : importCopy.success(importedQuestions.length)
-      );
+      setSaveMessage(importCopy.success(importedQuestions.length));
       setStartError(null);
       setStep('curate');
     } catch (error) {
@@ -1858,6 +2058,83 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   const selectedCount = getEffectiveQuestions().filter(q => !excludedIds.has(q.id)).length;
 
+  function getSelectedQuestionsForBattleSource(): BattleQuestion[] {
+    return sanitizeBattleQuestions(
+      getEffectiveQuestions().filter((question) => !excludedIds.has(question.id))
+    );
+  }
+
+  function buildBattleSourceTemplate(): SavedBattleTemplate | null {
+    const finalQuestions = getSelectedQuestionsForBattleSource();
+    if (finalQuestions.length === 0) {
+      return null;
+    }
+
+    return buildSavedBattleTemplate(
+      buildConfig(finalQuestions.length),
+      finalQuestions,
+      templateTitle.trim() || buildSuggestedBattleTitle(effectiveUiLanguage),
+    );
+  }
+
+  function buildBattleTextPrompt(): string {
+    const template = buildBattleSourceTemplate();
+    if (!template) {
+      return '';
+    }
+
+    return [
+      ...buildBattleSourcePromptHeader(editorLanguage, 'text', template.title),
+      '',
+      buildBattleQuestionsDigest(template.questions),
+    ].join('\n');
+  }
+
+  function buildBattleGrammarPrompt(): string {
+    const template = buildBattleSourceTemplate();
+    if (!template) {
+      return '';
+    }
+
+    return [
+      ...buildBattleSourcePromptHeader(editorLanguage, 'grammar', template.title),
+      '',
+      buildBattleQuestionsDigest(template.questions),
+    ].join('\n');
+  }
+
+  async function copyBattleSourcePrompt(kind: 'text' | 'grammar') {
+    const prompt = kind === 'text' ? buildBattleTextPrompt() : buildBattleGrammarPrompt();
+    if (!prompt) {
+      setStartError(copy.noQuestionsSave);
+      return;
+    }
+
+    setPromptPreview({
+      title: kind === 'text' ? battleSourceCopy.textPromptTitle : battleSourceCopy.grammarPromptTitle,
+      text: prompt,
+    });
+    setSaveMessage(null);
+    setStartError(null);
+  }
+
+  function handleBattleSourcePdf() {
+    const template = buildBattleSourceTemplate();
+    if (!template) {
+      setStartError(copy.noQuestionsSave);
+      return;
+    }
+
+    try {
+      downloadBattleTemplatePdf(template);
+      setSaveMessage(battleSourceCopy.pdfDone);
+      setStartError(null);
+    } catch (error) {
+      console.error('[BATTLE SOURCE] pdf export failed', error);
+      setStartError(copy.saveFailure);
+    }
+  }
+
   // ────────────────────────────────────────────────────────────────────────
   // STEP 1 — CONFIG
   // ────────────────────────────────────────────────────────────────────────
@@ -1916,9 +2193,16 @@ export const BattleSetupModal: React.FC<Props> = ({
         return;
       }
 
-      const { questions: incomingQuestions } = parseBulkBattleQuestions(normalizedPrompt);
+      const { questions: incomingQuestions, reviewAnswerCount } = parseBulkBattleQuestions(normalizedPrompt);
       if (incomingQuestions.length === 0) {
         setStartError(duplicatePromptCopy.emptyError);
+        return;
+      }
+      if (reviewAnswerCount > 0) {
+        setStartError(
+          duplicatePromptCopy.answerRequiredError?.(reviewAnswerCount)
+            ?? `${reviewAnswerCount} imported question(s) need a valid answer line before duplicating.`
+        );
         return;
       }
 
@@ -2405,6 +2689,37 @@ export const BattleSetupModal: React.FC<Props> = ({
                   </button>
                 </div>
               </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                  {battleSourceCopy.title}
+                </label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <button
+                    type="button"
+                    onClick={handleBattleSourcePdf}
+                    className="rounded-xl border border-orange-500/40 bg-orange-500/10 p-3 text-left text-orange-300 transition hover:border-orange-400 hover:bg-orange-500/15"
+                  >
+                    <div className="text-sm font-semibold">{battleSourceCopy.pdfTitle}</div>
+                    <div className="mt-1 text-[11px] leading-4 text-slate-300">{battleSourceCopy.pdfDesc}</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copyBattleSourcePrompt('text')}
+                    className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-left text-slate-100 transition hover:border-slate-500"
+                  >
+                    <div className="text-sm font-semibold">{battleSourceCopy.textPromptTitle}</div>
+                    <div className="mt-1 text-[11px] leading-4 text-slate-400">{battleSourceCopy.textPromptDesc}</div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copyBattleSourcePrompt('grammar')}
+                    className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-left text-slate-100 transition hover:border-slate-500"
+                  >
+                    <div className="text-sm font-semibold">{battleSourceCopy.grammarPromptTitle}</div>
+                    <div className="mt-1 text-[11px] leading-4 text-slate-400">{battleSourceCopy.grammarPromptDesc}</div>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
           {questions.map((q, idx) => {
@@ -2704,6 +3019,45 @@ export const BattleSetupModal: React.FC<Props> = ({
             className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-sm hover:opacity-90 transition disabled:opacity-40"
           >✅ Confirmar Lista Final ({selectedCount} perguntas)</button>
         </div>
+        {promptPreview ? (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
+            <div className="w-full max-w-2xl rounded-2xl border border-cyan-500/20 bg-slate-900 shadow-2xl">
+              <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+                <h3 className="text-sm font-bold text-white">{promptPreview.title}</h3>
+                <button
+                  type="button"
+                  onClick={() => setPromptPreview(null)}
+                  className="rounded-lg border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-slate-500"
+                >
+                  {battleSourceCopy.closePreview}
+                </button>
+              </div>
+              <div className="space-y-3 px-4 py-4">
+                <textarea
+                  readOnly
+                  value={promptPreview.text}
+                  className="min-h-[260px] w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-white outline-none"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void copyTextWithFallback(promptPreview.text).then((copied) => {
+                      if (copied) {
+                        setSaveMessage(battleSourceCopy.copied);
+                        setStartError(null);
+                      } else {
+                        setStartError(battleSourceCopy.copyFailed);
+                      }
+                    })}
+                    className="rounded-xl bg-gradient-to-r from-cyan-500 to-sky-600 px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
+                  >
+                    {battleSourceCopy.copyFromPreview}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

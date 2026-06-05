@@ -11,6 +11,7 @@ import {
   saveBattleTemplateToLibrary,
   type StoredBattleTemplate,
 } from '../../services/battleTemplateLibraryService';
+import { downloadBattleTemplatePdf } from '../../services/battlePdfService';
 import type { LiveClass } from '../../types';
 import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from './LiveBattleSimple';
 
@@ -77,6 +78,9 @@ const COPY: Record<UILang, {
   libraryEmpty: string;
   editAndUse: string;
   open: string;
+  exportPdf: string;
+  exportPdfSuccess: string;
+  exportPdfFailure: string;
   loadLibraryError: string;
 }> = {
   en: {
@@ -108,6 +112,9 @@ const COPY: Record<UILang, {
     libraryEmpty: 'There are no saved battles yet. Open "Prepare Class", build your questions and click "Save".',
     editAndUse: 'Edit and use',
     open: 'Open',
+    exportPdf: 'Export PDF',
+    exportPdfSuccess: 'Battle exported to PDF.',
+    exportPdfFailure: 'Failed to export the battle PDF.',
     loadLibraryError: 'Failed to load saved battles.',
   },
   pt: {
@@ -139,6 +146,9 @@ const COPY: Record<UILang, {
     libraryEmpty: 'Ainda nao ha battles salvos. Abra "Preparar Aula", monte suas perguntas e clique em "Salvar".',
     editAndUse: 'Editar e usar',
     open: 'Abrir',
+    exportPdf: 'Baixar PDF',
+    exportPdfSuccess: 'Battle exportado em PDF.',
+    exportPdfFailure: 'Falha ao exportar o battle em PDF.',
     loadLibraryError: 'Falha ao carregar battles salvos.',
   },
   es: {
@@ -170,6 +180,9 @@ const COPY: Record<UILang, {
     libraryEmpty: 'Todavia no hay batallas guardadas. Abre "Preparar clase", arma tus preguntas y pulsa "Guardar".',
     editAndUse: 'Editar y usar',
     open: 'Abrir',
+    exportPdf: 'Exportar PDF',
+    exportPdfSuccess: 'Batalla exportada en PDF.',
+    exportPdfFailure: 'No se pudo exportar la batalla en PDF.',
     loadLibraryError: 'No se pudieron cargar las batallas guardadas.',
   },
   el: {
@@ -201,6 +214,9 @@ const COPY: Record<UILang, {
     libraryEmpty: 'There are no saved battles yet. Open "Prepare Class", build your questions and click "Save".',
     editAndUse: 'Edit and use',
     open: 'Open',
+    exportPdf: 'Export PDF',
+    exportPdfSuccess: 'Battle exported to PDF.',
+    exportPdfFailure: 'Failed to export the battle PDF.',
     loadLibraryError: 'Failed to load saved battles.',
   },
   he: {
@@ -232,6 +248,9 @@ const COPY: Record<UILang, {
     libraryEmpty: 'There are no saved battles yet. Open "Prepare Class", build your questions and click "Save".',
     editAndUse: 'Edit and use',
     open: 'Open',
+    exportPdf: 'Export PDF',
+    exportPdfSuccess: 'Battle exported to PDF.',
+    exportPdfFailure: 'Failed to export the battle PDF.',
     loadLibraryError: 'Failed to load saved battles.',
   },
 };
@@ -297,6 +316,7 @@ export const BattleHubPage: React.FC<Props> = ({
   const [libraryTemplates, setLibraryTemplates] = useState<StoredBattleTemplate[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [libraryNotice, setLibraryNotice] = useState<string | null>(null);
   const groupedLibraryTemplates = useMemo(() => {
     const groups = BATTLE_LANGUAGE_GROUPS.reduce<Record<BattleTemplateLanguage, StoredBattleTemplate[]>>(
       (accumulator, group) => ({
@@ -344,6 +364,18 @@ export const BattleHubPage: React.FC<Props> = ({
       },
     );
   }, [groupedLibraryTemplates]);
+
+  function handleExportPdf(template: SavedBattleTemplate) {
+    try {
+      downloadBattleTemplatePdf(template);
+      setLibraryNotice(copy.exportPdfSuccess);
+      setLibraryError(null);
+    } catch (error) {
+      console.error('[BATTLE PDF] export failed', error);
+      setLibraryNotice(null);
+      setLibraryError(copy.exportPdfFailure);
+    }
+  }
   const setupCourseId = setupTemplate?.config.courseId ?? effectiveCourseId ?? undefined;
   const setupWorkbookId = setupTemplate?.config.workbookId ?? effectiveWorkbookId ?? undefined;
   const setupLessonId = setupTemplate?.config.lessonId?.toString() ?? effectiveLessonId ?? undefined;
@@ -636,12 +668,20 @@ export const BattleHubPage: React.FC<Props> = ({
                       {lastTemplate.questions.length} {copy.questionsWord} • {lastTemplate.config.timePerQuestion}s • {lastTemplate.config.botEnabled ? copy.botEnabled : copy.solo}
                     </p>
                   </div>
-                  <button
-                    onClick={() => setActiveTemplate(lastTemplate)}
-                    className="rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-2 text-sm font-bold text-orange-300"
-                  >
-                    {copy.replay}
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setActiveTemplate(lastTemplate)}
+                      className="rounded-xl border border-orange-500/40 bg-orange-500/10 px-4 py-2 text-sm font-bold text-orange-300"
+                    >
+                      {copy.replay}
+                    </button>
+                    <button
+                      onClick={() => handleExportPdf(lastTemplate)}
+                      className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+                    >
+                      {copy.exportPdf}
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -677,6 +717,10 @@ export const BattleHubPage: React.FC<Props> = ({
               {copy.savedCount(libraryTemplates.length)}
             </span>
           </div>
+
+          {libraryNotice ? (
+            <p className="mt-4 text-sm text-emerald-300">{libraryNotice}</p>
+          ) : null}
 
           {libraryLoading ? (
             <p className="mt-4 text-sm text-slate-400">{copy.libraryLoading}</p>
@@ -744,6 +788,12 @@ export const BattleHubPage: React.FC<Props> = ({
                                         className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
                                       >
                                         {copy.open}
+                                      </button>
+                                      <button
+                                        onClick={() => handleExportPdf(template)}
+                                        className="rounded-xl border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-bold text-slate-100"
+                                      >
+                                        {copy.exportPdf}
                                       </button>
                                     </div>
                                   </div>
