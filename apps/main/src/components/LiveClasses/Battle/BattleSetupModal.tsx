@@ -10,6 +10,7 @@
 // preference survives page refreshes and future sessions.
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { BattleConfig, BattleDifficulty, BattleQuestionKind, BattleScope, BattleQuestion, SavedBattleTemplate } from './battleTypes';
 import { getBattleQuestions } from './battleQuestions';
 import {
@@ -310,7 +311,6 @@ const BATTLE_SOURCE_COPY: Record<'en' | 'pt' | 'es', {
   closePreview: string;
   copyFromPreview: string;
   openChatGpt: string;
-  promptOpened: string;
 }> = {
   en: {
     title: 'Battle Source',
@@ -326,7 +326,6 @@ const BATTLE_SOURCE_COPY: Record<'en' | 'pt' | 'es', {
     closePreview: 'Close',
     copyFromPreview: 'Copy text',
     openChatGpt: 'Open ChatGPT',
-    promptOpened: 'Prompt opened in a separate window.',
   },
   pt: {
     title: 'Battle Source',
@@ -342,7 +341,6 @@ const BATTLE_SOURCE_COPY: Record<'en' | 'pt' | 'es', {
     closePreview: 'Fechar',
     copyFromPreview: 'Copiar texto',
     openChatGpt: 'Abrir ChatGPT',
-    promptOpened: 'Prompt aberto em uma nova janela.',
   },
   es: {
     title: 'Battle Source',
@@ -358,7 +356,6 @@ const BATTLE_SOURCE_COPY: Record<'en' | 'pt' | 'es', {
     closePreview: 'Cerrar',
     copyFromPreview: 'Copiar texto',
     openChatGpt: 'Abrir ChatGPT',
-    promptOpened: 'Prompt abierto en una ventana aparte.',
   },
 };
 
@@ -490,15 +487,6 @@ async function copyTextWithFallback(text: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 const IMPORT_OPTION_PATTERN = /^(?:[-*•]\s*)?([A-H])[\)\].:-]\s*(.+)$/i;
@@ -2130,52 +2118,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     window.open('https://chatgpt.com/', '_blank', 'noopener,noreferrer');
   }
 
-  function openPromptInSeparateWindow(title: string, prompt: string): boolean {
-    const popup = window.open('', '_blank', 'noopener,noreferrer,width=960,height=760');
-    if (!popup) {
-      return false;
-    }
-
-    popup.document.title = title;
-    popup.document.body.innerHTML = `
-      <div style="margin:0;min-height:100vh;background:#020617;color:#e2e8f0;font-family:Arial,sans-serif;padding:24px;box-sizing:border-box;">
-        <div style="max-width:960px;margin:0 auto;background:#0f172a;border:1px solid rgba(34,211,238,.2);border-radius:18px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.45);">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 20px;border-bottom:1px solid #1e293b;">
-            <h1 style="margin:0;font-size:16px;font-weight:700;color:#fff;">${escapeHtml(title)}</h1>
-            <button id="close-prompt-window" style="border:1px solid #334155;background:transparent;color:#e2e8f0;border-radius:10px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;">${escapeHtml(battleSourceCopy.closePreview)}</button>
-          </div>
-          <div style="padding:20px;display:flex;flex-direction:column;gap:16px;">
-            <textarea id="battle-prompt-text" readonly style="width:100%;min-height:420px;border-radius:14px;border:1px solid #334155;background:#020617;color:#fff;padding:14px;font-size:14px;line-height:1.55;box-sizing:border-box;resize:vertical;">${escapeHtml(prompt)}</textarea>
-            <div style="display:flex;justify-content:flex-end;gap:12px;flex-wrap:wrap;">
-              <button id="open-chatgpt-button" style="border:none;background:linear-gradient(90deg,#0ea5e9,#2563eb);color:#fff;border-radius:12px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;">${escapeHtml(battleSourceCopy.openChatGpt)}</button>
-              <button id="copy-prompt-button" style="border:none;background:linear-gradient(90deg,#06b6d4,#0284c7);color:#fff;border-radius:12px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;">${escapeHtml(battleSourceCopy.copyFromPreview)}</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
-
-    const closeButton = popup.document.getElementById('close-prompt-window');
-    const copyButton = popup.document.getElementById('copy-prompt-button');
-    const chatGptButton = popup.document.getElementById('open-chatgpt-button');
-
-    closeButton?.addEventListener('click', () => popup.close());
-    copyButton?.addEventListener('click', () => {
-      void copyTextWithFallback(prompt).then((copied) => {
-        if (copied) {
-          setSaveMessage(battleSourceCopy.copied);
-          setStartError(null);
-        } else {
-          setStartError(battleSourceCopy.copyFailed);
-        }
-      });
-    });
-    chatGptButton?.addEventListener('click', () => openChatGptForPrompt(prompt));
-
-    return true;
-  }
-
-  async function copyBattleSourcePrompt(kind: 'text' | 'grammar') {
+  function copyBattleSourcePrompt(kind: 'text' | 'grammar') {
     const prompt = kind === 'text' ? buildBattleTextPrompt() : buildBattleGrammarPrompt();
     if (!prompt) {
       setStartError(copy.noQuestionsSave);
@@ -2186,11 +2129,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       title: kind === 'text' ? battleSourceCopy.textPromptTitle : battleSourceCopy.grammarPromptTitle,
       text: prompt,
     });
-    const opened = openPromptInSeparateWindow(
-      kind === 'text' ? battleSourceCopy.textPromptTitle : battleSourceCopy.grammarPromptTitle,
-      prompt,
-    );
-    setSaveMessage(opened ? battleSourceCopy.promptOpened : null);
+    setSaveMessage(null);
     setStartError(null);
   }
 
@@ -3095,53 +3034,56 @@ export const BattleSetupModal: React.FC<Props> = ({
             className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 text-white font-bold text-sm hover:opacity-90 transition disabled:opacity-40"
           >✅ Confirmar Lista Final ({selectedCount} perguntas)</button>
         </div>
-        {promptPreview ? (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 p-4">
-            <div className="w-full max-w-2xl rounded-2xl border border-cyan-500/20 bg-slate-900 shadow-2xl">
-              <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-                <h3 className="text-sm font-bold text-white">{promptPreview.title}</h3>
-                <button
-                  type="button"
-                  onClick={() => setPromptPreview(null)}
-                  className="rounded-lg border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-slate-500"
-                >
-                  {battleSourceCopy.closePreview}
-                </button>
-              </div>
-              <div className="space-y-3 px-4 py-4">
-                <textarea
-                  readOnly
-                  value={promptPreview.text}
-                  className="min-h-[260px] w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-white outline-none"
-                />
-                <div className="flex justify-end">
+      </div>
+      {promptPreview && typeof document !== 'undefined'
+        ? createPortal(
+            <div className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+              <div className="w-full max-w-3xl rounded-2xl border border-cyan-500/20 bg-slate-900 shadow-2xl">
+                <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+                  <h3 className="text-sm font-bold text-white">{promptPreview.title}</h3>
                   <button
                     type="button"
-                    onClick={() => openChatGptForPrompt(promptPreview.text)}
-                    className="mr-2 rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-100 transition hover:border-slate-400"
+                    onClick={() => setPromptPreview(null)}
+                    className="rounded-lg border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-slate-500"
                   >
-                    {battleSourceCopy.openChatGpt}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void copyTextWithFallback(promptPreview.text).then((copied) => {
-                      if (copied) {
-                        setSaveMessage(battleSourceCopy.copied);
-                        setStartError(null);
-                      } else {
-                        setStartError(battleSourceCopy.copyFailed);
-                      }
-                    })}
-                    className="rounded-xl bg-gradient-to-r from-cyan-500 to-sky-600 px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
-                  >
-                    {battleSourceCopy.copyFromPreview}
+                    {battleSourceCopy.closePreview}
                   </button>
                 </div>
+                <div className="space-y-3 px-4 py-4">
+                  <textarea
+                    readOnly
+                    value={promptPreview.text}
+                    className="min-h-[320px] w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-sm text-white outline-none"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openChatGptForPrompt(promptPreview.text)}
+                      className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-bold text-slate-100 transition hover:border-slate-400"
+                    >
+                      {battleSourceCopy.openChatGpt}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void copyTextWithFallback(promptPreview.text).then((copied) => {
+                        if (copied) {
+                          setSaveMessage(battleSourceCopy.copied);
+                          setStartError(null);
+                        } else {
+                          setStartError(battleSourceCopy.copyFailed);
+                        }
+                      })}
+                      className="rounded-xl bg-gradient-to-r from-cyan-500 to-sky-600 px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
+                    >
+                      {battleSourceCopy.copyFromPreview}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-        ) : null}
-      </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 };
