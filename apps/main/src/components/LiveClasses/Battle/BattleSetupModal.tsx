@@ -1460,6 +1460,10 @@ export const BattleSetupModal: React.FC<Props> = ({
   }, [excludedIds, exclusionStorageKey]);
 
   useEffect(() => {
+    console.log('[BATTLE SOURCE] promptPreview changed:', promptPreview);
+  }, [promptPreview]);
+
+  useEffect(() => {
     if (!initialTemplate) return;
 
     setScope(initialTemplate.config.scope ?? 'current-lesson');
@@ -2119,7 +2123,14 @@ export const BattleSetupModal: React.FC<Props> = ({
   }
 
   function copyBattleSourcePrompt(kind: 'text' | 'grammar') {
+    if (kind === 'text') {
+      console.log('TEXT PROMPT CLICKED');
+    } else {
+      console.log('GRAMMAR PROMPT CLICKED');
+    }
+
     const prompt = kind === 'text' ? buildBattleTextPrompt() : buildBattleGrammarPrompt();
+    console.log('[BATTLE SOURCE] prompt kind:', kind, 'length:', prompt.length);
     if (!prompt) {
       setStartError(copy.noQuestionsSave);
       return;
@@ -2129,6 +2140,7 @@ export const BattleSetupModal: React.FC<Props> = ({
       title: kind === 'text' ? battleSourceCopy.textPromptTitle : battleSourceCopy.grammarPromptTitle,
       text: prompt,
     });
+    console.log('[BATTLE SOURCE] promptPreview state requested');
     setSaveMessage(null);
     setStartError(null);
   }
@@ -2719,7 +2731,11 @@ export const BattleSetupModal: React.FC<Props> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => void copyBattleSourcePrompt('text')}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      copyBattleSourcePrompt('text');
+                    }}
                     className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-left text-slate-100 transition hover:border-slate-500"
                   >
                     <div className="text-sm font-semibold">{battleSourceCopy.textPromptTitle}</div>
@@ -2727,7 +2743,11 @@ export const BattleSetupModal: React.FC<Props> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => void copyBattleSourcePrompt('grammar')}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      copyBattleSourcePrompt('grammar');
+                    }}
                     className="rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-left text-slate-100 transition hover:border-slate-500"
                   >
                     <div className="text-sm font-semibold">{battleSourceCopy.grammarPromptTitle}</div>
