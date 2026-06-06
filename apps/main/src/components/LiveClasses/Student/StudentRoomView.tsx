@@ -95,7 +95,6 @@ const StudentStage: React.FC<{
   const isCameraStage = stageMode === 'camera';
   const shouldRenderBattleOverlay = !USE_SIMPLE_LIVE_BATTLE && Boolean(battleSession) && isBattleStage;
   const shouldRenderSimpleBattleOverlay = USE_SIMPLE_LIVE_BATTLE && isBattleStage;
-  const shouldShowTeacherScreen = isTeacherSharing && isCameraStage;
 
 
   useEffect(() => {
@@ -323,6 +322,7 @@ const StudentStage: React.FC<{
     (track) => track.participant && !track.participant.isLocal,
   );
   const isTeacherSharing = !!teacherScreenTrack && isTrackReference(teacherScreenTrack);
+  const shouldShowTeacherScreen = isTeacherSharing && isCameraStage;
 
   const uiLang: 'en' | 'pt' | 'es' = (() => {
     try {
