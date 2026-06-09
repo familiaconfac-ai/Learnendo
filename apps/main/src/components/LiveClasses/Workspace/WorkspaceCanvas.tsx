@@ -2595,6 +2595,34 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }
   }, [isSlidesMode]);
 
+  const switchPage = (pageId: string) => {
+    if (pageId === activePageIdRef.current || !viewerCanManagePages) return;
+    flushFloatingEditorBeforePageMutation();
+    const flushed = flushPages();
+    const newPage = flushed.find((p) => p.id === pageId);
+    if (!newPage) return;
+    // Cancel debounced saves to avoid stale writes after the switch.
+    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    setDocHtml(newPage.docContent);
+    if (docRef.current) docRef.current.innerHTML = newPage.docContent;
+    const scopedNewPageItems = newPage.items.map(normalizeItemScope);
+    itemsRef.current = scopedNewPageItems;
+    setItems(scopedNewPageItems);
+    setSelectedId(null);
+    activePageIdRef.current = pageId;
+    setActivePageId(pageId);
+    slideSelectionAnchorIdRef.current = pageId;
+    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
+      ...current,
+      pages: flushed,
+      currentPageId: pageId,
+      docContent: newPage.docContent,
+      items: newPage.items,
+    }));
+    savePageSwitch(classId, flushed, pageId, newPage.docContent, newPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
+  };
+
   const navigateSlides = useCallback((direction: 'previous' | 'next') => {
     if (!isSlidesMode || !viewerCanManagePages) return;
     const activeIndex = pages.findIndex((page) => page.id === activePageIdRef.current);
@@ -4652,34 +4680,6 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       items: nextActivePage.items,
     }));
     savePageSwitch(classId, remaining, nextActivePage.id, nextActivePage.docContent, nextActivePage.items, userId, userName, surfaceModeRef.current).catch(console.error);
-  };
-
-  const switchPage = (pageId: string) => {
-    if (pageId === activePageIdRef.current || !viewerCanManagePages) return;
-    flushFloatingEditorBeforePageMutation();
-    const flushed = flushPages();
-    const newPage = flushed.find((p) => p.id === pageId);
-    if (!newPage) return;
-    // Cancel debounced saves to avoid stale writes after the switch.
-    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
-    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
-    setDocHtml(newPage.docContent);
-    if (docRef.current) docRef.current.innerHTML = newPage.docContent;
-    const scopedNewPageItems = newPage.items.map(normalizeItemScope);
-    itemsRef.current = scopedNewPageItems;
-    setItems(scopedNewPageItems);
-    setSelectedId(null);
-    activePageIdRef.current = pageId;
-    setActivePageId(pageId);
-    slideSelectionAnchorIdRef.current = pageId;
-    updateSurfaceStateRef(surfaceModeRef.current, (current) => ({
-      ...current,
-      pages: flushed,
-      currentPageId: pageId,
-      docContent: newPage.docContent,
-      items: newPage.items,
-    }));
-    savePageSwitch(classId, flushed, pageId, newPage.docContent, newPage.items, userId, userName, surfaceModeRef.current).catch(console.error);
   };
 
   const addPage = () => {
