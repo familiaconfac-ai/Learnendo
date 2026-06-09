@@ -491,6 +491,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   defaultLessonId = '',
   onUpdateSession,
 }) => {
+  // All state declarations first
   const [session, setSession] = useState<LiveExerciseSession>(EMPTY_SESSION);
   const [blocks, setBlocks] = useState<LiveExerciseBlock[]>([]);
   const [loadingSession, setLoadingSession] = useState(true);
@@ -498,9 +499,6 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   const [sessionTitleDraft, setSessionTitleDraft] = useState('');
   const [actionError, setActionError] = useState('');
   const [savingSessionState, setSavingSessionState] = useState(false);
-
-  const actorName = getActorName(user);
-  const actorLabel = user.displayName || user.email || 'My response';
   const [courseId, setCourseId] = useState(defaultCourseId);
   const [workbookId, setWorkbookId] = useState(defaultWorkbookId ?? 1);
   const [lessonId, setLessonId] = useState(defaultLessonId ?? '');
@@ -508,6 +506,11 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   const [workbook, setWorkbook] = useState<Workbook | null>(null);
   const [loadingWorkbook, setLoadingWorkbook] = useState(false);
 
+  // Derived values and computed props
+  const actorName = getActorName(user);
+  const actorLabel = user.displayName || user.email || 'My response';
+
+  // Memoized values with proper dependency ordering
   const workbookOptions = useMemo(() => getWorkbookOptionsForCourse(courseId), [courseId]);
   const lessonOptions = useMemo(() => workbook?.lessons ?? [], [workbook]);
   const selectedLesson = useMemo(() => resolveLessonForWhiteboard(workbook, lessonId), [lessonId, workbook]);
