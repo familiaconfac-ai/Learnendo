@@ -211,6 +211,8 @@ export default defineConfig(({ mode }) => {
     return {
       base: '/',
       build: {
+        minify: false,
+        sourcemap: true,
         rollupOptions: {
           input: {
             main: path.resolve(__dirname, 'index.html'),
