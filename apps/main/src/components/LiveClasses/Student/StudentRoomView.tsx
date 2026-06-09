@@ -38,8 +38,6 @@ function openExternalLink(rawUrl: string) {
   window.open(target, '_blank', 'noopener,noreferrer');
 }
 
-const STUDENT_TRAIL_BUTTON_LABEL = 'Trail';
-
 interface StudentRoomViewProps {
   liveClass: LiveClass;
   user: User;
@@ -821,22 +819,6 @@ const StudentStage: React.FC<{
             W
           </button>
 
-          {hasActiveTrailSession ? (
-            <button
-              type="button"
-              onClick={() => setShowExerciseSession(!showExerciseSession)}
-              className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
-                showExerciseSession
-                  ? 'bg-violet-500 text-white hover:bg-violet-400'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-              title={labels.trailSession}
-              aria-label={labels.trailSession}
-            >
-              {STUDENT_TRAIL_BUTTON_LABEL}
-            </button>
-          ) : null}
-
           <button
             onClick={() => setChatOpen((current) => !current)}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-lg shadow transition ${
@@ -878,15 +860,8 @@ const StudentStage: React.FC<{
           {showExerciseSession && hasActiveTrailSession ? (
             <div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm">
               <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
-                <div className="mb-3 flex items-center justify-between">
+                <div className="mb-3">
                   <h2 className="text-lg font-black text-white">Trail Session</h2>
-                  <button
-                    type="button"
-                    onClick={() => setShowExerciseSession(false)}
-                    className="rounded-lg px-3 py-1 text-sm font-bold text-slate-300 hover:bg-slate-800"
-                  >
-                    Close
-                  </button>
                 </div>
                 <ExerciseSessionPanel
                   classId={liveClass.id}
