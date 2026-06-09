@@ -2251,6 +2251,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
+  const showToolbar = !presentationMode && (Boolean(toolbarLeading) || viewerCanManageWorkspace);
   const [presentationRevealStep, setPresentationRevealStep] = useState(0);
   const [presentationViewport, setPresentationViewport] = useState<{ width: number; height: number }>({
     width: typeof window !== 'undefined' ? window.innerWidth : 1280,
@@ -2595,16 +2596,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [isSlidesMode]);
 
   const navigateSlides = useCallback((direction: 'previous' | 'next') => {
-    if (!isSlidesMode) return;
+    if (!isSlidesMode || !viewerCanManagePages) return;
     const activeIndex = pages.findIndex((page) => page.id === activePageIdRef.current);
     const targetIndex = direction === 'previous' ? activeIndex - 1 : activeIndex + 1;
     const targetPage = pages[targetIndex];
     if (!targetPage) return;
     switchPage(targetPage.id);
-  }, [isSlidesMode, pages]);
+  }, [isSlidesMode, pages, switchPage, viewerCanManagePages]);
 
   useEffect(() => {
-    if (!presentationMode) return;
+    if (!presentationMode || !viewerCanManagePages) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
@@ -2624,7 +2625,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [navigateSlides, presentationMode, updatePresentationMode]);
+  }, [navigateSlides, presentationMode, updatePresentationMode, viewerCanManagePages]);
 
   useEffect(() => {
     if (!openSlideMenuId) return undefined;
@@ -5597,7 +5598,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     >
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
-      {!presentationMode && (
+      {showToolbar && (
       <div
         ref={toolbarRef}
         className="flex-shrink-0 flex flex-wrap items-center gap-0.5 px-1.5 py-1 border-b bg-white border-slate-200"
@@ -5660,64 +5661,68 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
           </>
         )}
-        <select
-          value={fontFamily}
-          onMouseDownCapture={captureCurrentSelection}
-          onFocus={captureCurrentSelection}
-          onChange={(e) => applyFont(e.target.value)}
-          disabled={toolbarDisabled}
-          className="h-7 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
-          style={{ fontFamily, maxWidth: '8rem' }}
-        >
-          {FONT_FAMILIES.map((f) => (
-            <option key={f.v} value={f.v} style={{ fontFamily: f.v }}>{f.label}</option>
-          ))}
-        </select>
-
-        <select
-          value={fontSize}
-          onMouseDownCapture={captureCurrentSelection}
-          onFocus={captureCurrentSelection}
-          onChange={(e) => applySize(Number(e.target.value))}
-          disabled={toolbarDisabled}
-          className="h-7 w-14 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
-        >
-          {FONT_SIZES.map((s) => (<option key={s} value={s}>{s}</option>))}
-        </select>
-
-        <div className="w-px h-5 bg-slate-200 mx-0.5" />
-
-        <div className="flex items-center">
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
-          <button onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
-          {isSlidesMode && (
-            <button
-              onMouseDown={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
+        {viewerCanManageWorkspace && (
+          <>
+            <select
+              value={fontFamily}
+              onMouseDownCapture={captureCurrentSelection}
+              onFocus={captureCurrentSelection}
+              onChange={(e) => applyFont(e.target.value)}
               disabled={toolbarDisabled}
-              className="flex h-7 w-7 items-center justify-center rounded border border-amber-200 text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
-              title={wsl.revealOnClick}
-              aria-label={wsl.revealOnClick}
+              className="h-7 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
+              style={{ fontFamily, maxWidth: '8rem' }}
             >
-              <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
-                <path d="M7.4 9.2V4.9a1.1 1.1 0 012.2 0v2.7" />
-                <path d="M9.6 7.4a1.1 1.1 0 112.2 0v1.2" />
-                <path d="M11.8 7.9a1.1 1.1 0 112.2 0v1.4" />
-                <path d="M14 8.9a1.1 1.1 0 112.2 0v3.2c0 2.6-1.9 4.7-4.2 4.7H9.7c-1.6 0-2.4-.9-3-1.9L5 11.7a1 1 0 011.7-1l.7 1.1V9.2Z" />
-              </svg>
-            </button>
-          )}
-        </div>
+              {FONT_FAMILIES.map((f) => (
+                <option key={f.v} value={f.v} style={{ fontFamily: f.v }}>{f.label}</option>
+              ))}
+            </select>
 
-        <div className="w-px h-5 bg-slate-200 mx-0.5" />
+            <select
+              value={fontSize}
+              onMouseDownCapture={captureCurrentSelection}
+              onFocus={captureCurrentSelection}
+              onChange={(e) => applySize(Number(e.target.value))}
+              disabled={toolbarDisabled}
+              className="h-7 w-14 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
+            >
+              {FONT_SIZES.map((s) => (<option key={s} value={s}>{s}</option>))}
+            </select>
 
-        <AlignDropdown current={textAlign} disabled={toolbarDisabled} onPick={(cmd, value) => { setTextAlign(value); execFmt(cmd); }} />
+            <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
-        <div className="w-px h-5 bg-slate-200 mx-0.5" />
+            <div className="flex items-center">
+              <button onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
+              <button onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
+              <button onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
+              {isSlidesMode && (
+                <button
+                  onMouseDown={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
+                  disabled={toolbarDisabled}
+                  className="flex h-7 w-7 items-center justify-center rounded border border-amber-200 text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
+                  title={wsl.revealOnClick}
+                  aria-label={wsl.revealOnClick}
+                >
+                  <svg className="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7">
+                    <path d="M7.4 9.2V4.9a1.1 1.1 0 012.2 0v2.7" />
+                    <path d="M9.6 7.4a1.1 1.1 0 112.2 0v1.2" />
+                    <path d="M11.8 7.9a1.1 1.1 0 112.2 0v1.4" />
+                    <path d="M14 8.9a1.1 1.1 0 112.2 0v3.2c0 2.6-1.9 4.7-4.2 4.7H9.7c-1.6 0-2.4-.9-3-1.9L5 11.7a1 1 0 011.7-1l.7 1.1V9.2Z" />
+                  </svg>
+                </button>
+              )}
+            </div>
 
-        <UnifiedColorSwatch textColor={textColor} bgColor={bgColor} disabled={toolbarDisabled} onPickText={applyTextColor} onPickBg={applyHighlight} />
+            <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
-        <div className="w-px h-5 bg-slate-200 mx-0.5" />
+            <AlignDropdown current={textAlign} disabled={toolbarDisabled} onPick={(cmd, value) => { setTextAlign(value); execFmt(cmd); }} />
+
+            <div className="w-px h-5 bg-slate-200 mx-0.5" />
+
+            <UnifiedColorSwatch textColor={textColor} bgColor={bgColor} disabled={toolbarDisabled} onPickText={applyTextColor} onPickBg={applyHighlight} />
+
+            <div className="w-px h-5 bg-slate-200 mx-0.5" />
+          </>
+        )}
 
         {viewerCanManageWorkspace && !readOnly && (
           <>
@@ -5842,41 +5847,45 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
         <div className="flex-1" />
 
-        <button
-          type="button"
-          onClick={() => {
-            setVocabPopup(null);
-            setShowVocabModal(false);
-            setClickTranslatorMode((current) => !current);
-          }}
-          className={`w-7 h-7 rounded flex items-center justify-center border transition ${
-            clickTranslatorMode
-              ? 'border-emerald-300 bg-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.18)]'
-              : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
-          }`}
-          title={wsl.clickTranslator}
-          aria-label={wsl.clickTranslator}
-        >
-          <img src="/apple-touch-icon.png" alt="" className="h-6 w-6 object-contain" />
-        </button>
+        {viewerCanManageWorkspace && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setVocabPopup(null);
+                setShowVocabModal(false);
+                setClickTranslatorMode((current) => !current);
+              }}
+              className={`w-7 h-7 rounded flex items-center justify-center border transition ${
+                clickTranslatorMode
+                  ? 'border-emerald-300 bg-emerald-50 shadow-[0_0_0_1px_rgba(16,185,129,0.18)]'
+                  : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+              }`}
+              title={wsl.clickTranslator}
+              aria-label={wsl.clickTranslator}
+            >
+              <img src="/apple-touch-icon.png" alt="" className="h-6 w-6 object-contain" />
+            </button>
 
-        <button
-          onClick={() => {
-            setVocabPopup(null);
-            setClickTranslatorMode(false);
-            setShowVocabModal(true);
-          }}
-          className="w-7 h-7 rounded flex items-center justify-center hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition"
-          title={wsl.savedVocab}
-          aria-label={wsl.savedVocab}
-        >
-          <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20">
-            <rect x="3" y="2" width="10" height="14" rx="1.5"/>
-            <rect x="7" y="4" width="10" height="14" rx="1.5" opacity="0.4"/>
-            <line x1="6" y1="7" x2="10" y2="7"/>
-            <line x1="6" y1="10" x2="10" y2="10"/>
-          </svg>
-        </button>
+            <button
+              onClick={() => {
+                setVocabPopup(null);
+                setClickTranslatorMode(false);
+                setShowVocabModal(true);
+              }}
+              className="w-7 h-7 rounded flex items-center justify-center hover:bg-indigo-50 text-indigo-600 border border-indigo-200 transition"
+              title={wsl.savedVocab}
+              aria-label={wsl.savedVocab}
+            >
+              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20">
+                <rect x="3" y="2" width="10" height="14" rx="1.5"/>
+                <rect x="7" y="4" width="10" height="14" rx="1.5" opacity="0.4"/>
+                <line x1="6" y1="7" x2="10" y2="7"/>
+                <line x1="6" y1="10" x2="10" y2="10"/>
+              </svg>
+            </button>
+          </>
+        )}
 
         {viewerCanManageWorkspace && !readOnly && (
           <button onClick={handleExportPdf} className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 text-slate-600 border border-slate-200 transition" title={wsl.exportPdf} aria-label={wsl.exportPdf}>
@@ -5934,7 +5943,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       )}
 
       {/* -- Page tab bar ---------------------------------------------- */}
-      {!presentationMode && !isSlidesMode && (
+      {viewerCanManagePages && !presentationMode && !isSlidesMode && (
       <div
         className="flex-shrink-0 flex items-stretch gap-0 overflow-x-auto border-b bg-slate-50 border-slate-200"
         style={{ minHeight: '2rem', zIndex: 15 }}
@@ -6178,7 +6187,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
         >
-          {presentationMode && (
+          {presentationMode && viewerCanManagePages && (
             <>
             <div className="pointer-events-none fixed inset-x-0 top-0 z-[12040] flex justify-center">
               <div className="group/exit pointer-events-auto mt-2 flex h-16 min-w-[180px] items-start justify-center rounded-full">

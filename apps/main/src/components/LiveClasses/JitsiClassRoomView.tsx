@@ -17,6 +17,8 @@ import {
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../utils/tabScopedStorage';
 import type { LiveClass, LiveClassSession } from '../../types';
 
+const SHOW_LIVE_DEBUG_SHORTCUTS = import.meta.env.DEV;
+
 interface JitsiClassRoomViewProps {
   liveClass: LiveClass;
   user: User;
@@ -216,7 +218,7 @@ export const JitsiClassRoomView: React.FC<JitsiClassRoomViewProps> = ({
       >
         &#x1F50A;
       </button>
-      {onOpenPreviewTab ? (
+      {SHOW_LIVE_DEBUG_SHORTCUTS && onOpenPreviewTab ? (
         <button
           type="button"
           onClick={() => onOpenPreviewTab('student')}
@@ -227,7 +229,7 @@ export const JitsiClassRoomView: React.FC<JitsiClassRoomViewProps> = ({
           S
         </button>
       ) : null}
-      {onOpenTrackTab ? (
+      {SHOW_LIVE_DEBUG_SHORTCUTS && onOpenTrackTab ? (
         <button
           type="button"
           onClick={onOpenTrackTab}

@@ -29,6 +29,9 @@ function openExternalLink(rawUrl: string) {
   window.open(target, '_blank', 'noopener,noreferrer');
 }
 
+const SHOW_LIVE_DEBUG_SHORTCUTS = import.meta.env.DEV;
+const TEACHER_TRAIL_BUTTON_LABEL = 'Trail';
+
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
   user: User;
@@ -147,6 +150,12 @@ const TeacherStage: React.FC<{
       uiLang === 'en' ? 'Open student preview' : uiLang === 'es' ? 'Abrir preview alumno' : 'Abrir preview aluno',
     previewTeacher:
       uiLang === 'en' ? 'Open track/workbook tab' : uiLang === 'es' ? 'Abrir pestana de pista/cuaderno' : 'Abrir aba da trilha/caderno',
+    trailSession:
+      uiLang === 'en'
+        ? 'Trail session panel'
+        : uiLang === 'es'
+          ? 'Panel de rutas'
+          : 'Painel da trilha',
     sharingNow:
       uiLang === 'en' ? 'Sharing screen now' : uiLang === 'es' ? 'Compartiendo pantalla ahora' : 'Compartilhando tela agora',
     sharingNote:
@@ -455,36 +464,40 @@ const TeacherStage: React.FC<{
                       >
                         &#x1F4FA;
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenPreviewTab('student')}
-                        className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
-                        title={labels.previewStudent}
-                        aria-label={labels.previewStudent}
-                      >
-                        S
-                      </button>
-                      <button
-                        type="button"
-                        onClick={onOpenTrackTab}
-                        className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
-                        title={labels.previewTeacher}
-                        aria-label={labels.previewTeacher}
-                      >
-                        T
-                      </button>
+                      {SHOW_LIVE_DEBUG_SHORTCUTS ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenPreviewTab('student')}
+                          className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
+                          title={labels.previewStudent}
+                          aria-label={labels.previewStudent}
+                        >
+                          S
+                        </button>
+                      ) : null}
+                      {SHOW_LIVE_DEBUG_SHORTCUTS ? (
+                        <button
+                          type="button"
+                          onClick={onOpenTrackTab}
+                          className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
+                          title={labels.previewTeacher}
+                          aria-label={labels.previewTeacher}
+                        >
+                          T
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => setShowExerciseSession(!showExerciseSession)}
-                        className={`flex h-7 min-w-7 items-center justify-center rounded border px-1.5 text-[10px] font-black transition ${
+                        className={`flex h-7 min-w-[3.1rem] items-center justify-center rounded border px-1.5 text-[10px] font-black transition ${
                           showExerciseSession
                             ? 'border-violet-500 bg-violet-500 text-white'
                             : 'border-slate-200 text-slate-700 hover:bg-slate-100'
                         }`}
-                        title="Trail session"
-                        aria-label="Trail session"
+                        title={labels.trailSession}
+                        aria-label={labels.trailSession}
                       >
-                        TR
+                        {TEACHER_TRAIL_BUTTON_LABEL}
                       </button>
                       <button
                         type="button"
@@ -708,9 +721,10 @@ const TeacherStage: React.FC<{
                 ? 'bg-violet-500 text-white hover:bg-violet-400'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
-            title="Trail session"
+            title={labels.trailSession}
+            aria-label={labels.trailSession}
           >
-            TR
+            {TEACHER_TRAIL_BUTTON_LABEL}
           </button>
 
           <button

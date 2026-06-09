@@ -755,6 +755,13 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
     setActionError('');
     try {
       await endExerciseSession(classId, user.uid, actorName);
+      await onUpdateSession?.({
+        sessionStatus: 'idle',
+        activeExerciseId: null,
+        activeTrailIds: [],
+        activeTrailLabel: null,
+        mainStageMode: 'workspace',
+      });
     } catch (error) {
       console.warn('[ExerciseSessionPanel] end session failed:', error);
       setActionError('Unable to end the exercise session right now.');

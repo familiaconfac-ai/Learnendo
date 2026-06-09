@@ -286,10 +286,11 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   }, [liveClass.id, liveClass.workbookId]);
 
   useEffect(() => {
-    if (session.sessionStatus !== 'active') return;
-    if ((session.activeTrailIds?.length ?? 0) > 0 || Boolean(session.activeExerciseId)) {
-      setShowExerciseSession(true);
-    }
+    const hasActiveTrailSession =
+      session.sessionStatus === 'active' &&
+      ((session.activeTrailIds?.length ?? 0) > 0 || Boolean(session.activeExerciseId));
+
+    setShowExerciseSession(hasActiveTrailSession);
   }, [session.activeExerciseId, session.activeTrailIds, session.sessionStatus]);
 
   const handleUpdateSession = useCallback(

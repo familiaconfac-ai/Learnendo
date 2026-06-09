@@ -37,6 +37,8 @@ function openExternalLink(rawUrl: string) {
   window.open(target, '_blank', 'noopener,noreferrer');
 }
 
+const STUDENT_TRAIL_BUTTON_LABEL = 'Trail';
+
 interface StudentRoomViewProps {
   liveClass: LiveClass;
   user: User;
@@ -385,6 +387,12 @@ const StudentStage: React.FC<{
         : uiLang === 'es'
           ? 'No dejen el micro interno activo junto con el audio de Meet, o puede haber eco.'
           : 'Nao deixe o microfone interno aberto junto com o audio do Meet, ou pode dar eco.',
+    trailSession:
+      uiLang === 'en'
+        ? 'Trail session'
+        : uiLang === 'es'
+          ? 'Sesion de rutas'
+          : 'Sessao de trilha',
   };
 
   const liveFallbackBanner = liveKitError ? (
@@ -635,37 +643,6 @@ const StudentStage: React.FC<{
                 classTeacherUserId={liveClass.teacherUid ?? null}
                 assignedRoster={assignedRoster}
                 onPresentationModeChange={setWorkspacePresentationActive}
-                toolbarLeading={
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setShowExerciseSession(!showExerciseSession)}
-                      className={`flex h-7 min-w-7 items-center justify-center rounded border px-1.5 text-[10px] font-black transition ${
-                        showExerciseSession
-                          ? 'border-violet-500 bg-violet-500 text-white'
-                          : 'border-slate-200 text-slate-700 hover:bg-slate-100'
-                      }`}
-                      title="Trail session"
-                      aria-label="Trail session"
-                    >
-                      TR
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => undefined}
-                      className="flex h-7 w-7 items-center justify-center rounded border border-blue-600 bg-blue-600 text-sm text-white transition"
-                      title={labels.workspace}
-                      aria-label={labels.workspace}
-                    >
-                      &#x270F;&#xFE0F;
-                    </button>
-                    {cameraError ? (
-                      <span className="flex items-center text-[10px] text-red-500" title={cameraError}>
-                        &#x26A0;&#xFE0F;
-                      </span>
-                    ) : null}
-                  </>
-                }
               />
             </div>
           ) : null}
@@ -847,9 +824,10 @@ const StudentStage: React.FC<{
                 ? 'bg-violet-500 text-white hover:bg-violet-400'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
-            title="Trail session"
+            title={labels.trailSession}
+            aria-label={labels.trailSession}
           >
-            TR
+            {STUDENT_TRAIL_BUTTON_LABEL}
           </button>
 
           <button
