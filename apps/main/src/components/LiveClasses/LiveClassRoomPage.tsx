@@ -38,6 +38,55 @@ interface LiveClassRoomPageProps {
 
 type LiveClassPreviewRole = 'teacher' | 'student';
 
+interface LiveRoomErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface LiveRoomErrorBoundaryState {
+  hasError: boolean;
+  message: string | null;
+}
+
+class LiveRoomErrorBoundary extends React.Component<LiveRoomErrorBoundaryProps, LiveRoomErrorBoundaryState> {
+  state: LiveRoomErrorBoundaryState = {
+    hasError: false,
+    message: null,
+  };
+
+  static getDerivedStateFromError(error: unknown): LiveRoomErrorBoundaryState {
+    return {
+      hasError: true,
+      message: error instanceof Error ? error.message : 'Erro inesperado ao abrir a live.',
+    };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error('[LIVE_DEBUG] live room render failed', error);
+  }
+
+  render() {
+    if (!this.state.hasError) {
+      return this.props.children;
+    }
+
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 px-6 text-center">
+        <div className="max-w-lg rounded-3xl border border-rose-500/40 bg-slate-900/95 px-6 py-5 shadow-2xl">
+          <div className="text-xs font-black uppercase tracking-[0.18em] text-rose-300">
+            Live Class
+          </div>
+          <p className="mt-3 text-sm text-slate-200">
+            Ocorreu um erro ao renderizar a sala ao vivo.
+          </p>
+          <p className="mt-2 text-xs text-slate-400">
+            {this.state.message || 'Erro inesperado ao abrir a live.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+}
+
 function getPreviewRoleFromSearch(): LiveClassPreviewRole | null {
   if (typeof window === 'undefined') return null;
   const params = new URLSearchParams(window.location.search);
@@ -229,6 +278,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   const [showExerciseSession, setShowExerciseSession] = useState(false);
   const [pendingBattleTemplate, setPendingBattleTemplate] = useState<SavedBattleTemplate | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
+  const [sessionLoadError, setSessionLoadError] = useState<string | null>(null);
   const [session, setSession] = useState<LiveClassSession>(() => buildInitialSession(liveClass));
 
   const role = previewRole ?? (isTeacher ? 'teacher' : 'student');
@@ -263,6 +313,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
   useEffect(() => {
     setSessionLoaded(false);
+    setSessionLoadError(null);
     setSession(buildInitialSession(liveClass));
     setPendingBattleTemplate(null);
     setShowWhiteboard(false);
@@ -273,13 +324,25 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     const unsubscribe = subscribeLiveSession(
       liveClass.id,
       (next) => {
+        console.info('[LIVE_DEBUG] shared session loaded', {
+          classId: liveClass.id,
+          role,
+          sessionStatus: next.sessionStatus ?? 'unknown',
+          activeTrailIds: next.activeTrailIds ?? [],
+          activeExerciseId: next.activeExerciseId ?? null,
+        });
         setSession({
           ...next,
           activeWorkbookId: next.activeWorkbookId ?? liveClass.workbookId ?? null,
         });
+        setSessionLoadError(null);
         setSessionLoaded(true);
       },
-      (error) => console.warn('[LiveClass] Session error:', error),
+      (error) => {
+        console.warn('[LiveClass] Session error:', error);
+        setSessionLoadError('Nao foi possivel carregar o estado compartilhado da live. A sala abriu em modo seguro.');
+        setSessionLoaded(true);
+      },
     );
 
     return unsubscribe;
@@ -300,6 +363,17 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     },
     [isPreview, liveClass.id, user.uid],
   );
+
+  useEffect(() => {
+    console.info('[LIVE_DEBUG] loading room', {
+      classId: liveClass?.id ?? null,
+      userId: user?.uid ?? null,
+      role,
+      sessionLoaded,
+      sessionLoadError,
+      showExerciseSession,
+    });
+  }, [liveClass?.id, role, sessionLoadError, sessionLoaded, showExerciseSession, user?.uid]);
 
   const onlinePresence = useMemo(
     () => presence.filter((item) => isLivePresenceActive(item)),
@@ -408,6 +482,21 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     opened.location.replace(targetUrl.toString());
   }, [liveClass.courseId, liveClass.lessonId, liveClass.workbookId, session.activeLessonId, session.activeWorkbookId, uiLanguage]);
 
+  if (!liveClass?.id || !user?.uid) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 px-6 text-center">
+        <div className="max-w-lg rounded-3xl border border-slate-800 bg-slate-900/90 px-6 py-5 shadow-2xl">
+          <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-300">
+            Live Class
+          </div>
+          <p className="mt-3 text-sm text-slate-200">
+            Nao foi possivel identificar esta sala ou o usuario atual. Volte e entre novamente.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (!sessionLoaded) {
     return (
       <div className="flex h-screen w-screen flex-col items-center justify-center bg-slate-950">
@@ -419,76 +508,84 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
 
   if (isPreview && previewRole) {
     return (
-      <LiveClassPreviewView
-        liveClass={liveClass}
-        user={user}
-        uiLanguage={uiLanguage}
-        previewRole={previewRole}
-        assignedRoster={assignedRoster}
-        session={session}
-        onlineCount={onlinePresence.length}
-        onExit={onExit}
-      />
+      <LiveRoomErrorBoundary>
+        <LiveClassPreviewView
+          liveClass={liveClass}
+          user={user}
+          uiLanguage={uiLanguage}
+          previewRole={previewRole}
+          assignedRoster={assignedRoster}
+          session={session}
+          onlineCount={onlinePresence.length}
+          onExit={onExit}
+        />
+      </LiveRoomErrorBoundary>
     );
   }
 
   if (role === 'teacher') {
     return (
-      <>
-        <TeacherRoomView
-          liveClass={liveClass}
-          user={user}
-          session={session}
-          presence={presence}
-          assignedRoster={assignedRoster}
-          showWhiteboard={showWhiteboard}
-          setShowWhiteboard={setShowWhiteboard}
-          showExerciseSession={showExerciseSession}
-          setShowExerciseSession={setShowExerciseSession}
-          handleUpdateSession={handleUpdateSession}
-          onOpenBattleHub={handleOpenBattleHub}
-          onOpenBattleTemplate={handleOpenSavedBattleTemplate}
-          onOpenPreviewTab={handleOpenPreviewTab}
-          onOpenTrackTab={handleOpenTrackTab}
-          onExit={onExit}
-        />
-        {isBattleStage ? (
-          <BattleHubPage
-            uid={user.uid}
-            name={user.displayName || user.email || 'Professor'}
-            courseId={liveClass.courseId ?? null}
-            workbookId={session.activeWorkbookId ?? liveClass.workbookId ?? null}
-            lessonId={session.activeLessonId?.toString() ?? liveClass.lessonId?.toString() ?? null}
-            activeLiveClass={liveClass}
-            uiLanguage={battleUiLanguage}
-            fire={0}
-            ice={0}
-            diamonds={0}
-            stars={0}
-            onlineParticipants={battleOnlineParticipants}
-            onOpenLiveClasses={handleReturnToWorkspace}
-            onDismiss={handleReturnToWorkspace}
-            initialSetupTemplate={pendingBattleTemplate}
+      <LiveRoomErrorBoundary>
+        <>
+          <TeacherRoomView
+            liveClass={liveClass}
+            user={user}
+            session={session}
+            presence={presence}
+            assignedRoster={assignedRoster}
+            showWhiteboard={showWhiteboard}
+            setShowWhiteboard={setShowWhiteboard}
+            showExerciseSession={showExerciseSession}
+            setShowExerciseSession={setShowExerciseSession}
+            handleUpdateSession={handleUpdateSession}
+            onOpenBattleHub={handleOpenBattleHub}
+            onOpenBattleTemplate={handleOpenSavedBattleTemplate}
+            onOpenPreviewTab={handleOpenPreviewTab}
+            onOpenTrackTab={handleOpenTrackTab}
+            onExit={onExit}
+            statusMessage={sessionLoadError}
           />
-        ) : null}
-      </>
+          {isBattleStage ? (
+            <BattleHubPage
+              uid={user.uid}
+              name={user.displayName || user.email || 'Professor'}
+              courseId={liveClass.courseId ?? null}
+              workbookId={session.activeWorkbookId ?? liveClass.workbookId ?? null}
+              lessonId={session.activeLessonId?.toString() ?? liveClass.lessonId?.toString() ?? null}
+              activeLiveClass={liveClass}
+              uiLanguage={battleUiLanguage}
+              fire={0}
+              ice={0}
+              diamonds={0}
+              stars={0}
+              onlineParticipants={battleOnlineParticipants}
+              onOpenLiveClasses={handleReturnToWorkspace}
+              onDismiss={handleReturnToWorkspace}
+              initialSetupTemplate={pendingBattleTemplate}
+            />
+          ) : null}
+        </>
+      </LiveRoomErrorBoundary>
     );
   }
 
   return (
-    <StudentRoomView
-      liveClass={liveClass}
-      user={user}
-      session={session}
-      presence={presence}
-      assignedRoster={assignedRoster}
-      showWhiteboard={showWhiteboard}
-      setShowWhiteboard={setShowWhiteboard}
-      showExerciseSession={showExerciseSession}
-      setShowExerciseSession={setShowExerciseSession}
-      handleUpdateSession={handleUpdateSession}
-      onOpenBattleHub={onOpenBattleHub}
-      onExit={onExit}
-    />
+    <LiveRoomErrorBoundary>
+      <StudentRoomView
+        liveClass={liveClass}
+        user={user}
+        session={session}
+        presence={presence}
+        assignedRoster={assignedRoster}
+        showWhiteboard={showWhiteboard}
+        setShowWhiteboard={setShowWhiteboard}
+        showExerciseSession={showExerciseSession}
+        setShowExerciseSession={setShowExerciseSession}
+        handleUpdateSession={handleUpdateSession}
+        onOpenBattleHub={onOpenBattleHub}
+        onExit={onExit}
+        statusMessage={sessionLoadError}
+      />
+    </LiveRoomErrorBoundary>
   );
 };

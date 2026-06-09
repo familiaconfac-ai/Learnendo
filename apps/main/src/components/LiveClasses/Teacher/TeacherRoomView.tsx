@@ -48,6 +48,7 @@ interface TeacherRoomViewProps {
   onOpenPreviewTab: (role: 'teacher' | 'student') => void;
   onOpenTrackTab: () => void;
   onExit: () => void;
+  statusMessage?: string | null;
 }
 
 const TeacherStage: React.FC<{
@@ -773,10 +774,11 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onOpenPreviewTab, onOpenTrackTab, onExit, showExerciseSession, setShowExerciseSession } = props;
+  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onOpenPreviewTab, onOpenTrackTab, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [liveKitError, setLiveKitError] = useState<string | null>(null);
+  const [loadingCredentials, setLoadingCredentials] = useState(true);
   const [roomInstance] = useState(
     () => {
       const instanceNumber = nextLiveKitDebugCounter('teacher_room_instance');
@@ -938,6 +940,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
 
   useEffect(() => {
     const getCreds = async () => {
+      setLoadingCredentials(true);
       try {
         const creds = await requestLiveAudioCredentials({
           classId: liveClass.id,
@@ -950,6 +953,9 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
         setWsUrl(creds.wsUrl);
       } catch (error) {
         console.error('[TeacherRoomView] LiveKit credentials error:', error);
+        setLiveKitError('Nao foi possivel carregar o audio/video interno. A live vai abrir sem esse recurso por enquanto.');
+      } finally {
+        setLoadingCredentials(false);
       }
     };
 
@@ -967,16 +973,23 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
     };
   }, [roomInstance]);
 
-  if (!token || !wsUrl) {
+  if (!liveClass?.id || !user?.uid) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-black">
-        <div className="animate-pulse text-slate-500">Conectando a sala...</div>
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-950 px-6 text-center">
+        <div className="max-w-lg rounded-3xl border border-slate-800 bg-slate-900/90 px-6 py-5 shadow-2xl">
+          <div className="text-xs font-black uppercase tracking-[0.18em] text-amber-300">
+            Live Class
+          </div>
+          <p className="mt-3 text-sm text-slate-200">
+            Nao foi possivel identificar o professor ou a sala ao vivo.
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="lk-room-container">
+    <div className="lk-room-container relative">
       <RoomContext.Provider value={roomInstance}>
         <RoomAudioRenderer />
         <TeacherStage
@@ -998,6 +1011,21 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
           liveKitError={liveKitError}
         />
       </RoomContext.Provider>
+      {(loadingCredentials || statusMessage) ? (
+        <div className="pointer-events-none absolute inset-x-0 top-4 z-[70] flex justify-center px-4">
+          <div className="max-w-2xl rounded-2xl border border-slate-700 bg-slate-950/92 px-4 py-3 text-center shadow-2xl backdrop-blur-sm">
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-cyan-300">
+              Live Class
+            </div>
+            {loadingCredentials ? (
+              <p className="mt-1 text-sm text-slate-200">Carregando sala...</p>
+            ) : null}
+            {statusMessage ? (
+              <p className="mt-1 text-sm text-amber-200">{statusMessage}</p>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };
