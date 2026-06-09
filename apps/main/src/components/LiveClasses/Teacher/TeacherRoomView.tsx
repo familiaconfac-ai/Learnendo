@@ -14,7 +14,8 @@ import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavigation';
-import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
+// HOTFIX: ExerciseSessionPanel disabled due to runtime error
+// import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../../services/liveKitDebug';
 import { getLiveClassMeetLink } from '../../../services/liveClassesService';
@@ -487,7 +488,8 @@ const TeacherStage: React.FC<{
                           T
                         </button>
                       ) : null}
-                      <button
+                      {/* HOTFIX: Trail button hidden */}
+                      {/* <button
                         type="button"
                         onClick={() => setShowExerciseSession(!showExerciseSession)}
                         className={`flex h-7 min-w-[3.1rem] items-center justify-center rounded border px-1.5 text-[10px] font-black transition ${
@@ -499,7 +501,7 @@ const TeacherStage: React.FC<{
                         aria-label={labels.trailSession}
                       >
                         {TEACHER_TRAIL_BUTTON_LABEL}
-                      </button>
+                      </button> */}
                       <button
                         type="button"
                         onClick={() => {
@@ -714,7 +716,8 @@ const TeacherStage: React.FC<{
             uiLanguage={uiLang}
           />
 
-          <button
+          {/* HOTFIX: Trail button hidden */}
+          {/* <button
             type="button"
             onClick={() => setShowExerciseSession(!showExerciseSession)}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
@@ -726,7 +729,7 @@ const TeacherStage: React.FC<{
             aria-label={labels.trailSession}
           >
             {TEACHER_TRAIL_BUTTON_LABEL}
-          </button>
+          </button> */}
 
           <button
             onClick={() => {
@@ -742,32 +745,8 @@ const TeacherStage: React.FC<{
         </div>
       }
       overlay={
-        showExerciseSession ? (
-          <div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm">
-            <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-black text-white">Trail Session Panel</h2>
-                <button
-                  type="button"
-                  onClick={() => setShowExerciseSession(false)}
-                  className="rounded-lg px-3 py-1 text-sm font-bold text-slate-300 hover:bg-slate-800"
-                >
-                  Close
-                </button>
-              </div>
-              <ExerciseSessionPanel
-                classId={liveClass.id}
-                user={user}
-                isTeacher={true}
-                assignedRoster={assignedRoster}
-                defaultCourseId={liveClass.courseId ?? 'english'}
-                defaultWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
-                defaultLessonId={session.activeLessonId ?? liveClass.lessonId ?? ''}
-                onUpdateSession={handleUpdateSession}
-              />
-            </div>
-          </div>
-        ) : null
+        // HOTFIX: ExerciseSessionPanel hidden due to runtime error
+        null
       }
     />
   );

@@ -14,7 +14,8 @@ import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassChat } from '../LiveClassChat';
 import { BattlePlayerView } from '../Battle/BattlePlayerView';
-import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
+// HOTFIX: ExerciseSessionPanel disabled due to runtime error
+// import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
 import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
 import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from '../../BattleHub/LiveBattleSimple';
@@ -869,7 +870,8 @@ const StudentStage: React.FC<{
               </div>
             </div>
           ) : null}
-          {showExerciseSession ? (
+          {/* HOTFIX: ExerciseSessionPanel hidden */}
+          {/* showExerciseSession ? (
             <div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm">
               <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
                 <div className="mb-3 flex items-center justify-between">
@@ -893,7 +895,8 @@ const StudentStage: React.FC<{
                 />
               </div>
             </div>
-          ) : null}
+          ) : null */}
+          null
           {!USE_SIMPLE_LIVE_BATTLE && isBattleStage && !battleSession ? (
             <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4">
               <div className="max-w-sm rounded-2xl border border-orange-400/40 bg-slate-950/90 px-4 py-3 text-center shadow-2xl backdrop-blur-sm">
