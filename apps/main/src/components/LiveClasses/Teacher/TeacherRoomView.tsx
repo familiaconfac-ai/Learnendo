@@ -488,8 +488,7 @@ const TeacherStage: React.FC<{
                           T
                         </button>
                       ) : null}
-                      {/* HOTFIX: Trail button hidden */}
-                      {/* <button
+                      <button
                         type="button"
                         onClick={() => setShowExerciseSession(!showExerciseSession)}
                         className={`flex h-7 min-w-[3.1rem] items-center justify-center rounded border px-1.5 text-[10px] font-black transition ${
@@ -501,7 +500,7 @@ const TeacherStage: React.FC<{
                         aria-label={labels.trailSession}
                       >
                         {TEACHER_TRAIL_BUTTON_LABEL}
-                      </button> */}
+                      </button>
                       <button
                         type="button"
                         onClick={() => {
@@ -716,8 +715,7 @@ const TeacherStage: React.FC<{
             uiLanguage={uiLang}
           />
 
-          {/* HOTFIX: Trail button hidden */}
-          {/* <button
+          <button
             type="button"
             onClick={() => setShowExerciseSession(!showExerciseSession)}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
@@ -729,7 +727,7 @@ const TeacherStage: React.FC<{
             aria-label={labels.trailSession}
           >
             {TEACHER_TRAIL_BUTTON_LABEL}
-          </button> */}
+          </button>
 
           <button
             onClick={() => {

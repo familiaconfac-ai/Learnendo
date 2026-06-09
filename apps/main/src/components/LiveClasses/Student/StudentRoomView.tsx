@@ -102,6 +102,9 @@ const StudentStage: React.FC<{
   const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const isBattleStage = stageMode === 'battle';
   const isCameraStage = stageMode === 'camera';
+  const hasActiveTrailSession =
+    session.sessionStatus === 'active' &&
+    ((session.activeTrailIds?.length ?? 0) > 0 || Boolean(session.activeExerciseId));
   const shouldRenderBattleOverlay = !USE_SIMPLE_LIVE_BATTLE && Boolean(battleSession) && isBattleStage;
   const shouldRenderSimpleBattleOverlay = USE_SIMPLE_LIVE_BATTLE && isBattleStage;
 
@@ -818,19 +821,21 @@ const StudentStage: React.FC<{
             W
           </button>
 
-          <button
-            type="button"
-            onClick={() => setShowExerciseSession(!showExerciseSession)}
-            className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
-              showExerciseSession
-                ? 'bg-violet-500 text-white hover:bg-violet-400'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}
-            title={labels.trailSession}
-            aria-label={labels.trailSession}
-          >
-            {STUDENT_TRAIL_BUTTON_LABEL}
-          </button>
+          {hasActiveTrailSession ? (
+            <button
+              type="button"
+              onClick={() => setShowExerciseSession(!showExerciseSession)}
+              className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
+                showExerciseSession
+                  ? 'bg-violet-500 text-white hover:bg-violet-400'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+              title={labels.trailSession}
+              aria-label={labels.trailSession}
+            >
+              {STUDENT_TRAIL_BUTTON_LABEL}
+            </button>
+          ) : null}
 
           <button
             onClick={() => setChatOpen((current) => !current)}
@@ -870,8 +875,7 @@ const StudentStage: React.FC<{
               </div>
             </div>
           ) : null}
-          {/* HOTFIX: ExerciseSessionPanel hidden */}
-          {/* showExerciseSession ? (
+          {showExerciseSession && hasActiveTrailSession ? (
             <div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm">
               <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
                 <div className="mb-3 flex items-center justify-between">
@@ -895,8 +899,7 @@ const StudentStage: React.FC<{
                 />
               </div>
             </div>
-          ) : null */}
-          null
+          ) : null}
           {!USE_SIMPLE_LIVE_BATTLE && isBattleStage && !battleSession ? (
             <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4">
               <div className="max-w-sm rounded-2xl border border-orange-400/40 bg-slate-950/90 px-4 py-3 text-center shadow-2xl backdrop-blur-sm">

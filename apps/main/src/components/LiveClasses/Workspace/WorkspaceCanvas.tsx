@@ -2186,8 +2186,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsTeacher = isTeacher(viewerContext);
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
+  const viewerCanUseStudentTools = !readOnly && (viewerIsAdmin || viewerIsTeacher || viewerIsStudent);
   const viewerCanEditSharedDocument = viewerCanManageWorkspace && !readOnly;
   const viewerCanManagePages = viewerCanManageWorkspace && !readOnly;
+  const viewerCanBrowseSavedLibraries = viewerCanUseStudentTools;
+  const viewerCanApplySavedLibraryEntries = viewerCanManageWorkspace && !readOnly;
+  const viewerCanDeleteSavedLibraryEntries = viewerCanManageWorkspace && !readOnly;
+  const viewerCanUseReferenceTools = viewerCanUseStudentTools;
+  const viewerCanExportWorkspacePdf = viewerCanUseStudentTools;
   const effectiveReadOnly = readOnly || (viewerIsStudent && !studentEditingEnabled);
   const toolbarDisabled = effectiveReadOnly;
 
@@ -2251,7 +2257,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
-  const showToolbar = !presentationMode && (Boolean(toolbarLeading) || viewerCanManageWorkspace);
+  const showToolbar = !presentationMode && (Boolean(toolbarLeading) || viewerCanManageWorkspace || viewerCanUseStudentTools);
   const [presentationRevealStep, setPresentationRevealStep] = useState(0);
   const [presentationViewport, setPresentationViewport] = useState<{ width: number; height: number }>({
     width: typeof window !== 'undefined' ? window.innerWidth : 1280,
@@ -5834,20 +5840,23 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             >
               <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M17 5v11a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1h9l4 4z"/><path d="M13 4v4H7V4"/><path d="M7 12h6"/></svg>
             </button>
-            <button
-              onClick={handleOpenMaterialsList}
-              className="w-7 h-7 rounded flex items-center justify-center hover:bg-blue-50 text-blue-700 border border-blue-200 transition"
-              title={wsl.openMaterial}
-              aria-label={wsl.openMaterial}
-            >
-              <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M3 7a1 1 0 011-1h4l2 2h6a1 1 0 011 1v7a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/></svg>
-            </button>
           </>
+        )}
+
+        {viewerCanBrowseSavedLibraries && (
+          <button
+            onClick={handleOpenMaterialsList}
+            className="w-7 h-7 rounded flex items-center justify-center hover:bg-blue-50 text-blue-700 border border-blue-200 transition"
+            title={wsl.openMaterial}
+            aria-label={wsl.openMaterial}
+          >
+            <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M3 7a1 1 0 011-1h4l2 2h6a1 1 0 011 1v7a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/></svg>
+          </button>
         )}
 
         <div className="flex-1" />
 
-        {viewerCanManageWorkspace && (
+        {viewerCanUseReferenceTools && (
           <>
             <button
               type="button"
@@ -5887,7 +5896,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           </>
         )}
 
-        {viewerCanManageWorkspace && !readOnly && (
+        {viewerCanExportWorkspacePdf && (
           <button onClick={handleExportPdf} className="w-7 h-7 rounded flex items-center justify-center hover:bg-slate-100 text-slate-600 border border-slate-200 transition" title={wsl.exportPdf} aria-label={wsl.exportPdf}>
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M5 4h7l4 4v8a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/><polyline points="12 4 12 9 17 9"/><line x1="10" y1="12" x2="10" y2="17"/><polyline points="7 14 10 17 13 14"/></svg>
           </button>
@@ -6089,20 +6098,28 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                           <p className="text-xs text-slate-400">{new Date(m.updatedAt).toLocaleDateString('pt-BR')}</p>
                         </div>
                         <div className="flex flex-shrink-0 items-center gap-2">
-                          <button
-                            onClick={() => handleDeleteMaterial(m.id)}
-                            disabled={deletingMaterialId === m.id}
-                            className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                          >
-                            {deletingMaterialId === m.id ? '...' : 'Delete'}
-                          </button>
-                          <button
-                            onClick={() => handleLoadMaterial(m.id)}
-                            disabled={loadingMaterialId === m.id}
-                            className="px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
-                          >
-                            {loadingMaterialId === m.id ? '...' : `${wsl.open} ${getMaterialSurfaceLabel(m.surfaceMode)}`}
-                          </button>
+                          {viewerCanDeleteSavedLibraryEntries ? (
+                            <button
+                              onClick={() => handleDeleteMaterial(m.id)}
+                              disabled={deletingMaterialId === m.id}
+                              className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                            >
+                              {deletingMaterialId === m.id ? '...' : 'Delete'}
+                            </button>
+                          ) : null}
+                          {viewerCanApplySavedLibraryEntries ? (
+                            <button
+                              onClick={() => handleLoadMaterial(m.id)}
+                              disabled={loadingMaterialId === m.id}
+                              className="px-2.5 py-1 rounded-lg text-xs bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition"
+                            >
+                              {loadingMaterialId === m.id ? '...' : `${wsl.open} ${getMaterialSurfaceLabel(m.surfaceMode)}`}
+                            </button>
+                          ) : (
+                            <span className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-400">
+                              Teacher only in live class
+                            </span>
+                          )}
                         </div>
                       </li>
                     ))}
@@ -6129,19 +6146,27 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                                 </p>
                               </div>
                               <div className="flex flex-shrink-0 items-center gap-2">
-                                <button
-                                  onClick={() => handleDeleteBattleTemplate(template.id)}
-                                  disabled={deletingBattleTemplateId === template.id}
-                                  className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
-                                >
-                                  {deletingBattleTemplateId === template.id ? '...' : 'Delete'}
-                                </button>
-                                <button
-                                  onClick={() => handleLoadBattleTemplate(template)}
-                                  className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white transition hover:bg-emerald-700"
-                                >
-                                  {wsl.openBattle}
-                                </button>
+                                {viewerCanDeleteSavedLibraryEntries ? (
+                                  <button
+                                    onClick={() => handleDeleteBattleTemplate(template.id)}
+                                    disabled={deletingBattleTemplateId === template.id}
+                                    className="rounded-lg border border-red-200 px-2.5 py-1 text-xs text-red-600 transition hover:bg-red-50 disabled:opacity-50"
+                                  >
+                                    {deletingBattleTemplateId === template.id ? '...' : 'Delete'}
+                                  </button>
+                                ) : null}
+                                {viewerCanApplySavedLibraryEntries ? (
+                                  <button
+                                    onClick={() => handleLoadBattleTemplate(template)}
+                                    className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs text-white transition hover:bg-emerald-700"
+                                  >
+                                    {wsl.openBattle}
+                                  </button>
+                                ) : (
+                                  <span className="rounded-lg border border-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-400">
+                                    Teacher only in live class
+                                  </span>
+                                )}
                               </div>
                             </li>
                           ))}
