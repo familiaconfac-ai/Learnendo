@@ -1153,12 +1153,17 @@ export async function recordDailyProgress(
       throw err;
     }
 
-    // Update total user stats
-    await updateUserTotalProgress(uid, {
-      diamondsEarned: diamondEarned ? 1 : 0,
-      fireEarned: fireEarned ? 1 : 0,
-      iceEarned: iceEarned ? 1 : 0,
-    });
+    // Only award totals the first time a day gains each status. Replays on the
+    // same day should not farm extra fire / ice / diamonds.
+    const progressDelta = {
+      diamondsEarned: updatedDay.diamondEarned && !day.diamondEarned ? 1 : 0,
+      fireEarned: updatedDay.fireEarned && !day.fireEarned ? 1 : 0,
+      iceEarned: updatedDay.iceEarned && !day.iceEarned ? 1 : 0,
+    };
+
+    if (progressDelta.diamondsEarned || progressDelta.fireEarned || progressDelta.iceEarned) {
+      await updateUserTotalProgress(uid, progressDelta);
+    }
 
     console.log(`[SAVE] Day ${dayNumber} done. fire=${fireEarned} ice=${iceEarned} diamond=${diamondEarned} weekComplete=${isWeekComplete}`);
 

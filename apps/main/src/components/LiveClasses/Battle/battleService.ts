@@ -342,6 +342,7 @@ export async function createBattleSession(
       courseId: config.courseId,
       lessonId: config.lessonId,
       workbookId: config.workbookId,
+      trailIds: config.trailIds,
     });
 
   const questions = sanitizeBattleQuestions(generatedQuestions);

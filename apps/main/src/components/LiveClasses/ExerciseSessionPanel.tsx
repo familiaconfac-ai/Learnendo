@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
-import { LiveExerciseBlock, LiveExerciseBlockStatus, LiveExerciseSession } from '../../types';
+import { Day, Lesson, LiveClassSession, LiveExerciseAnswerVerdict, LiveExerciseBlock, LiveExerciseBlockStatus, LiveExerciseSession, Workbook } from '../../types';
 import {
   clearExerciseBlockStudentResponse,
   createExerciseBlock,
   endExerciseSession,
   saveExerciseSession,
+  seedExerciseSessionFromLessonTrails,
   setExerciseBlockStudentLock,
   setExerciseBlockStudentStatus,
   subscribeExerciseBlocks,
@@ -13,6 +14,7 @@ import {
   updateExerciseBlock,
   updateExerciseBlockResponse,
 } from '../../services/liveSessionService';
+import { getWorkbookOptionsForCourse, loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from '../../services/liveWhiteboardActivities';
 
 interface ExerciseSessionPanelProps {
   classId: string;
@@ -23,6 +25,10 @@ interface ExerciseSessionPanelProps {
     label: string;
     isOnline: boolean;
   }>;
+  defaultCourseId?: string;
+  defaultWorkbookId?: number | null;
+  defaultLessonId?: string | null;
+  onUpdateSession?: (patch: Partial<LiveClassSession>) => Promise<void>;
 }
 
 interface TeacherExerciseBlockCardProps {
@@ -73,6 +79,15 @@ function getStudentResponse(block: LiveExerciseBlock, studentUid: string) {
   return block.responses[studentUid] ?? '';
 }
 
+function normalizeExerciseAnswer(text: string) {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
 function getStudentStatus(block: LiveExerciseBlock, studentUid: string): LiveExerciseBlockStatus {
   const mappedStatus = block.responseStatuses[studentUid];
   if (mappedStatus) return mappedStatus;
@@ -81,6 +96,27 @@ function getStudentStatus(block: LiveExerciseBlock, studentUid: string): LiveExe
 
 function isStudentLocked(block: LiveExerciseBlock, studentUid: string) {
   return Boolean(block.responseLocks[studentUid]);
+}
+
+function getStudentVerdict(block: LiveExerciseBlock, studentUid: string): LiveExerciseAnswerVerdict | null {
+  return block.responseVerdicts[studentUid] ?? null;
+}
+
+function evaluateResponseVerdict(block: LiveExerciseBlock, answer: string, attempts: number): LiveExerciseAnswerVerdict | null {
+  const normalizedAnswer = normalizeExerciseAnswer(answer);
+  if (!normalizedAnswer) return null;
+
+  const acceptedAnswers = [
+    ...(block.acceptedAnswers ?? []),
+    ...(block.expectedAnswer ? [block.expectedAnswer] : []),
+  ]
+    .map(normalizeExerciseAnswer)
+    .filter(Boolean);
+
+  if (acceptedAnswers.length === 0) return null;
+  const isCorrect = acceptedAnswers.includes(normalizedAnswer);
+  if (!isCorrect) return 'wrong';
+  return attempts > 1 ? 'correct_second_try' : 'correct';
 }
 
 const TeacherExerciseBlockCard: React.FC<TeacherExerciseBlockCardProps> = ({
@@ -302,6 +338,7 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
 }) => {
   const ownAnswer = getStudentResponse(block, actorUid);
   const ownStatus = getStudentStatus(block, actorUid);
+  const ownVerdict = getStudentVerdict(block, actorUid);
   const locked = isStudentLocked(block, actorUid);
   const [draft, setDraft] = useState(ownAnswer);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
@@ -316,9 +353,14 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
   const handleSubmit = async () => {
     if (!canEdit) return;
 
-    const nextStatus: LiveExerciseBlockStatus = draft.trim()
-      ? (ownStatus === 'done' ? 'done' : 'in_progress')
-      : 'pending';
+    const trimmedDraft = draft.trim();
+    const nextAttempts = trimmedDraft ? Math.max(1, (block.responseAttempts[actorUid] ?? 0) + 1) : 0;
+    const verdict = trimmedDraft ? evaluateResponseVerdict(block, trimmedDraft, nextAttempts) : null;
+    const nextStatus: LiveExerciseBlockStatus = !trimmedDraft
+      ? 'pending'
+      : verdict === 'correct' || verdict === 'correct_second_try'
+        ? 'done'
+        : 'in_progress';
 
     setSaveState('saving');
     setError('');
@@ -339,6 +381,11 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
         nextStatus,
         actorUid,
         actorName,
+        {
+          attempts: nextAttempts,
+          verdict: verdict ?? undefined,
+          answeredAt: new Date().toISOString(),
+        },
       );
       setSaveState('saved');
     } catch (saveError) {
@@ -378,6 +425,22 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
       {error ? (
         <p className="mt-3 rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-xs font-semibold text-rose-200">
           {error}
+        </p>
+      ) : null}
+
+      {ownVerdict ? (
+        <p
+          className={`mt-3 rounded-xl border px-3 py-2 text-xs font-semibold ${
+            ownVerdict === 'correct' || ownVerdict === 'correct_second_try'
+              ? 'border-emerald-500/40 bg-emerald-950/30 text-emerald-200'
+              : 'border-amber-500/40 bg-amber-950/30 text-amber-200'
+          }`}
+        >
+          {ownVerdict === 'correct'
+            ? 'Correct answer'
+            : ownVerdict === 'correct_second_try'
+              ? 'Correct on the second try'
+              : 'Answer saved. You can try again.'}
         </p>
       ) : null}
 
@@ -423,6 +486,10 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   user,
   isTeacher,
   assignedRoster,
+  defaultCourseId = 'english',
+  defaultWorkbookId = 1,
+  defaultLessonId = '',
+  onUpdateSession,
 }) => {
   const [session, setSession] = useState<LiveExerciseSession>(EMPTY_SESSION);
   const [blocks, setBlocks] = useState<LiveExerciseBlock[]>([]);
@@ -434,6 +501,57 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
 
   const actorName = getActorName(user);
   const actorLabel = user.displayName || user.email || 'My response';
+  const [courseId, setCourseId] = useState(defaultCourseId);
+  const [workbookId, setWorkbookId] = useState(defaultWorkbookId ?? 1);
+  const [lessonId, setLessonId] = useState(defaultLessonId ?? '');
+  const [selectedTrailIds, setSelectedTrailIds] = useState<string[]>([]);
+  const [workbook, setWorkbook] = useState<Workbook | null>(null);
+  const [loadingWorkbook, setLoadingWorkbook] = useState(false);
+
+  const workbookOptions = useMemo(() => getWorkbookOptionsForCourse(courseId), [courseId]);
+  const lessonOptions = useMemo(() => workbook?.lessons ?? [], [workbook]);
+  const selectedLesson = useMemo(() => resolveLessonForWhiteboard(workbook, lessonId), [lessonId, workbook]);
+  const trailOptions = useMemo(() => selectedLesson?.days ?? [], [selectedLesson]);
+
+  useEffect(() => {
+    let active = true;
+    setLoadingWorkbook(true);
+
+    loadWorkbookForWhiteboard(courseId, workbookId)
+      .then((nextWorkbook) => {
+        if (!active) return;
+        setWorkbook(nextWorkbook);
+        const nextLesson = resolveLessonForWhiteboard(nextWorkbook, lessonId);
+        const resolvedLessonId = nextLesson?.id ?? nextWorkbook?.lessons?.[0]?.id ?? '';
+        setLessonId((previous) => previous || resolvedLessonId);
+      })
+      .catch((error) => {
+        console.warn('[ExerciseSessionPanel] workbook load failed:', error);
+        if (!active) return;
+        setWorkbook(null);
+        setActionError('Unable to load the selected workbook right now.');
+      })
+      .finally(() => {
+        if (active) setLoadingWorkbook(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [courseId, lessonId, workbookId]);
+
+  useEffect(() => {
+    if (!trailOptions.length) {
+      setSelectedTrailIds([]);
+      return;
+    }
+
+    setSelectedTrailIds((previous) => {
+      const filtered = previous.filter((trailId) => trailOptions.some((trail) => trail.id === trailId));
+      if (filtered.length > 0) return filtered;
+      return [trailOptions[0].id];
+    });
+  }, [trailOptions]);
 
   useEffect(() => {
     setLoadingSession(true);
@@ -501,6 +619,85 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
     return blocks.length;
   }, [assignedRoster.length, blocks.length, isTeacher]);
 
+  const currentBlock = useMemo(() => {
+    return blocks.find((block) => {
+      if (assignedRoster.length === 0) return true;
+      return assignedRoster.some((student) => getStudentStatus(block, student.uid) !== 'done');
+    }) ?? blocks[0] ?? null;
+  }, [assignedRoster, blocks]);
+
+  const teacherSummary = useMemo(() => {
+    if (!currentBlock) {
+      return {
+        respondedCount: 0,
+        accuracyRate: 0,
+        pendingStudents: [] as string[],
+        mostCommonAnswer: null as string | null,
+        topErrorBlock: null as LiveExerciseBlock | null,
+        studentRows: [] as Array<{ uid: string; label: string; status: string }>,
+      };
+    }
+
+    const answerCounts = new Map<string, number>();
+    const studentRows = assignedRoster.map((student) => {
+      const verdict = getStudentVerdict(currentBlock, student.uid);
+      const status = getStudentStatus(currentBlock, student.uid);
+      const response = getStudentResponse(currentBlock, student.uid).trim();
+      const questionType = currentBlock.questionType ?? '';
+      const attempts = currentBlock.responseAttempts[student.uid] ?? 0;
+
+      if (response) {
+        answerCounts.set(response, (answerCounts.get(response) ?? 0) + 1);
+      }
+
+      let label = 'aguardando';
+      if (questionType === 'speaking' && status === 'in_progress' && !response) {
+        label = 'gravando audio';
+      } else if (!response && status === 'pending') {
+        label = 'aguardando';
+      } else if (status === 'in_progress' && response) {
+        label = verdict === 'wrong' ? 'errou' : 'respondendo';
+      } else if (verdict === 'correct_second_try') {
+        label = 'acertou na segunda tentativa';
+      } else if (verdict === 'correct') {
+        label = 'acertou';
+      } else if (verdict === 'wrong') {
+        label = 'errou';
+      } else if (response) {
+        label = attempts > 0 ? 'respondeu' : 'respondendo';
+      }
+
+      return {
+        uid: student.uid,
+        label: student.label,
+        status: label,
+      };
+    });
+
+    const respondedCount = studentRows.filter((row) => row.status !== 'aguardando').length;
+    const correctCount = assignedRoster.filter((student) => {
+      const verdict = getStudentVerdict(currentBlock, student.uid);
+      return verdict === 'correct' || verdict === 'correct_second_try';
+    }).length;
+
+    const mostCommonAnswer = Array.from(answerCounts.entries()).sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
+    const topErrorBlock = blocks
+      .map((block) => ({
+        block,
+        errorCount: assignedRoster.filter((student) => getStudentVerdict(block, student.uid) === 'wrong').length,
+      }))
+      .sort((left, right) => right.errorCount - left.errorCount)[0]?.block ?? null;
+
+    return {
+      respondedCount,
+      accuracyRate: assignedRoster.length > 0 ? Math.round((correctCount / assignedRoster.length) * 100) : 0,
+      pendingStudents: studentRows.filter((row) => row.status === 'aguardando').map((row) => row.label),
+      mostCommonAnswer,
+      topErrorBlock,
+      studentRows,
+    };
+  }, [assignedRoster, blocks, currentBlock]);
+
   const handleSaveSession = async (nextIsActive = true) => {
     setSavingSessionState(true);
     setActionError('');
@@ -566,14 +763,56 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
     }
   };
 
+  const handleStartSelectedTrails = async () => {
+    if (!selectedLesson || selectedTrailIds.length === 0) {
+      setActionError('Select a lesson and at least one trail before starting the live session.');
+      return;
+    }
+
+    setSavingSessionState(true);
+    setActionError('');
+    try {
+      const seeded = await seedExerciseSessionFromLessonTrails({
+        classId,
+        courseId,
+        workbookId,
+        lessonId: selectedLesson.id,
+        trailIds: selectedTrailIds,
+        updatedByUid: user.uid,
+        updatedByName: actorName,
+      });
+
+      await onUpdateSession?.({
+        sessionStatus: 'active',
+        activeWorkbookId: workbookId,
+        activeLessonId: selectedLesson.id,
+        activeExerciseId: selectedTrailIds.length === 1 ? selectedTrailIds[0] : null,
+        activeTrailIds: seeded.trailIds,
+        activeTrailLabel: seeded.trailLabel,
+        mainStageMode: 'workspace',
+      });
+      setSessionTitleDraft(seeded.title);
+    } catch (error) {
+      console.warn('[ExerciseSessionPanel] trail session seed failed:', error);
+      setActionError('Unable to start the selected trail session right now.');
+    } finally {
+      setSavingSessionState(false);
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-violet-500/30 bg-slate-900 p-4 sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-sm font-black uppercase tracking-wide text-violet-300">Exercise Session</h2>
+          <h2 className="text-sm font-black uppercase tracking-wide text-violet-300">Trail Session</h2>
           <p className="mt-1 text-sm text-slate-200">
-            Every exercise stores one live response per student. Teachers can follow the whole class in real time.
+            Every trail question stores one live response per student. Teachers can follow the whole class in real time.
           </p>
+          {session.sourceTrailLabel ? (
+            <p className="mt-2 text-xs font-semibold text-violet-200">
+              {session.title || 'Live trail'} - {session.sourceTrailLabel}
+            </p>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
           <span className={`rounded-full border px-3 py-1 font-bold ${session.isActive ? 'border-emerald-400/40 bg-emerald-500/20 text-emerald-200' : 'border-slate-600 bg-slate-800 text-slate-200'}`}>
@@ -584,6 +823,52 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
           </span>
         </div>
       </div>
+
+      {isTeacher && currentBlock ? (
+        <div className="mt-3 rounded-2xl border border-violet-500/30 bg-slate-950/70 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-violet-200">
+                Questao {Math.min(currentBlock.order, blocks.length)}/{Math.max(blocks.length, 1)}
+              </p>
+              <p className="mt-1 text-sm text-slate-200">{currentBlock.prompt.split('\n')[0]}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <span className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 font-bold text-slate-200">
+                Respondidos: {teacherSummary.respondedCount}/{Math.max(assignedRoster.length, 1)}
+              </span>
+              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 font-bold text-emerald-200">
+                Acertos: {teacherSummary.accuracyRate}%
+              </span>
+            </div>
+          </div>
+          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Status dos alunos</p>
+              <div className="mt-2 space-y-1.5 text-sm text-slate-200">
+                {teacherSummary.studentRows.map((row) => (
+                  <div key={row.uid} className="flex items-center justify-between gap-2 rounded-xl bg-slate-950/60 px-3 py-2">
+                    <span className="truncate">{row.label}</span>
+                    <span className="text-xs font-semibold text-violet-200">{row.status}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3 text-sm text-slate-200">
+              <p className="text-[11px] font-black uppercase tracking-wide text-slate-400">Resumo</p>
+              <p className="mt-2">
+                Ainda sem resposta: {teacherSummary.pendingStudents.length > 0 ? teacherSummary.pendingStudents.join(', ') : 'ninguem'}
+              </p>
+              <p className="mt-2">
+                Resposta mais comum: {teacherSummary.mostCommonAnswer || 'sem respostas ainda'}
+              </p>
+              <p className="mt-2">
+                Questao com mais erros: {teacherSummary.topErrorBlock ? `#${teacherSummary.topErrorBlock.order}` : 'sem erros ainda'}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {loadingSession || loadingBlocks ? (
         <p className="mt-3 rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-400">
@@ -599,6 +884,79 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
 
       {isTeacher ? (
         <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="text-xs font-black uppercase tracking-wide text-slate-400">
+              Course
+              <input
+                value={courseId}
+                onChange={(event) => setCourseId(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-normal uppercase text-white"
+              />
+            </label>
+            <label className="text-xs font-black uppercase tracking-wide text-slate-400">
+              Book
+              <select
+                value={String(workbookId)}
+                onChange={(event) => setWorkbookId(Number(event.target.value) || 1)}
+                className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-normal text-white"
+              >
+                {workbookOptions.map((option) => (
+                  <option key={option.id} value={option.id}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-black uppercase tracking-wide text-slate-400">
+              Lesson
+              <select
+                value={lessonId}
+                onChange={(event) => setLessonId(event.target.value)}
+                className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-normal text-white"
+                disabled={loadingWorkbook || lessonOptions.length === 0}
+              >
+                {lessonOptions.map((lesson) => (
+                  <option key={lesson.id} value={lesson.id}>{lesson.title}</option>
+                ))}
+              </select>
+            </label>
+            <div className="text-xs font-black uppercase tracking-wide text-slate-400">
+              Trails
+              <div className="mt-2 flex flex-wrap gap-2 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-3">
+                {trailOptions.map((trail, index) => {
+                  const isActive = selectedTrailIds.includes(trail.id);
+                  return (
+                    <button
+                      key={trail.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedTrailIds((previous) => (
+                          previous.includes(trail.id)
+                            ? previous.filter((value) => value !== trail.id)
+                            : [...previous, trail.id]
+                        ));
+                      }}
+                      className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
+                        isActive
+                          ? 'border-violet-400 bg-violet-500/20 text-violet-100'
+                          : 'border-slate-700 bg-slate-950 text-slate-300'
+                      }`}
+                    >
+                      Trail {index + 1}
+                    </button>
+                  );
+                })}
+                {trailOptions.length > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTrailIds(trailOptions.map((trail) => trail.id))}
+                    className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-200"
+                  >
+                    All Trails
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
           <label className="text-xs font-black uppercase tracking-wide text-slate-400">
             Session Title
           </label>
@@ -610,6 +968,14 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
             placeholder="Example: Unit 3 Review - Simple Present"
           />
           <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleStartSelectedTrails()}
+              disabled={savingSessionState || selectedTrailIds.length === 0}
+              className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#059669] disabled:opacity-60"
+            >
+              {savingSessionState ? 'Starting...' : 'Start Selected Trails'}
+            </button>
             <button
               type="button"
               onClick={() => void handleSaveSession(true)}

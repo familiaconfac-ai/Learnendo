@@ -14,6 +14,7 @@ import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassChat } from '../LiveClassChat';
 import { BattlePlayerView } from '../Battle/BattlePlayerView';
+import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
 import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
 import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from '../../BattleHub/LiveBattleSimple';
@@ -56,6 +57,8 @@ const StudentStage: React.FC<{
   user: User;
   session: LiveClassSession;
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
+  showExerciseSession: boolean;
+  setShowExerciseSession: (show: boolean) => void;
   onOpenBattleHub: () => void;
   onExit: () => void;
   ensureLiveRoomConnected: () => Promise<void>;
@@ -65,6 +68,8 @@ const StudentStage: React.FC<{
   user,
   session,
   assignedRoster,
+  showExerciseSession,
+  setShowExerciseSession,
   onOpenBattleHub,
   onExit,
   ensureLiveRoomConnected,
@@ -634,6 +639,19 @@ const StudentStage: React.FC<{
                   <>
                     <button
                       type="button"
+                      onClick={() => setShowExerciseSession(!showExerciseSession)}
+                      className={`flex h-7 min-w-7 items-center justify-center rounded border px-1.5 text-[10px] font-black transition ${
+                        showExerciseSession
+                          ? 'border-violet-500 bg-violet-500 text-white'
+                          : 'border-slate-200 text-slate-700 hover:bg-slate-100'
+                      }`}
+                      title="Trail session"
+                      aria-label="Trail session"
+                    >
+                      TR
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => undefined}
                       className="flex h-7 w-7 items-center justify-center rounded border border-blue-600 bg-blue-600 text-sm text-white transition"
                       title={labels.workspace}
@@ -822,6 +840,19 @@ const StudentStage: React.FC<{
           </button>
 
           <button
+            type="button"
+            onClick={() => setShowExerciseSession(!showExerciseSession)}
+            className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
+              showExerciseSession
+                ? 'bg-violet-500 text-white hover:bg-violet-400'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+            title="Trail session"
+          >
+            TR
+          </button>
+
+          <button
             onClick={() => setChatOpen((current) => !current)}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-lg shadow transition ${
               chatOpen
@@ -855,6 +886,31 @@ const StudentStage: React.FC<{
                   user={user}
                   role="student"
                   allowAudioNotes={session.audioNotesEnabled !== false}
+                />
+              </div>
+            </div>
+          ) : null}
+          {showExerciseSession ? (
+            <div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm">
+              <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-black text-white">Trail Session</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowExerciseSession(false)}
+                    className="rounded-lg px-3 py-1 text-sm font-bold text-slate-300 hover:bg-slate-800"
+                  >
+                    Close
+                  </button>
+                </div>
+                <ExerciseSessionPanel
+                  classId={liveClass.id}
+                  user={user}
+                  isTeacher={false}
+                  assignedRoster={assignedRoster}
+                  defaultCourseId={liveClass.courseId ?? 'english'}
+                  defaultWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
+                  defaultLessonId={session.activeLessonId ?? liveClass.lessonId ?? ''}
                 />
               </div>
             </div>
@@ -928,7 +984,7 @@ const StudentStage: React.FC<{
 };
 
 export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
-  const { liveClass, user, session, onOpenBattleHub, onExit } = props;
+  const { liveClass, user, session, onOpenBattleHub, onExit, showExerciseSession, setShowExerciseSession } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [liveKitError, setLiveKitError] = useState<string | null>(null);
@@ -1139,6 +1195,8 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
           user={user}
           session={session}
           assignedRoster={props.assignedRoster}
+          showExerciseSession={showExerciseSession}
+          setShowExerciseSession={setShowExerciseSession}
           onOpenBattleHub={onOpenBattleHub}
           onExit={onExit}
           ensureLiveRoomConnected={ensureLiveRoomConnected}

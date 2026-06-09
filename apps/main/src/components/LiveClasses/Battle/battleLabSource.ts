@@ -3,6 +3,7 @@ import type { BibleItem } from '../../../../../lab/src/types';
 import type { Exercise, Lesson, Workbook } from '../../../types';
 import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from '../../../services/liveWhiteboardActivities';
 import type { BattleConfig, BattleDifficulty, BattleQuestion } from './battleTypes';
+import { readLocalBattleQuestionIds } from './battleQuestionHistoryService';
 import { getBattleLanguage, sanitizeBattleQuestion } from './battleUtils';
 
 interface BattleWorkbookContext {
@@ -61,6 +62,91 @@ function dedupeQuestions(questions: BattleQuestion[]): BattleQuestion[] {
   return next;
 }
 
+function getTrailNumber(dayId: string | undefined): number | null {
+  if (!dayId) return null;
+  const match = dayId.match(/d(\d+)/i);
+  return match ? Number(match[1]) : null;
+}
+
+function inferExerciseSkill(exercise: Exercise): BattleQuestion['skill'] {
+  switch (exercise.type) {
+    case 'speaking':
+      return 'speaking';
+    case 'writing':
+      return 'writing';
+    case 'identification':
+      return 'reading';
+    default:
+      return 'grammar';
+  }
+}
+
+function inferExerciseDifficulty(exercise: Exercise): BattleQuestion['difficulty'] {
+  if (exercise.type === 'speaking') return 'hard';
+  if (exercise.type === 'writing') return 'medium';
+  return exercise.options?.length && exercise.options.length <= 3 ? 'easy' : 'medium';
+}
+
+function inferQuestionDifficulty(question: BattleQuestion): 'easy' | 'medium' | 'hard' {
+  return question.difficulty ?? (
+    question.kind === 'speaking'
+      ? 'hard'
+      : question.kind === 'audio-open'
+        ? 'medium'
+        : 'easy'
+  );
+}
+
+function inferQuestionSkill(question: BattleQuestion): NonNullable<BattleQuestion['skill']> {
+  return question.skill ?? (
+    question.kind === 'speaking'
+      ? 'speaking'
+      : question.kind === 'audio-choice' || question.kind === 'audio-open'
+        ? 'listening'
+        : 'grammar'
+  );
+}
+
+function pickBalancedQuestions(pool: BattleQuestion[], questionCount: number, recentQuestionIds: string[]): BattleQuestion[] {
+  const recentSet = new Set(recentQuestionIds);
+  const unusedPool = pool.filter((question) => !recentSet.has(question.id ?? ''));
+  const effectivePool = unusedPool.length >= questionCount ? unusedPool : pool;
+  const shuffledPool = shuffle(effectivePool);
+
+  const targets = {
+    easy: Math.max(1, Math.round(questionCount * 0.25)),
+    medium: Math.max(1, Math.round(questionCount * 0.5)),
+    hard: Math.max(1, questionCount - Math.max(1, Math.round(questionCount * 0.25)) - Math.max(1, Math.round(questionCount * 0.5))),
+  };
+  const selected: BattleQuestion[] = [];
+  const selectedIds = new Set<string>();
+  const speakingCap = Math.max(2, Math.floor(questionCount * 0.25));
+
+  (['easy', 'medium', 'hard'] as const).forEach((difficulty) => {
+    const candidates = shuffledPool.filter((question) => inferQuestionDifficulty(question) === difficulty);
+    for (const question of candidates) {
+      if (selected.length >= questionCount) break;
+      if (selectedIds.has(question.id ?? '')) continue;
+      const speakingCount = selected.filter((item) => inferQuestionSkill(item) === 'speaking').length;
+      if (inferQuestionSkill(question) === 'speaking' && speakingCount >= speakingCap) continue;
+      selected.push(question);
+      selectedIds.add(question.id ?? '');
+      if (selected.filter((item) => inferQuestionDifficulty(item) === difficulty).length >= targets[difficulty]) break;
+    }
+  });
+
+  for (const question of shuffledPool) {
+    if (selected.length >= questionCount) break;
+    if (selectedIds.has(question.id ?? '')) continue;
+    const speakingCount = selected.filter((item) => inferQuestionSkill(item) === 'speaking').length;
+    if (inferQuestionSkill(question) === 'speaking' && speakingCount >= speakingCap) continue;
+    selected.push(question);
+    selectedIds.add(question.id ?? '');
+  }
+
+  return selected.slice(0, questionCount);
+}
+
 function buildExercisePromptText(exercise: Exercise): string {
   const lines: string[] = [];
   const instruction = exercise.instruction?.trim();
@@ -81,7 +167,10 @@ function buildExercisePromptText(exercise: Exercise): string {
   return lines.join('\n').trim();
 }
 
-function mapExerciseToBattleQuestion(exercise: Exercise): BattleQuestion | null {
+function mapExerciseToBattleQuestion(
+  exercise: Exercise,
+  context: { workbookId: number; lessonId: string; dayId: string },
+): BattleQuestion | null {
   const displayValue = exercise.displayValue?.trim() ?? '';
   const displayIsIcon = displayValue.startsWith('fa-');
   const promptAudioText = exercise.audioValue?.trim() || undefined;
@@ -103,6 +192,11 @@ function mapExerciseToBattleQuestion(exercise: Exercise): BattleQuestion | null 
         promptAudioText: shouldUseAudio ? promptAudioText : undefined,
         playAudioOnce: shouldUseAudio,
         hint,
+        bookId: context.workbookId,
+        trailId: context.dayId,
+        trailNumber: getTrailNumber(context.dayId),
+        skill: inferExerciseSkill(exercise),
+        difficulty: inferExerciseDifficulty(exercise),
       });
     }
     case 'writing':
@@ -115,6 +209,11 @@ function mapExerciseToBattleQuestion(exercise: Exercise): BattleQuestion | null 
         promptAudioText,
         playAudioOnce: Boolean(promptAudioText),
         hint,
+        bookId: context.workbookId,
+        trailId: context.dayId,
+        trailNumber: getTrailNumber(context.dayId),
+        skill: inferExerciseSkill(exercise),
+        difficulty: inferExerciseDifficulty(exercise),
       });
     case 'speaking':
       return sanitizeBattleQuestion({
@@ -126,6 +225,11 @@ function mapExerciseToBattleQuestion(exercise: Exercise): BattleQuestion | null 
         promptAudioText,
         playAudioOnce: true,
         hint,
+        bookId: context.workbookId,
+        trailId: context.dayId,
+        trailNumber: getTrailNumber(context.dayId),
+        skill: inferExerciseSkill(exercise),
+        difficulty: inferExerciseDifficulty(exercise),
       });
     default:
       return null;
@@ -207,7 +311,9 @@ async function loadBattleWorkbookContext(
 }
 
 async function getBattleQuestionsFromWorkbook(
-  config: Pick<BattleConfig, 'questionCount' | 'scope' | 'lessonId' | 'workbookId' | 'courseId' | 'difficulty'>,
+  config: Pick<BattleConfig, 'questionCount' | 'scope' | 'lessonId' | 'workbookId' | 'courseId' | 'difficulty' | 'trailIds'> & {
+    recentQuestionIds?: string[];
+  },
 ): Promise<BattleQuestion[]> {
   const context = await loadBattleWorkbookContext(config);
   if (!context) {
@@ -221,21 +327,34 @@ async function getBattleQuestionsFromWorkbook(
     context.currentLessonNumber,
   );
 
-  const rawPool = scopedLessons.flatMap((lesson) => (
-    lesson.days.flatMap((day) => day.exercises.map((exercise) => mapExerciseToBattleQuestion(exercise)))
-  ));
+  const selectedTrailIds = new Set(config.trailIds ?? []);
+  const rawPool = scopedLessons.flatMap((lesson) => {
+    const scopedDays = selectedTrailIds.size > 0
+      ? lesson.days.filter((day) => selectedTrailIds.has(day.id))
+      : lesson.days;
+    return scopedDays.flatMap((day) => day.exercises.map((exercise) => mapExerciseToBattleQuestion(exercise, {
+      workbookId: Number(config.workbookId) || 1,
+      lessonId: lesson.id,
+      dayId: day.id,
+    })));
+  });
 
   const normalizedPool = dedupeQuestions(
     rawPool.filter((question): question is BattleQuestion => question !== null),
   );
 
   const difficultyPool = applyDifficultyToPool(normalizedPool, config.difficulty);
-  const selectedQuestions = shuffle(difficultyPool).slice(0, config.questionCount);
+  const recentQuestionIds = Array.from(new Set([
+    ...readLocalBattleQuestionIds(config),
+    ...(config.recentQuestionIds ?? []),
+  ]));
+  const selectedQuestions = pickBalancedQuestions(difficultyPool, config.questionCount, recentQuestionIds);
 
   console.log('[BATTLE CONTENT] workbook source active', {
     courseId: config.courseId ?? null,
     workbookId: config.workbookId ?? null,
     lessonId: config.lessonId ?? null,
+    trailIds: config.trailIds ?? [],
     scope: config.scope,
     lessonCount: scopedLessons.length,
     poolSize: normalizedPool.length,
@@ -254,7 +373,9 @@ function buildBibleSources(): BattleQuestion[] {
 }
 
 export async function getBattleQuestionsFromLab(
-  config: Pick<BattleConfig, 'questionCount' | 'scope' | 'lessonId' | 'workbookId' | 'courseId' | 'difficulty'>,
+  config: Pick<BattleConfig, 'questionCount' | 'scope' | 'lessonId' | 'workbookId' | 'courseId' | 'difficulty' | 'trailIds'> & {
+    recentQuestionIds?: string[];
+  },
 ): Promise<BattleQuestion[]> {
   const workbookQuestions = await getBattleQuestionsFromWorkbook(config);
   if (workbookQuestions.length > 0 || !shouldUseBibleSources(config.courseId)) {

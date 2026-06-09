@@ -25,24 +25,29 @@ import {
   sanitizeBattleQuestions,
 } from './battleUtils';
 import { BOT_AVATAR_OPTIONS, DEFAULT_BOT_AVATAR_ID, normalizeBotAvatarId } from './botAvatars';
+import { readSharedBattleQuestionIds, recordUsedBattleQuestionIds } from './battleQuestionHistoryService';
 import { translateText } from '../../../services/vocabularyService';
 import { downloadBattleTemplatePdf } from '../../../services/battlePdfService';
+import { getWorkbookOptionsForCourse, loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from '../../../services/liveWhiteboardActivities';
+import type { Lesson, Workbook } from '../../../types';
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 function buildExcludedKey(params: {
   courseId?: string;
   workbookId?: number;
   lessonId?: string;
+  trailIds?: string[];
   scope: BattleScope;
 }) {
   const {
     courseId = 'no-course',
     workbookId = 'no-workbook',
     lessonId = 'no-lesson',
+    trailIds = [],
     scope,
   } = params;
 
-  return `learnendo_battle_excluded_ids:${courseId}:${workbookId}:${lessonId}:${scope}`;
+  return `learnendo_battle_excluded_ids:${courseId}:${workbookId}:${lessonId}:${trailIds.join('|') || 'all-trails'}:${scope}`;
 }
 
 function loadExcluded(storageKey: string): Set<string> {
@@ -966,6 +971,37 @@ export const BattleSetupModal: React.FC<Props> = ({
   const battleSourceCopy = BATTLE_SOURCE_COPY[
     effectiveUiLanguage === 'pt' || effectiveUiLanguage === 'es' ? effectiveUiLanguage : 'en'
   ];
+  const trailSelectorCopy = useMemo(() => {
+    switch (effectiveUiLanguage) {
+      case 'pt':
+        return {
+          workbook: 'Livro',
+          lesson: 'Licao',
+          trail: 'Trilha',
+          allTrails: 'Todas as trilhas',
+          loading: 'Carregando trilhas...',
+          currentLessonHint: 'As trilhas sao aplicadas quando a fonte estiver em Esta Licao.',
+        };
+      case 'es':
+        return {
+          workbook: 'Libro',
+          lesson: 'Leccion',
+          trail: 'Ruta',
+          allTrails: 'Todas las rutas',
+          loading: 'Cargando rutas...',
+          currentLessonHint: 'Las rutas se aplican cuando la fuente esta en Esta leccion.',
+        };
+      default:
+        return {
+          workbook: 'Book',
+          lesson: 'Lesson',
+          trail: 'Trail',
+          allTrails: 'All Trails',
+          loading: 'Loading trails...',
+          currentLessonHint: 'Trails are applied when the source is set to This Lesson.',
+        };
+    }
+  }, [effectiveUiLanguage]);
   const copy = useMemo(() => {
     switch (effectiveUiLanguage) {
       case 'pt':
@@ -1419,6 +1455,11 @@ export const BattleSetupModal: React.FC<Props> = ({
   const [botEnabled,      setBotEnabled]      = useState(false);
   const [botAvatarId,     setBotAvatarId]     = useState(DEFAULT_BOT_AVATAR_ID);
   const [botName,         setBotName]         = useState('Bot');
+  const [selectedWorkbookId, setSelectedWorkbookId] = useState<number>(defaultWorkbookId ?? 1);
+  const [selectedLessonId, setSelectedLessonId] = useState<string>(defaultLessonId ?? '');
+  const [selectedTrailIds, setSelectedTrailIds] = useState<string[]>([]);
+  const [selectedWorkbook, setSelectedWorkbook] = useState<Workbook | null>(null);
+  const [loadingWorkbook, setLoadingWorkbook] = useState(false);
 
   // ── Step 2 state ────────────────────────────────────────────────────────
   const [questions,    setQuestions]    = useState<BattleQuestion[]>([]);
@@ -1442,12 +1483,30 @@ export const BattleSetupModal: React.FC<Props> = ({
   const exclusionStorageKey = useMemo(
     () => buildExcludedKey({
       courseId: defaultCourseId,
-      workbookId: defaultWorkbookId,
-      lessonId: defaultLessonId,
+      workbookId: selectedWorkbookId,
+      lessonId: selectedLessonId,
+      trailIds: selectedTrailIds,
       scope,
     }),
-    [defaultCourseId, defaultWorkbookId, defaultLessonId, scope]
+    [defaultCourseId, scope, selectedLessonId, selectedTrailIds, selectedWorkbookId]
   );
+  const workbookOptions = useMemo(
+    () => getWorkbookOptionsForCourse(defaultCourseId ?? 'english'),
+    [defaultCourseId],
+  );
+  const lessonOptions = useMemo<Lesson[]>(
+    () => selectedWorkbook?.lessons ?? [],
+    [selectedWorkbook],
+  );
+  const selectedLesson = useMemo(
+    () => resolveLessonForWhiteboard(selectedWorkbook, selectedLessonId),
+    [selectedLessonId, selectedWorkbook],
+  );
+  const trailOptions = useMemo(
+    () => selectedLesson?.days ?? [],
+    [selectedLesson],
+  );
+  const allTrailsSelected = trailOptions.length > 0 && selectedTrailIds.length === trailOptions.length;
 
   // Load persisted exclusions for the current battle context
   useEffect(() => {
@@ -1458,6 +1517,45 @@ export const BattleSetupModal: React.FC<Props> = ({
   useEffect(() => {
     persistExcluded(exclusionStorageKey, excludedIds);
   }, [excludedIds, exclusionStorageKey]);
+
+  useEffect(() => {
+    let active = true;
+    setLoadingWorkbook(true);
+
+    loadWorkbookForWhiteboard(defaultCourseId ?? 'english', selectedWorkbookId)
+      .then((workbook) => {
+        if (!active) return;
+        setSelectedWorkbook(workbook);
+        const nextLesson = resolveLessonForWhiteboard(workbook, selectedLessonId);
+        const resolvedLessonId = nextLesson?.id ?? workbook?.lessons?.[0]?.id ?? '';
+        setSelectedLessonId((previous) => previous || resolvedLessonId);
+      })
+      .catch((error) => {
+        console.warn('[BattleSetupModal] workbook load failed:', error);
+        if (!active) return;
+        setSelectedWorkbook(null);
+      })
+      .finally(() => {
+        if (active) setLoadingWorkbook(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [defaultCourseId, selectedLessonId, selectedWorkbookId]);
+
+  useEffect(() => {
+    if (!trailOptions.length) {
+      setSelectedTrailIds([]);
+      return;
+    }
+
+    setSelectedTrailIds((previous) => {
+      const filtered = previous.filter((trailId) => trailOptions.some((trail) => trail.id === trailId));
+      if (filtered.length > 0) return filtered;
+      return trailOptions.map((trail) => trail.id);
+    });
+  }, [trailOptions]);
 
   useEffect(() => {
     console.log('[BATTLE SOURCE] promptPreview changed:', promptPreview);
@@ -1480,6 +1578,9 @@ export const BattleSetupModal: React.FC<Props> = ({
     setBotEnabled(Boolean(initialTemplate.config.botEnabled));
     setBotAvatarId(normalizeBotAvatarId(initialTemplate.config.botAvatarId));
     setBotName(initialTemplate.config.botName?.trim() || 'Bot');
+    setSelectedWorkbookId(initialTemplate.config.workbookId ?? defaultWorkbookId ?? 1);
+    setSelectedLessonId(initialTemplate.config.lessonId ?? defaultLessonId ?? '');
+    setSelectedTrailIds(initialTemplate.config.trailIds ?? []);
     setQuestions(sanitizeBattleQuestions(initialTemplate.questions));
     setExcludedIds(new Set());
     setEditingIdx(null);
@@ -1495,7 +1596,7 @@ export const BattleSetupModal: React.FC<Props> = ({
     setEditorLanguage(nextLanguage);
     setDuplicateLanguage(nextLanguage);
     setStep('curate');
-  }, [effectiveUiLanguage, initialTemplate]);
+  }, [defaultLessonId, defaultWorkbookId, effectiveUiLanguage, initialTemplate]);
 
   useEffect(() => {
     setEditorLanguage(templateLanguage);
@@ -1528,13 +1629,24 @@ export const BattleSetupModal: React.FC<Props> = ({
 
   // ── Helpers ─────────────────────────────────────────────────────────────
   async function generateQuestions(selectedScope: BattleScope = scope): Promise<BattleQuestion[]> {
+    const recentQuestionIds = await readSharedBattleQuestionIds({
+      classId: liveClassId ?? null,
+      teacherId: currentUserUid ?? null,
+      courseId: defaultCourseId,
+      workbookId: selectedWorkbookId,
+      lessonId: selectedLessonId,
+      trailIds: selectedTrailIds,
+    });
+
     return getBattleQuestions({
       questionCount,
       scope: selectedScope,
       difficulty,
       courseId: defaultCourseId,
-      lessonId: defaultLessonId,
-      workbookId: defaultWorkbookId,
+      lessonId: selectedLessonId,
+      workbookId: selectedWorkbookId,
+      trailIds: selectedTrailIds,
+      recentQuestionIds,
     });
   }
 
@@ -1549,8 +1661,9 @@ export const BattleSetupModal: React.FC<Props> = ({
       botAvatarId,
       botName: botName.trim() || 'Bot',
       courseId:    getBattleCourseIdForLanguage(editorLanguage),
-      workbookId:  defaultWorkbookId,
-      lessonId:    defaultLessonId,
+      workbookId:  selectedWorkbookId,
+      lessonId:    selectedLessonId,
+      trailIds:    selectedTrailIds,
     };
   }
 
@@ -1778,6 +1891,17 @@ export const BattleSetupModal: React.FC<Props> = ({
       console.log('[BATTLE START DEBUG] questions generated:', generatedQuestions?.length, generatedQuestions);
       console.log('[BATTLE START DEBUG] creating battle session...');
       await onStart(config, generatedQuestions);
+      await recordUsedBattleQuestionIds(
+        {
+          classId: liveClassId ?? null,
+          teacherId: currentUserUid ?? null,
+          courseId: config.courseId,
+          workbookId: config.workbookId,
+          lessonId: config.lessonId,
+          trailIds: config.trailIds,
+        },
+        generatedQuestions.map((question) => question.id ?? '').filter(Boolean),
+      );
       console.log('[BATTLE START DEBUG] battle session created:', liveClassId ?? 'local-battle');
     } catch (error) {
       console.error('[BATTLE START DEBUG] start failed:', error);
@@ -2389,6 +2513,103 @@ export const BattleSetupModal: React.FC<Props> = ({
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  {trailSelectorCopy.workbook}
+                </label>
+                <select
+                  value={selectedWorkbookId}
+                  onChange={(event) => setSelectedWorkbookId(Number(event.target.value) || 1)}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-orange-500"
+                >
+                  {workbookOptions.map((workbook) => (
+                    <option key={workbook.id} value={workbook.id}>
+                      {workbook.label.replace('Workbook', trailSelectorCopy.workbook)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  {trailSelectorCopy.lesson}
+                </label>
+                <select
+                  value={selectedLessonId}
+                  onChange={(event) => setSelectedLessonId(event.target.value)}
+                  disabled={loadingWorkbook || lessonOptions.length === 0}
+                  className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm font-semibold text-white outline-none focus:border-orange-500 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {lessonOptions.map((lesson, index) => (
+                    <option key={lesson.id} value={lesson.id}>
+                      {trailSelectorCopy.lesson} {index + 1}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  {trailSelectorCopy.trail}
+                </label>
+                {scope !== 'current-lesson' ? (
+                  <span className="text-[11px] text-slate-500">
+                    {trailSelectorCopy.currentLessonHint}
+                  </span>
+                ) : null}
+              </div>
+
+              {loadingWorkbook ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-400">
+                  {trailSelectorCopy.loading}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedTrailIds(trailOptions.map((trail) => trail.id))}
+                    disabled={trailOptions.length === 0 || scope !== 'current-lesson'}
+                    className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                      allTrailsSelected
+                        ? 'border-orange-500 bg-orange-500/20 text-orange-300'
+                        : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
+                    {trailSelectorCopy.allTrails}
+                  </button>
+                  {trailOptions.map((trail, index) => {
+                    const selected = selectedTrailIds.includes(trail.id);
+                    return (
+                      <button
+                        key={trail.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedTrailIds((previous) => {
+                            if (previous.includes(trail.id)) {
+                              const next = previous.filter((trailId) => trailId !== trail.id);
+                              return next.length > 0 ? next : [trail.id];
+                            }
+                            return [...previous, trail.id];
+                          });
+                        }}
+                        disabled={scope !== 'current-lesson'}
+                        className={`rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                          selected
+                            ? 'border-orange-500 bg-orange-500/20 text-orange-300'
+                            : 'border-slate-700 text-slate-300 hover:border-slate-500'
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                        title={`${trailSelectorCopy.trail} ${index + 1} (${trail.id})`}
+                      >
+                        {trailSelectorCopy.trail} {index + 1}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Difficulty */}

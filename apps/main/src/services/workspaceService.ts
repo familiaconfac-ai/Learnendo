@@ -43,6 +43,11 @@ export interface WorkspaceItem {
   ownerEmail?: string;   // owner email for display
   classId?: string;
   teacherUserId?: string;
+  lockedByUserId?: string;
+  lockedByName?: string;
+  lockedByRole?: 'admin' | 'teacher' | 'student';
+  lockStartedAt?: number;
+  lockExpiresAt?: number;
   editingByUserId?: string;
   editingByUserName?: string;
   editingStartedAt?: number;

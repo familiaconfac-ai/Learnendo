@@ -285,6 +285,13 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     return unsubscribe;
   }, [liveClass.id, liveClass.workbookId]);
 
+  useEffect(() => {
+    if (session.sessionStatus !== 'active') return;
+    if ((session.activeTrailIds?.length ?? 0) > 0 || Boolean(session.activeExerciseId)) {
+      setShowExerciseSession(true);
+    }
+  }, [session.activeExerciseId, session.activeTrailIds, session.sessionStatus]);
+
   const handleUpdateSession = useCallback(
     async (patch: Partial<LiveClassSession>) => {
       if (isPreview) return;

@@ -968,6 +968,54 @@ function isStudent(viewer: WorkspaceViewerContext): boolean {
   return !isAdmin(viewer) && !isTeacher(viewer);
 }
 
+function getViewerLockRole(viewer: WorkspaceViewerContext): 'admin' | 'teacher' | 'student' {
+  if (isAdmin(viewer)) return 'admin';
+  if (isTeacher(viewer)) return 'teacher';
+  return 'student';
+}
+
+function getItemLockUserId(item: WorkspaceItem): string {
+  return item.lockedByUserId?.trim() || item.editingByUserId?.trim() || '';
+}
+
+function getItemLockName(item: WorkspaceItem): string {
+  return item.lockedByName?.trim() || item.editingByUserName?.trim() || getItemLockUserId(item);
+}
+
+function getItemLockRole(item: WorkspaceItem): 'admin' | 'teacher' | 'student' {
+  return item.lockedByRole ?? 'student';
+}
+
+function getItemLockStartedAt(item: WorkspaceItem): number {
+  return item.lockStartedAt ?? item.editingStartedAt ?? 0;
+}
+
+function getItemLockExpiresAt(item: WorkspaceItem): number {
+  const explicitExpiry = item.lockExpiresAt ?? 0;
+  if (explicitExpiry > 0) return explicitExpiry;
+  const startedAt = getItemLockStartedAt(item);
+  return startedAt > 0 ? startedAt + WORKSPACE_BOX_LOCK_TIMEOUT_MS : 0;
+}
+
+function isItemLockActive(item: WorkspaceItem, now = Date.now()): boolean {
+  const lockedByUserId = getItemLockUserId(item);
+  if (!lockedByUserId) return false;
+  return getItemLockExpiresAt(item) > now;
+}
+
+function canViewerOverrideItemLock(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  if (!isItemLockActive(item)) return true;
+
+  const viewerRole = getViewerLockRole(viewer);
+  const lockOwnerRole = getItemLockRole(item);
+  const lockOwnerId = getItemLockUserId(item);
+
+  if (lockOwnerId && lockOwnerId === viewer.userId) return true;
+  if (viewerRole === 'admin') return true;
+  if (lockOwnerRole === 'teacher' || lockOwnerRole === 'admin') return false;
+  return viewerRole === 'teacher';
+}
+
 function isBoxOwner(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
   if (item.ownerUserId && item.ownerUserId === viewer.userId) return true;
   if (item.ownerEmail && viewer.userEmail) {
@@ -1602,14 +1650,10 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   const inputRef = useRef<HTMLInputElement>(null);
   const ownerMenuRef = useRef<HTMLDivElement>(null);
   const FLOATING_GUARD_MS = 1500;
-  const LOCK_TIMEOUT_MS = WORKSPACE_BOX_LOCK_TIMEOUT_MS;
-
-  const isLockedByOther = Boolean(
-    item.editingByUserId &&
-      item.editingByUserId !== currentUserId &&
-      Date.now() - (item.editingStartedAt ?? 0) < LOCK_TIMEOUT_MS,
-  );
-  const lockOwnerName = item.editingByUserName || item.editingByUserId;
+  const isLockedByOther = isItemLockActive(item) && getItemLockUserId(item) !== currentUserId;
+  const lockOwnerName = getItemLockName(item);
+  const canTakeOverLock = canViewerOverrideItemLock(viewerContext, item);
+  const isBlockedByLock = isLockedByOther && !canTakeOverLock;
   const resolvedOwner = resolveAssignableOwner(item, assignableStudents);
   const resolvedOwnerUid = resolvedOwner?.uid ?? item.ownerUserId ?? null;
   const resolvedOwnerEmail = resolvedOwner?.email ?? item.ownerEmail ?? null;
@@ -1743,13 +1787,13 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       setAssigningOwner(false);
     }
 
-    if (canEditThisContent && !isLockedByOther) return;
+    if (canEditThisContent && !isBlockedByLock) return;
 
     if (contentRef.current && document.activeElement === contentRef.current) {
       contentRef.current.blur();
     }
 
-    if (item.editingByUserId === currentUserId) {
+    if (getItemLockUserId(item) === currentUserId) {
       onEditorBlur();
     }
   }, [
@@ -1759,8 +1803,9 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     canRenameThisBox,
     currentUserId,
     editingLabel,
-    isLockedByOther,
+    isBlockedByLock,
     item.editingByUserId,
+    item.lockedByUserId,
     onEditorBlur,
   ]);
 
@@ -1788,12 +1833,12 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     const el = contentRef.current;
     if (!el || item.type !== 'text') return;
     const isTyping = Date.now() - lastTypedAtRef.current < FLOATING_GUARD_MS;
-    const isFocusedLocally = document.activeElement === el && canEditThisContent && !isLockedByOther;
+    const isFocusedLocally = document.activeElement === el && canEditThisContent && !isBlockedByLock;
     if (isFocusedLocally) return;
     if (isTyping) return;
     if (el.innerHTML !== (item.content ?? '')) el.innerHTML = item.content ?? '';
     autoResizeStudentBox();
-  }, [autoResizeStudentBox, canEditThisContent, isLockedByOther, item.content, item.type]);
+  }, [autoResizeStudentBox, canEditThisContent, isBlockedByLock, item.content, item.type]);
 
   useEffect(() => {
     if (item.type !== 'text') return;
@@ -1992,7 +2037,9 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
               </button>
             ) : null}
             {isLockedByOther ? (
-              <span className="text-[9px] font-normal text-slate-500">Editing by {lockOwnerName}</span>
+              <span className="text-[9px] font-normal text-slate-500">
+                Esta caixa esta sendo editada por {lockOwnerName}.{canTakeOverLock ? ' Clique para assumir.' : ''}
+              </span>
             ) : null}
           </div>
         </div>
@@ -2069,7 +2116,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       ) : null}
       <div
         ref={contentRef}
-        contentEditable={canEditThisContent && !isLockedByOther}
+        contentEditable={canEditThisContent && !isBlockedByLock}
         suppressContentEditableWarning
         spellCheck
         onMouseDown={(e) => e.stopPropagation()}
@@ -2080,12 +2127,12 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         }}
         onBlur={(e) => {
           onEditorBlur();
-          if (!canEditThisContent || isLockedByOther) return;
+          if (!canEditThisContent || isBlockedByLock) return;
           onContentChange((e.target as HTMLDivElement).innerHTML);
           autoResizeStudentBox();
         }}
         onInput={(e) => {
-          if (!canEditThisContent || isLockedByOther) {
+          if (!canEditThisContent || isBlockedByLock) {
             e.currentTarget.blur();
             return;
           }
@@ -2100,9 +2147,9 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           fontSize: `${item.styles?.fontSize ?? 14}px`,
           color: item.styles?.color ?? '#1e293b',
           paddingTop: isSlideContentBox ? '0.75rem' : isSelected ? '2.1rem' : '0.5rem',
-          cursor: !canEditThisContent || isLockedByOther ? 'not-allowed' : 'text',
+          cursor: !canEditThisContent || isBlockedByLock ? 'not-allowed' : 'text',
           wordBreak: 'break-word',
-          opacity: isOwnedByOther ? 0.65 : isLockedByOther ? 0.85 : 1,
+          opacity: isOwnedByOther ? 0.65 : isBlockedByLock ? 0.85 : 1,
         }}
       />
       {isSelected && canResizeThisBox ? <StableResizeHandle onPointerDown={onPointerDownResize} /> : null}
@@ -2285,11 +2332,27 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     [classId, storage],
   );
   const normalizeItemScope = useCallback(
-    (item: WorkspaceItem): WorkspaceItem => ({
-      ...item,
-      classId: item.classId ?? classId,
-      teacherUserId: item.teacherUserId ?? classTeacherUserId ?? undefined,
-    }),
+    (item: WorkspaceItem): WorkspaceItem => {
+      const lockUserId = item.lockedByUserId?.trim() || item.editingByUserId?.trim() || '';
+      const lockName = item.lockedByName?.trim() || item.editingByUserName?.trim() || '';
+      const lockStartedAt = item.lockStartedAt ?? item.editingStartedAt ?? 0;
+      const lockExpiresAt =
+        item.lockExpiresAt ??
+        (lockStartedAt > 0 ? lockStartedAt + WORKSPACE_BOX_LOCK_TIMEOUT_MS : 0);
+
+      return {
+        ...item,
+        classId: item.classId ?? classId,
+        teacherUserId: item.teacherUserId ?? classTeacherUserId ?? undefined,
+        lockedByUserId: lockUserId || undefined,
+        lockedByName: lockName || undefined,
+        lockStartedAt: lockStartedAt || undefined,
+        lockExpiresAt: lockUserId && lockExpiresAt > 0 ? lockExpiresAt : undefined,
+        editingByUserId: lockUserId || undefined,
+        editingByUserName: lockName || undefined,
+        editingStartedAt: lockStartedAt || undefined,
+      };
+    },
     [classId, classTeacherUserId],
   );
 
@@ -3503,33 +3566,48 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     [normalizeItemScope, userId, userName],
   );
 
-  const LOCK_TIMEOUT_MS = WORKSPACE_BOX_LOCK_TIMEOUT_MS;
-
   const isItemLockedByOther = (item: WorkspaceItem) => {
-    if (!item.editingByUserId || item.editingByUserId === userId) return false;
-    const age = Date.now() - (item.editingStartedAt ?? 0);
-    return age < LOCK_TIMEOUT_MS;
+    return isItemLockActive(item) && getItemLockUserId(item) !== userId;
+  };
+
+  const buildItemLockPatch = (locking: boolean) => {
+    if (!locking) {
+      return {
+        lockedByUserId: '',
+        lockedByName: '',
+        lockedByRole: undefined,
+        lockStartedAt: 0,
+        lockExpiresAt: 0,
+        editingByUserId: '',
+        editingByUserName: '',
+        editingStartedAt: 0,
+      } satisfies Partial<WorkspaceItem>;
+    }
+
+    const lockStartedAt = Date.now();
+    return {
+      lockedByUserId: userId,
+      lockedByName: userName,
+      lockedByRole: getViewerLockRole(viewerContext),
+      lockStartedAt,
+      lockExpiresAt: lockStartedAt + WORKSPACE_BOX_LOCK_TIMEOUT_MS,
+      editingByUserId: userId,
+      editingByUserName: userName,
+      editingStartedAt: lockStartedAt,
+    } satisfies Partial<WorkspaceItem>;
   };
 
   const clearItemLock = (item: WorkspaceItem) => {
-    if (item.editingByUserId !== userId) return;
-    updateItem(item.id, {
-      editingByUserId: '',
-      editingByUserName: '',
-      editingStartedAt: 0,
-    }, { forceSave: canEditResolvedBoxContent(item) });
+    if (getItemLockUserId(item) !== userId) return;
+    updateItem(item.id, buildItemLockPatch(false), { forceSave: canEditResolvedBoxContent(item) });
   };
 
   const acquireItemLock = (item: WorkspaceItem) => {
     const canEditThisItem = canEditResolvedBoxContent(item);
     if (!canEditThisItem) return false;
     if (effectiveReadOnly && !canEditThisItem) return false;
-    if (isItemLockedByOther(item)) return false;
-    updateItem(item.id, {
-      editingByUserId: userId,
-      editingByUserName: userName,
-      editingStartedAt: Date.now(),
-    }, { forceSave: canEditThisItem });
+    if (isItemLockedByOther(item) && !canViewerOverrideItemLock(viewerContext, item)) return false;
+    updateItem(item.id, buildItemLockPatch(true), { forceSave: canEditThisItem });
     return true;
   };
 
@@ -3543,7 +3621,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     const item = items.find((it) => it.id === itemId);
     if (!item || item.type !== 'text') return;
     const canEditThisItem = canEditResolvedBoxContent(item);
-    if (!canEditThisItem || (effectiveReadOnly && !canEditThisItem) || isItemLockedByOther(item)) {
+    if (
+      !canEditThisItem ||
+      (effectiveReadOnly && !canEditThisItem) ||
+      (isItemLockedByOther(item) && !canViewerOverrideItemLock(viewerContext, item))
+    ) {
       el.blur();
       return;
     }
@@ -3555,7 +3637,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     activeFloatingElRef.current = el;
   };
 
-  const handleFloatingBlur = (itemId: string) => {
+  const handleFloatingBlur = useCallback((itemId: string) => {
     activeFloatingIdRef.current = null;
     activeFloatingElRef.current = null;
     releaseItemLock(itemId);
@@ -3564,7 +3646,34 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       saveSingleItemDebounce.current = null;
     }
     flushPendingSingleItemSaves();
-  };
+  }, [flushPendingSingleItemSaves, releaseItemLock]);
+
+  useEffect(() => {
+    const heartbeat = window.setInterval(() => {
+      const activeFloatingId = activeFloatingIdRef.current;
+      if (!activeFloatingId || document.activeElement !== activeFloatingElRef.current) return;
+      const activeItem = itemsRef.current.find((item) => item.id === activeFloatingId);
+      if (!activeItem || activeItem.type !== 'text') return;
+      if (!canEditResolvedBoxContent(activeItem)) return;
+      updateItem(activeItem.id, buildItemLockPatch(true), { forceSave: true });
+    }, Math.max(3_000, Math.floor(WORKSPACE_BOX_LOCK_TIMEOUT_MS / 2)));
+
+    const releaseActiveLock = () => {
+      const activeFloatingId = activeFloatingIdRef.current;
+      if (activeFloatingId) {
+        handleFloatingBlur(activeFloatingId);
+      }
+    };
+
+    window.addEventListener('beforeunload', releaseActiveLock);
+    window.addEventListener('blur', releaseActiveLock);
+
+    return () => {
+      window.clearInterval(heartbeat);
+      window.removeEventListener('beforeunload', releaseActiveLock);
+      window.removeEventListener('blur', releaseActiveLock);
+    };
+  }, [buildItemLockPatch, canEditResolvedBoxContent, handleFloatingBlur, updateItem]);
 
   const addBox = (boxRole: 'content' | 'student' = 'content') => {
     if (effectiveReadOnly || readOnly) return;
@@ -6193,9 +6302,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   item.id,
                   {
                     content: html,
-                    editingByUserId: userId,
-                    editingByUserName: userName,
-                    editingStartedAt: Date.now(),
+                    ...buildItemLockPatch(true),
                   },
                   { forceSave: canEditResolvedBoxContent(item) },
                 )}

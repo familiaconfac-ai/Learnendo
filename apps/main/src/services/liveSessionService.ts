@@ -4,10 +4,12 @@ import {
   deleteField,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { sanitizeMainStageMode } from './liveClassStage';
@@ -17,10 +19,13 @@ import {
   LiveClassSession,
   LiveWhiteboardBlock,
   LiveExerciseBlock,
+  LiveExerciseAnswerVerdict,
   LiveExerciseBlockStatus,
   LiveExerciseSession,
   LiveWhiteboardState,
 } from '../types';
+import type { Day, Exercise, Lesson } from '../types';
+import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from './liveWhiteboardActivities';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_SESSION_COLLECTION = 'session';
@@ -42,11 +47,67 @@ function isBooleanRecord(value: unknown): value is Record<string, boolean> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function isNumberRecord(value: unknown): value is Record<string, number> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isVerdictRecord(value: unknown): value is Record<string, LiveExerciseAnswerVerdict> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeExerciseAnswer(text: string) {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+}
+
+function buildAcceptedAnswers(exercise: Exercise): string[] {
+  const pool = new Set<string>();
+  const correctValue = exercise.correctValue?.trim() ?? '';
+  if (correctValue) {
+    pool.add(correctValue);
+  }
+  if (exercise.options?.length) {
+    const directMatch = exercise.options.find((option) => normalizeExerciseAnswer(option) === normalizeExerciseAnswer(correctValue));
+    if (directMatch) pool.add(directMatch);
+  }
+  return Array.from(pool);
+}
+
+function getTrailNumber(dayId: string | null | undefined): number | null {
+  if (!dayId) return null;
+  const match = dayId.match(/d(\d+)/i);
+  return match ? Number(match[1]) : null;
+}
+
+function buildExercisePrompt(exercise: Exercise, index: number): string {
+  const promptLines = [`${index + 1}. ${exercise.instruction}`];
+  const displayValue = (exercise.displayValue ?? '').trim();
+  const audioValue = (exercise.audioValue ?? '').trim();
+
+  if (displayValue && !displayValue.startsWith('fa-')) {
+    promptLines.push(`Prompt: ${displayValue}`);
+  } else if (audioValue) {
+    promptLines.push(`Prompt: ${audioValue}`);
+  }
+
+  if (exercise.options?.length) {
+    promptLines.push(`Options: ${exercise.options.join(' / ')}`);
+  }
+
+  return promptLines.join('\n');
+}
+
 const mapSession = (data: Record<string, any> | undefined): LiveClassSession => ({
   sessionStatus: (data?.sessionStatus ?? 'idle') as LiveClassSession['sessionStatus'],
   activeWorkbookId: data?.activeWorkbookId ?? null,
   activeLessonId: data?.activeLessonId ?? null,
   activeExerciseId: data?.activeExerciseId ?? null,
+  activeTrailIds: Array.isArray(data?.activeTrailIds) ? data.activeTrailIds.filter((value: unknown): value is string => typeof value === 'string') : [],
+  activeTrailLabel: data?.activeTrailLabel ?? null,
   liveAudioTransport: (data?.liveAudioTransport ?? 'not-configured') as LiveClassSession['liveAudioTransport'],
   teacherLiveMicEnabled: Boolean(data?.teacherLiveMicEnabled),
   teacherCameraEnabled: Boolean(data?.teacherCameraEnabled),
@@ -143,6 +204,12 @@ const mapWhiteboard = (data: Record<string, any> | undefined): LiveWhiteboardSta
 const mapExerciseSession = (data: Record<string, any> | undefined): LiveExerciseSession => ({
   title: data?.title ?? '',
   isActive: data ? data.isActive !== false : false,
+  sourceCourseId: data?.sourceCourseId ?? '',
+  sourceWorkbookId: Number.isFinite(data?.sourceWorkbookId) ? Number(data.sourceWorkbookId) : null,
+  sourceLessonId: data?.sourceLessonId ?? '',
+  sourceTrailIds: Array.isArray(data?.sourceTrailIds) ? data.sourceTrailIds.filter((value: unknown): value is string => typeof value === 'string') : [],
+  sourceTrailLabel: data?.sourceTrailLabel ?? null,
+  totalQuestions: Number.isFinite(data?.totalQuestions) ? Number(data.totalQuestions) : undefined,
   endedAt: data?.endedAt?.toDate?.()?.toISOString?.() ?? data?.endedAt ?? undefined,
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
   updatedBy: data?.updatedBy
@@ -167,6 +234,15 @@ const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBl
   const responseLocks = isBooleanRecord(data.responseLocks)
     ? data.responseLocks
     : (legacyAssignedTo ? { [legacyAssignedTo]: Boolean(data.isLocked) } : {});
+  const responseAttempts = isNumberRecord(data.responseAttempts)
+    ? data.responseAttempts
+    : {};
+  const responseVerdicts = isVerdictRecord(data.responseVerdicts)
+    ? data.responseVerdicts
+    : {};
+  const responseAnsweredAt = isStringRecord(data.responseAnsweredAt)
+    ? data.responseAnsweredAt
+    : {};
 
   return {
     id,
@@ -175,6 +251,18 @@ const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBl
     responses,
     responseStatuses,
     responseLocks,
+    responseAttempts,
+    responseVerdicts,
+    responseAnsweredAt,
+    sourceTrailId: data.sourceTrailId ?? null,
+    sourceTrailNumber: Number.isFinite(data.sourceTrailNumber) ? Number(data.sourceTrailNumber) : null,
+    sourceLessonId: data.sourceLessonId ?? null,
+    sourceWorkbookId: Number.isFinite(data.sourceWorkbookId) ? Number(data.sourceWorkbookId) : null,
+    questionType: data.questionType ?? undefined,
+    expectedAnswer: data.expectedAnswer ?? undefined,
+    acceptedAnswers: Array.isArray(data.acceptedAnswers)
+      ? data.acceptedAnswers.filter((value: unknown): value is string => typeof value === 'string')
+      : [],
     createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
     updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
     updatedBy: data.updatedBy
@@ -291,6 +379,8 @@ export async function updateLiveSession(
   if ('activeWorkbookId' in patch) payload.activeWorkbookId = patch.activeWorkbookId ?? null;
   if ('activeLessonId' in patch) payload.activeLessonId = patch.activeLessonId ?? null;
   if ('activeExerciseId' in patch) payload.activeExerciseId = patch.activeExerciseId ?? null;
+  if ('activeTrailIds' in patch) payload.activeTrailIds = Array.isArray(patch.activeTrailIds) ? patch.activeTrailIds : [];
+  if ('activeTrailLabel' in patch) payload.activeTrailLabel = patch.activeTrailLabel ?? null;
   if ('liveAudioTransport' in patch) payload.liveAudioTransport = patch.liveAudioTransport ?? 'not-configured';
   if ('teacherLiveMicEnabled' in patch) payload.teacherLiveMicEnabled = Boolean(patch.teacherLiveMicEnabled);
   if ('teacherCameraEnabled' in patch) payload.teacherCameraEnabled = Boolean(patch.teacherCameraEnabled);
@@ -541,7 +631,7 @@ export function subscribeExerciseBlocks(
 
 export async function saveExerciseSession(
   classId: string,
-  patch: Partial<Pick<LiveExerciseSession, 'title' | 'isActive'>>,
+  patch: Partial<Pick<LiveExerciseSession, 'title' | 'isActive' | 'sourceCourseId' | 'sourceWorkbookId' | 'sourceLessonId' | 'sourceTrailIds' | 'sourceTrailLabel' | 'totalQuestions'>>,
   updatedByUid: string,
   updatedByName: string,
 ): Promise<void> {
@@ -558,6 +648,12 @@ export async function saveExerciseSession(
     payload.isActive = patch.isActive !== false;
     if (patch.isActive !== false) payload.endedAt = null;
   }
+  if ('sourceCourseId' in patch) payload.sourceCourseId = patch.sourceCourseId ?? '';
+  if ('sourceWorkbookId' in patch) payload.sourceWorkbookId = patch.sourceWorkbookId ?? null;
+  if ('sourceLessonId' in patch) payload.sourceLessonId = patch.sourceLessonId ?? '';
+  if ('sourceTrailIds' in patch) payload.sourceTrailIds = Array.isArray(patch.sourceTrailIds) ? patch.sourceTrailIds : [];
+  if ('sourceTrailLabel' in patch) payload.sourceTrailLabel = patch.sourceTrailLabel ?? null;
+  if ('totalQuestions' in patch) payload.totalQuestions = patch.totalQuestions ?? 0;
 
   await setDoc(getExerciseSessionRef(classId), payload, { merge: true });
 }
@@ -597,6 +693,9 @@ export async function createExerciseBlock(
     responses: {},
     responseStatuses: {},
     responseLocks: {},
+    responseAttempts: {},
+    responseVerdicts: {},
+    responseAnsweredAt: {},
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
     updatedBy: buildExerciseActor(updatedByUid, updatedByName),
@@ -636,6 +735,11 @@ export async function updateExerciseBlockResponse(
   status: LiveExerciseBlockStatus,
   updatedByUid: string,
   updatedByName: string,
+  meta?: {
+    attempts?: number;
+    verdict?: LiveExerciseAnswerVerdict;
+    answeredAt?: string;
+  },
 ): Promise<void> {
   if (!db) throw new Error('Firestore is not initialized');
   if (!classId || !blockId || !studentUid) return;
@@ -648,14 +752,25 @@ export async function updateExerciseBlockResponse(
     updatedByUid,
   });
 
+  const payload: Record<string, unknown> = {
+    [`responses.${studentUid}`]: answerText,
+    [`responseStatuses.${studentUid}`]: status,
+    updatedAt: serverTimestamp(),
+    updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+  };
+  if (typeof meta?.attempts === 'number') {
+    payload[`responseAttempts.${studentUid}`] = meta.attempts;
+  }
+  if (meta?.verdict) {
+    payload[`responseVerdicts.${studentUid}`] = meta.verdict;
+  }
+  if (meta?.answeredAt) {
+    payload[`responseAnsweredAt.${studentUid}`] = meta.answeredAt;
+  }
+
   await setDoc(
     doc(getExerciseBlocksCollection(classId), blockId),
-    {
-      [`responses.${studentUid}`]: answerText,
-      [`responseStatuses.${studentUid}`]: status,
-      updatedAt: serverTimestamp(),
-      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
-    },
+    payload,
     { merge: true },
   );
 }
@@ -719,11 +834,133 @@ export async function clearExerciseBlockStudentResponse(
     {
       [`responses.${studentUid}`]: '',
       [`responseStatuses.${studentUid}`]: 'pending',
+      [`responseAttempts.${studentUid}`]: 0,
+      [`responseVerdicts.${studentUid}`]: deleteField(),
+      [`responseAnsweredAt.${studentUid}`]: deleteField(),
       updatedAt: serverTimestamp(),
       updatedBy: buildExerciseActor(updatedByUid, updatedByName),
     },
     { merge: true },
   );
+}
+
+function buildTrailSelectionLabel(trailNumbers: number[]) {
+  if (trailNumbers.length === 0) return 'No trail selected';
+  if (trailNumbers.length === 1) return `Trail ${trailNumbers[0]}`;
+  return `All Trails (${trailNumbers.join(', ')})`;
+}
+
+function buildTrailBlocksFromSelection(
+  lesson: Lesson,
+  workbookId: number,
+  selectedDays: Day[],
+) {
+  let order = 1;
+  return selectedDays.flatMap((day) => {
+    const trailNumber = getTrailNumber(day.id);
+    return (day.exercises ?? []).map((exercise, index) => {
+      const block = {
+        order,
+        prompt: buildExercisePrompt(exercise, index),
+        responses: {},
+        responseStatuses: {},
+        responseLocks: {},
+        responseAttempts: {},
+        responseVerdicts: {},
+        responseAnsweredAt: {},
+        sourceTrailId: day.id,
+        sourceTrailNumber: trailNumber,
+        sourceLessonId: lesson.id,
+        sourceWorkbookId: workbookId,
+        questionType: exercise.type,
+        expectedAnswer: exercise.correctValue?.trim() ?? '',
+        acceptedAnswers: buildAcceptedAnswers(exercise),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      order += 1;
+      return block;
+    });
+  });
+}
+
+export async function seedExerciseSessionFromLessonTrails(params: {
+  classId: string;
+  courseId: string;
+  workbookId: number;
+  lessonId: string;
+  trailIds: string[];
+  updatedByUid: string;
+  updatedByName: string;
+}): Promise<{
+  title: string;
+  lessonId: string;
+  trailIds: string[];
+  trailLabel: string;
+  totalQuestions: number;
+}> {
+  if (!db) throw new Error('Firestore is not initialized');
+
+  const workbook = await loadWorkbookForWhiteboard(params.courseId, params.workbookId);
+  const lesson = resolveLessonForWhiteboard(workbook, params.lessonId);
+  if (!lesson) {
+    throw new Error('Selected lesson could not be loaded for the live trail session.');
+  }
+
+  const selectedDays = (lesson.days ?? []).filter((day) => params.trailIds.includes(day.id));
+  if (selectedDays.length === 0) {
+    throw new Error('Select at least one trail before starting the live trail session.');
+  }
+
+  const trailNumbers = selectedDays
+    .map((day) => getTrailNumber(day.id))
+    .filter((value): value is number => Number.isFinite(value));
+  const trailLabel = buildTrailSelectionLabel(trailNumbers);
+  const title = `${lesson.title} - ${trailLabel}`;
+  const blocks = buildTrailBlocksFromSelection(lesson, params.workbookId, selectedDays);
+  const batch = writeBatch(db);
+  const blocksCollection = getExerciseBlocksCollection(params.classId);
+  const existingBlocks = await getDocs(blocksCollection);
+
+  existingBlocks.docs.forEach((snapshot) => {
+    batch.delete(snapshot.ref);
+  });
+
+  blocks.forEach((block) => {
+    const nextRef = doc(blocksCollection);
+    batch.set(nextRef, {
+      ...block,
+      updatedBy: buildExerciseActor(params.updatedByUid, params.updatedByName),
+    });
+  });
+
+  batch.set(
+    getExerciseSessionRef(params.classId),
+    {
+      title,
+      isActive: true,
+      sourceCourseId: params.courseId,
+      sourceWorkbookId: params.workbookId,
+      sourceLessonId: lesson.id,
+      sourceTrailIds: selectedDays.map((day) => day.id),
+      sourceTrailLabel: trailLabel,
+      totalQuestions: blocks.length,
+      endedAt: null,
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(params.updatedByUid, params.updatedByName),
+    },
+    { merge: true },
+  );
+
+  await batch.commit();
+
+  return {
+    title,
+    lessonId: lesson.id,
+    trailIds: selectedDays.map((day) => day.id),
+    trailLabel,
+    totalQuestions: blocks.length,
+  };
 }
 
 export async function clearExerciseBlockStudentLock(

@@ -211,6 +211,8 @@ export interface LiveClassSession {
   activeWorkbookId?: number | null;
   activeLessonId?: string | null;
   activeExerciseId?: string | null;
+  activeTrailIds?: string[];
+  activeTrailLabel?: string | null;
   liveAudioTransport?: 'not-configured' | 'connecting' | 'connected';
   teacherLiveMicEnabled?: boolean;
   teacherCameraEnabled?: boolean;
@@ -257,10 +259,18 @@ export interface LiveExerciseActor {
 export interface LiveExerciseSession {
   title: string;
   isActive: boolean;
+  sourceCourseId?: string;
+  sourceWorkbookId?: number | null;
+  sourceLessonId?: string | null;
+  sourceTrailIds?: string[];
+  sourceTrailLabel?: string | null;
+  totalQuestions?: number;
   endedAt?: string;
   updatedAt?: string;
   updatedBy?: LiveExerciseActor;
 }
+
+export type LiveExerciseAnswerVerdict = 'correct' | 'wrong' | 'correct_second_try';
 
 export interface LiveExerciseBlock {
   id: string;
@@ -269,6 +279,16 @@ export interface LiveExerciseBlock {
   responses: Record<string, string>;
   responseStatuses: Record<string, LiveExerciseBlockStatus>;
   responseLocks: Record<string, boolean>;
+  responseAttempts: Record<string, number>;
+  responseVerdicts: Record<string, LiveExerciseAnswerVerdict>;
+  responseAnsweredAt: Record<string, string>;
+  sourceTrailId?: string | null;
+  sourceTrailNumber?: number | null;
+  sourceLessonId?: string | null;
+  sourceWorkbookId?: number | null;
+  questionType?: Exercise['type'] | string;
+  expectedAnswer?: string;
+  acceptedAnswers?: string[];
   createdAt?: string;
   updatedAt?: string;
   updatedBy?: LiveExerciseActor;

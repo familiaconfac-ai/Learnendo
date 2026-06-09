@@ -18,6 +18,7 @@ export interface BattleConfig {
   courseId?: string;
   workbookId?: number;
   lessonId?: string;
+  trailIds?: string[];
 }
 
 export interface BattleQuestion {
@@ -34,6 +35,12 @@ export interface BattleQuestion {
   promptAudioText?: string; // text spoken via TTS when the question starts
   playAudioOnce?: boolean;  // audio prompt can only be heard once in battle
   durationSeconds?: number; // optional custom timer for this specific question
+  bookId?: number | null;
+  trailId?: string | null;
+  trailNumber?: number | null;
+  skill?: 'grammar' | 'vocabulary' | 'listening' | 'speaking' | 'reading' | 'writing';
+  difficulty?: 'easy' | 'medium' | 'hard';
+  timesUsed?: number;
 }
 
 export interface SavedBattleTemplate {
