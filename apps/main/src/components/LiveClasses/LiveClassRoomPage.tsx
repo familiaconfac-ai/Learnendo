@@ -251,6 +251,7 @@ function buildInitialSession(liveClass: LiveClass): LiveClassSession {
     allowStudentLiveMic: false,
     studentCameraMode: 'off',
     allowStudentWhiteboardEdit: false,
+    studentEditingEnabled: true,
     audioNotesEnabled: true,
     mainStageMode: getDefaultMainStageMode(),
   };

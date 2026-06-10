@@ -117,6 +117,7 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   audioNotesEnabled: data?.audioNotesEnabled !== false,
   mainStageMode: sanitizeMainStageMode(data?.mainStageMode),
   isBoardLocked: Boolean(data?.isBoardLocked),
+  studentEditingEnabled: data?.studentEditingEnabled !== false,
   lastUpdatedBy: data?.lastUpdatedBy ?? '',
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
 });
@@ -390,6 +391,7 @@ export async function updateLiveSession(
   if ('audioNotesEnabled' in patch) payload.audioNotesEnabled = patch.audioNotesEnabled !== false;
   if ('mainStageMode' in patch) payload.mainStageMode = sanitizeMainStageMode(patch.mainStageMode);
   if ('isBoardLocked' in patch) payload.isBoardLocked = Boolean(patch.isBoardLocked);
+  if ('studentEditingEnabled' in patch) payload.studentEditingEnabled = patch.studentEditingEnabled !== false;
 
   await setDoc(
     sessionRef,

@@ -2187,14 +2187,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
   const viewerCanUseStudentTools = !readOnly && (viewerIsAdmin || viewerIsTeacher || viewerIsStudent);
-  const viewerCanEditSharedDocument = viewerCanManageWorkspace && !readOnly;
+  const effectiveReadOnly = readOnly || (viewerIsStudent && !studentEditingEnabled);
+  const viewerCanEditSharedDocument = !effectiveReadOnly && (viewerCanManageWorkspace || viewerIsStudent);
   const viewerCanManagePages = viewerCanManageWorkspace && !readOnly;
   const viewerCanBrowseSavedLibraries = viewerCanUseStudentTools;
   const viewerCanApplySavedLibraryEntries = viewerCanManageWorkspace && !readOnly;
   const viewerCanDeleteSavedLibraryEntries = viewerCanManageWorkspace && !readOnly;
   const viewerCanUseReferenceTools = viewerCanUseStudentTools;
   const viewerCanExportWorkspacePdf = viewerCanUseStudentTools;
-  const effectiveReadOnly = readOnly || (viewerIsStudent && !studentEditingEnabled);
   const toolbarDisabled = effectiveReadOnly;
 
   if (!userId) {
@@ -3359,12 +3359,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const restoreSavedSelection = useCallback(() => {
     const selection = window.getSelection();
     const savedRange = savedSelectionRangeRef.current;
-    if (!selection || !savedRange) return;
+    const root = activeFloatingElRef.current ?? docRef.current;
+    if (!selection || !savedRange || !root) return;
+    const startContainer = savedRange.startContainer;
+    const endContainer = savedRange.endContainer;
+    if (!startContainer.isConnected || !endContainer.isConnected) return;
+    if (!root.contains(startContainer) || !root.contains(endContainer)) return;
     selection.removeAllRanges();
     selection.addRange(savedRange);
   }, []);
 
   const execFmt = useCallback((cmd: string, value?: string) => {
+    captureCurrentSelection();
     if (activeFloatingIdRef.current && activeFloatingElRef.current) {
       // -- Floating block is the active editor -------------------------------
       // e.preventDefault() on toolbar buttons already prevented the button from
@@ -3401,7 +3407,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         scheduleDocSave(html);
       }, 50);
     }
-  }, [restoreSavedSelection, scheduleDocSave, scheduleItemsSave, userId, userName]);
+  }, [captureCurrentSelection, restoreSavedSelection, scheduleDocSave, scheduleItemsSave, userId, userName]);
 
   const applyFont = (family: string) => { setFontFamily(family); execFmt('fontName', family); };
   const applySize = (size: number) => {
@@ -5566,7 +5572,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           contentEditable={canEditThisContent && !isLockedByOther}
           suppressContentEditableWarning
           spellCheck
-          onFocus={(e) => { onEditorFocus(item.id, e.currentTarget); }}
+          onFocus={(e) => {
+            onEditorFocus(item.id, e.currentTarget);
+            captureCurrentSelection();
+          }}
+          onMouseUp={captureCurrentSelection}
+          onKeyUp={captureCurrentSelection}
           onBlur={(e) => {
             onEditorBlur();
             if (!canEditThisContent || isLockedByOther) return;
@@ -6289,6 +6300,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
               contentEditable={viewerCanEditSharedDocument}
               suppressContentEditableWarning
               spellCheck
+              onFocus={captureCurrentSelection}
+              onMouseUp={captureCurrentSelection}
+              onKeyUp={captureCurrentSelection}
               onBlur={onDocBlur}
               onInput={onDocInput}
               onPaste={handleDocPaste}
