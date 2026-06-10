@@ -14,8 +14,7 @@ import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassChat } from '../LiveClassChat';
 import { BattlePlayerView } from '../Battle/BattlePlayerView';
-// HOTFIX: ExerciseSessionPanel disabled due to runtime error
-// import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
+import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
 import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
 import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from '../../BattleHub/LiveBattleSimple';

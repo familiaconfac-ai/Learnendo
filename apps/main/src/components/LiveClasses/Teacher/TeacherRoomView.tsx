@@ -14,8 +14,7 @@ import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavigation';
-// HOTFIX: ExerciseSessionPanel disabled due to runtime error
-// import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
+import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../../services/liveKitDebug';
 import { getLiveClassMeetLink } from '../../../services/liveClassesService';
