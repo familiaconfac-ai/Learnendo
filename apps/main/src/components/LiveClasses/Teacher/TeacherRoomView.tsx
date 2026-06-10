@@ -53,6 +53,7 @@ interface TeacherRoomViewProps {
 
 const TeacherStage: React.FC<{
   liveClass: LiveClass;
+  user: User;
   session: LiveClassSession;
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
@@ -70,6 +71,7 @@ const TeacherStage: React.FC<{
   liveKitError: string | null;
 }> = ({
   liveClass,
+  user,
   session,
   assignedRoster,
   handleUpdateSession,
@@ -981,6 +983,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
         <RoomAudioRenderer />
         <TeacherStage
           liveClass={liveClass}
+          user={user}
           session={session}
           assignedRoster={assignedRoster}
           handleUpdateSession={handleUpdateSession}
