@@ -1,7 +1,5 @@
 import type { BattleStatus } from '../components/LiveClasses/Battle/battleTypes';
-import type { LiveClassSession } from '../types';
-
-export type MainStageMode = NonNullable<LiveClassSession['mainStageMode']>;
+export type MainStageMode = 'workspace' | 'camera' | 'battle' | 'trail';
 
 const ACTIVE_BATTLE_STATUSES: readonly BattleStatus[] = ['WAITING', 'PLAYING', 'REVEALED'];
 
@@ -20,6 +18,7 @@ export function getDefaultMainStageMode(): MainStageMode {
 export function sanitizeMainStageMode(mode: unknown): MainStageMode {
   if (mode === 'battle') return 'battle';
   if (mode === 'camera') return 'camera';
+  if (mode === 'trail') return 'trail';
   return 'workspace';
 }
 

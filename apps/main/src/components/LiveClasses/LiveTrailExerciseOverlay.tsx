@@ -40,6 +40,8 @@ interface LiveTrailExerciseOverlayProps {
   }>;
   defaultCourseId?: string | null;
   uiLanguage?: 'en' | 'pt' | 'es';
+  onReturnToWorkspace?: () => void | Promise<void>;
+  onOpenSessionPanel?: () => void;
 }
 
 function getActorName(user: User) {
@@ -304,6 +306,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   assignedRoster,
   defaultCourseId,
   uiLanguage = 'pt',
+  onReturnToWorkspace,
+  onOpenSessionPanel,
 }) => {
   const [blocks, setBlocks] = useState<LiveExerciseBlock[]>([]);
   const [blocksError, setBlocksError] = useState<string | null>(null);
@@ -323,6 +327,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const lessonId = session.activeLessonId ?? null;
   const lessonNumber = getLessonNumberFromId(lessonId);
   const courseLanguage = getCourseLanguageCode(courseId);
+
+  void uiLanguage;
 
   useEffect(() => {
     setBlocksError(null);
@@ -463,6 +469,10 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
   }, [vocabMode]);
 
+  useEffect(() => {
+    setSaveError(null);
+  }, [currentBlock?.id]);
+
   const setSharedCurrentBlock = async (blockId: string) => {
     await saveExerciseSession(
       classId,
@@ -586,7 +596,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     return (
       <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 px-4">
         <div className="max-w-md rounded-3xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
-          <p className="text-sm font-bold text-slate-200">Carregando trilha ao vivo...</p>
+          <p className="text-sm font-bold text-slate-200">
+            {isTeacher ? 'Carregando trilha ao vivo...' : 'Professor preparando a trilha...'}
+          </p>
         </div>
       </div>
     );
@@ -611,62 +623,66 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     <>
       {practiceItem ? (
         <div className="fixed inset-0 z-[120] bg-slate-950">
-          <div className="fixed left-4 right-4 top-4 z-[135] flex items-start justify-between gap-3">
-            <div className="max-w-[520px] rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 shadow-2xl backdrop-blur-sm">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-300">
-                {lesson?.title || session.activeTrailLabel || 'Live Trail'}
-              </p>
-              <p className="mt-1 text-xs text-slate-300">
-                Questao {Math.max(currentBlockIndex + 1, 1)}/{Math.max(blocks.length, 1)}
-              </p>
-              {isTeacher ? (
-                <>
-                  <p className="mt-1 text-xs text-slate-200">
-                    Respondidos: {teacherSummary.respondedCount}/{assignedRoster.length || 0} ·
-                    {' '}Aguardando: {teacherSummary.pendingCount} · Acertos: {teacherSummary.accuracyRate}%
+          <div className="fixed left-4 right-4 top-4 z-[135] flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            {isTeacher ? (
+              <div className="max-w-[520px] rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 shadow-2xl backdrop-blur-sm">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                  {lesson?.title || session.activeTrailLabel || 'Live Trail'}
+                </p>
+                <p className="mt-1 text-xs text-slate-300">
+                  Questao {Math.max(currentBlockIndex + 1, 1)}/{Math.max(blocks.length, 1)}
+                </p>
+                <p className="mt-1 text-xs text-slate-200">
+                  Respondidos: {teacherSummary.respondedCount}/{assignedRoster.length || 0} | Aguardando: {teacherSummary.pendingCount} | Acertos: {teacherSummary.accuracyRate}%
+                </p>
+                {teacherSummary.latestStudentAnswer ? (
+                  <p className="mt-1 max-w-[460px] text-xs text-emerald-200">
+                    Ultima resposta: <span className="font-black">{teacherSummary.latestStudentAnswer.label}</span>{' '}
+                    {getVerdictCopy(teacherSummary.latestStudentAnswer.verdict)} com "
+                    {teacherSummary.latestStudentAnswer.answer}".
                   </p>
-                  {teacherSummary.latestStudentAnswer ? (
-                    <p className="mt-1 max-w-[460px] text-xs text-emerald-200">
-                      Ultima resposta: <span className="font-black">{teacherSummary.latestStudentAnswer.label}</span>{' '}
-                      {getVerdictCopy(teacherSummary.latestStudentAnswer.verdict)} com "
-                      {teacherSummary.latestStudentAnswer.answer}".
-                    </p>
-                  ) : (
-                    <p className="mt-1 text-xs text-slate-400">
-                      Nenhum aluno respondeu esta questao ainda.
-                    </p>
-                  )}
-                  {currentBlock.livePreviewAnswer?.trim() ? (
-                    <p className="mt-1 max-w-[460px] text-xs text-sky-200">
-                      Sua demonstracao visivel para os alunos: "{currentBlock.livePreviewAnswer.trim()}"
-                      {currentBlock.livePreviewCorrect == null
-                        ? ''
-                        : currentBlock.livePreviewCorrect
-                          ? ' (correta)'
-                          : ' (incorreta)'}
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
-              {!isTeacher && !canEdit ? (
-                <p className="mt-1 text-xs text-amber-200">
-                  O professor travou sua resposta neste momento.
-                </p>
-              ) : null}
-              {!isTeacher && currentBlock.livePreviewAnswer?.trim() ? (
-                <p className="mt-1 max-w-[460px] text-xs text-sky-200">
-                  Professor respondeu agora: "{currentBlock.livePreviewAnswer.trim()}"
-                  {currentBlock.livePreviewCorrect == null
-                    ? ''
-                    : currentBlock.livePreviewCorrect
-                      ? ' (correta)'
-                      : ' (incorreta)'}
-                </p>
-              ) : null}
-              {saveError ? <p className="mt-1 text-xs text-rose-200">{saveError}</p> : null}
-            </div>
+                ) : (
+                  <p className="mt-1 text-xs text-slate-400">
+                    Nenhum aluno respondeu esta questao ainda.
+                  </p>
+                )}
+                {currentBlock.livePreviewAnswer?.trim() ? (
+                  <p className="mt-1 max-w-[460px] text-xs text-sky-200">
+                    Sua demonstracao visivel para os alunos: "{currentBlock.livePreviewAnswer.trim()}"
+                    {currentBlock.livePreviewCorrect == null
+                      ? ''
+                      : currentBlock.livePreviewCorrect
+                        ? ' (correta)'
+                        : ' (incorreta)'}
+                  </p>
+                ) : null}
+                {saveError ? <p className="mt-1 text-xs text-rose-200">{saveError}</p> : null}
+              </div>
+            ) : (
+              <div className="pointer-events-none h-0" />
+            )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {isTeacher && onReturnToWorkspace ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void onReturnToWorkspace();
+                  }}
+                  className="rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+                >
+                  Lousa
+                </button>
+              ) : null}
+              {isTeacher && onOpenSessionPanel ? (
+                <button
+                  type="button"
+                  onClick={onOpenSessionPanel}
+                  className="rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+                >
+                  Painel
+                </button>
+              ) : null}
               {isTeacher ? (
                 <>
                   <button

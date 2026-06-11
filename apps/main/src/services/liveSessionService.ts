@@ -115,7 +115,7 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   studentCameraMode: (data?.studentCameraMode ?? 'off') as LiveClassSession['studentCameraMode'],
   allowStudentWhiteboardEdit: Boolean(data?.allowStudentWhiteboardEdit),
   audioNotesEnabled: data?.audioNotesEnabled !== false,
-  mainStageMode: sanitizeMainStageMode(data?.mainStageMode),
+  mainStageMode: sanitizeMainStageMode(data?.mainStageMode) as LiveClassSession['mainStageMode'],
   isBoardLocked: Boolean(data?.isBoardLocked),
   studentEditingEnabled:
     data?.studentEditingEnabled !== false
@@ -409,7 +409,7 @@ export async function updateLiveSession(
     if (!('studentEditingEnabled' in patch)) payload.studentEditingEnabled = nextValue;
   }
   if ('audioNotesEnabled' in patch) payload.audioNotesEnabled = patch.audioNotesEnabled !== false;
-  if ('mainStageMode' in patch) payload.mainStageMode = sanitizeMainStageMode(patch.mainStageMode);
+  if ('mainStageMode' in patch) payload.mainStageMode = sanitizeMainStageMode(patch.mainStageMode) as LiveClassSession['mainStageMode'];
   if ('isBoardLocked' in patch) payload.isBoardLocked = Boolean(patch.isBoardLocked);
   if ('studentEditingEnabled' in patch) {
     const nextValue = patch.studentEditingEnabled !== false;

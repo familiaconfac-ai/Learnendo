@@ -116,6 +116,7 @@ const PREVIEW_COPY: Record<'en' | 'pt' | 'es', {
   teacher: string;
   previewStudent: string;
   previewTeacher: string;
+  trail: string;
 }> = {
   en: {
     title: 'Preview',
@@ -127,6 +128,7 @@ const PREVIEW_COPY: Record<'en' | 'pt' | 'es', {
     workspace: 'Workspace',
     battle: 'Battle in progress',
     camera: 'Camera or screen sharing in progress',
+    trail: 'Trail on stage',
     student: 'Student view',
     teacher: 'Teacher view',
     previewStudent: 'Open student preview',
@@ -142,6 +144,7 @@ const PREVIEW_COPY: Record<'en' | 'pt' | 'es', {
     workspace: 'Lousa',
     battle: 'Batalha em andamento',
     camera: 'Camera ou compartilhamento em andamento',
+    trail: 'Trilha no palco',
     student: 'Visao de aluno',
     teacher: 'Visao de professor',
     previewStudent: 'Abrir preview aluno',
@@ -157,6 +160,7 @@ const PREVIEW_COPY: Record<'en' | 'pt' | 'es', {
     workspace: 'Pizarra',
     battle: 'Batalla en curso',
     camera: 'Camara o pantalla compartida en curso',
+    trail: 'Ruta en escena',
     student: 'Vista de alumno',
     teacher: 'Vista de profesor',
     previewStudent: 'Abrir preview alumno',
@@ -187,6 +191,8 @@ const LiveClassPreviewView: React.FC<{
   const stageLabel =
     session.mainStageMode === 'battle'
       ? copy.battle
+      : session.mainStageMode === 'trail'
+        ? copy.trail
       : session.mainStageMode === 'camera'
         ? copy.camera
         : copy.workspace;

@@ -112,6 +112,7 @@ const StudentStage: React.FC<{
   const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const isBattleStage = stageMode === 'battle';
   const isCameraStage = stageMode === 'camera';
+  const isTrailStage = stageMode === 'trail';
   const hasActiveTrailSession = hasActiveLiveTrailSession(session);
   const shouldRenderBattleOverlay = !USE_SIMPLE_LIVE_BATTLE && Boolean(battleSession) && isBattleStage;
   const shouldRenderSimpleBattleOverlay = USE_SIMPLE_LIVE_BATTLE && isBattleStage;
@@ -868,7 +869,7 @@ const StudentStage: React.FC<{
               </div>
             </div>
           ) : null}
-          {hasActiveTrailSession ? (
+          {hasActiveTrailSession && isTrailStage ? (
             <LiveTrailExerciseOverlay
               classId={liveClass.id}
               user={user}
@@ -878,6 +879,21 @@ const StudentStage: React.FC<{
               defaultCourseId={liveClass.courseId ?? 'english'}
               uiLanguage={uiLang}
             />
+          ) : null}
+          {isTrailStage && !hasActiveTrailSession ? (
+            <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4">
+              <div className="max-w-sm rounded-2xl border border-violet-400/40 bg-slate-950/90 px-4 py-3 text-center shadow-2xl backdrop-blur-sm">
+                <div className="text-xs font-black uppercase tracking-[0.22em] text-violet-300">
+                  Trilha
+                </div>
+                <p className="mt-2 text-sm font-semibold text-white">
+                  Professor preparando a trilha
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  A lousa continua ativa enquanto a trilha carrega.
+                </p>
+              </div>
+            </div>
           ) : null}
           {!USE_SIMPLE_LIVE_BATTLE && isBattleStage && !battleSession ? (
             <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4">

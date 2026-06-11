@@ -924,7 +924,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
         activeExerciseId: seeded.trailIds[0] ?? null,
         activeTrailIds: seeded.trailIds,
         activeTrailLabel: seeded.trailLabel,
-        mainStageMode: 'workspace',
+        mainStageMode: 'trail' as LiveClassSession['mainStageMode'],
       });
       setSessionTitleDraft(seeded.title);
       onStarted?.();

@@ -19,6 +19,7 @@ import { LiveTrailExerciseOverlay } from '../LiveTrailExerciseOverlay';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../../services/liveKitDebug';
 import { getLiveClassMeetLink } from '../../../services/liveClassesService';
+import { sanitizeMainStageMode } from '../../../services/liveClassStage';
 import type { SavedBattleTemplate } from '../Battle/battleTypes';
 import type { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
@@ -103,6 +104,7 @@ const TeacherStage: React.FC<{
   liveKitError,
 }) => {
   const hasActiveTrailSession = hasActiveLiveTrailSession(session);
+  const isTrailStage = sanitizeMainStageMode(session.mainStageMode) === 'trail';
   const meetLink = getLiveClassMeetLink(liveClass);
   const whatsappLink = (liveClass.whatsappLink ?? '').trim();
   const participants = useParticipants();
@@ -723,9 +725,19 @@ const TeacherStage: React.FC<{
 
           <button
             type="button"
-            onClick={() => setShowExerciseSession(!showExerciseSession)}
+            onClick={() => {
+              if (isTrailStage) {
+                void handleUpdateSession({ mainStageMode: 'workspace' as LiveClassSession['mainStageMode'] });
+                return;
+              }
+              if (hasActiveTrailSession) {
+                void handleUpdateSession({ mainStageMode: 'trail' as LiveClassSession['mainStageMode'] });
+                return;
+              }
+              setShowExerciseSession(!showExerciseSession);
+            }}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
-              showExerciseSession
+              showExerciseSession || isTrailStage
                 ? 'bg-violet-500 text-white hover:bg-violet-400'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
@@ -750,7 +762,7 @@ const TeacherStage: React.FC<{
       }
       overlay={
         <>
-          {hasActiveTrailSession ? (
+          {hasActiveTrailSession && isTrailStage ? (
             <LiveTrailExerciseOverlay
               classId={liveClass.id}
               user={user}
@@ -759,6 +771,8 @@ const TeacherStage: React.FC<{
               assignedRoster={assignedRoster}
               defaultCourseId={liveClass.courseId ?? 'english'}
               uiLanguage={uiLang}
+              onReturnToWorkspace={() => handleUpdateSession({ mainStageMode: 'workspace' as LiveClassSession['mainStageMode'] })}
+              onOpenSessionPanel={() => setShowExerciseSession(true)}
             />
           ) : null}
           {showExerciseSession ? (
