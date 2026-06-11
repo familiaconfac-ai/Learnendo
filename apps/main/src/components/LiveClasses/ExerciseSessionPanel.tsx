@@ -14,6 +14,7 @@ import {
   updateExerciseBlock,
   updateExerciseBlockResponse,
 } from '../../services/liveSessionService';
+import { speak } from '../../services/ttsService';
 import { getWorkbookOptionsForCourse, loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from '../../services/liveWhiteboardActivities';
 
 interface ExerciseSessionPanelProps {
@@ -117,6 +118,15 @@ function evaluateResponseVerdict(block: LiveExerciseBlock, answer: string, attem
   const isCorrect = acceptedAnswers.includes(normalizedAnswer);
   if (!isCorrect) return 'wrong';
   return attempts > 1 ? 'correct_second_try' : 'correct';
+}
+
+function getCourseLanguageCode(courseId: string | null | undefined): 'en' | 'pt' | 'es' | 'el' | 'he' {
+  const normalized = (courseId ?? '').trim().toLowerCase();
+  if (normalized === 'spanish') return 'es';
+  if (normalized === 'portuguese_foreigners' || normalized === 'portuguese_native') return 'pt';
+  if (normalized === 'greek_koine') return 'el';
+  if (normalized === 'hebrew_biblical') return 'he';
+  return 'en';
 }
 
 const TeacherExerciseBlockCard: React.FC<TeacherExerciseBlockCardProps> = ({
@@ -343,6 +353,15 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
   const [draft, setDraft] = useState(ownAnswer);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState('');
+  const sourceOptions = block.sourceOptions ?? [];
+  const hasChoiceOptions =
+    (block.questionType === 'multiple-choice' || block.questionType === 'identification')
+    && sourceOptions.length > 0;
+  const sourceInstruction = block.sourceInstruction?.trim() || block.prompt.trim();
+  const sourceDisplayValue = block.sourceDisplayValue?.trim() ?? '';
+  const sourceAudioValue = block.sourceAudioValue?.trim() ?? '';
+  const sourceTranslation = block.sourceTranslation?.trim() ?? '';
+  const courseLanguage = getCourseLanguageCode(block.sourceCourseId);
 
   useEffect(() => {
     setDraft(ownAnswer);
@@ -417,9 +436,28 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
 
       <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-900/80 p-3">
         <p className="text-xs font-black uppercase tracking-wide text-slate-400">Prompt</p>
-        <p className="mt-2 whitespace-pre-wrap text-sm text-slate-100">
-          {block.prompt.trim() || 'Your teacher will add the prompt here.'}
-        </p>
+        <div className="mt-2 space-y-3 text-sm text-slate-100">
+          <p className="whitespace-pre-wrap">
+            {sourceInstruction || 'Your teacher will add the prompt here.'}
+          </p>
+          {sourceDisplayValue ? (
+            <div className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-base font-semibold text-white">
+              {sourceDisplayValue}
+            </div>
+          ) : null}
+          {sourceAudioValue ? (
+            <button
+              type="button"
+              onClick={() => speak(sourceAudioValue, courseLanguage)}
+              className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-200"
+            >
+              Play audio
+            </button>
+          ) : null}
+          {sourceTranslation ? (
+            <p className="text-xs text-slate-400">{sourceTranslation}</p>
+          ) : null}
+        </div>
       </div>
 
       {error ? (
@@ -444,6 +482,33 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
         </p>
       ) : null}
 
+      {hasChoiceOptions ? (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          {sourceOptions.map((option) => {
+            const selected = normalizeExerciseAnswer(draft) === normalizeExerciseAnswer(option);
+            return (
+              <button
+                key={option}
+                type="button"
+                disabled={!canEdit}
+                onClick={() => {
+                  setDraft(option);
+                  setSaveState('idle');
+                  setError('');
+                }}
+                className={`rounded-2xl border px-4 py-3 text-left text-sm font-bold transition ${
+                  selected
+                    ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100'
+                    : 'border-slate-700 bg-slate-900 text-white'
+                } disabled:cursor-not-allowed disabled:opacity-70`}
+              >
+                {option}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
       <textarea
         value={draft}
         onChange={(event) => {
@@ -452,7 +517,13 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
         }}
         disabled={!canEdit}
         className="mt-3 h-32 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-70"
-        placeholder={canEdit ? 'Type your answer here, then tap Submit.' : 'Your answer is read-only right now.'}
+        placeholder={
+          canEdit
+            ? hasChoiceOptions
+              ? 'Tap an option above or type your answer here.'
+              : 'Type your answer here, then tap Submit.'
+            : 'Your answer is read-only right now.'
+        }
       />
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
@@ -796,7 +867,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
         sessionStatus: 'active',
         activeWorkbookId: workbookId,
         activeLessonId: selectedLesson.id,
-        activeExerciseId: selectedTrailIds.length === 1 ? selectedTrailIds[0] : null,
+        activeExerciseId: seeded.trailIds[0] ?? null,
         activeTrailIds: seeded.trailIds,
         activeTrailLabel: seeded.trailLabel,
         mainStageMode: 'workspace',

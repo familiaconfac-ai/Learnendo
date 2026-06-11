@@ -276,6 +276,7 @@ export interface LiveExerciseBlock {
   id: string;
   order: number;
   prompt: string;
+  sourceCourseId?: string | null;
   responses: Record<string, string>;
   responseStatuses: Record<string, LiveExerciseBlockStatus>;
   responseLocks: Record<string, boolean>;
@@ -286,6 +287,11 @@ export interface LiveExerciseBlock {
   sourceTrailNumber?: number | null;
   sourceLessonId?: string | null;
   sourceWorkbookId?: number | null;
+  sourceInstruction?: string;
+  sourceDisplayValue?: string;
+  sourceAudioValue?: string;
+  sourceOptions?: string[];
+  sourceTranslation?: string;
   questionType?: Exercise['type'] | string;
   expectedAnswer?: string;
   acceptedAnswers?: string[];

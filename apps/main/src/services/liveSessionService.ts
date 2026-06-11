@@ -251,6 +251,7 @@ const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBl
     id,
     order: Number.isFinite(data.order) ? Number(data.order) : 0,
     prompt: data.prompt ?? '',
+    sourceCourseId: data.sourceCourseId ?? null,
     responses,
     responseStatuses,
     responseLocks,
@@ -261,6 +262,13 @@ const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBl
     sourceTrailNumber: Number.isFinite(data.sourceTrailNumber) ? Number(data.sourceTrailNumber) : null,
     sourceLessonId: data.sourceLessonId ?? null,
     sourceWorkbookId: Number.isFinite(data.sourceWorkbookId) ? Number(data.sourceWorkbookId) : null,
+    sourceInstruction: data.sourceInstruction ?? '',
+    sourceDisplayValue: data.sourceDisplayValue ?? '',
+    sourceAudioValue: data.sourceAudioValue ?? '',
+    sourceOptions: Array.isArray(data.sourceOptions)
+      ? data.sourceOptions.filter((value: unknown): value is string => typeof value === 'string')
+      : [],
+    sourceTranslation: data.sourceTranslation ?? '',
     questionType: data.questionType ?? undefined,
     expectedAnswer: data.expectedAnswer ?? undefined,
     acceptedAnswers: Array.isArray(data.acceptedAnswers)
@@ -863,6 +871,7 @@ function buildTrailSelectionLabel(trailNumbers: number[]) {
 }
 
 function buildTrailBlocksFromSelection(
+  courseId: string,
   lesson: Lesson,
   workbookId: number,
   selectedDays: Day[],
@@ -874,6 +883,7 @@ function buildTrailBlocksFromSelection(
       const block = {
         order,
         prompt: buildExercisePrompt(exercise, index),
+        sourceCourseId: courseId,
         responses: {},
         responseStatuses: {},
         responseLocks: {},
@@ -884,6 +894,11 @@ function buildTrailBlocksFromSelection(
         sourceTrailNumber: trailNumber,
         sourceLessonId: lesson.id,
         sourceWorkbookId: workbookId,
+        sourceInstruction: exercise.instruction?.trim() ?? '',
+        sourceDisplayValue: exercise.displayValue?.trim() ?? '',
+        sourceAudioValue: exercise.audioValue?.trim() ?? '',
+        sourceOptions: Array.isArray(exercise.options) ? exercise.options : [],
+        sourceTranslation: exercise.translation?.trim() ?? '',
         questionType: exercise.type,
         expectedAnswer: exercise.correctValue?.trim() ?? '',
         acceptedAnswers: buildAcceptedAnswers(exercise),
@@ -929,7 +944,7 @@ export async function seedExerciseSessionFromLessonTrails(params: {
     .filter((value): value is number => Number.isFinite(value));
   const trailLabel = buildTrailSelectionLabel(trailNumbers);
   const title = `${lesson.title} - ${trailLabel}`;
-  const blocks = buildTrailBlocksFromSelection(lesson, params.workbookId, selectedDays);
+  const blocks = buildTrailBlocksFromSelection(params.courseId, lesson, params.workbookId, selectedDays);
   const batch = writeBatch(db);
   const blocksCollection = getExerciseBlocksCollection(params.classId);
   const existingBlocks = await getDocs(blocksCollection);
