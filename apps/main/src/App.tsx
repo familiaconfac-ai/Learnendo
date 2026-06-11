@@ -2578,6 +2578,7 @@ const App: React.FC = () => {
             lessonProgress={lessonProgress}
             currentLanguage={language}
             isAdmin={isAdmin}
+            canAccessAllDays={canManageLiveClasses}
             testCompleted={lessonTestCompleted[lessonNumber] || false}
             testScore={lessonTestScores[lessonNumber]}
             testPassed={completedLessonSet.has(lessonNumber)}

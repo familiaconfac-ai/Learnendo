@@ -32,6 +32,11 @@ function openExternalLink(rawUrl: string) {
 const SHOW_LIVE_DEBUG_SHORTCUTS = import.meta.env.DEV;
 const TEACHER_TRAIL_BUTTON_LABEL = 'Trail';
 
+function getStudentWorkspaceEditingEnabled(session: LiveClassSession) {
+  return session.studentEditingEnabled !== false
+    || session.allowStudentWhiteboardEdit === true;
+}
+
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
   user: User;
@@ -101,7 +106,7 @@ const TeacherStage: React.FC<{
 
   const [expandedCameraId, setExpandedCameraId] = useState<string | null>(null);
   const [studentEditingEnabled, setStudentEditingEnabled] = useState(
-    session.studentEditingEnabled ?? true,
+    getStudentWorkspaceEditingEnabled(session),
   );
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [microphoneBusy, setMicrophoneBusy] = useState(false);
@@ -111,8 +116,8 @@ const TeacherStage: React.FC<{
   const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
 
   useEffect(() => {
-    setStudentEditingEnabled(session.studentEditingEnabled ?? true);
-  }, [session.studentEditingEnabled]);
+    setStudentEditingEnabled(getStudentWorkspaceEditingEnabled(session));
+  }, [session.allowStudentWhiteboardEdit, session.studentEditingEnabled]);
 
   useEffect(() => {
     const sharing = Boolean(localParticipant.getTrackPublication(Track.Source.ScreenShare));
@@ -494,7 +499,10 @@ const TeacherStage: React.FC<{
                         onClick={() => {
                           const nextValue = !studentEditingEnabled;
                           setStudentEditingEnabled(nextValue);
-                          void handleUpdateSession({ studentEditingEnabled: nextValue });
+                          void handleUpdateSession({
+                            studentEditingEnabled: nextValue,
+                            allowStudentWhiteboardEdit: nextValue,
+                          });
                         }}
                         className={`flex h-7 w-7 items-center justify-center rounded border text-sm transition ${
                           studentEditingEnabled

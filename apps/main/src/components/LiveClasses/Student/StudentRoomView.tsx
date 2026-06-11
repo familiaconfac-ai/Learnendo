@@ -30,6 +30,16 @@ import {
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 
+const STUDENT_TRAIL_BUTTON_LABEL = 'Trail';
+
+function hasActiveLiveTrailSession(session: LiveClassSession) {
+  return session.sessionStatus === 'active'
+    && (
+      (session.activeTrailIds?.length ?? 0) > 0
+      || Boolean(session.activeTrailLabel)
+    );
+}
+
 function openExternalLink(rawUrl: string) {
   const trimmed = rawUrl.trim();
   if (!trimmed) return;
@@ -51,6 +61,11 @@ interface StudentRoomViewProps {
   onOpenBattleHub: () => void;
   onExit: () => void;
   statusMessage?: string | null;
+}
+
+function getStudentWorkspaceEditingEnabled(session: LiveClassSession) {
+  return session.studentEditingEnabled !== false
+    || session.allowStudentWhiteboardEdit === true;
 }
 
 const StudentStage: React.FC<{
@@ -99,9 +114,7 @@ const StudentStage: React.FC<{
   const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const isBattleStage = stageMode === 'battle';
   const isCameraStage = stageMode === 'camera';
-  const hasActiveTrailSession =
-    session.sessionStatus === 'active' &&
-    ((session.activeTrailIds?.length ?? 0) > 0 || Boolean(session.activeExerciseId));
+  const hasActiveTrailSession = hasActiveLiveTrailSession(session);
   const shouldRenderBattleOverlay = !USE_SIMPLE_LIVE_BATTLE && Boolean(battleSession) && isBattleStage;
   const shouldRenderSimpleBattleOverlay = USE_SIMPLE_LIVE_BATTLE && isBattleStage;
 
@@ -641,7 +654,7 @@ const StudentStage: React.FC<{
                 userEmail={user.email}
                 readOnly={false}
                 isTeacher={false}
-                studentEditingEnabled={session.studentEditingEnabled ?? true}
+                studentEditingEnabled={getStudentWorkspaceEditingEnabled(session)}
                 classTeacherUserId={liveClass.teacherUid ?? null}
                 assignedRoster={assignedRoster}
                 onPresentationModeChange={setWorkspacePresentationActive}
@@ -831,6 +844,22 @@ const StudentStage: React.FC<{
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
             </svg>
           </button>
+
+          {hasActiveTrailSession ? (
+            <button
+              type="button"
+              onClick={() => setShowExerciseSession(!showExerciseSession)}
+              className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
+                showExerciseSession
+                  ? 'bg-violet-500 text-white hover:bg-violet-400'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+              title={labels.trailSession}
+              aria-label={labels.trailSession}
+            >
+              {STUDENT_TRAIL_BUTTON_LABEL}
+            </button>
+          ) : null}
         </div>
       }
       overlay={

@@ -333,7 +333,11 @@ export const VirtualWhiteboard: React.FC<VirtualWhiteboardProps> = ({
     setUpdatingPermission(true);
     setError('');
     try {
-      await onUpdateSession({ allowStudentWhiteboardEdit: !allowStudentWhiteboardEdit });
+      const nextValue = !allowStudentWhiteboardEdit;
+      await onUpdateSession({
+        allowStudentWhiteboardEdit: nextValue,
+        studentEditingEnabled: nextValue,
+      });
     } catch (permissionError) {
       console.warn('[VirtualWhiteboard] whiteboard permission update failed:', permissionError);
       setError('Unable to update whiteboard editing permissions right now.');

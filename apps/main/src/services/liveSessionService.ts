@@ -117,7 +117,9 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   audioNotesEnabled: data?.audioNotesEnabled !== false,
   mainStageMode: sanitizeMainStageMode(data?.mainStageMode),
   isBoardLocked: Boolean(data?.isBoardLocked),
-  studentEditingEnabled: data?.studentEditingEnabled !== false,
+  studentEditingEnabled:
+    data?.studentEditingEnabled !== false
+      || data?.allowStudentWhiteboardEdit === true,
   lastUpdatedBy: data?.lastUpdatedBy ?? '',
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
 });
@@ -387,11 +389,19 @@ export async function updateLiveSession(
   if ('teacherCameraEnabled' in patch) payload.teacherCameraEnabled = Boolean(patch.teacherCameraEnabled);
   if ('allowStudentLiveMic' in patch) payload.allowStudentLiveMic = Boolean(patch.allowStudentLiveMic);
   if ('studentCameraMode' in patch) payload.studentCameraMode = patch.studentCameraMode ?? 'off';
-  if ('allowStudentWhiteboardEdit' in patch) payload.allowStudentWhiteboardEdit = Boolean(patch.allowStudentWhiteboardEdit);
+  if ('allowStudentWhiteboardEdit' in patch) {
+    const nextValue = Boolean(patch.allowStudentWhiteboardEdit);
+    payload.allowStudentWhiteboardEdit = nextValue;
+    if (!('studentEditingEnabled' in patch)) payload.studentEditingEnabled = nextValue;
+  }
   if ('audioNotesEnabled' in patch) payload.audioNotesEnabled = patch.audioNotesEnabled !== false;
   if ('mainStageMode' in patch) payload.mainStageMode = sanitizeMainStageMode(patch.mainStageMode);
   if ('isBoardLocked' in patch) payload.isBoardLocked = Boolean(patch.isBoardLocked);
-  if ('studentEditingEnabled' in patch) payload.studentEditingEnabled = patch.studentEditingEnabled !== false;
+  if ('studentEditingEnabled' in patch) {
+    const nextValue = patch.studentEditingEnabled !== false;
+    payload.studentEditingEnabled = nextValue;
+    if (!('allowStudentWhiteboardEdit' in patch)) payload.allowStudentWhiteboardEdit = nextValue;
+  }
 
   await setDoc(
     sessionRef,

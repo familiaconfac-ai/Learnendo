@@ -15,6 +15,7 @@ interface LessonViewProps {
   lessonProgress?: LessonProgress | null;
   currentLanguage?: LessonLanguageCode;
   isAdmin?: boolean;
+  canAccessAllDays?: boolean;
   onStartDay: (day: Day) => void;
   onStartWeeklyTest: (day: Day) => void;
   testCompleted?: boolean;
@@ -57,6 +58,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   lessonProgress,
   currentLanguage = 'en',
   isAdmin = false,
+  canAccessAllDays = false,
   onStartDay,
   onStartWeeklyTest,
   testCompleted = false,
@@ -95,7 +97,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
 
   const canOpenExercise = (dayId: string | null, index: number): boolean => {
     if (!dayId) return false;
-    if (isAdmin) return true;
+    if (isAdmin || canAccessAllDays) return true;
     if (isExerciseCompleted(dayId, index)) return true;
     if (isDefaultFirstExercise(index)) return true;
     return isUnlockedByPreviousCompletion(index);
@@ -113,7 +115,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   // Uses merged completion sources so late lessonProgress cannot hide saved progress.
   const firstSixComplete = firstSixDays.every((day, index) => !!day && isExerciseCompleted(day.id, index));
 
-  const testUnlocked = (isAdmin || firstSixComplete) && !!daySeven;
+  const testUnlocked = (isAdmin || canAccessAllDays || firstSixComplete) && !!daySeven;
 
   // ── DIAGNOSTIC: log render context on every render ──
   console.log('[LESSONVIEW RENDER]', {
@@ -263,7 +265,6 @@ export const LessonView: React.FC<LessonViewProps> = ({
     </div>
   );
 };
-
 
 
 

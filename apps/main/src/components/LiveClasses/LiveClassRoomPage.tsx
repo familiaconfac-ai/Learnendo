@@ -94,6 +94,14 @@ function getPreviewRoleFromSearch(): LiveClassPreviewRole | null {
   return preview === 'teacher' || preview === 'student' ? preview : null;
 }
 
+function hasActiveLiveTrailSession(session: LiveClassSession) {
+  return session.sessionStatus === 'active'
+    && (
+      (session.activeTrailIds?.length ?? 0) > 0
+      || Boolean(session.activeTrailLabel)
+    );
+}
+
 const PREVIEW_COPY: Record<'en' | 'pt' | 'es', {
   title: string;
   exit: string;
@@ -350,12 +358,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   }, [liveClass.id, liveClass.workbookId]);
 
   useEffect(() => {
-    const hasActiveTrailSession =
-      session.sessionStatus === 'active' &&
-      ((session.activeTrailIds?.length ?? 0) > 0 || Boolean(session.activeExerciseId));
-
-    setShowExerciseSession(hasActiveTrailSession);
-  }, [session.activeExerciseId, session.activeTrailIds, session.sessionStatus]);
+    setShowExerciseSession(hasActiveLiveTrailSession(session));
+  }, [session.activeTrailIds, session.activeTrailLabel, session.sessionStatus]);
 
   const handleUpdateSession = useCallback(
     async (patch: Partial<LiveClassSession>) => {
