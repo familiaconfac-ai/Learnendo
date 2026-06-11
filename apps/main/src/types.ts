@@ -264,6 +264,7 @@ export interface LiveExerciseSession {
   sourceLessonId?: string | null;
   sourceTrailIds?: string[];
   sourceTrailLabel?: string | null;
+  currentBlockId?: string | null;
   totalQuestions?: number;
   endedAt?: string;
   updatedAt?: string;
@@ -295,6 +296,11 @@ export interface LiveExerciseBlock {
   questionType?: Exercise['type'] | string;
   expectedAnswer?: string;
   acceptedAnswers?: string[];
+  livePreviewAnswer?: string;
+  livePreviewCorrect?: boolean | null;
+  livePreviewByUid?: string | null;
+  livePreviewByName?: string | null;
+  livePreviewUpdatedAt?: string;
   createdAt?: string;
   updatedAt?: string;
   updatedBy?: LiveExerciseActor;

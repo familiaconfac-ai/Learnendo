@@ -212,6 +212,7 @@ const mapExerciseSession = (data: Record<string, any> | undefined): LiveExercise
   sourceLessonId: data?.sourceLessonId ?? '',
   sourceTrailIds: Array.isArray(data?.sourceTrailIds) ? data.sourceTrailIds.filter((value: unknown): value is string => typeof value === 'string') : [],
   sourceTrailLabel: data?.sourceTrailLabel ?? null,
+  currentBlockId: typeof data?.currentBlockId === 'string' ? data.currentBlockId : null,
   totalQuestions: Number.isFinite(data?.totalQuestions) ? Number(data.totalQuestions) : undefined,
   endedAt: data?.endedAt?.toDate?.()?.toISOString?.() ?? data?.endedAt ?? undefined,
   updatedAt: data?.updatedAt?.toDate?.()?.toISOString?.() ?? data?.updatedAt ?? undefined,
@@ -274,6 +275,11 @@ const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBl
     acceptedAnswers: Array.isArray(data.acceptedAnswers)
       ? data.acceptedAnswers.filter((value: unknown): value is string => typeof value === 'string')
       : [],
+    livePreviewAnswer: typeof data.livePreviewAnswer === 'string' ? data.livePreviewAnswer : '',
+    livePreviewCorrect: typeof data.livePreviewCorrect === 'boolean' ? data.livePreviewCorrect : null,
+    livePreviewByUid: typeof data.livePreviewByUid === 'string' ? data.livePreviewByUid : null,
+    livePreviewByName: typeof data.livePreviewByName === 'string' ? data.livePreviewByName : null,
+    livePreviewUpdatedAt: data.livePreviewUpdatedAt?.toDate?.()?.toISOString?.() ?? data.livePreviewUpdatedAt ?? undefined,
     createdAt: data.createdAt?.toDate?.()?.toISOString?.() ?? data.createdAt ?? undefined,
     updatedAt: data.updatedAt?.toDate?.()?.toISOString?.() ?? data.updatedAt ?? undefined,
     updatedBy: data.updatedBy
@@ -651,7 +657,7 @@ export function subscribeExerciseBlocks(
 
 export async function saveExerciseSession(
   classId: string,
-  patch: Partial<Pick<LiveExerciseSession, 'title' | 'isActive' | 'sourceCourseId' | 'sourceWorkbookId' | 'sourceLessonId' | 'sourceTrailIds' | 'sourceTrailLabel' | 'totalQuestions'>>,
+  patch: Partial<Pick<LiveExerciseSession, 'title' | 'isActive' | 'sourceCourseId' | 'sourceWorkbookId' | 'sourceLessonId' | 'sourceTrailIds' | 'sourceTrailLabel' | 'currentBlockId' | 'totalQuestions'>>,
   updatedByUid: string,
   updatedByName: string,
 ): Promise<void> {
@@ -673,6 +679,7 @@ export async function saveExerciseSession(
   if ('sourceLessonId' in patch) payload.sourceLessonId = patch.sourceLessonId ?? '';
   if ('sourceTrailIds' in patch) payload.sourceTrailIds = Array.isArray(patch.sourceTrailIds) ? patch.sourceTrailIds : [];
   if ('sourceTrailLabel' in patch) payload.sourceTrailLabel = patch.sourceTrailLabel ?? null;
+  if ('currentBlockId' in patch) payload.currentBlockId = patch.currentBlockId ?? null;
   if ('totalQuestions' in patch) payload.totalQuestions = patch.totalQuestions ?? 0;
 
   await setDoc(getExerciseSessionRef(classId), payload, { merge: true });
@@ -743,6 +750,36 @@ export async function updateExerciseBlock(
   await setDoc(
     doc(getExerciseBlocksCollection(classId), blockId),
     payload,
+    { merge: true },
+  );
+}
+
+export async function updateExerciseBlockLivePreview(
+  classId: string,
+  blockId: string,
+  preview: {
+    answer: string;
+    isCorrect: boolean | null;
+    actorUid: string;
+    actorName: string;
+  },
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !blockId) return;
+
+  await setDoc(
+    doc(getExerciseBlocksCollection(classId), blockId),
+    {
+      livePreviewAnswer: preview.answer,
+      livePreviewCorrect: preview.isCorrect,
+      livePreviewByUid: preview.actorUid,
+      livePreviewByName: preview.actorName,
+      livePreviewUpdatedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+    },
     { merge: true },
   );
 }
@@ -924,6 +961,7 @@ export async function seedExerciseSessionFromLessonTrails(params: {
   lessonId: string;
   trailIds: string[];
   trailLabel: string;
+  firstBlockId: string | null;
   totalQuestions: number;
 }> {
   if (!db) throw new Error('Firestore is not initialized');
@@ -953,8 +991,10 @@ export async function seedExerciseSessionFromLessonTrails(params: {
     batch.delete(snapshot.ref);
   });
 
-  blocks.forEach((block) => {
+  let firstBlockId: string | null = null;
+  blocks.forEach((block, index) => {
     const nextRef = doc(blocksCollection);
+    if (index === 0) firstBlockId = nextRef.id;
     batch.set(nextRef, {
       ...block,
       updatedBy: buildExerciseActor(params.updatedByUid, params.updatedByName),
@@ -971,6 +1011,7 @@ export async function seedExerciseSessionFromLessonTrails(params: {
       sourceLessonId: lesson.id,
       sourceTrailIds: selectedDays.map((day) => day.id),
       sourceTrailLabel: trailLabel,
+      currentBlockId: firstBlockId,
       totalQuestions: blocks.length,
       endedAt: null,
       updatedAt: serverTimestamp(),
@@ -986,6 +1027,7 @@ export async function seedExerciseSessionFromLessonTrails(params: {
     lessonId: lesson.id,
     trailIds: selectedDays.map((day) => day.id),
     trailLabel,
+    firstBlockId,
     totalQuestions: blocks.length,
   };
 }

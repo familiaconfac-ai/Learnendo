@@ -1166,30 +1166,19 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
         </div>
       ) : null}
 
-      {visibleBlocks.length > 0 ? (
+      {!isTeacher && visibleBlocks.length > 0 ? (
         <div className="mt-4 grid grid-cols-1 gap-3">
           {visibleBlocks.map((block) => (
-            isTeacher ? (
-              <TeacherExerciseBlockCard
-                key={block.id}
-                block={block}
-                roster={assignedRoster}
-                actorUid={user.uid}
-                actorName={actorName}
-                classId={classId}
-              />
-            ) : (
-              <StudentExerciseBlockCard
-                key={block.id}
-                block={block}
-                actorUid={user.uid}
-                actorName={actorName}
-                actorLabel={actorLabel}
-                classId={classId}
-                canEdit={session.isActive && !isStudentLocked(block, user.uid) && getStudentStatus(block, user.uid) !== 'done'}
-                sessionIsActive={session.isActive}
-              />
-            )
+            <StudentExerciseBlockCard
+              key={block.id}
+              block={block}
+              actorUid={user.uid}
+              actorName={actorName}
+              actorLabel={actorLabel}
+              classId={classId}
+              canEdit={session.isActive && !isStudentLocked(block, user.uid) && getStudentStatus(block, user.uid) !== 'done'}
+              sessionIsActive={session.isActive}
+            />
           ))}
         </div>
       ) : null}

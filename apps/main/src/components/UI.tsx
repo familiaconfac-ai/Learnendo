@@ -483,6 +483,7 @@ export const PracticeSection: React.FC<{
   onAttempt?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
   onContinue?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
   actionLocked?: boolean;
+  fullScreen?: boolean;
 }> =
   ({
     item,
@@ -497,6 +498,7 @@ export const PracticeSection: React.FC<{
     onAttempt,
     onContinue,
     actionLocked = false,
+    fullScreen = false,
   }) => {
     const [userInput, setUserInput] = useState('');
     const [isListening, setIsListening] = useState(false);
@@ -862,7 +864,7 @@ export const PracticeSection: React.FC<{
     const isMultipleChoice = item.type === 'multiple-choice' || item.type === 'identification';
 
     return (
-      <div className="fixed inset-x-0 top-[68px] bottom-[56px] bg-slate-900 z-30 flex flex-col items-center outline-none">
+      <div className={`${fullScreen ? 'fixed inset-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} bg-slate-900 z-30 flex flex-col items-center outline-none`}>
         <div className="w-full max-sm:px-4 max-w-sm px-6 pt-5">
           <div className="flex items-center gap-3 mb-4">
             {onBack && (
