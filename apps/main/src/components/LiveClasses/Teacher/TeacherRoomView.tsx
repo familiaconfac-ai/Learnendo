@@ -765,6 +765,7 @@ const TeacherStage: React.FC<{
               uiLanguage={uiLang}
               onReturnToWorkspace={() => handleUpdateSession({ mainStageMode: 'workspace' as LiveClassSession['mainStageMode'] })}
               onOpenSessionPanel={() => setShowExerciseSession(true)}
+              onOpenBattleTemplate={onOpenBattleTemplate}
             />
           ) : null}
           {showExerciseSession ? (

@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { GRAMMAR_GUIDES } from '../../constants';
 import { PracticeSection } from '../UI';
+import type { BattleConfig, BattleQuestion, SavedBattleTemplate } from './Battle/battleTypes';
+import { buildSavedBattleTemplate, sanitizeBattleQuestion } from './Battle/battleUtils';
 import {
   LiveClassSession,
   LiveExerciseAnswerVerdict,
@@ -42,6 +44,7 @@ interface LiveTrailExerciseOverlayProps {
   uiLanguage?: 'en' | 'pt' | 'es';
   onReturnToWorkspace?: () => void | Promise<void>;
   onOpenSessionPanel?: () => void;
+  onOpenBattleTemplate?: (template: SavedBattleTemplate) => void;
 }
 
 type TrailUiLanguage = NonNullable<LiveTrailExerciseOverlayProps['uiLanguage']>;
@@ -53,6 +56,7 @@ const TRAIL_COPY = {
     panel: 'Panel',
     previous: 'Previous',
     next: 'Next',
+    generateBattle: 'Generate battle',
     grammar: 'Grammar',
     clickTranslator: 'Click translator',
     question: 'Question',
@@ -93,6 +97,7 @@ const TRAIL_COPY = {
     panel: 'Painel',
     previous: 'Anterior',
     next: 'Próxima',
+    generateBattle: 'Gerar batalha',
     grammar: 'Gramática',
     clickTranslator: 'Tradutor por clique',
     question: 'Questão',
@@ -133,6 +138,7 @@ const TRAIL_COPY = {
     panel: 'Panel',
     previous: 'Anterior',
     next: 'Siguiente',
+    generateBattle: 'Generar batalla',
     grammar: 'Gramática',
     clickTranslator: 'Traductor por clic',
     question: 'Pregunta',
@@ -303,6 +309,124 @@ function getUniqueQuestionWords(block: LiveExerciseBlock) {
   ).slice(0, 24);
 }
 
+function normalizeBattleOptions(options: string[] | undefined, expectedAnswer: string): string[] {
+  const pool = new Set<string>((options ?? []).map((option) => option.trim()).filter(Boolean));
+  if (expectedAnswer.trim()) {
+    pool.add(expectedAnswer.trim());
+  }
+  return Array.from(pool);
+}
+
+function buildLiveTrailPromptText(block: LiveExerciseBlock): string {
+  const prompt = getExercisePrompt(block);
+  const lines: string[] = [];
+  const instruction = prompt.instruction?.trim();
+  const displayValue = prompt.displayValue?.trim();
+
+  if (instruction) {
+    lines.push(instruction);
+  }
+
+  if (
+    displayValue
+    && !displayValue.startsWith('fa-')
+    && displayValue.toLowerCase() !== instruction?.toLowerCase()
+  ) {
+    lines.push(displayValue);
+  }
+
+  return lines.join('\n').trim();
+}
+
+function inferBattleSkill(block: LiveExerciseBlock): BattleQuestion['skill'] {
+  if (block.questionType === 'speaking') return 'speaking';
+  if (block.questionType === 'writing') return 'writing';
+  if (block.sourceAudioValue?.trim()) return 'listening';
+  if (block.questionType === 'identification') return 'reading';
+  return 'grammar';
+}
+
+function inferBattleDifficulty(block: LiveExerciseBlock): BattleQuestion['difficulty'] {
+  if (block.questionType === 'speaking') return 'hard';
+  if (block.questionType === 'writing') return 'medium';
+  return (block.sourceOptions?.length ?? 0) <= 3 ? 'easy' : 'medium';
+}
+
+function mapLiveBlockToBattleQuestion(
+  block: LiveExerciseBlock,
+  context: {
+    workbookId: number;
+    trailIds: string[];
+  },
+): BattleQuestion | null {
+  const prompt = getExercisePrompt(block);
+  const displayValue = prompt.displayValue?.trim() ?? '';
+  const displayIsIcon = displayValue.startsWith('fa-');
+  const promptAudioText = prompt.audioValue?.trim() || undefined;
+  const text = buildLiveTrailPromptText(block);
+  const expectedAnswer = block.expectedAnswer?.trim() ?? '';
+  const trailId = block.sourceTrailId ?? context.trailIds[0] ?? null;
+  const trailNumber = trailId ? getLessonNumberFromId(trailId) : null;
+
+  switch (block.questionType) {
+    case 'multiple-choice':
+    case 'identification': {
+      const options = normalizeBattleOptions(prompt.options, expectedAnswer);
+      const correctIndex = options.indexOf(expectedAnswer);
+      const shouldUseAudio = Boolean(promptAudioText) && (displayIsIcon || !displayValue);
+      return sanitizeBattleQuestion({
+        id: block.id,
+        kind: shouldUseAudio ? 'audio-choice' : 'multiple-choice',
+        text: text || promptAudioText || 'Choose the correct answer.',
+        options,
+        correctIndex: correctIndex >= 0 ? correctIndex : 0,
+        promptAudioText: shouldUseAudio ? promptAudioText : undefined,
+        playAudioOnce: shouldUseAudio,
+        hint: prompt.translation,
+        bookId: context.workbookId,
+        trailId,
+        trailNumber,
+        skill: inferBattleSkill(block),
+        difficulty: inferBattleDifficulty(block),
+      });
+    }
+    case 'writing':
+      return sanitizeBattleQuestion({
+        id: block.id,
+        kind: 'audio-open',
+        text: text || prompt.instruction || 'Type your answer.',
+        correctText: expectedAnswer,
+        acceptedAnswers: [expectedAnswer],
+        promptAudioText,
+        playAudioOnce: Boolean(promptAudioText),
+        hint: prompt.translation,
+        bookId: context.workbookId,
+        trailId,
+        trailNumber,
+        skill: inferBattleSkill(block),
+        difficulty: inferBattleDifficulty(block),
+      });
+    case 'speaking':
+      return sanitizeBattleQuestion({
+        id: block.id,
+        kind: 'speaking',
+        text: text || prompt.instruction || 'Speak your answer.',
+        correctText: expectedAnswer,
+        acceptedAnswers: [expectedAnswer],
+        promptAudioText,
+        playAudioOnce: true,
+        hint: prompt.translation,
+        bookId: context.workbookId,
+        trailId,
+        trailNumber,
+        skill: inferBattleSkill(block),
+        difficulty: inferBattleDifficulty(block),
+      });
+    default:
+      return null;
+  }
+}
+
 interface TrailTranslatorSelection {
   text: string;
   rect: { top: number; left: number; bottom: number; right: number };
@@ -469,6 +593,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   uiLanguage = 'pt',
   onReturnToWorkspace,
   onOpenSessionPanel,
+  onOpenBattleTemplate,
 }) => {
   const [blocks, setBlocks] = useState<LiveExerciseBlock[]>([]);
   const [blocksError, setBlocksError] = useState<string | null>(null);
@@ -607,6 +732,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     () => Object.entries(GRAMMAR_GUIDES).filter(([key]) => key.startsWith(`L${lessonNumber}_`)),
     [lessonNumber],
   );
+  const canGenerateBattleFromTrail = isTeacher && currentBlockIndex >= blocks.length - 1 && blocks.length > 0;
 
   const canEdit = currentBlock
     ? session.sessionStatus === 'active' &&
@@ -637,6 +763,45 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       user.uid,
       actorName,
     );
+  };
+
+  const handleGenerateBattle = () => {
+    if (!onOpenBattleTemplate || blocks.length === 0) return;
+    const trailIds = Array.from(
+      new Set(
+        [
+          ...(session.activeTrailIds ?? []),
+          ...blocks.map((block) => block.sourceTrailId).filter((value): value is string => Boolean(value)),
+        ],
+      ),
+    );
+    const questions = blocks
+      .map((block) => mapLiveBlockToBattleQuestion(block, {
+        workbookId,
+        trailIds,
+      }))
+      .filter((question): question is BattleQuestion => question !== null);
+
+    if (questions.length === 0) {
+      setSaveError(copy.loadError);
+      return;
+    }
+
+    const config: BattleConfig = {
+      scope: 'current-lesson',
+      difficulty: 'normal',
+      questionCount: questions.length,
+      timePerQuestion: 10,
+      includeTeacher: false,
+      botEnabled: false,
+      courseId,
+      workbookId,
+      lessonId: lessonId ?? undefined,
+      trailIds,
+    };
+
+    const templateTitle = `${lesson?.title || session.activeTrailLabel || copy.liveTrail} • Battle`;
+    onOpenBattleTemplate(buildSavedBattleTemplate(config, questions, templateTitle));
   };
 
   const handleAttempt = async (payload: {
@@ -836,6 +1001,15 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
                 >
                   {copy.panel}
+                </button>
+              ) : null}
+              {canGenerateBattleFromTrail && onOpenBattleTemplate ? (
+                <button
+                  type="button"
+                  onClick={handleGenerateBattle}
+                  className="rounded-2xl border border-orange-400/50 bg-orange-500/20 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-orange-100 shadow-2xl backdrop-blur-sm"
+                >
+                  {copy.generateBattle}
                 </button>
               ) : null}
               {isTeacher ? (
