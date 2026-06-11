@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { GRAMMAR_GUIDES } from '../../constants';
 import { PracticeSection } from '../UI';
@@ -42,6 +42,135 @@ interface LiveTrailExerciseOverlayProps {
   uiLanguage?: 'en' | 'pt' | 'es';
   onReturnToWorkspace?: () => void | Promise<void>;
   onOpenSessionPanel?: () => void;
+}
+
+type TrailUiLanguage = NonNullable<LiveTrailExerciseOverlayProps['uiLanguage']>;
+
+const TRAIL_COPY = {
+  en: {
+    liveTrail: 'Live Trail',
+    board: 'Board',
+    panel: 'Panel',
+    previous: 'Previous',
+    next: 'Next',
+    grammar: 'Grammar',
+    clickTranslator: 'Click translator',
+    question: 'Question',
+    answered: 'Answered',
+    waiting: 'Waiting',
+    accuracy: 'Accuracy',
+    latestAnswer: 'Latest answer',
+    noAnswersYet: 'No student has answered this question yet.',
+    yourDemo: 'Your live demo for students',
+    correct: 'correct',
+    incorrect: 'incorrect',
+    loadingTrail: 'Loading live trail...',
+    teacherPreparingTrail: 'Teacher is preparing the trail...',
+    trailComplete: 'Trail completed',
+    trailCompleteBody: 'You finished all exercises from this live lesson.',
+    loadError: 'Could not load the live trail right now.',
+    syncAnswerError: 'Could not sync this answer right now.',
+    finishAnswerError: 'Could not finish this answer right now.',
+    grammarTitle: (lessonNumber: number) => `Lesson ${lessonNumber} Grammar`,
+    noGrammar: 'No grammar notes available for this lesson yet.',
+    dictionary: 'Dictionary',
+    portuguese: 'Portuguese',
+    spanish: 'Spanish',
+    loading: 'Loading...',
+    audio: 'Audio',
+    saved: 'Saved',
+    saving: 'Saving...',
+    saveFlashcard: 'Save flashcard',
+    close: 'Close',
+    openTranslatorHint: 'Click a word to translate it',
+    verdictCorrect: 'got it right',
+    verdictWrong: 'got it wrong',
+    verdictAnswered: 'answered',
+  },
+  pt: {
+    liveTrail: 'Trilha Ao Vivo',
+    board: 'Lousa',
+    panel: 'Painel',
+    previous: 'Anterior',
+    next: 'Próxima',
+    grammar: 'Gramática',
+    clickTranslator: 'Tradutor por clique',
+    question: 'Questão',
+    answered: 'Respondidos',
+    waiting: 'Aguardando',
+    accuracy: 'Acertos',
+    latestAnswer: 'Última resposta',
+    noAnswersYet: 'Nenhum aluno respondeu esta questão ainda.',
+    yourDemo: 'Sua demonstração visível para os alunos',
+    correct: 'correta',
+    incorrect: 'incorreta',
+    loadingTrail: 'Carregando trilha ao vivo...',
+    teacherPreparingTrail: 'Professor preparando a trilha...',
+    trailComplete: 'Trilha concluída',
+    trailCompleteBody: 'Você terminou todos os exercícios desta aula ao vivo.',
+    loadError: 'Não foi possível carregar a trilha ao vivo agora.',
+    syncAnswerError: 'Não foi possível sincronizar esta resposta agora.',
+    finishAnswerError: 'Não foi possível concluir esta resposta agora.',
+    grammarTitle: (lessonNumber: number) => `Gramática da Lição ${lessonNumber}`,
+    noGrammar: 'Ainda não há notas de gramática para esta lição.',
+    dictionary: 'Dicionário',
+    portuguese: 'Português',
+    spanish: 'Espanhol',
+    loading: 'Carregando...',
+    audio: 'Áudio',
+    saved: 'Salvo',
+    saving: 'Salvando...',
+    saveFlashcard: 'Salvar flashcard',
+    close: 'Fechar',
+    openTranslatorHint: 'Clique em uma palavra para traduzir',
+    verdictCorrect: 'acertou',
+    verdictWrong: 'errou',
+    verdictAnswered: 'respondeu',
+  },
+  es: {
+    liveTrail: 'Ruta En Vivo',
+    board: 'Pizarra',
+    panel: 'Panel',
+    previous: 'Anterior',
+    next: 'Siguiente',
+    grammar: 'Gramática',
+    clickTranslator: 'Traductor por clic',
+    question: 'Pregunta',
+    answered: 'Respondidos',
+    waiting: 'Pendientes',
+    accuracy: 'Aciertos',
+    latestAnswer: 'Última respuesta',
+    noAnswersYet: 'Ningún alumno respondió esta pregunta todavía.',
+    yourDemo: 'Tu demostración visible para los alumnos',
+    correct: 'correcta',
+    incorrect: 'incorrecta',
+    loadingTrail: 'Cargando ruta en vivo...',
+    teacherPreparingTrail: 'El profesor está preparando la ruta...',
+    trailComplete: 'Ruta completada',
+    trailCompleteBody: 'Terminaste todos los ejercicios de esta clase en vivo.',
+    loadError: 'No fue posible cargar la ruta en vivo ahora.',
+    syncAnswerError: 'No fue posible sincronizar esta respuesta ahora.',
+    finishAnswerError: 'No fue posible concluir esta respuesta ahora.',
+    grammarTitle: (lessonNumber: number) => `Gramática de la Lección ${lessonNumber}`,
+    noGrammar: 'Todavía no hay notas de gramática para esta lección.',
+    dictionary: 'Diccionario',
+    portuguese: 'Portugués',
+    spanish: 'Español',
+    loading: 'Cargando...',
+    audio: 'Audio',
+    saved: 'Guardado',
+    saving: 'Guardando...',
+    saveFlashcard: 'Guardar flashcard',
+    close: 'Cerrar',
+    openTranslatorHint: 'Haz clic en una palabra para traducir',
+    verdictCorrect: 'acertó',
+    verdictWrong: 'falló',
+    verdictAnswered: 'respondió',
+  },
+} as const;
+
+function getTrailCopy(language: TrailUiLanguage) {
+  return TRAIL_COPY[language] ?? TRAIL_COPY.en;
 }
 
 function getActorName(user: User) {
@@ -121,10 +250,11 @@ function buildVerdict(
   return attemptNumber > 1 ? 'correct_second_try' : 'correct';
 }
 
-function getVerdictCopy(verdict: LiveExerciseAnswerVerdict | null) {
-  if (verdict === 'correct' || verdict === 'correct_second_try') return 'acertou';
-  if (verdict === 'wrong') return 'errou';
-  return 'respondeu';
+function getVerdictCopy(verdict: LiveExerciseAnswerVerdict | null, language: TrailUiLanguage) {
+  const copy = getTrailCopy(language);
+  if (verdict === 'correct' || verdict === 'correct_second_try') return copy.verdictCorrect;
+  if (verdict === 'wrong') return copy.verdictWrong;
+  return copy.verdictAnswered;
 }
 
 function getExercisePrompt(block: LiveExerciseBlock) {
@@ -173,16 +303,23 @@ function getUniqueQuestionWords(block: LiveExerciseBlock) {
   ).slice(0, 24);
 }
 
+interface TrailTranslatorSelection {
+  text: string;
+  rect: { top: number; left: number; bottom: number; right: number };
+}
+
 interface TrailVocabHelperProps {
-  word: string;
+  selection: TrailTranslatorSelection;
   courseLanguage: 'en' | 'pt' | 'es' | 'el' | 'he';
+  uiLanguage: TrailUiLanguage;
   userId: string;
   onClose: () => void;
 }
 
 const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
-  word,
+  selection,
   courseLanguage,
+  uiLanguage,
   userId,
   onClose,
 }) => {
@@ -191,6 +328,8 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [phonetic, setPhonetic] = useState('');
+  const popupRef = useRef<HTMLDivElement>(null);
+  const copy = getTrailCopy(uiLanguage);
 
   useEffect(() => {
     let active = true;
@@ -198,9 +337,9 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
     setSaved(false);
 
     Promise.all([
-      translateText(word, courseLanguage, 'pt'),
-      translateText(word, courseLanguage, 'es'),
-      fetchPhoneticForPhrase(word),
+      translateText(selection.text, courseLanguage, 'pt'),
+      translateText(selection.text, courseLanguage, 'es'),
+      fetchPhoneticForPhrase(selection.text),
     ])
       .then(([pt, es, nextPhonetic]) => {
         if (!active) return;
@@ -214,19 +353,30 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
     return () => {
       active = false;
     };
-  }, [courseLanguage, word]);
+  }, [courseLanguage, selection.text]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown, true);
+    return () => document.removeEventListener('mousedown', handlePointerDown, true);
+  }, [onClose]);
 
   const handleSpeak = () => {
-    void ttsSpeakImpl(word, courseLanguage);
+    void ttsSpeakImpl(selection.text, courseLanguage);
   };
 
   const handleSave = async () => {
     if (saving || saved) return;
     setSaving(true);
-    const targetLang = courseLanguage === 'pt' ? 'es' : 'pt';
-    const translation = targetLang === 'pt' ? translations.pt : translations.es;
+    const targetLang = uiLanguage === 'es' ? 'es' : 'pt';
+    const translation = targetLang === 'es' ? translations.es : translations.pt;
     const entryId = await saveVocabularyEntry(userId, {
-      text: word,
+      text: selection.text,
       translation,
       sourceLang: courseLanguage,
       targetLang,
@@ -238,61 +388,72 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
     if (entryId) setSaved(true);
   };
 
+  const popupWidth = 260;
+  const popupHeight = 180;
+  const desiredTop =
+    selection.rect.top >= popupHeight + 16
+      ? selection.rect.top - popupHeight - 8
+      : selection.rect.bottom + 8;
+  const desiredLeft = selection.rect.left + (selection.rect.right - selection.rect.left) / 2 - popupWidth / 2;
+  const top = Math.max(8, Math.min(desiredTop, window.innerHeight - popupHeight - 8));
+  const left = Math.max(8, Math.min(desiredLeft, window.innerWidth - popupWidth - 8));
+
   return (
-    <div className="fixed inset-0 z-[145] bg-black/50 backdrop-blur-sm" onClick={onClose}>
-      <div
-        className="absolute right-4 top-20 w-[320px] rounded-3xl border border-slate-700 bg-white p-4 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-              Dictionary
-            </p>
-            <p className="mt-1 break-words text-lg font-black text-slate-900">{word}</p>
-            {phonetic ? <p className="mt-1 text-xs font-semibold text-slate-500">{phonetic}</p> : null}
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full bg-slate-100 px-2 py-1 text-sm font-black text-slate-600"
-          >
-            x
-          </button>
+    <div
+      ref={popupRef}
+      style={{ top, left, width: popupWidth }}
+      className="fixed z-[145] rounded-3xl border border-slate-200 bg-white p-4 shadow-2xl"
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+            {copy.dictionary}
+          </p>
+          <p className="mt-1 break-words text-lg font-black text-slate-900">{selection.text}</p>
+          {phonetic ? <p className="mt-1 text-xs font-semibold text-slate-500">{phonetic}</p> : null}
         </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600"
+          aria-label={copy.close}
+        >
+          x
+        </button>
+      </div>
 
-        <div className="mt-4 space-y-2 text-sm text-slate-700">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-              Portugues
-            </p>
-            <p className="mt-1">{loading ? 'Carregando...' : translations.pt || word}</p>
-          </div>
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
-              Espanol
-            </p>
-            <p className="mt-1">{loading ? 'Carregando...' : translations.es || word}</p>
-          </div>
+      <div className="mt-4 space-y-2 text-sm text-slate-700">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+            {copy.portuguese}
+          </p>
+          <p className="mt-1">{loading ? copy.loading : translations.pt || selection.text}</p>
         </div>
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+            {copy.spanish}
+          </p>
+          <p className="mt-1">{loading ? copy.loading : translations.es || selection.text}</p>
+        </div>
+      </div>
 
-        <div className="mt-4 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={handleSpeak}
-            className="rounded-2xl bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-wide text-white"
-          >
-            Audio
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={saving || saved}
-            className="rounded-2xl bg-blue-600 px-4 py-2 text-xs font-black uppercase tracking-wide text-white disabled:opacity-50"
-          >
-            {saved ? 'Salvo' : saving ? 'Salvando...' : 'Salvar Flashcard'}
-          </button>
-        </div>
+      <div className="mt-4 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={handleSpeak}
+          className="rounded-2xl bg-slate-900 px-4 py-2 text-xs font-black uppercase tracking-wide text-white"
+        >
+          {copy.audio}
+        </button>
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || saved}
+          className="rounded-2xl bg-blue-600 px-4 py-2 text-xs font-black uppercase tracking-wide text-white disabled:opacity-50"
+        >
+          {saved ? copy.saved : saving ? copy.saving : copy.saveFlashcard}
+        </button>
       </div>
     </div>
   );
@@ -318,7 +479,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [loadingWorkbook, setLoadingWorkbook] = useState(false);
   const [showGrammarModal, setShowGrammarModal] = useState(false);
   const [vocabMode, setVocabMode] = useState(false);
-  const [selectedVocabWord, setSelectedVocabWord] = useState<string | null>(null);
+  const [selectedVocab, setSelectedVocab] = useState<TrailTranslatorSelection | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const actorName = getActorName(user);
@@ -327,30 +488,29 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const lessonId = session.activeLessonId ?? null;
   const lessonNumber = getLessonNumberFromId(lessonId);
   const courseLanguage = getCourseLanguageCode(courseId);
-
-  void uiLanguage;
+  const copy = getTrailCopy(uiLanguage);
 
   useEffect(() => {
     setBlocksError(null);
     const unsubscribe = subscribeExerciseSession(
       classId,
       (next) => setExerciseSession({ currentBlockId: next.currentBlockId ?? null }),
-      () => setBlocksError('Nao foi possivel carregar a trilha ao vivo agora.'),
+      () => setBlocksError(copy.loadError),
     );
 
     return unsubscribe;
-  }, [classId]);
+  }, [classId, copy.loadError]);
 
   useEffect(() => {
     setBlocksError(null);
     const unsubscribe = subscribeExerciseBlocks(
       classId,
       (next) => setBlocks(next),
-      () => setBlocksError('Nao foi possivel carregar a trilha ao vivo agora.'),
+      () => setBlocksError(copy.loadError),
     );
 
     return unsubscribe;
-  }, [classId]);
+  }, [classId, copy.loadError]);
 
   useEffect(() => {
     let active = true;
@@ -454,18 +614,13 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       getStudentStatus(currentBlock, user.uid) !== 'done'
     : false;
 
-  const questionWords = useMemo(
-    () => (currentBlock && vocabMode ? getUniqueQuestionWords(currentBlock) : []),
-    [currentBlock, vocabMode],
-  );
-
   useEffect(() => {
-    setSelectedVocabWord(null);
+    setSelectedVocab(null);
   }, [currentBlock?.id]);
 
   useEffect(() => {
     if (!vocabMode) {
-      setSelectedVocabWord(null);
+      setSelectedVocab(null);
     }
   }, [vocabMode]);
 
@@ -526,7 +681,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         );
       }
     } catch {
-      setSaveError('Nao foi possivel sincronizar esta resposta agora.');
+      setSaveError(copy.syncAnswerError);
     }
   };
 
@@ -578,7 +733,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         }
       }
     } catch {
-      setSaveError('Nao foi possivel concluir esta resposta agora.');
+      setSaveError(copy.finishAnswerError);
     }
   };
 
@@ -597,7 +752,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 px-4">
         <div className="max-w-md rounded-3xl border border-slate-700 bg-slate-900 p-6 text-center shadow-2xl">
           <p className="text-sm font-bold text-slate-200">
-            {isTeacher ? 'Carregando trilha ao vivo...' : 'Professor preparando a trilha...'}
+            {isTeacher ? copy.loadingTrail : copy.teacherPreparingTrail}
           </p>
         </div>
       </div>
@@ -608,9 +763,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     return (
       <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 px-4">
         <div className="max-w-md rounded-3xl border border-emerald-500/30 bg-slate-900 p-6 text-center shadow-2xl">
-          <p className="text-lg font-black text-emerald-300">Trilha concluida</p>
+          <p className="text-lg font-black text-emerald-300">{copy.trailComplete}</p>
           <p className="mt-2 text-sm text-slate-200">
-            Voce terminou todos os exercicios desta aula ao vivo.
+            {copy.trailCompleteBody}
           </p>
         </div>
       </div>
@@ -627,33 +782,33 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             {isTeacher ? (
               <div className="max-w-[520px] rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2.5 shadow-2xl backdrop-blur-sm">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-300">
-                  {lesson?.title || session.activeTrailLabel || 'Live Trail'}
+                  {lesson?.title || session.activeTrailLabel || copy.liveTrail}
                 </p>
                 <p className="mt-1 text-xs text-slate-300">
-                  Questao {Math.max(currentBlockIndex + 1, 1)}/{Math.max(blocks.length, 1)}
+                  {copy.question} {Math.max(currentBlockIndex + 1, 1)}/{Math.max(blocks.length, 1)}
                 </p>
                 <p className="mt-1 text-xs text-slate-200">
-                  Respondidos: {teacherSummary.respondedCount}/{assignedRoster.length || 0} | Aguardando: {teacherSummary.pendingCount} | Acertos: {teacherSummary.accuracyRate}%
+                  {copy.answered}: {teacherSummary.respondedCount}/{assignedRoster.length || 0} | {copy.waiting}: {teacherSummary.pendingCount} | {copy.accuracy}: {teacherSummary.accuracyRate}%
                 </p>
                 {teacherSummary.latestStudentAnswer ? (
                   <p className="mt-1 max-w-[460px] text-xs text-emerald-200">
-                    Ultima resposta: <span className="font-black">{teacherSummary.latestStudentAnswer.label}</span>{' '}
-                    {getVerdictCopy(teacherSummary.latestStudentAnswer.verdict)} com "
+                    {copy.latestAnswer}: <span className="font-black">{teacherSummary.latestStudentAnswer.label}</span>{' '}
+                    {getVerdictCopy(teacherSummary.latestStudentAnswer.verdict, uiLanguage)} "
                     {teacherSummary.latestStudentAnswer.answer}".
                   </p>
                 ) : (
                   <p className="mt-1 text-xs text-slate-400">
-                    Nenhum aluno respondeu esta questao ainda.
+                    {copy.noAnswersYet}
                   </p>
                 )}
                 {currentBlock.livePreviewAnswer?.trim() ? (
                   <p className="mt-1 max-w-[460px] text-xs text-sky-200">
-                    Sua demonstracao visivel para os alunos: "{currentBlock.livePreviewAnswer.trim()}"
+                    {copy.yourDemo}: "{currentBlock.livePreviewAnswer.trim()}"
                     {currentBlock.livePreviewCorrect == null
                       ? ''
                       : currentBlock.livePreviewCorrect
-                        ? ' (correta)'
-                        : ' (incorreta)'}
+                        ? ` (${copy.correct})`
+                        : ` (${copy.incorrect})`}
                   </p>
                 ) : null}
                 {saveError ? <p className="mt-1 text-xs text-rose-200">{saveError}</p> : null}
@@ -671,7 +826,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   }}
                   className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
                 >
-                  Lousa
+                  {copy.board}
                 </button>
               ) : null}
               {isTeacher && onOpenSessionPanel ? (
@@ -680,7 +835,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   onClick={onOpenSessionPanel}
                   className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
                 >
-                  Painel
+                  {copy.panel}
                 </button>
               ) : null}
               {isTeacher ? (
@@ -694,9 +849,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                       }
                     }}
                     disabled={currentBlockIndex <= 0}
-                    className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
+                    title={copy.previous}
+                    aria-label={copy.previous}
+                    className="flex h-[38px] w-[38px] items-center justify-center rounded-2xl border border-slate-700 bg-slate-950/92 text-sm font-black text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
                   >
-                    Anterior
+                    ←
                   </button>
                   <button
                     type="button"
@@ -707,9 +864,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                       }
                     }}
                     disabled={currentBlockIndex < 0 || currentBlockIndex >= blocks.length - 1}
-                    className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
+                    title={copy.next}
+                    aria-label={copy.next}
+                    className="flex h-[38px] w-[38px] items-center justify-center rounded-2xl border border-slate-700 bg-slate-950/92 text-sm font-black text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
                   >
-                    Proxima
+                    →
                   </button>
                 </>
               ) : null}
@@ -718,41 +877,26 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                 onClick={() => setShowGrammarModal(true)}
                 className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
               >
-                Gramatica
+                {copy.grammar}
               </button>
               <button
                 type="button"
-                onClick={() => setVocabMode((current) => !current)}
-                className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+                onClick={() => {
+                  setSelectedVocab(null);
+                  setVocabMode((current) => !current);
+                }}
+                title={copy.clickTranslator}
+                aria-label={copy.clickTranslator}
+                className={`flex h-[38px] w-[38px] items-center justify-center rounded-2xl border bg-slate-950/92 shadow-2xl backdrop-blur-sm transition ${
+                  vocabMode
+                    ? 'border-emerald-300 shadow-[0_0_0_1px_rgba(16,185,129,0.18)]'
+                    : 'border-slate-700'
+                }`}
               >
-                Vocab
+                <img src="/apple-touch-icon.png" alt="" className="h-6 w-6 object-contain" />
               </button>
             </div>
           </div>
-
-          {vocabMode && questionWords.length > 0 ? (
-            <div className="fixed left-3 right-3 top-[118px] z-[134] flex justify-center sm:left-4 sm:right-4 sm:top-[134px]">
-              <div className="flex max-w-4xl flex-wrap items-center justify-center gap-2 rounded-3xl border border-slate-700 bg-slate-950/92 px-3 py-2.5 shadow-2xl backdrop-blur-sm">
-                <span className="mr-2 text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
-                  Escolha uma palavra
-                </span>
-                {questionWords.map((word) => (
-                  <button
-                    key={word}
-                    type="button"
-                    onClick={() => setSelectedVocabWord(word)}
-                    className={`rounded-full border px-3 py-1.5 text-xs font-black transition ${
-                      selectedVocabWord === word
-                        ? 'border-cyan-300 bg-cyan-500/20 text-cyan-100'
-                        : 'border-slate-600 bg-slate-900 text-slate-100 hover:border-cyan-400'
-                    }`}
-                  >
-                    {word}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
 
           <PracticeSection
             item={practiceItem}
@@ -761,10 +905,16 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             totalItems={blocks.length}
             lessonId={lessonNumber}
             currentLanguage={courseLanguage}
+            uiLanguage={uiLanguage}
             onAttempt={handleAttempt}
             onContinue={handleContinue}
             actionLocked={!isTeacher && !canEdit}
             fullScreen={true}
+            clickTranslatorMode={vocabMode}
+            onTranslatorWordSelect={({ word, rect }) => {
+              if (!vocabMode) return;
+              setSelectedVocab({ text: word, rect });
+            }}
           />
         </div>
       ) : null}
@@ -779,7 +929,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             onClick={(event) => event.stopPropagation()}
           >
             <div className="sticky top-0 flex items-center justify-between rounded-t-3xl border-b border-slate-100 bg-white px-6 py-4">
-              <h2 className="text-lg font-bold text-slate-800">Lesson {lessonNumber} Grammar</h2>
+              <h2 className="text-lg font-bold text-slate-800">{copy.grammarTitle(lessonNumber)}</h2>
               <button
                 type="button"
                 onClick={() => setShowGrammarModal(false)}
@@ -791,7 +941,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             <div className="space-y-5 px-6 py-4">
               {grammarEntries.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  No grammar notes available for this lesson yet.
+                  {copy.noGrammar}
                 </p>
               ) : (
                 grammarEntries.map(([key, tips]) => (
@@ -815,12 +965,13 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         </div>
       ) : null}
 
-      {selectedVocabWord ? (
+      {selectedVocab ? (
         <TrailVocabHelper
-          word={selectedVocabWord}
+          selection={selectedVocab}
           courseLanguage={courseLanguage}
+          uiLanguage={uiLanguage}
           userId={user.uid}
-          onClose={() => setSelectedVocabWord(null)}
+          onClose={() => setSelectedVocab(null)}
         />
       ) : null}
     </>

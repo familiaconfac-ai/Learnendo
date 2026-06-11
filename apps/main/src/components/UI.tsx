@@ -484,6 +484,12 @@ export const PracticeSection: React.FC<{
   onContinue?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
   actionLocked?: boolean;
   fullScreen?: boolean;
+  uiLanguage?: string;
+  clickTranslatorMode?: boolean;
+  onTranslatorWordSelect?: (payload: {
+    word: string;
+    rect: { top: number; left: number; bottom: number; right: number };
+  }) => void;
 }> =
   ({
     item,
@@ -499,6 +505,9 @@ export const PracticeSection: React.FC<{
     onContinue,
     actionLocked = false,
     fullScreen = false,
+    uiLanguage,
+    clickTranslatorMode = false,
+    onTranslatorWordSelect,
   }) => {
     const [userInput, setUserInput] = useState('');
     const [isListening, setIsListening] = useState(false);
@@ -508,7 +517,7 @@ export const PracticeSection: React.FC<{
     const [praiseText, setPraiseText] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const PL = getPL(currentLanguage);
+    const PL = getPL(uiLanguage || currentLanguage);
     // Deterministic voice pair for this exercise: odd #→ female prompt, even #→ male prompt
     const { prompt: promptVoice, feedback: feedbackVoice } = exerciseVoices(currentIdx);
 
@@ -802,6 +811,7 @@ export const PracticeSection: React.FC<{
     const handleOptionClick = (opt: string) => {
       if (actionLocked) return;
       if (showFooter && feedback === 'correct') return;
+      if (clickTranslatorMode && onTranslatorWordSelect) return;
       setSelectedOption(opt);
       speak(opt, 1, promptVoice);
       if (feedback === 'wrong') {
@@ -809,6 +819,76 @@ export const PracticeSection: React.FC<{
         setFeedback('none');
         setUserInput('');
       }
+    };
+
+    const openTranslatorForWord = (
+      rawWord: string,
+      target: EventTarget | null,
+      event?: React.MouseEvent<HTMLElement>,
+    ) => {
+      if (!clickTranslatorMode || !onTranslatorWordSelect) return;
+      const normalizedWord = rawWord
+        .trim()
+        .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+      if (normalizedWord.length < 2) return;
+      const element = target instanceof HTMLElement ? target : null;
+      if (!element) return;
+      event?.stopPropagation();
+      const rect = element.getBoundingClientRect();
+      onTranslatorWordSelect({
+        word: normalizedWord,
+        rect: {
+          top: rect.top,
+          left: rect.left,
+          bottom: rect.bottom,
+          right: rect.right,
+        },
+      });
+    };
+
+    const renderInteractiveText = (
+      text: string,
+      options?: {
+        wordClassName?: string;
+        separatorClassName?: string;
+      },
+    ) => {
+      const parts = text.split(/([\p{L}\p{N}'’-]+)/gu);
+      return parts.map((part, index) => {
+        if (!part) return null;
+        const isWord = /[\p{L}\p{N}]/u.test(part);
+        if (!isWord) {
+          return (
+            <span key={`${part}_${index}`} className={options?.separatorClassName}>
+              {part}
+            </span>
+          );
+        }
+
+        const isTranslatorEnabled = clickTranslatorMode && Boolean(onTranslatorWordSelect);
+        return (
+          <span
+            key={`${part}_${index}`}
+            role={isTranslatorEnabled ? 'button' : undefined}
+            tabIndex={isTranslatorEnabled ? 0 : undefined}
+            className={`${options?.wordClassName ?? ''} ${
+              isTranslatorEnabled
+                ? 'cursor-pointer rounded-lg px-0.5 transition hover:bg-cyan-500/20 hover:text-cyan-100'
+                : ''
+            }`}
+            onClick={(event) => openTranslatorForWord(part, event.currentTarget, event)}
+            onKeyDown={(event) => {
+              if (!isTranslatorEnabled) return;
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                openTranslatorForWord(part, event.currentTarget);
+              }
+            }}
+          >
+            {part}
+          </span>
+        );
+      });
     };
 
     const renderDisplay = () => {
@@ -830,8 +910,8 @@ export const PracticeSection: React.FC<{
         return (
           <div className="w-full max-w-sm mx-auto mb-4">
             <div className="max-h-[260px] overflow-y-auto bg-slate-800 p-5 rounded-2xl border-2 border-slate-600 shadow-inner">
-              <div className={`text-xl font-bold text-center transition-colors duration-500 whitespace-pre-line leading-relaxed ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
-                {item.displayValue}
+              <div className={`text-xl font-bold text-center transition-colors duration-500 whitespace-pre-wrap leading-relaxed ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
+                {renderInteractiveText(item.displayValue)}
               </div>
             </div>
           </div>
@@ -855,7 +935,7 @@ export const PracticeSection: React.FC<{
 
       return (
         <div className={`text-5xl font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
-          {item.displayValue}
+          {renderInteractiveText(item.displayValue)}
         </div>
       );
     };
@@ -895,34 +975,39 @@ export const PracticeSection: React.FC<{
                 : PL.exerciseIdxLabel(currentIdx, totalItems)}
             </span>
           </div>
-          <div className="relative group mb-4 cursor-help w-full" onClick={() => setShowHint(!showHint)}>
+          <div
+            className="relative group mb-4 cursor-help w-full"
+            onClick={() => {
+              if (!clickTranslatorMode) setShowHint(!showHint);
+            }}
+          >
             {isReadingExercise ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">{PL.badgeReading}</span>
-                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
-                  {item.instruction.replace(/^(Read and write:|Read:)\s*/i, '')}
+                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap">
+                  {renderInteractiveText(item.instruction.replace(/^(Read and write:|Read:)\s*/i, ''))}
                 </h2>
               </div>
             ) : item.type === 'writing' && isSentenceWriting ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-base font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
                 <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.answerFullSentence}</p>
-                <h2 className="text-xl sm:text-2xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
-                  {item.instruction.replace(/\s*answer in a full sentence\.?/i, '').trim()}
+                <h2 className="text-xl sm:text-2xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
+                  {renderInteractiveText(item.instruction.replace(/\s*answer in a full sentence\.?/i, '').trim())}
                 </h2>
               </div>
             ) : item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
-                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
-                  {item.instruction}
+                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap">
+                  {renderInteractiveText(item.instruction)}
                 </h2>
               </div>
             ) : item.type === 'speaking' && !item.instruction.toLowerCase().includes('listen and answer') ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">{PL.badgeShadowing}</span>
-                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
-                  {item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, '')}
+                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap">
+                  {renderInteractiveText(item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, ''))}
                 </h2>
               </div>
             ) : item.type === 'speaking' ? (
@@ -944,8 +1029,8 @@ export const PracticeSection: React.FC<{
                       <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
                       <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.chooseCorrect}</p>
                       <p className="text-sm font-semibold text-white text-center mt-1">{dlg[1]}:</p>
-                      <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl">
-                        "{dlg[2]}"
+                      <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl">
+                        "{renderInteractiveText(dlg[2])}"
                       </h2>
                     </div>
                   );
@@ -956,8 +1041,8 @@ export const PracticeSection: React.FC<{
                     <div className="flex flex-col items-center gap-2">
                       <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
                       <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.chooseCorrect}</p>
-                      <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
-                        {PL.whatColor}
+                      <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
+                        {renderInteractiveText(PL.whatColor)}
                       </h2>
                     </div>
                   );
@@ -965,8 +1050,8 @@ export const PracticeSection: React.FC<{
                 return (
                   <div className="flex flex-col items-center gap-2">
                     <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
-                    <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
-                      {item.instruction}
+                    <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap">
+                      {renderInteractiveText(item.instruction)}
                     </h2>
                   </div>
                 );
@@ -1046,12 +1131,18 @@ export const PracticeSection: React.FC<{
                   <button
                     key={opt}
                     disabled={actionLocked || (showFooter && feedback === 'correct')}
-                    onClick={() => handleOptionClick(opt)}
+                    onClick={(event) => {
+                      if (clickTranslatorMode && onTranslatorWordSelect) {
+                        openTranslatorForWord(opt, event.currentTarget, event);
+                        return;
+                      }
+                      handleOptionClick(opt);
+                    }}
                     className={`p-3 border-2 rounded-3xl font-bold transition-all flex items-center justify-center text-center leading-snug break-words [touch-action:manipulation] min-h-[56px] ${
                       opt.length > 14 ? 'text-sm normal-case' : 'text-xl font-black uppercase'
                     } ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-500 shadow-lg' : 'bg-slate-800 border-slate-600 text-white hover:border-blue-500'}`}
                   >
-                    {opt}
+                    <span className="whitespace-pre-wrap">{renderInteractiveText(opt)}</span>
                   </button>
                 ))}
               </div>
