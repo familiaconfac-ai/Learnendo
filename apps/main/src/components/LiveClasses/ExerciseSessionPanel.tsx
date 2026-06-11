@@ -1104,6 +1104,16 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
             placeholder="Example: Unit 3 Review - Simple Present"
           />
           <div className="mt-3 flex flex-wrap gap-2">
+            {session.isActive ? (
+              <button
+                type="button"
+                onClick={() => void onUpdateSession?.({ mainStageMode: 'trail' as LiveClassSession['mainStageMode'] })}
+                disabled={savingSessionState}
+                className="rounded-xl bg-cyan-400 px-4 py-2 text-sm font-black text-slate-950 shadow-[0_4px_0_0_#0891b2] disabled:opacity-60"
+              >
+                Abrir Trilha Ao Vivo
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => void handleStartSelectedTrails()}

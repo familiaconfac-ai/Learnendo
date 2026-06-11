@@ -623,9 +623,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     <>
       {practiceItem ? (
         <div className="fixed inset-0 z-[120] bg-slate-950">
-          <div className="fixed left-4 right-4 top-4 z-[135] flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="fixed left-3 right-3 top-[58px] z-[135] flex flex-col gap-2 sm:left-4 sm:right-4 sm:top-[70px] sm:flex-row sm:items-start sm:justify-between">
             {isTeacher ? (
-              <div className="max-w-[520px] rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 shadow-2xl backdrop-blur-sm">
+              <div className="max-w-[520px] rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2.5 shadow-2xl backdrop-blur-sm">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-300">
                   {lesson?.title || session.activeTrailLabel || 'Live Trail'}
                 </p>
@@ -662,14 +662,14 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               <div className="pointer-events-none h-0" />
             )}
 
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
               {isTeacher && onReturnToWorkspace ? (
                 <button
                   type="button"
                   onClick={() => {
                     void onReturnToWorkspace();
                   }}
-                  className="rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+                  className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
                 >
                   Lousa
                 </button>
@@ -678,7 +678,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                 <button
                   type="button"
                   onClick={onOpenSessionPanel}
-                  className="rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+                  className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
                 >
                   Painel
                 </button>
@@ -694,7 +694,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                       }
                     }}
                     disabled={currentBlockIndex <= 0}
-                    className="rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
+                    className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
                   >
                     Anterior
                   </button>
@@ -707,7 +707,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                       }
                     }}
                     disabled={currentBlockIndex < 0 || currentBlockIndex >= blocks.length - 1}
-                    className="rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
+                    className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
                   >
                     Proxima
                   </button>
@@ -716,14 +716,14 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               <button
                 type="button"
                 onClick={() => setShowGrammarModal(true)}
-                className="rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+                className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
               >
                 Gramatica
               </button>
               <button
                 type="button"
                 onClick={() => setVocabMode((current) => !current)}
-                className="rounded-2xl border border-slate-700 bg-slate-950/90 px-4 py-3 text-xs font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+                className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
               >
                 Vocab
               </button>
@@ -731,8 +731,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           </div>
 
           {vocabMode && questionWords.length > 0 ? (
-            <div className="fixed left-4 right-4 top-[88px] z-[134] flex justify-center">
-              <div className="flex max-w-4xl flex-wrap items-center justify-center gap-2 rounded-3xl border border-slate-700 bg-slate-950/92 px-4 py-3 shadow-2xl backdrop-blur-sm">
+            <div className="fixed left-3 right-3 top-[118px] z-[134] flex justify-center sm:left-4 sm:right-4 sm:top-[134px]">
+              <div className="flex max-w-4xl flex-wrap items-center justify-center gap-2 rounded-3xl border border-slate-700 bg-slate-950/92 px-3 py-2.5 shadow-2xl backdrop-blur-sm">
                 <span className="mr-2 text-[10px] font-black uppercase tracking-[0.18em] text-cyan-300">
                   Escolha uma palavra
                 </span>
