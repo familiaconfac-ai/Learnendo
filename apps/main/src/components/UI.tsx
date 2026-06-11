@@ -470,8 +470,34 @@ type PracticeLang = keyof typeof PRACTICE_LABELS;
 const getPL = (lang: string) =>
   PRACTICE_LABELS[(lang as PracticeLang) in PRACTICE_LABELS ? (lang as PracticeLang) : 'en'];
 
-export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct: boolean, val: string) => void; currentIdx: number; totalItems: number; lessonId: number; onBack?: () => void; dayNumber?: number; totalDays?: number; currentLanguage?: string; }> =
-  ({ item, onResult, currentIdx, totalItems, lessonId, onBack, dayNumber, totalDays, currentLanguage = 'en' }) => {
+export const PracticeSection: React.FC<{
+  item: PracticeItem;
+  onResult: (correct: boolean, val: string) => void;
+  currentIdx: number;
+  totalItems: number;
+  lessonId: number;
+  onBack?: () => void;
+  dayNumber?: number;
+  totalDays?: number;
+  currentLanguage?: string;
+  onAttempt?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
+  onContinue?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
+  actionLocked?: boolean;
+}> =
+  ({
+    item,
+    onResult,
+    currentIdx,
+    totalItems,
+    lessonId,
+    onBack,
+    dayNumber,
+    totalDays,
+    currentLanguage = 'en',
+    onAttempt,
+    onContinue,
+    actionLocked = false,
+  }) => {
     const [userInput, setUserInput] = useState('');
     const [isListening, setIsListening] = useState(false);
     const [feedback, setFeedback] = useState<'none' | 'correct' | 'wrong'>('none');
@@ -522,6 +548,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     const currentItemIdRef = useRef<string>(item.id);
     // Stores the onResult action prepared at CHECK time so Continue never reads stale state
     const pendingOnResultRef = useRef<(() => void) | null>(null);
+    const lastAttemptMetaRef = useRef<{ answer: string; isCorrect: boolean; attemptNumber: number } | null>(null);
 
     useEffect(() => {
       // Cancel any ongoing STT from the previous exercise so its callbacks can't
@@ -532,6 +559,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       }
       currentItemIdRef.current = item.id;
       pendingOnResultRef.current = null;
+      lastAttemptMetaRef.current = null;
 
       setUserInput('');
       setIsListening(false);
@@ -591,6 +619,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
     // Auto-grow textarea
     const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+      if (actionLocked) return;
       setUserInput(e.target.value);
       if (feedback === 'wrong') { setFeedback('none'); setShowFooter(false); }
       if (textareaRef.current) {
@@ -615,6 +644,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     };
 
     const handleSTT = () => {
+      if (actionLocked) return;
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) return alert("Mic not supported");
 
@@ -649,15 +679,23 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     };
 
     const handleCheck = () => {
+      if (actionLocked) return;
       // Dismiss keyboard immediately so the footer is at its final position
       // before the CONTINUE button renders — prevents the "double-tap" ghost click.
       inputRef.current?.blur();
       textareaRef.current?.blur();
 
       const rawInput = userInput || selectedOption || '';
+      const nextAttemptNumber = (lastAttemptMetaRef.current?.attemptNumber ?? 0) + 1;
+      const reportAttempt = (answer: string, isCorrect: boolean) => {
+        const payload = { answer, isCorrect, attemptNumber: nextAttemptNumber };
+        lastAttemptMetaRef.current = payload;
+        onAttempt?.(payload);
+      };
 
       // Dictation writing: reject pure numeric input — student must type words
       if (isDictationWriting && /^\s*\d[\d\s]*$/.test(rawInput)) {
+        reportAttempt(rawInput, false);
         setFeedback('wrong');
         setShowFooter(true);
         new Audio(ERR_SOUND).play().catch(() => {});
@@ -670,6 +708,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
       // Sentence writing (math): answer must be a complete English sentence
       if (isSentenceWriting) {
         if (/^\s*\d[\d\s]*$/.test(rawInput)) {
+          reportAttempt(rawInput, false);
           setFeedback('wrong');
           setShowFooter(true);
           new Audio(ERR_SOUND).play().catch(() => {});
@@ -681,10 +720,15 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
         const normSentence = (s: string) =>
           s.trim().toLowerCase().replace(/it'?s\s/g, 'it is ').replace(/[.,!?']/g, '').trim();
         const isSentenceCorrect = normSentence(rawInput) === normSentence(item.correctValue);
+        reportAttempt(rawInput, isSentenceCorrect);
         setFeedback(isSentenceCorrect ? 'correct' : 'wrong');
         setShowFooter(true);
         if (isSentenceCorrect) {
-          pendingOnResultRef.current = () => onResult(true, rawInput);
+          pendingOnResultRef.current = () => {
+            const payload = lastAttemptMetaRef.current;
+            if (payload) onContinue?.(payload);
+            onResult(true, rawInput);
+          };
           new Audio(SUCCESS_SOUND).play().catch(() => {});
           const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
           setPraiseText(p);
@@ -707,11 +751,16 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
           (NUMBER_MAP[response] === cleanTarget) ||
           (NUMBER_MAP[cleanTarget] === response);
 
+      reportAttempt(rawInput, isCorrect);
       setFeedback(isCorrect ? 'correct' : 'wrong');
       setShowFooter(true);
 
       if (isCorrect) {
-        pendingOnResultRef.current = () => onResult(true, rawInput);
+        pendingOnResultRef.current = () => {
+          const payload = lastAttemptMetaRef.current;
+          if (payload) onContinue?.(payload);
+          onResult(true, rawInput);
+        };
         new Audio(SUCCESS_SOUND).play().catch(() => { });
         const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
         setPraiseText(p);
@@ -726,6 +775,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
 
     // ✅ Handle ENTER key
     const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (actionLocked) return;
       if (e.key === 'Enter') {
         e.preventDefault();
         if (showFooter) {
@@ -748,6 +798,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
     };
 
     const handleOptionClick = (opt: string) => {
+      if (actionLocked) return;
       if (showFooter && feedback === 'correct') return;
       setSelectedOption(opt);
       speak(opt, 1, promptVoice);
@@ -941,7 +992,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               {item.type === 'speaking' && (
                 <button 
                   onClick={handleSTT}
-                  disabled={showFooter && feedback === 'correct'}
+                  disabled={actionLocked || (showFooter && feedback === 'correct')}
                   className={`w-14 h-14 rounded-2xl text-2xl active:translate-y-1 transition-all flex items-center justify-center ${isListening ? 'bg-red-500 text-white animate-pulse shadow-[0_4px_0_0_#b91c1c]' : 'bg-red-500 text-white shadow-[0_4px_0_0_#991b1b] hover:bg-red-600'}`}
                   title="Tap to speak"
                 >
@@ -962,7 +1013,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                     return (
                       <button
                         key={opt}
-                        disabled={showFooter && feedback === 'correct'}
+                        disabled={actionLocked || (showFooter && feedback === 'correct')}
                         onClick={() => handleOptionClick(opt)}
                         aria-label={opt}
                         className={`rounded-2xl overflow-hidden border-4 transition-all [touch-action:manipulation] ${isSelected ? 'border-blue-400 shadow-lg ring-2 ring-blue-400' : 'border-slate-700 hover:border-blue-400'}`}
@@ -992,7 +1043,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                 {shuffledOptions.map((opt) => (
                   <button
                     key={opt}
-                    disabled={showFooter && feedback === 'correct'}
+                    disabled={actionLocked || (showFooter && feedback === 'correct')}
                     onClick={() => handleOptionClick(opt)}
                     className={`p-3 border-2 rounded-3xl font-bold transition-all flex items-center justify-center text-center leading-snug break-words [touch-action:manipulation] min-h-[56px] ${
                       opt.length > 14 ? 'text-sm normal-case' : 'text-xl font-black uppercase'
@@ -1008,7 +1059,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
                 {/* Auto-growing textarea for speaking exercises - moved below buttons */}
                 <textarea
                   ref={textareaRef}
-                  disabled={showFooter && feedback === 'correct'}
+                  disabled={actionLocked || (showFooter && feedback === 'correct')}
                   className={`w-full px-4 py-3 border-2 rounded-3xl text-center text-lg font-black focus:border-blue-500 outline-none transition-all resize-none overflow-hidden min-h-16 max-h-32 ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
                   onChange={handleTextareaChange}
@@ -1021,7 +1072,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
               <div className="w-full">
                 <input
                   ref={inputRef}
-                  disabled={showFooter && feedback === 'correct'}
+                  disabled={actionLocked || (showFooter && feedback === 'correct')}
                   className={`w-full p-4 border-2 rounded-3xl text-center text-2xl font-black focus:border-blue-500 outline-none transition-all ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
                   onChange={(e) => {
@@ -1088,7 +1139,7 @@ export const PracticeSection: React.FC<{ item: PracticeItem; onResult: (correct:
             ) : (
               <div className="flex gap-3">
                 <button
-                  disabled={isMultipleChoice ? !selectedOption : !userInput.trim()}
+                  disabled={actionLocked || (isMultipleChoice ? !selectedOption : !userInput.trim())}
                   onClick={() => handleCheck()}
                   className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-40 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center [touch-action:manipulation]"
                 >

@@ -30,6 +30,7 @@ interface ExerciseSessionPanelProps {
   defaultWorkbookId?: number | null;
   defaultLessonId?: string | null;
   onUpdateSession?: (patch: Partial<LiveClassSession>) => Promise<void>;
+  onStarted?: () => void;
 }
 
 interface TeacherExerciseBlockCardProps {
@@ -127,6 +128,37 @@ function getCourseLanguageCode(courseId: string | null | undefined): 'en' | 'pt'
   if (normalized === 'greek_koine') return 'el';
   if (normalized === 'hebrew_biblical') return 'he';
   return 'en';
+}
+
+function getQuestionBadge(block: LiveExerciseBlock) {
+  if (block.questionType === 'speaking') return 'Speaking';
+  if (block.questionType === 'writing') return 'Writing';
+  if (block.sourceAudioValue?.trim()) return 'Listening';
+  if (block.questionType === 'identification') return 'Identification';
+  return 'Exercise';
+}
+
+function parseLegacyPromptParts(prompt: string) {
+  const lines = prompt
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const firstLine = lines[0] ?? '';
+  const instruction = firstLine.replace(/^\d+\.\s*/, '').trim();
+  const promptLine = lines.find((line) => /^prompt:/i.test(line));
+  const optionsLine = lines.find((line) => /^options:/i.test(line));
+
+  return {
+    instruction,
+    promptValue: promptLine ? promptLine.replace(/^prompt:\s*/i, '').trim() : '',
+    options: optionsLine
+      ? optionsLine
+        .replace(/^options:\s*/i, '')
+        .split('/')
+        .map((item) => item.trim())
+        .filter(Boolean)
+      : [],
+  };
 }
 
 const TeacherExerciseBlockCard: React.FC<TeacherExerciseBlockCardProps> = ({
@@ -353,15 +385,18 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
   const [draft, setDraft] = useState(ownAnswer);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState('');
-  const sourceOptions = block.sourceOptions ?? [];
+  const legacyPromptParts = parseLegacyPromptParts(block.prompt);
+  const sourceOptions = (block.sourceOptions?.length ? block.sourceOptions : legacyPromptParts.options) ?? [];
   const hasChoiceOptions =
     (block.questionType === 'multiple-choice' || block.questionType === 'identification')
     && sourceOptions.length > 0;
-  const sourceInstruction = block.sourceInstruction?.trim() || block.prompt.trim();
+  const sourceInstruction = block.sourceInstruction?.trim() || legacyPromptParts.instruction || block.prompt.trim();
   const sourceDisplayValue = block.sourceDisplayValue?.trim() ?? '';
-  const sourceAudioValue = block.sourceAudioValue?.trim() ?? '';
+  const sourceAudioValue = block.sourceAudioValue?.trim() || legacyPromptParts.promptValue;
   const sourceTranslation = block.sourceTranslation?.trim() ?? '';
   const courseLanguage = getCourseLanguageCode(block.sourceCourseId);
+  const questionBadge = getQuestionBadge(block);
+  const showTextInput = !hasChoiceOptions || block.questionType === 'writing' || block.questionType === 'speaking';
 
   useEffect(() => {
     setDraft(ownAnswer);
@@ -419,7 +454,7 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-2">
           <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-xs font-black uppercase tracking-wide text-cyan-200">
-            Exercise {block.order}
+            {questionBadge}
           </span>
           <span className={`rounded-full border px-3 py-1 text-xs font-bold ${statusClassName[ownStatus]}`}>
             {getStatusLabel(ownStatus)}
@@ -435,24 +470,35 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
       </div>
 
       <div className="mt-3 rounded-2xl border border-slate-700 bg-slate-900/80 p-3">
-        <p className="text-xs font-black uppercase tracking-wide text-slate-400">Prompt</p>
-        <div className="mt-2 space-y-3 text-sm text-slate-100">
-          <p className="whitespace-pre-wrap">
+        <p className="text-xs font-black uppercase tracking-wide text-slate-400">
+          Exercise {block.order}
+        </p>
+        <div className="mt-2 space-y-4 text-sm text-slate-100">
+          <p className="text-xl font-black text-white">
             {sourceInstruction || 'Your teacher will add the prompt here.'}
           </p>
           {sourceDisplayValue ? (
-            <div className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-2 text-base font-semibold text-white">
+            <div className="rounded-xl border border-slate-700 bg-slate-950/60 px-3 py-3 text-center text-2xl font-black text-white">
               {sourceDisplayValue}
             </div>
           ) : null}
           {sourceAudioValue ? (
-            <button
-              type="button"
-              onClick={() => speak(sourceAudioValue, courseLanguage)}
-              className="rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-xs font-bold text-cyan-200"
-            >
-              Play audio
-            </button>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => speak(sourceAudioValue, courseLanguage)}
+                className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white shadow-[0_4px_0_0_#1d4ed8]"
+              >
+                Play audio
+              </button>
+              <button
+                type="button"
+                onClick={() => speak(sourceAudioValue, courseLanguage, { rate: 0.5 })}
+                className="rounded-2xl bg-orange-500 px-4 py-3 text-sm font-black text-white shadow-[0_4px_0_0_#c2410c]"
+              >
+                Slow audio
+              </button>
+            </div>
           ) : null}
           {sourceTranslation ? (
             <p className="text-xs text-slate-400">{sourceTranslation}</p>
@@ -483,7 +529,7 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
       ) : null}
 
       {hasChoiceOptions ? (
-        <div className="mt-3 grid grid-cols-2 gap-2">
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {sourceOptions.map((option) => {
             const selected = normalizeExerciseAnswer(draft) === normalizeExerciseAnswer(option);
             return (
@@ -496,7 +542,7 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
                   setSaveState('idle');
                   setError('');
                 }}
-                className={`rounded-2xl border px-4 py-3 text-left text-sm font-bold transition ${
+                className={`rounded-2xl border px-4 py-4 text-center text-lg font-black transition ${
                   selected
                     ? 'border-cyan-400 bg-cyan-500/20 text-cyan-100'
                     : 'border-slate-700 bg-slate-900 text-white'
@@ -509,22 +555,22 @@ const StudentExerciseBlockCard: React.FC<StudentExerciseBlockCardProps> = ({
         </div>
       ) : null}
 
-      <textarea
-        value={draft}
-        onChange={(event) => {
-          setDraft(event.target.value);
-          setSaveState('idle');
-        }}
-        disabled={!canEdit}
-        className="mt-3 h-32 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-70"
-        placeholder={
-          canEdit
-            ? hasChoiceOptions
-              ? 'Tap an option above or type your answer here.'
-              : 'Type your answer here, then tap Submit.'
-            : 'Your answer is read-only right now.'
-        }
-      />
+      {showTextInput ? (
+        <textarea
+          value={draft}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setSaveState('idle');
+          }}
+          disabled={!canEdit}
+          className="mt-3 h-32 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white placeholder:text-slate-500 disabled:cursor-not-allowed disabled:opacity-70"
+          placeholder={
+            canEdit
+              ? 'Type your answer here, then tap Submit.'
+              : 'Your answer is read-only right now.'
+          }
+        />
+      ) : null}
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-slate-400">{actorLabel}</span>
@@ -561,6 +607,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   defaultWorkbookId = 1,
   defaultLessonId = '',
   onUpdateSession,
+  onStarted,
 }) => {
   // All state declarations first
   const [session, setSession] = useState<LiveExerciseSession>(EMPTY_SESSION);
@@ -674,7 +721,14 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
     return unsubscribe;
   }, [classId]);
 
-  const visibleBlocks = useMemo(() => blocks, [blocks]);
+  const studentCurrentBlock = useMemo(() => {
+    if (isTeacher) return null;
+    return blocks.find((block) => getStudentStatus(block, user.uid) !== 'done') ?? blocks[0] ?? null;
+  }, [blocks, isTeacher, user.uid]);
+  const visibleBlocks = useMemo(() => {
+    if (isTeacher) return blocks;
+    return studentCurrentBlock ? [studentCurrentBlock] : [];
+  }, [blocks, isTeacher, studentCurrentBlock]);
 
   const completedCount = useMemo(() => {
     if (isTeacher) {
@@ -873,6 +927,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
         mainStageMode: 'workspace',
       });
       setSessionTitleDraft(seeded.title);
+      onStarted?.();
     } catch (error) {
       console.warn('[ExerciseSessionPanel] trail session seed failed:', error);
       setActionError('Unable to start the selected trail session right now.');

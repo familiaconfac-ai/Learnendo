@@ -15,6 +15,7 @@ import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavigation';
 import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
+import { LiveTrailExerciseOverlay } from '../LiveTrailExerciseOverlay';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../../services/liveKitDebug';
 import { getLiveClassMeetLink } from '../../../services/liveClassesService';
@@ -31,6 +32,14 @@ function openExternalLink(rawUrl: string) {
 
 const SHOW_LIVE_DEBUG_SHORTCUTS = import.meta.env.DEV;
 const TEACHER_TRAIL_BUTTON_LABEL = 'Trail';
+
+function hasActiveLiveTrailSession(session: LiveClassSession) {
+  return session.sessionStatus === 'active'
+    && (
+      (session.activeTrailIds?.length ?? 0) > 0
+      || Boolean(session.activeTrailLabel)
+    );
+}
 
 function getStudentWorkspaceEditingEnabled(session: LiveClassSession) {
   return session.studentEditingEnabled !== false
@@ -93,6 +102,7 @@ const TeacherStage: React.FC<{
   ensureLiveRoomConnected,
   liveKitError,
 }) => {
+  const hasActiveTrailSession = hasActiveLiveTrailSession(session);
   const meetLink = getLiveClassMeetLink(liveClass);
   const whatsappLink = (liveClass.whatsappLink ?? '').trim();
   const participants = useParticipants();
@@ -739,32 +749,46 @@ const TeacherStage: React.FC<{
         </div>
       }
       overlay={
-        showExerciseSession ? (
-          <div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm">
-            <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-black text-white">Trail Session Panel</h2>
-                <button
-                  type="button"
-                  onClick={() => setShowExerciseSession(false)}
-                  className="rounded-lg px-3 py-1 text-sm font-bold text-slate-300 hover:bg-slate-800"
-                >
-                  Close
-                </button>
+        <>
+          {hasActiveTrailSession ? (
+            <LiveTrailExerciseOverlay
+              classId={liveClass.id}
+              user={user}
+              session={session}
+              isTeacher={true}
+              assignedRoster={assignedRoster}
+              defaultCourseId={liveClass.courseId ?? 'english'}
+              uiLanguage={uiLang}
+            />
+          ) : null}
+          {showExerciseSession ? (
+            <div className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-sm">
+              <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="text-lg font-black text-white">Trail Session Panel</h2>
+                  <button
+                    type="button"
+                    onClick={() => setShowExerciseSession(false)}
+                    className="rounded-lg px-3 py-1 text-sm font-bold text-slate-300 hover:bg-slate-800"
+                  >
+                    Close
+                  </button>
+                </div>
+                <ExerciseSessionPanel
+                  classId={liveClass.id}
+                  user={user}
+                  isTeacher={true}
+                  assignedRoster={assignedRoster}
+                  defaultCourseId={liveClass.courseId ?? 'english'}
+                  defaultWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
+                  defaultLessonId={session.activeLessonId ?? liveClass.lessonId ?? ''}
+                  onUpdateSession={handleUpdateSession}
+                  onStarted={() => setShowExerciseSession(false)}
+                />
               </div>
-              <ExerciseSessionPanel
-                classId={liveClass.id}
-                user={user}
-                isTeacher={true}
-                assignedRoster={assignedRoster}
-                defaultCourseId={liveClass.courseId ?? 'english'}
-                defaultWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
-                defaultLessonId={session.activeLessonId ?? liveClass.lessonId ?? ''}
-                onUpdateSession={handleUpdateSession}
-              />
             </div>
-          </div>
-        ) : null
+          ) : null}
+        </>
       }
     />
   );

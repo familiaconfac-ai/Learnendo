@@ -14,7 +14,7 @@ import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassChat } from '../LiveClassChat';
 import { BattlePlayerView } from '../Battle/BattlePlayerView';
-import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
+import { LiveTrailExerciseOverlay } from '../LiveTrailExerciseOverlay';
 import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
 import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from '../../BattleHub/LiveBattleSimple';
@@ -29,8 +29,6 @@ import {
 } from '../../../services/liveClassStage';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
-
-const STUDENT_TRAIL_BUTTON_LABEL = 'Trail';
 
 function hasActiveLiveTrailSession(session: LiveClassSession) {
   return session.sessionStatus === 'active'
@@ -845,21 +843,6 @@ const StudentStage: React.FC<{
             </svg>
           </button>
 
-          {hasActiveTrailSession ? (
-            <button
-              type="button"
-              onClick={() => setShowExerciseSession(!showExerciseSession)}
-              className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
-                showExerciseSession
-                  ? 'bg-violet-500 text-white hover:bg-violet-400'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-              title={labels.trailSession}
-              aria-label={labels.trailSession}
-            >
-              {STUDENT_TRAIL_BUTTON_LABEL}
-            </button>
-          ) : null}
         </div>
       }
       overlay={
@@ -885,23 +868,16 @@ const StudentStage: React.FC<{
               </div>
             </div>
           ) : null}
-          {showExerciseSession && hasActiveTrailSession ? (
-            <div className="fixed inset-0 z-40 bg-slate-950/70 backdrop-blur-sm">
-              <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
-                <div className="mb-3">
-                  <h2 className="text-lg font-black text-white">Trail Session</h2>
-                </div>
-                <ExerciseSessionPanel
-                  classId={liveClass.id}
-                  user={user}
-                  isTeacher={false}
-                  assignedRoster={assignedRoster}
-                  defaultCourseId={liveClass.courseId ?? 'english'}
-                  defaultWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
-                  defaultLessonId={session.activeLessonId ?? liveClass.lessonId ?? ''}
-                />
-              </div>
-            </div>
+          {hasActiveTrailSession ? (
+            <LiveTrailExerciseOverlay
+              classId={liveClass.id}
+              user={user}
+              session={session}
+              isTeacher={false}
+              assignedRoster={assignedRoster}
+              defaultCourseId={liveClass.courseId ?? 'english'}
+              uiLanguage={uiLang}
+            />
           ) : null}
           {!USE_SIMPLE_LIVE_BATTLE && isBattleStage && !battleSession ? (
             <div className="pointer-events-none fixed inset-x-0 top-4 z-40 flex justify-center px-4">

@@ -358,7 +358,9 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   }, [liveClass.id, liveClass.workbookId]);
 
   useEffect(() => {
-    setShowExerciseSession(hasActiveLiveTrailSession(session));
+    if (!hasActiveLiveTrailSession(session)) {
+      setShowExerciseSession(false);
+    }
   }, [session.activeTrailIds, session.activeTrailLabel, session.sessionStatus]);
 
   const handleUpdateSession = useCallback(
