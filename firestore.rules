@@ -182,19 +182,31 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'responses',
           'responseStatuses',
+          'responseAttempts',
+          'responseVerdicts',
+          'responseAnsweredAt',
           'updatedAt',
           'updatedBy',
         ])
         && request.resource.data.responses is map
         && request.resource.data.responseStatuses is map
+        && request.resource.data.responseAttempts is map
+        && request.resource.data.responseVerdicts is map
+        && request.resource.data.responseAnsweredAt is map
         && request.resource.data.responses.diff(resource.data.responses).affectedKeys().hasOnly([request.auth.uid])
         && request.resource.data.responseStatuses.diff(resource.data.responseStatuses).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.responseAttempts.diff(resource.data.responseAttempts).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.responseVerdicts.diff(resource.data.responseVerdicts).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.responseAnsweredAt.diff(resource.data.responseAnsweredAt).affectedKeys().hasOnly([request.auth.uid])
         && request.resource.data.order == resource.data.order
         && request.resource.data.prompt == resource.data.prompt
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.responseLocks == resource.data.responseLocks
         && request.resource.data.responses[request.auth.uid] is string
-        && request.resource.data.responseStatuses[request.auth.uid] in ['pending', 'in_progress']
+        && request.resource.data.responseStatuses[request.auth.uid] in ['pending', 'in_progress', 'done']
+        && (request.resource.data.responseAttempts[request.auth.uid] == null || request.resource.data.responseAttempts[request.auth.uid] is int)
+        && (request.resource.data.responseVerdicts[request.auth.uid] == null || request.resource.data.responseVerdicts[request.auth.uid] in ['correct', 'wrong', 'correct_second_try'])
+        && (request.resource.data.responseAnsweredAt[request.auth.uid] == null || request.resource.data.responseAnsweredAt[request.auth.uid] is string)
         && request.resource.data.updatedBy.uid == request.auth.uid
         && request.resource.data.updatedBy.name is string;
     }
