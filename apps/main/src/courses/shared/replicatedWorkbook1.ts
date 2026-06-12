@@ -28,7 +28,7 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Lição 2: Um Dia na Natureza',
       'Lição 3: Rotina Diária e Atividades',
       'Lição 4: Números Ordinais e Sequência',
-      'Lição 5: Placeholder',
+      'Lição 5: Informações Pessoais e To Be',
     ],
     replacements: [
       // ── Lesson 1: alphabet & number instructions ─────────────────────────
@@ -181,7 +181,7 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Lección 2: Un Día en la Naturaleza',
       'Lección 3: Rutinas Diarias y Actividades',
       'Lección 4: Números Ordinales y Secuencia',
-      'Lección 5: Placeholder',
+      'Lección 5: Informacion Personal y To Be',
     ],
     replacements: [
       // ── Lesson 1: alphabet & number instructions ─────────────────────────
@@ -326,7 +326,7 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Mathima 1: Alfavito kai Arithmoi',
       'Mathima 2: Mia Imera sti Fysi',
       'Mathima 3: Kathimerines Routines kai Drastiriotites',      'Mathima 4: Ordinal Numbers and Sequence',
-      'Mathima 5: Placeholder',    ],
+      'Mathima 5: Personal Information and To Be',    ],
     replacements: [
       ['Lesson ', 'Mathima '],
       ['Which letter has the same vowel sound?', 'Poio gramma exei ton idio fthinoggo?'],
@@ -376,7 +376,7 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Shiur 2: Yom BeHateva',
       'Shiur 3: Seder Yom VePeulot',
       'Shiur 4: Ordinal Numbers and Sequence',
-      'Shiur 5: Placeholder',
+      'Shiur 5: Personal Information and To Be',
     ],
     replacements: [
       ['Lesson ', 'Shiur '],
