@@ -4,18 +4,13 @@ export const lesson7: Lesson = {
   id: 'wb1_l7',
   title: 'Lesson 7: Days, Months, and Dates',
   days: [
-    {
-      id: 'wb1_l7_d1',
-      type: 'practice',
-      exercises: [
         {
           id: 'wb1_l7_d1_e1',
           type: 'multiple-choice',
           instruction: 'Choose the day.',
           audioValue: 'Monday',
-          options: ['Monday', 'January', 'Today'],
+          options: ['Monday', 'January'],
           correctValue: 'Monday',
-          displayValue: 'Monday',
           translation: 'segunda-feira',
           isNewVocab: true
         },
@@ -24,9 +19,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the day.',
           audioValue: 'Friday',
-          options: ['March', 'Friday', 'Date'],
+          options: ['Friday', 'March'],
           correctValue: 'Friday',
-          displayValue: 'Friday',
           translation: 'sexta-feira',
           isNewVocab: true
         },
@@ -35,9 +29,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the month.',
           audioValue: 'January',
-          options: ['January', 'Tuesday', 'Today'],
+          options: ['January', 'Tuesday'],
           correctValue: 'January',
-          displayValue: 'January',
           translation: 'janeiro',
           isNewVocab: true
         },
@@ -46,9 +39,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the month.',
           audioValue: 'July',
-          options: ['Sunday', 'July', 'Tomorrow'],
+          options: ['July', 'Sunday'],
           correctValue: 'July',
-          displayValue: 'July',
           translation: 'julho',
           isNewVocab: true
         },
@@ -57,9 +49,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Identify the type of word.',
           audioValue: 'Saturday',
-          options: ['day', 'month', 'number'],
+          options: ['day', 'month'],
           correctValue: 'day',
-          displayValue: 'Saturday',
           translation: 'sábado',
           isNewVocab: true
         },
@@ -68,9 +59,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Identify the type of word.',
           audioValue: 'December',
-          options: ['day', 'month', 'letter'],
+          options: ['month', 'day'],
           correctValue: 'month',
-          displayValue: 'December',
           translation: 'dezembro',
           isNewVocab: true
         },
@@ -85,18 +75,13 @@ export const lesson7: Lesson = {
         }
       ]
     },
-    {
-      id: 'wb1_l7_d2',
-      type: 'practice',
-      exercises: [
         {
           id: 'wb1_l7_d2_e1',
           type: 'multiple-choice',
           instruction: 'Choose the correct sentence.',
           audioValue: 'Today is Monday.',
-          options: ['Today is Monday.', 'Today are Monday.', 'Today am Monday.'],
+          options: ['Today is Monday.', 'Today are Monday.'],
           correctValue: 'Today is Monday.',
-          displayValue: 'Today ______ Monday.',
           isNewVocab: false
         },
         {
@@ -104,9 +89,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the correct sentence.',
           audioValue: 'It is Tuesday.',
-          options: ['It is Tuesday.', 'It are Tuesday.', 'It am Tuesday.'],
+          options: ['It is Tuesday.', 'It are Tuesday.'],
           correctValue: 'It is Tuesday.',
-          displayValue: 'It ______ Tuesday.',
           isNewVocab: false
         },
         {
@@ -114,9 +98,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Choose the correct answer.',
           audioValue: 'What day is it today?',
-          options: ['It is Wednesday.', 'I am Wednesday.', 'They are Wednesday.'],
+          options: ['It is Wednesday.', 'I am Wednesday.'],
           correctValue: 'It is Wednesday.',
-          displayValue: 'What day is it today?',
           isNewVocab: false
         },
         {
@@ -124,9 +107,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the correct sentence.',
           audioValue: 'The month is April.',
-          options: ['The month is April.', 'The month are April.', 'The month am April.'],
+          options: ['The month is April.', 'The month are April.'],
           correctValue: 'The month is April.',
-          displayValue: 'The month ______ April.',
           isNewVocab: false
         },
         {
@@ -158,18 +140,13 @@ export const lesson7: Lesson = {
         }
       ]
     },
-    {
-      id: 'wb1_l7_d3',
-      type: 'practice',
-      exercises: [
         {
           id: 'wb1_l7_d3_e1',
           type: 'identification',
           instruction: 'Choose the correct answer.',
           audioValue: 'What day is it today?',
-          options: ['It is Monday.', 'It is January.', 'It is seven.'],
+          options: ['It is Monday.', 'It is January.'],
           correctValue: 'It is Monday.',
-          displayValue: 'What day is it today?',
           isNewVocab: false
         },
         {
@@ -177,9 +154,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Choose the correct answer.',
           audioValue: 'What month is it?',
-          options: ['It is March.', 'It is Tuesday.', 'It is blue.'],
+          options: ['It is March.', 'It is Tuesday.'],
           correctValue: 'It is March.',
-          displayValue: 'What month is it?',
           isNewVocab: false
         },
         {
@@ -187,9 +163,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the correct question.',
           audioValue: 'It is Saturday.',
-          options: ['What day is it?', 'What month is it?', 'What color is it?'],
+          options: ['What day is it?', 'What month is it?'],
           correctValue: 'What day is it?',
-          displayValue: 'It is Saturday.',
           isNewVocab: false
         },
         {
@@ -197,9 +172,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the correct question.',
           audioValue: 'It is October.',
-          options: ['What month is it?', 'What day is it?', 'How are you?'],
+          options: ['What month is it?', 'What day is it?'],
           correctValue: 'What month is it?',
-          displayValue: 'It is October.',
           isNewVocab: false
         },
         {
@@ -231,10 +205,6 @@ export const lesson7: Lesson = {
         }
       ]
     },
-    {
-      id: 'wb1_l7_d4',
-      type: 'practice',
-      exercises: [
         {
           id: 'wb1_l7_d4_e1',
           type: 'speaking',
@@ -249,9 +219,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Choose the correct answer from the dialogue.',
           audioValue: 'What day is it today?',
-          options: ['It is Monday.', 'It is January.', 'It is first.'],
+          options: ['It is Monday.', 'It is January.'],
           correctValue: 'It is Monday.',
-          displayValue: 'What day is it today?',
           isNewVocab: false
         },
         {
@@ -259,9 +228,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Choose the correct answer from the dialogue.',
           audioValue: 'What month is it?',
-          options: ['It is January.', 'It is Monday.', 'It is seven.'],
+          options: ['It is January.', 'It is Monday.'],
           correctValue: 'It is January.',
-          displayValue: 'What month is it?',
           isNewVocab: false
         },
         {
@@ -269,9 +237,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the date.',
           audioValue: 'January first',
-          options: ['January first', 'Monday first', 'January Monday'],
+          options: ['January first', 'Monday first'],
           correctValue: 'January first',
-          displayValue: 'January 1st',
           isNewVocab: false
         },
         {
@@ -303,10 +270,6 @@ export const lesson7: Lesson = {
         }
       ]
     },
-    {
-      id: 'wb1_l7_d5',
-      type: 'practice',
-      exercises: [
         {
           id: 'wb1_l7_d5_e1',
           type: 'speaking',
@@ -372,10 +335,6 @@ export const lesson7: Lesson = {
         }
       ]
     },
-    {
-      id: 'wb1_l7_d6',
-      type: 'practice',
-      exercises: [
         {
           id: 'wb1_l7_d6_e1',
           type: 'speaking',
@@ -390,9 +349,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Answer the question.',
           audioValue: 'What day is it?',
-          options: ['Monday', 'Friday', 'Sunday'],
+          options: ['Monday', 'Friday'],
           correctValue: 'Monday',
-          displayValue: 'What day is it?',
           isNewVocab: false
         },
         {
@@ -400,9 +358,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Answer the question.',
           audioValue: 'What month is it?',
-          options: ['January', 'March', 'July'],
+          options: ['January', 'March'],
           correctValue: 'January',
-          displayValue: 'What month is it?',
           isNewVocab: false
         },
         {
@@ -410,9 +367,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Answer the question.',
           audioValue: 'What is the date?',
-          options: ['January first', 'March first', 'July first'],
+          options: ['January first', 'March first'],
           correctValue: 'January first',
-          displayValue: 'What is the date?',
           isNewVocab: false
         },
         {
@@ -420,9 +376,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Choose the correct answer.',
           audioValue: 'When is Anna’s birthday?',
-          options: ['In March', 'In January', 'On Monday'],
+          options: ['In March', 'In January'],
           correctValue: 'In March',
-          displayValue: 'When is Anna’s birthday?',
           isNewVocab: false
         },
         {
@@ -430,9 +385,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Choose the correct answer.',
           audioValue: 'When is Lucas’s birthday?',
-          options: ['In July', 'In May', 'On Sunday'],
+          options: ['In July', 'In May'],
           correctValue: 'In July',
-          displayValue: 'When is Lucas’s birthday?',
           isNewVocab: false
         },
         {
@@ -446,18 +400,13 @@ export const lesson7: Lesson = {
         }
       ]
     },
-    {
-      id: 'wb1_l7_d7',
-      type: 'review',
-      exercises: [
         {
           id: 'wb1_l7_d7_e1',
           type: 'multiple-choice',
           instruction: 'Choose the day.',
           audioValue: 'Wednesday',
-          options: ['Wednesday', 'April', 'First'],
+          options: ['Wednesday', 'April'],
           correctValue: 'Wednesday',
-          displayValue: 'Wednesday',
           isNewVocab: false
         },
         {
@@ -465,9 +414,8 @@ export const lesson7: Lesson = {
           type: 'multiple-choice',
           instruction: 'Choose the month.',
           audioValue: 'September',
-          options: ['Saturday', 'September', 'Second'],
+          options: ['September', 'Saturday'],
           correctValue: 'September',
-          displayValue: 'September',
           isNewVocab: false
         },
         {
@@ -475,9 +423,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Choose the correct answer.',
           audioValue: 'What day is it today?',
-          options: ['It is Thursday.', 'It is August.', 'It is a number.'],
+          options: ['It is Thursday.', 'It is August.'],
           correctValue: 'It is Thursday.',
-          displayValue: 'What day is it today?',
           isNewVocab: false
         },
         {
@@ -485,9 +432,8 @@ export const lesson7: Lesson = {
           type: 'identification',
           instruction: 'Choose the correct answer.',
           audioValue: 'What month is it?',
-          options: ['It is November.', 'It is Tuesday.', 'It is first.'],
+          options: ['It is November.', 'It is Tuesday.'],
           correctValue: 'It is November.',
-          displayValue: 'What month is it?',
           isNewVocab: false
         },
         {

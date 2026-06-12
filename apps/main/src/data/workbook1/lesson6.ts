@@ -8,17 +8,16 @@ export const lesson6: Lesson = {
       id: 'wb1_l6_d1',
       type: 'practice',
       exercises: [
-        {
-          id: 'wb1_l6_d1_e1',
-          type: 'multiple-choice',
-          instruction: 'Choose the greeting.',
-          audioValue: 'Hello!',
-          options: ['Hello!', 'Good night!', 'Goodbye!'],
-          correctValue: 'Hello!',
-          displayValue: 'Hello!',
-          translation: 'Olá!',
-          isNewVocab: true
-        },
+       {
+  id: 'wb1_l6_d1_e1',
+  type: 'multiple-choice',
+  instruction: 'Choose the greeting.',
+  audioValue: 'Hello!',
+  options: ['Hello!', 'Good night!', 'Goodbye!'],
+  correctValue: 'Hello!',
+  translation: 'Olá!',
+  isNewVocab: true
+},
         {
           id: 'wb1_l6_d1_e2',
           type: 'multiple-choice',
