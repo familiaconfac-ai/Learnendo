@@ -1,3 +1,5 @@
+import { Lesson } from '../../types';
+
 export const lesson6: Lesson = {
   id: 'wb1_l6',
   title: 'Lesson 6: Greetings',
@@ -432,7 +434,7 @@ export const lesson6: Lesson = {
     },
     {
       id: 'wb1_l6_d7',
-      type: 'practice',
+      type: 'review',
       exercises: [
         {
           id: 'wb1_l6_d7_e1',
@@ -504,4 +506,4 @@ export const lesson6: Lesson = {
       ]
     }
   ]
-}
+};
