@@ -1,57 +1,151 @@
 import { Lesson } from '../../types';
 
 export const lesson4: Lesson = {
-  id: "wb1_l4",
-  title: "Lesson 4: Placeholder",
+  id: 'wb1_l4',
+  title: 'Lesson 4: Ordinal Numbers and Sequence',
   days: [
     {
-      id: "wb1_l4_d1",
-      type: "practice",
+      id: 'wb1_l4_d1',
+      type: 'practice',
       exercises: [
-        { id: 'wb1_l4_d1_e1', type: 'writing', instruction: 'Type: Hello', audioValue: 'Hello', correctValue: 'hello' }
-      ]
+        { id: 'wb1_l4_d1_e1', type: 'identification', instruction: 'Who is the first one?', audioValue: 'Daniel is the first one.', options: ['Daniel', 'Anna', 'Lucas', 'Emily'], correctValue: 'Daniel', isNewVocab: true, translation: 'First = Primeiro' },
+        { id: 'wb1_l4_d1_e2', type: 'identification', instruction: 'Who is second?', audioValue: 'Anna is second.', options: ['Emily', 'Bruno', 'Anna', 'Daniel'], correctValue: 'Anna', isNewVocab: true, translation: 'Second = Segundo' },
+        { id: 'wb1_l4_d1_e3', type: 'identification', instruction: 'Who is third?', audioValue: 'Lucas is third.', options: ['Bruno', 'Lucas', 'Anna', 'Emily'], correctValue: 'Lucas', isNewVocab: true, translation: 'Third = Terceiro' },
+        { id: 'wb1_l4_d1_e4', type: 'identification', instruction: 'Who is fourth?', audioValue: 'Emily is fourth.', options: ['Emily', 'Anna', 'Lucas', 'Bruno'], correctValue: 'Emily', isNewVocab: true, translation: 'Fourth = Quarto' },
+        { id: 'wb1_l4_d1_e5', type: 'identification', instruction: 'Who is fifth?', audioValue: 'Bruno is fifth.', options: ['Daniel', 'Bruno', 'Anna', 'Emily'], correctValue: 'Bruno', isNewVocab: true, translation: 'Fifth = Quinto' },
+        { id: 'wb1_l4_d1_e6', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'first', options: ['first', 'second', 'third', 'fourth'], correctValue: 'first' },
+        { id: 'wb1_l4_d1_e7', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'second', options: ['first', 'second', 'fifth', 'sixth'], correctValue: 'second' },
+        { id: 'wb1_l4_d1_e8', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'third', options: ['third', 'thirteenth', 'thirty', 'tenth'], correctValue: 'third' },
+        { id: 'wb1_l4_d1_e9', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'fourth', options: ['fourth', 'fourteen', 'forty', 'fifth'], correctValue: 'fourth' },
+        { id: 'wb1_l4_d1_e10', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'fifth', options: ['fifteenth', 'fifth', 'fifty', 'first'], correctValue: 'fifth' },
+        { id: 'wb1_l4_d1_e11', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'first', correctValue: 'first' },
+        { id: 'wb1_l4_d1_e12', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'fourth', correctValue: 'fourth' },
+        { id: 'wb1_l4_d1_e13', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'I am the first one.', correctValue: 'i am the first one' },
+        { id: 'wb1_l4_d1_e14', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Anna is second.', correctValue: 'anna is second' },
+        { id: 'wb1_l4_d1_e15', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Bruno is fifth.', correctValue: 'bruno is fifth' },
+      ],
     },
     {
-      id: "wb1_l4_d2",
-      type: "practice",
+      id: 'wb1_l4_d2',
+      type: 'practice',
       exercises: [
-        { id: 'wb1_l4_d2_e1', type: 'writing', instruction: 'Type: World', audioValue: 'World', correctValue: 'world' }
-      ]
+        { id: 'wb1_l4_d2_e1', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '4th', audioValue: 'fourth', options: ['fourth', 'four', 'fourteen', 'forty'], correctValue: 'fourth', isNewVocab: true },
+        { id: 'wb1_l4_d2_e2', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '5th', audioValue: 'fifth', options: ['five', 'fifth', 'fifteen', 'fifty'], correctValue: 'fifth', isNewVocab: true },
+        { id: 'wb1_l4_d2_e3', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '6th', audioValue: 'sixth', options: ['six', 'sixteen', 'sixth', 'sixty'], correctValue: 'sixth', isNewVocab: true },
+        { id: 'wb1_l4_d2_e4', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '7th', audioValue: 'seventh', options: ['seven', 'seventh', 'seventeen', 'seventy'], correctValue: 'seventh', isNewVocab: true },
+        { id: 'wb1_l4_d2_e5', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '8th', audioValue: 'eighth', options: ['eight', 'eighth', 'eighty', 'eighteen'], correctValue: 'eighth', isNewVocab: true },
+        { id: 'wb1_l4_d2_e6', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '9th', audioValue: 'ninth', options: ['nine', 'ninety', 'ninth', 'nineteen'], correctValue: 'ninth', isNewVocab: true },
+        { id: 'wb1_l4_d2_e7', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '10th', audioValue: 'tenth', options: ['ten', 'tenth', 'twelve', 'twentieth'], correctValue: 'tenth', isNewVocab: true },
+        { id: 'wb1_l4_d2_e8', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '11th', audioValue: 'eleventh', options: ['eleven', 'eleventh', 'twelfth', 'seventh'], correctValue: 'eleventh', isNewVocab: true },
+        { id: 'wb1_l4_d2_e9', type: 'multiple-choice', instruction: 'What ordinal number is this?', displayValue: '12th', audioValue: 'twelfth', options: ['twelve', 'twentieth', 'twelfth', 'tenth'], correctValue: 'twelfth', isNewVocab: true },
+        { id: 'wb1_l4_d2_e10', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'fifteenth', correctValue: 'fifteenth' },
+        { id: 'wb1_l4_d2_e11', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'twentieth', correctValue: 'twentieth' },
+        { id: 'wb1_l4_d2_e12', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'thirty-first', correctValue: 'thirty-first' },
+        { id: 'wb1_l4_d2_e13', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'fourth', correctValue: 'fourth' },
+        { id: 'wb1_l4_d2_e14', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'fifth', correctValue: 'fifth' },
+        { id: 'wb1_l4_d2_e15', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'twelfth', correctValue: 'twelfth' },
+      ],
     },
     {
-      id: "wb1_l4_d3",
-      type: "practice",
+      id: 'wb1_l4_d3',
+      type: 'practice',
       exercises: [
-        { id: 'wb1_l4_d3_e1', type: 'writing', instruction: 'Type: Test', audioValue: 'Test', correctValue: 'test' }
-      ]
+        { id: 'wb1_l4_d3_e1', type: 'multiple-choice', instruction: 'What do ordinal numbers show?', audioValue: 'Ordinal numbers show order.', options: ['order', 'color', 'age', 'size'], correctValue: 'order', isNewVocab: true },
+        { id: 'wb1_l4_d3_e2', type: 'multiple-choice', instruction: 'Why do we use ordinal numbers?', audioValue: 'We use them to show position.', options: ['to show position', 'to show color', 'to show food', 'to show weather'], correctValue: 'to show position' },
+        { id: 'wb1_l4_d3_e3', type: 'identification', instruction: 'Who is first?', audioValue: 'Daniel is first.', options: ['Daniel', 'Emily', 'Lucas', 'Anna'], correctValue: 'Daniel' },
+        { id: 'wb1_l4_d3_e4', type: 'identification', instruction: 'Who is second?', audioValue: 'Emily is second.', options: ['Bruno', 'Lais', 'Emily', 'Anna'], correctValue: 'Emily' },
+        { id: 'wb1_l4_d3_e5', type: 'identification', instruction: 'Who is third?', audioValue: 'Lucas is third.', options: ['Lucas', 'Daniel', 'Anna', 'Bruno'], correctValue: 'Lucas' },
+        { id: 'wb1_l4_d3_e6', type: 'identification', instruction: 'Who is fourth?', audioValue: 'Anna is fourth.', options: ['Lais', 'Anna', 'Emily', 'Daniel'], correctValue: 'Anna' },
+        { id: 'wb1_l4_d3_e7', type: 'identification', instruction: 'Who is fifth?', audioValue: 'Bruno is fifth.', options: ['Emily', 'Lucas', 'Bruno', 'Lais'], correctValue: 'Bruno' },
+        { id: 'wb1_l4_d3_e8', type: 'identification', instruction: 'Who is sixth?', audioValue: 'Lais is sixth.', options: ['Anna', 'Lais', 'Bruno', 'Daniel'], correctValue: 'Lais' },
+        { id: 'wb1_l4_d3_e9', type: 'multiple-choice', instruction: 'We also use ordinal numbers for ___.', audioValue: 'We also use ordinal numbers for dates.', options: ['dates', 'colors', 'animals', 'sports'], correctValue: 'dates' },
+        { id: 'wb1_l4_d3_e10', type: 'multiple-choice', instruction: 'What holiday is on the Fourth of July?', audioValue: 'The Fourth of July is Independence Day.', options: ['Christmas', 'Thanksgiving', 'Independence Day', 'New Year'], correctValue: 'Independence Day' },
+        { id: 'wb1_l4_d3_e11', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Ordinal numbers show order.', correctValue: 'ordinal numbers show order' },
+        { id: 'wb1_l4_d3_e12', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'The Fourth of July is Independence Day.', correctValue: 'the fourth of july is independence day' },
+      ],
     },
     {
-      id: "wb1_l4_d4",
-      type: "practice",
+      id: 'wb1_l4_d4',
+      type: 'practice',
       exercises: [
-        { id: 'wb1_l4_d4_e1', type: 'writing', instruction: 'Type: One', audioValue: 'One', correctValue: 'one' }
-      ]
+        { id: 'wb1_l4_d4_e1', type: 'multiple-choice', instruction: 'When is Bruno\'s birthday?', audioValue: 'My birthday is March tenth.', options: ['March tenth', 'March third', 'May tenth', 'June fifteenth'], correctValue: 'March tenth', isNewVocab: true },
+        { id: 'wb1_l4_d4_e2', type: 'multiple-choice', instruction: 'When is Lucas\'s birthday?', audioValue: 'My birthday is May third.', options: ['May third', 'May thirtieth', 'March third', 'April seventh'], correctValue: 'May third' },
+        { id: 'wb1_l4_d4_e3', type: 'multiple-choice', instruction: 'When is Anna\'s birthday?', audioValue: 'Mine is September first.', options: ['September first', 'September fourth', 'January first', 'April first'], correctValue: 'September first' },
+        { id: 'wb1_l4_d4_e4', type: 'multiple-choice', instruction: 'When is Daniel\'s birthday?', audioValue: 'My birthday is January twenty-first.', options: ['January twentieth', 'January twenty-first', 'June twenty-first', 'July fourth'], correctValue: 'January twenty-first' },
+        { id: 'wb1_l4_d4_e5', type: 'multiple-choice', instruction: 'When is Lais\'s birthday?', audioValue: 'My birthday is April seventh.', options: ['April seventeenth', 'April seventh', 'August seventh', 'May seventh'], correctValue: 'April seventh' },
+        { id: 'wb1_l4_d4_e6', type: 'multiple-choice', instruction: 'When is Emily\'s birthday?', audioValue: 'My birthday is July fourth.', options: ['July fourth', 'July fourteenth', 'June fourth', 'July first'], correctValue: 'July fourth' },
+        { id: 'wb1_l4_d4_e7', type: 'multiple-choice', instruction: 'What holiday is on July fourth?', audioValue: 'That is Independence Day in the USA.', options: ['Thanksgiving', 'Halloween', 'Independence Day', 'Easter'], correctValue: 'Independence Day' },
+        { id: 'wb1_l4_d4_e8', type: 'multiple-choice', instruction: 'When is Thanksgiving?', audioValue: 'Thanksgiving is on the fourth Thursday of November.', options: ['the first Monday of May', 'the fourth Thursday of November', 'the second Tuesday of June', 'the third Friday of December'], correctValue: 'the fourth Thursday of November' },
+        { id: 'wb1_l4_d4_e9', type: 'multiple-choice', instruction: 'When is the party?', audioValue: 'I have a party on June fifteenth.', options: ['June fifth', 'June fifteenth', 'July fifteenth', 'June thirtieth'], correctValue: 'June fifteenth' },
+        { id: 'wb1_l4_d4_e10', type: 'multiple-choice', instruction: 'What is the address?', audioValue: 'It is at 21 First Street.', options: ['12 First Street', '21 First Street', '31 Third Street', '41 Fourth Street'], correctValue: '21 First Street' },
+        { id: 'wb1_l4_d4_e11', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'tenth', correctValue: 'tenth' },
+        { id: 'wb1_l4_d4_e12', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'twenty-first', correctValue: 'twenty-first' },
+        { id: 'wb1_l4_d4_e13', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'My birthday is March tenth.', correctValue: 'my birthday is march tenth' },
+        { id: 'wb1_l4_d4_e14', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'We use ordinal numbers for dates, addresses, and order.', correctValue: 'we use ordinal numbers for dates addresses and order' },
+      ],
     },
     {
-      id: "wb1_l4_d5",
-      type: "practice",
+      id: 'wb1_l4_d5',
+      type: 'practice',
       exercises: [
-        { id: 'wb1_l4_d5_e1', type: 'writing', instruction: 'Type: Two', audioValue: 'Two', correctValue: 'two' }
-      ]
+        { id: 'wb1_l4_d5_e1', type: 'speaking', instruction: 'Listen and answer: Who is first in line?', audioValue: 'Who is first in line?', displayValue: 'Question: Who is first in line?', correctValue: 'anna' },
+        { id: 'wb1_l4_d5_e2', type: 'speaking', instruction: 'Listen and answer: Who is second?', audioValue: 'Who is second?', displayValue: 'Question: Who is second?', correctValue: 'lucas' },
+        { id: 'wb1_l4_d5_e3', type: 'speaking', instruction: 'Listen and answer: Who is third?', audioValue: 'Who is third?', displayValue: 'Question: Who is third?', correctValue: 'daniel' },
+        { id: 'wb1_l4_d5_e4', type: 'speaking', instruction: 'Listen and answer: Who is fourth?', audioValue: 'Who is fourth?', displayValue: 'Question: Who is fourth?', correctValue: 'emily' },
+        { id: 'wb1_l4_d5_e5', type: 'speaking', instruction: 'Listen and answer: What do ordinal numbers show?', audioValue: 'What do ordinal numbers show?', displayValue: 'Question: What do ordinal numbers show?', correctValue: 'order' },
+        { id: 'wb1_l4_d5_e6', type: 'speaking', instruction: 'Listen and answer: Does fourth have the TH sound?', audioValue: 'Does fourth have the TH sound?', displayValue: 'Question: Does fourth have the TH sound?', correctValue: 'yes' },
+        { id: 'wb1_l4_d5_e7', type: 'speaking', instruction: 'Listen and answer: Does second have the TH sound?', audioValue: 'Does second have the TH sound?', displayValue: 'Question: Does second have the TH sound?', correctValue: 'no' },
+        { id: 'wb1_l4_d5_e8', type: 'speaking', instruction: 'Listen and answer: What is the first letter of the alphabet?', audioValue: 'What is the first letter of the alphabet?', displayValue: 'Question: First letter?', correctValue: 'a' },
+        { id: 'wb1_l4_d5_e9', type: 'speaking', instruction: 'Listen and answer: What is the second letter of the alphabet?', audioValue: 'What is the second letter?', displayValue: 'Question: Second letter?', correctValue: 'b' },
+        { id: 'wb1_l4_d5_e10', type: 'speaking', instruction: 'Listen and answer: What is the third letter of the alphabet?', audioValue: 'What is the third letter?', displayValue: 'Question: Third letter?', correctValue: 'c' },
+        { id: 'wb1_l4_d5_e11', type: 'speaking', instruction: 'Listen and answer: What is the fourth number?', audioValue: 'What is the fourth number?', displayValue: 'Question: Fourth number?', correctValue: 'four' },
+        { id: 'wb1_l4_d5_e12', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'My birthday is on March tenth.', correctValue: 'my birthday is on march tenth' },
+      ],
     },
     {
-      id: "wb1_l4_d6",
-      type: "practice",
+      id: 'wb1_l4_d6',
+      type: 'practice',
       exercises: [
-        { id: 'wb1_l4_d6_e1', type: 'writing', instruction: 'Type: Three', audioValue: 'Three', correctValue: 'three' }
-      ]
+        { id: 'wb1_l4_d6_e1', type: 'multiple-choice', instruction: 'Who came first?', displayValue: 'Choosing Team', audioValue: 'Joe was first.', options: ['Joe', 'Tom', 'John', 'Bob'], correctValue: 'Joe', isNewVocab: true },
+        { id: 'wb1_l4_d6_e2', type: 'multiple-choice', instruction: 'Who was second?', displayValue: 'Choosing Team', audioValue: 'Tom was second.', options: ['Bob', 'Tom', 'Sam', 'Greg'], correctValue: 'Tom' },
+        { id: 'wb1_l4_d6_e3', type: 'multiple-choice', instruction: 'Who was third?', displayValue: 'Choosing Team', audioValue: 'John was third.', options: ['John', 'Joe', 'Charlie', 'JD'], correctValue: 'John' },
+        { id: 'wb1_l4_d6_e4', type: 'multiple-choice', instruction: 'Who was fifth?', displayValue: 'Choosing Team', audioValue: 'Sam was fifth.', options: ['Sam', 'Bob', 'Greg', 'Peter'], correctValue: 'Sam' },
+        { id: 'wb1_l4_d6_e5', type: 'multiple-choice', instruction: 'Who was tenth?', displayValue: 'Choosing Team', audioValue: 'Fernando was tenth.', options: ['Charlie', 'Greg', 'Fernando', 'Samuel'], correctValue: 'Fernando' },
+        { id: 'wb1_l4_d6_e6', type: 'multiple-choice', instruction: 'Who was eleventh?', displayValue: 'Choosing Team', audioValue: 'JD was eleventh.', options: ['JD', 'Eder', 'Benjamin', 'Anderson'], correctValue: 'JD' },
+        { id: 'wb1_l4_d6_e7', type: 'multiple-choice', instruction: 'Who was fifteenth?', displayValue: 'Choosing Team', audioValue: 'Anderson was fifteenth.', options: ['Benjamin', 'Anderson', 'Ronaldo', 'Neymar'], correctValue: 'Anderson' },
+        { id: 'wb1_l4_d6_e8', type: 'multiple-choice', instruction: 'Who was nineteenth and the last one to arrive?', displayValue: 'Choosing Team', audioValue: 'Neymar was nineteenth and the last one to arrive.', options: ['Ronaldo', 'Rivaldo', 'Neymar', 'Ronaldinho'], correctValue: 'Neymar' },
+        { id: 'wb1_l4_d6_e9', type: 'multiple-choice', instruction: 'Who is the student from Brazil?', displayValue: 'Reading Check', audioValue: 'Bruno is a student from Brazil.', options: ['Bruno', 'Daniel', 'Pastor McMartin', 'Joe'], correctValue: 'Bruno' },
+        { id: 'wb1_l4_d6_e10', type: 'multiple-choice', instruction: 'What word does Bruno read first?', displayValue: 'Reading Check', audioValue: 'First, Bruno reads the word walk.', options: ['knife', 'walk', 'sword', 'order'], correctValue: 'walk' },
+        { id: 'wb1_l4_d6_e11', type: 'multiple-choice', instruction: 'Which letter is silent in the word walk?', displayValue: 'walk', audioValue: 'The letter L is silent in walk.', options: ['K', 'L', 'W', 'T'], correctValue: 'L', isNewVocab: true },
+        { id: 'wb1_l4_d6_e12', type: 'multiple-choice', instruction: 'Which letter is silent in the word knife?', displayValue: 'knife', audioValue: 'The letter K is silent in knife.', options: ['N', 'F', 'K', 'E'], correctValue: 'K', isNewVocab: true },
+        { id: 'wb1_l4_d6_e13', type: 'multiple-choice', instruction: 'Which letter is silent in the word sword?', displayValue: 'sword', audioValue: 'The letter W is silent in sword.', options: ['S', 'W', 'R', 'D'], correctValue: 'W', isNewVocab: true },
+        { id: 'wb1_l4_d6_e14', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'walk', correctValue: 'walk' },
+        { id: 'wb1_l4_d6_e15', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'knife', correctValue: 'knife' },
+      ],
     },
     {
-      id: "wb1_l4_d7",
-      type: "review",
+      id: 'wb1_l4_d7',
+      type: 'review',
       exercises: [
-        { id: 'wb1_l4_d7_e1', type: 'writing', instruction: 'Type: Review', audioValue: 'Review', correctValue: 'review' }
-      ]
-    }
-  ]
+        { id: 'wb1_l4_d7_e1', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'first', options: ['first', 'fifth', 'fourth', 'third'], correctValue: 'first' },
+        { id: 'wb1_l4_d7_e2', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'seventh', options: ['seventh', 'seventeen', 'seventy', 'second'], correctValue: 'seventh' },
+        { id: 'wb1_l4_d7_e3', type: 'identification', instruction: 'Listen and pick the correct answer.', audioValue: 'twelfth', options: ['twelfth', 'twentieth', 'twelve', 'third'], correctValue: 'twelfth' },
+        { id: 'wb1_l4_d7_e4', type: 'multiple-choice', instruction: 'Choose the correct sentence.', audioValue: 'My birthday is May third.', options: ['My birthday is May third.', 'My birthday is third May.', 'My birthday is May three.', 'My birthday are May third.'], correctValue: 'My birthday is May third.' },
+        { id: 'wb1_l4_d7_e5', type: 'multiple-choice', instruction: 'Who is second?', audioValue: 'Anna is second.', options: ['Daniel', 'Bruno', 'Anna', 'Emily'], correctValue: 'Anna' },
+        { id: 'wb1_l4_d7_e6', type: 'multiple-choice', instruction: 'Which word has a silent K?', audioValue: 'knife', options: ['walk', 'knife', 'sword', 'third'], correctValue: 'knife' },
+        { id: 'wb1_l4_d7_e7', type: 'multiple-choice', instruction: 'Which word has a silent W?', audioValue: 'sword', options: ['first', 'walk', 'knife', 'sword'], correctValue: 'sword' },
+        { id: 'wb1_l4_d7_e8', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'fourth', correctValue: 'fourth' },
+        { id: 'wb1_l4_d7_e9', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'nineteenth', correctValue: 'nineteenth' },
+        { id: 'wb1_l4_d7_e10', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'First Street', correctValue: 'first street' },
+        { id: 'wb1_l4_d7_e11', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Daniel is first in line.', correctValue: 'daniel is first in line' },
+        { id: 'wb1_l4_d7_e12', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Bruno is fifth.', correctValue: 'bruno is fifth' },
+        { id: 'wb1_l4_d7_e13', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'The fourth number is four.', correctValue: 'the fourth number is four' },
+        { id: 'wb1_l4_d7_e14', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Thanksgiving is on the fourth Thursday of November.', correctValue: 'thanksgiving is on the fourth thursday of november' },
+        { id: 'wb1_l4_d7_e15', type: 'identification', instruction: 'What holiday is on the Fourth of July?', audioValue: 'Independence Day', options: ['Independence Day', 'Christmas', 'Easter', 'Halloween'], correctValue: 'Independence Day' },
+        { id: 'wb1_l4_d7_e16', type: 'identification', instruction: 'What do ordinal numbers show?', audioValue: 'order', options: ['order', 'weather', 'color', 'size'], correctValue: 'order' },
+        { id: 'wb1_l4_d7_e17', type: 'writing', instruction: 'Type in words what you hear.', audioValue: 'third', correctValue: 'third' },
+        { id: 'wb1_l4_d7_e18', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'The letter L is silent in walk.', correctValue: 'the letter l is silent in walk' },
+      ],
+    },
+  ],
 };

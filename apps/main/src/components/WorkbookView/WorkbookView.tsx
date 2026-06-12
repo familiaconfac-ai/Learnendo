@@ -76,8 +76,9 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({ workbookId, lessons,
               .replace(/^Workbook\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .replace(/^Lesson\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .trim();
+            const displayTitle = /^placeholder$/i.test(cleanTitle) ? '' : cleanTitle;
             const isCurrent = status === 'in-progress' && index === firstUnlockedIndex;
-            const lessonLabel = cleanTitle ? `Lesson ${lessonNumber} - ${cleanTitle}` : `Lesson ${lessonNumber}`;
+            const lessonLabel = displayTitle ? `Lesson ${lessonNumber} - ${displayTitle}` : `Lesson ${lessonNumber}`;
 
             // Stagger: left → center → right → center to create a curved path feel
             const offsetClass = (['ml-[-50px] sm:ml-[-60px]', 'ml-0', 'ml-[50px] sm:ml-[60px]', 'ml-0'] as const)[index % 4];

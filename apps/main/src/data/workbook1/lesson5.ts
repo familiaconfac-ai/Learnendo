@@ -2,7 +2,7 @@ import { Lesson } from '../../types';
 
 export const lesson5: Lesson = {
   id: "wb1_l5",
-  title: "Lesson 5: Placeholder",
+  title: "Lesson 5",
   days: [
     {
       id: "wb1_l5_d1",
