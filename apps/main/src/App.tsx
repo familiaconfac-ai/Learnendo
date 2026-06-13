@@ -9,6 +9,7 @@ import { BattleHubPage } from './components/BattleHub/BattleHubPage';
 import { LoginScreen } from './components/LoginScreen';
 import { PlacementTest } from './components/PlacementTest';
 import { WorkbookView } from './components/WorkbookView';
+import { WorkbookPdfView } from './components/WorkbookPdfView/WorkbookPdfView';
 import { LessonView } from './components/LessonView';
 import { ExercisePractice } from './components/ExercisePractice';
 import { PronunciationTrainer } from './components/PronunciationTrainer/PronunciationTrainer';
@@ -1394,7 +1395,7 @@ const App: React.FC = () => {
     setCurrentSection(section);
   };
 
-  const handleSelectWorkbook = (workbookId: number) => {
+  const handleSelectWorkbook = (workbookId: number, nextSection: SectionType = SectionType.WORKBOOK) => {
     const effectiveCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
     console.log('[WORKBOOK_CLICK_DEBUG] handleSelectWorkbook called', {
       workbookId,
@@ -1423,7 +1424,7 @@ const App: React.FC = () => {
         { merge: true },
       ).catch(e => console.warn('[WORKBOOK] persist workbook selection failed:', e));
     }
-    handleNavigate(SectionType.WORKBOOK, { workbookId });
+    handleNavigate(nextSection, { workbookId });
   };
 
   const canOpenLessonToday = (lessonNumber: number) => {
@@ -2460,10 +2461,35 @@ const App: React.FC = () => {
       }
       case SectionType.PLACEMENT_TEST:
         return <PlacementTest currentLanguage={language} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
+      case SectionType.WORKBOOK_PDF: {
+        const workbookRegistry = COURSE_WORKBOOKS[currentCourseId ?? DEFAULT_COURSE_ID] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+        const availableWorkbookIds = Object.keys(workbookRegistry)
+          .map(Number)
+          .filter((id) => Number.isFinite(id))
+          .sort((a, b) => a - b);
+        return (
+          <WorkbookPdfView
+            workbookId={currentWorkbookId || progress.currentWorkbook || 1}
+            availableWorkbookIds={availableWorkbookIds}
+            uiLanguage={uiLanguage}
+            courseTitle={activeCourse?.title}
+            courseFlag={activeCourse?.flag}
+            onBack={() => handleNavigate(SectionType.COURSES)}
+            onOpenTracks={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook || 1 })}
+            onOpenWorkbookList={() => setCurrentSection(SectionType.WORKBOOK_LIST)}
+            onSelectWorkbook={(workbookId) => handleSelectWorkbook(workbookId, SectionType.WORKBOOK_PDF)}
+          />
+        );
+      }
       case SectionType.WORKBOOK: {
         const hasAnyDays = Object.keys(progress.days ?? {}).some(k => (progress.days as any)?.[k] === true);
         const hasAnyActivity = (progress.completedActivities?.length ?? 0) > 0;
         const hasProgress = hasAnyDays || hasAnyActivity;
+        const workbookRegistry = COURSE_WORKBOOKS[currentCourseId ?? DEFAULT_COURSE_ID] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+        const availableWorkbookIds = Object.keys(workbookRegistry)
+          .map(Number)
+          .filter((id) => Number.isFinite(id))
+          .sort((a, b) => a - b);
         console.log('[EMPTY_STATE_DEBUG]', { language, courseId: currentCourseId, hasProgress, isWorkbookLoading, hasWorkbook: !!currentWorkbook });
         if (isWorkbookLoading) {
           return (
@@ -2552,8 +2578,13 @@ const App: React.FC = () => {
             lessons={currentWorkbook.lessons || []}
             progress={progress}
             onSelectLesson={openLesson}
+            availableWorkbookIds={availableWorkbookIds}
             isAdmin={isAdmin}
             currentLanguage={language}
+            onSelectWorkbook={handleSelectWorkbook}
+            onOpenWorkbookList={() => setCurrentSection(SectionType.WORKBOOK_LIST)}
+            onOpenPdfLanding={() => handleNavigate(SectionType.WORKBOOK_PDF, { workbookId: currentWorkbookId || progress.currentWorkbook || 1 })}
+            uiLanguage={uiLanguage}
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
         );
@@ -2715,7 +2746,10 @@ const App: React.FC = () => {
             lessons={currentWorkbook?.lessons || []}
             progress={progress}
             onSelectLesson={openLesson}
+            availableWorkbookIds={[currentWorkbookId || progress.currentWorkbook || 1]}
             isAdmin={isAdmin}
+            currentLanguage={language}
+            uiLanguage={uiLanguage}
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
         );
@@ -2854,7 +2888,7 @@ const App: React.FC = () => {
               </div>
             ) : null}
             <div className="space-y-2">
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { handleNavigate(SectionType.WORKBOOK); setMenuOpen(false); }}>Workbooks</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK_LIST); setMenuOpen(false); }}>Workbooks</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
               {canAccessTeacherDashboard && (
