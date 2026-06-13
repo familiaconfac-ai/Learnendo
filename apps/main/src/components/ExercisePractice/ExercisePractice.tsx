@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Day, UserProgress, LessonLanguageCode } from '../../types';
+import { getUnitNumberFromLessonNumber } from '../../utils/workbookUnits';
 
 // PracticeSection lives in UI.tsx and expects the legacy PracticeItem shape.
 // We adapt Exercise → PracticeItem here so no changes are needed in UI.tsx.
@@ -36,6 +37,11 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     const m = day.id.match(/d(\d+)/);
     return m ? parseInt(m[1], 10) : undefined;
   })();
+  const lessonNumber = (() => {
+    const m = lessonId.match(/_l(\d+)/i) ?? lessonId.match(/(\d+)/);
+    return m ? parseInt(m[1], 10) : 1;
+  })();
+  const unitNumber = getUnitNumberFromLessonNumber(lessonNumber);
 
   const exercises = day.exercises;
 
@@ -61,7 +67,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const practiceItem = {
     ...currentExercise,
     moduleType: `${lessonId}_${day.id}`,
-    lessonId: 1,
+    lessonId: lessonNumber,
   };
 
   const handleResult = (correct: boolean, _val: string) => {
@@ -87,7 +93,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         onResult={handleResult}
         currentIdx={currentIdx}
         totalItems={exercises.length}
-        lessonId={1}
+        lessonId={lessonNumber}
+        unitNumber={unitNumber}
         onBack={onBack}
         dayNumber={dayNumber}
         totalDays={totalDays}

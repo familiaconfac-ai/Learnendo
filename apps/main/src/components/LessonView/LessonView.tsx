@@ -1,6 +1,7 @@
 import React from 'react';
 import { Day, Lesson, UserProgress, LessonLanguageCode } from '../../types';
 import { LessonProgress } from '../../engine/courseProgressEngine';
+import { getUnitNumberFromLessonNumber } from '../../utils/workbookUnits';
 
 interface LessonViewProps {
   lesson: Lesson;
@@ -67,6 +68,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
   onBack,
   onGrammar,
 }) => {
+  const unitNumber = getUnitNumberFromLessonNumber(lessonNumber);
   const completed = progress.completedActivities || [];
   const completedFromMap = Object.keys(progress.days ?? {}).filter((id) => progress.days?.[id] === true);
   const completedExerciseSet = new Set([...completed, ...completedFromMap]);
@@ -148,13 +150,16 @@ export const LessonView: React.FC<LessonViewProps> = ({
         )}
         {(() => {
           const colonIdx = lesson.title.indexOf(':');
-          const mainTitle = colonIdx > -1 ? lesson.title.slice(0, colonIdx) : lesson.title;
+          const rawMainTitle = colonIdx > -1 ? lesson.title.slice(0, colonIdx) : lesson.title;
+          const mainTitle = rawMainTitle.replace(/^Lesson\s+\d+\s*:?\s*/i, '').trim() || rawMainTitle;
           const subtitle = colonIdx > -1 ? lesson.title.slice(colonIdx + 1).trim() : null;
           return (
             <div className="text-center mb-6 sm:mb-8">
-              <h1 className="text-2xl sm:text-3xl font-black text-yellow-400 leading-tight">{mainTitle}</h1>
+              <p className="text-xs font-black uppercase tracking-[0.35em] text-cyan-300 mb-2">Unit {unitNumber}</p>
+              <p className="text-lg sm:text-xl font-black text-yellow-400 leading-tight">Lesson {lessonNumber}</p>
+              <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight mt-1">{mainTitle}</h1>
               {subtitle && (
-                <p className="text-lg sm:text-xl font-semibold text-white mt-1 leading-snug">{subtitle}</p>
+                <p className="text-base sm:text-lg font-semibold text-slate-300 mt-1 leading-snug">{subtitle}</p>
               )}
               {!!wordCount && (
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2">
@@ -265,6 +270,5 @@ export const LessonView: React.FC<LessonViewProps> = ({
     </div>
   );
 };
-
 
 

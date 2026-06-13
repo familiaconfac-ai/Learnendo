@@ -8,6 +8,10 @@ interface ResultAnimationProps {
   /** Accuracy percentage (0–100). Shown below the stars count when provided. */
   percentage?: number;
   newWords?: number;
+  emoji?: string;
+  title?: string;
+  subtitle?: string;
+  buttonLabel?: string;
   onClose: () => void;
 }
 
@@ -71,6 +75,10 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
   stars,
   percentage,
   newWords,
+  emoji = '⭐',
+  title = 'Lesson Complete!',
+  subtitle,
+  buttonLabel = 'Continue',
   onClose,
 }) => {
   const [overlayVisible, setOverlayVisible] = useState(false);
@@ -99,11 +107,17 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
         }`}
       >
         {/* Mascot */}
-        <img src="/mascot.png" alt="Learnendo" className="w-16 h-16 object-contain mx-auto mb-3" />
+        <div className="mb-3 flex flex-col items-center gap-2">
+          <img src="/mascot.png" alt="Learnendo" className="w-16 h-16 object-contain" />
+          <span className="text-4xl leading-none">{emoji}</span>
+        </div>
         {/* Title */}
         <p className="text-sm font-semibold text-blue-500 uppercase tracking-widest mb-4">
-          Lesson Complete!
+          {title}
         </p>
+        {subtitle && (
+          <p className="mb-4 text-sm font-medium text-slate-500">{subtitle}</p>
+        )}
         {/* New words block */}
         {!!newWords && (
           <div className="flex items-center justify-center gap-2 mb-5 bg-amber-50 rounded-xl py-2 px-4 border border-amber-200">
@@ -142,7 +156,7 @@ export const ResultAnimation: React.FC<ResultAnimationProps> = ({
             btnVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-3'
           }`}
         >
-          Continue
+          {buttonLabel}
         </button>
       </div>
     </div>

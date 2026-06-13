@@ -417,6 +417,7 @@ const PRACTICE_LABELS = {
     continueBtn: 'CONTINUE',
     gotItBtn: 'GOT IT',
     speakPlaceholder: 'Say something or type...',
+    unitLabel: (id: number) => `Unit ${id}`,
     lessonLabel: (id: number) => `Lesson ${id}`,
     exerciseLabel: (day: number, total: number) => `Exercise ${day} of ${total}`,
     exerciseIdxLabel: (idx: number, total: number) => `Exercise ${idx + 1} of ${total}`,
@@ -444,6 +445,7 @@ const PRACTICE_LABELS = {
     continueBtn: 'CONTINUAR',
     gotItBtn: 'ENTENDI',
     speakPlaceholder: 'Fale ou escreva...',
+    unitLabel: (id: number) => `Unidade ${id}`,
     lessonLabel: (id: number) => `Lição ${id}`,
     exerciseLabel: (day: number, total: number) => `Exercício ${day} de ${total}`,
     exerciseIdxLabel: (idx: number, total: number) => `Exercício ${idx + 1} de ${total}`,
@@ -471,6 +473,7 @@ const PRACTICE_LABELS = {
     continueBtn: 'CONTINUAR',
     gotItBtn: 'ENTENDIDO',
     speakPlaceholder: 'Di algo o escribe...',
+    unitLabel: (id: number) => `Unidad ${id}`,
     lessonLabel: (id: number) => `Lección ${id}`,
     exerciseLabel: (day: number, total: number) => `Ejercicio ${day} de ${total}`,
     exerciseIdxLabel: (idx: number, total: number) => `Ejercicio ${idx + 1} de ${total}`,
@@ -496,6 +499,7 @@ export const PracticeSection: React.FC<{
   currentIdx: number;
   totalItems: number;
   lessonId: number;
+  unitNumber?: number;
   onBack?: () => void;
   dayNumber?: number;
   totalDays?: number;
@@ -517,6 +521,7 @@ export const PracticeSection: React.FC<{
     currentIdx,
     totalItems,
     lessonId,
+    unitNumber,
     onBack,
     dayNumber,
     totalDays,
@@ -986,7 +991,7 @@ export const PracticeSection: React.FC<{
       }
 
       return (
-        <div className={`text-5xl font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
+        <div className={`text-3xl sm:text-5xl font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
           {renderInteractiveText(item.displayValue)}
         </div>
       );
@@ -996,7 +1001,7 @@ export const PracticeSection: React.FC<{
     const isMultipleChoice = item.type === 'multiple-choice' || item.type === 'identification';
 
     return (
-      <div className={`${fullScreen ? 'fixed inset-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} bg-slate-900 z-30 flex flex-col items-center outline-none`}>
+      <div className={`${fullScreen ? 'fixed inset-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-hidden outline-none`}>
         <div className="w-full max-sm:px-4 max-w-sm px-6 pt-5">
           <div className="flex items-center gap-3 mb-4">
             {onBack && (
@@ -1017,10 +1022,15 @@ export const PracticeSection: React.FC<{
           </div>
         </div>
 
-        <div className="flex-1 w-full max-w-sm px-6 flex flex-col items-center pt-4 pb-40 overflow-y-auto no-scrollbar">
+        <div className="flex-1 min-h-0 w-full max-w-sm px-4 sm:px-6 flex flex-col items-center pt-2 sm:pt-4 pb-44 sm:pb-40 overflow-y-auto no-scrollbar">
           {/* Lesson + exercise context header — scrolls with content */}
           <div className="flex flex-col items-center mb-3 w-full">
-            <span className="text-2xl font-black text-yellow-400 tracking-tight leading-tight">{PL.lessonLabel(lessonId)}</span>
+            {typeof unitNumber === 'number' && (
+              <span className="text-xs font-black text-cyan-300 uppercase tracking-[0.3em] leading-tight">
+                {PL.unitLabel(unitNumber)}
+              </span>
+            )}
+            <span className="text-xl sm:text-2xl font-black text-yellow-400 tracking-tight leading-tight">{PL.lessonLabel(lessonId)}</span>
             <span className="text-sm font-semibold text-white uppercase tracking-widest mt-0.5">
               {dayNumber != null && totalDays != null
                 ? PL.exerciseLabel(dayNumber, totalDays)
@@ -1115,7 +1125,7 @@ export const PracticeSection: React.FC<{
               </div>
             )}
           </div>
-          <div className="flex flex-col items-center gap-6 w-full">
+          <div className="flex flex-col items-center gap-4 sm:gap-6 w-full">
             {/* ✅ Audio control buttons in correct order */}
             <div className="flex gap-4">
               {item.audioValue && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
@@ -1178,7 +1188,7 @@ export const PracticeSection: React.FC<{
                   })}
                 </div>
               ) : (
-              <div className="grid grid-cols-2 gap-2 w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
                 {shuffledOptions.map((opt) => (
                   <button
                     key={opt}
@@ -1191,7 +1201,7 @@ export const PracticeSection: React.FC<{
                       handleOptionClick(opt);
                     }}
                     className={`p-3 border-2 rounded-3xl font-bold transition-all flex items-center justify-center text-center leading-snug break-words [touch-action:manipulation] min-h-[56px] ${
-                      opt.length > 14 ? 'text-sm normal-case' : 'text-xl font-black uppercase'
+                      opt.length > 14 ? 'text-xs sm:text-sm normal-case' : 'text-base sm:text-xl font-black uppercase'
                     } ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-500 shadow-lg' : 'bg-slate-800 border-slate-600 text-white hover:border-blue-500'}`}
                   >
                     <span className="whitespace-pre-wrap">{renderInteractiveText(opt)}</span>

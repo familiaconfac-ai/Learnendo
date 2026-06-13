@@ -55,6 +55,7 @@ import {
   saveTabAppContext,
   setScopedStorageItem,
 } from './utils/tabScopedStorage';
+import { getUnitNumberFromLessonNumber, isUnitCompletionLesson } from './utils/workbookUnits';
 
 /** Accumulated unique word count per lesson number.
  * Lesson N value = sum of all new words introduced from lesson 1 through N.
@@ -248,6 +249,22 @@ const getLessonNumberFromId = (lessonId: string | null | undefined) => {
   return match ? Number(match[1]) : NaN;
 };
 
+const findLessonByNumber = (
+  lessons: Lesson[] | undefined,
+  lessonNumber: number,
+  lessonId?: string | null,
+): Lesson | null => {
+  if (!lessons?.length) return null;
+  if (lessonId) {
+    const byId = lessons.find((lesson) => lesson.id === lessonId);
+    if (byId) return byId;
+  }
+  return (
+    lessons.find((lesson) => getLessonNumberFromId(lesson.id) === lessonNumber)
+    ?? null
+  );
+};
+
 const getDefaultWorkbookIdForCourse = (courseId: string | null | undefined): number => {
   const registry = COURSE_WORKBOOKS[courseId ?? DEFAULT_COURSE_ID] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
   const workbookIds = Object.keys(registry)
@@ -363,6 +380,13 @@ const App: React.FC = () => {
   const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
   const [showConversionModal, setShowConversionModal] = useState(false);
   const [showResultAnimation, setShowResultAnimation] = useState(false);
+  const [resultAnimationMeta, setResultAnimationMeta] = useState<{
+    emoji?: string;
+    title?: string;
+    subtitle?: string;
+    buttonLabel?: string;
+    lessonNumber?: number;
+  } | null>(null);
   const [conversionReason, setConversionReason] = useState<string | undefined>();
   const [conversionSuccess, setConversionSuccess] = useState(false);
   const [showGrammarModal, setShowGrammarModal] = useState(false);
@@ -1873,6 +1897,8 @@ const App: React.FC = () => {
       if (score === 100) {
         const testMarker = `${fullLessonTestPrefix}${lessonNumber}`;
         const alreadyDone = progress.completedActivities.includes(testMarker);
+        const completedUnitNumber = getUnitNumberFromLessonNumber(lessonNumber);
+        const completedUnit = isUnitCompletionLesson(lessonNumber);
         const nextPath = computeNextPath({
           workbook: progress.currentWorkbook,
           lesson: lessonNumber,
@@ -1896,6 +1922,23 @@ const App: React.FC = () => {
         setCurrentWorkbookId(nextPath.workbook);
         setCurrentLessonId(null);
         setCurrentSection(advancedWorkbook ? SectionType.WORKBOOK_LIST : SectionType.WORKBOOK);
+        setResultAnimationMeta(
+          completedUnit
+            ? {
+                emoji: lessonNumber === 24 ? '👑' : '🏆',
+                title: `Unit ${completedUnitNumber} Complete!`,
+                subtitle: lessonNumber === 24
+                  ? 'You finished Unit 4 and completed the Workbook 2 journey.'
+                  : advancedWorkbook
+                  ? `You closed Unit ${completedUnitNumber}. Choose the next workbook to keep going.`
+                  : `You closed Unit ${completedUnitNumber}. The next unit is ready for you.`,
+                buttonLabel: advancedWorkbook ? 'Choose Workbook' : 'Continue',
+                lessonNumber,
+              }
+            : {
+                lessonNumber,
+              },
+        );
 
         // Persist progress to Firestore — fire-and-forget (no await).
         if (user?.uid && db) {
@@ -2665,14 +2708,11 @@ const App: React.FC = () => {
       case SectionType.LESSON: {
         const parsedLessonNumber = getLessonNumberFromId(currentLessonId || `lesson${progress.currentLesson}`);
         const lessonNumber = Number.isFinite(parsedLessonNumber) ? parsedLessonNumber : progress.currentLesson;
-        const lesson =
-          currentWorkbook?.lessons?.find((l: any) => l.id === currentLessonId) ||
-          currentWorkbook?.lessons?.[lessonNumber - 1] ||
-          {
-            id: `lesson${lessonNumber}`,
-            title: `Lesson ${lessonNumber}`,
-            days: [],
-          };
+        const lesson = findLessonByNumber(currentWorkbook?.lessons, lessonNumber, currentLessonId) || {
+          id: `lesson${lessonNumber}`,
+          title: `Lesson ${lessonNumber}`,
+          days: [],
+        };
         return (
           <LessonView
             lesson={lesson}
@@ -2759,7 +2799,12 @@ const App: React.FC = () => {
         );
       case SectionType.PRACTICE: {
         if (!currentDay) return <div className="px-4 py-6 text-white">Exercicio indisponivel.</div>;
-        const practiceTotalDays = currentWorkbook?.lessons?.find((l: any) => l.id === currentLessonId)?.days?.length ?? 7;
+        const currentPracticeLesson = findLessonByNumber(
+          currentWorkbook?.lessons,
+          getLessonNumberFromId(currentLessonId || `lesson${progress.currentLesson}`),
+          currentLessonId,
+        );
+        const practiceTotalDays = currentPracticeLesson?.days?.length ?? 7;
         return (
           <ExercisePractice
             day={currentDay}
@@ -2987,8 +3032,15 @@ const App: React.FC = () => {
           diamonds={lessonScore.total}
           stars={lessonScore.total + Math.min(1, lessonScore.completed)}
           percentage={lessonScore.total > 0 ? Math.round(lessonScore.correct / lessonScore.total * 100) : 0}
-          newWords={progress.currentLesson === 1 ? lesson1NewWords.length : 0}
-          onClose={() => setShowResultAnimation(false)}
+          newWords={resultAnimationMeta?.lessonNumber === 1 ? lesson1NewWords.length : 0}
+          emoji={resultAnimationMeta?.emoji}
+          title={resultAnimationMeta?.title}
+          subtitle={resultAnimationMeta?.subtitle}
+          buttonLabel={resultAnimationMeta?.buttonLabel}
+          onClose={() => {
+            setShowResultAnimation(false);
+            setResultAnimationMeta(null);
+          }}
         />
       )}
       {user && user.isAnonymous && (
