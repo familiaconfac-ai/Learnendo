@@ -1,6 +1,7 @@
-// Workbook 2 - Placeholder
+import { workbook2Lessons } from './lessons';
+
 export const workbook2 = {
   id: 'wb2',
   title: 'Workbook 2',
-  lessons: []
+  lessons: workbook2Lessons,
 };

@@ -102,6 +102,22 @@ const normalizeAnswer = (answer: string): string => {
   return normalized;
 };
 
+const normalizeStrictWritingAnswer = (answer: string): string => {
+  return answer
+    .toLowerCase()
+    .trim()
+    .replace(/[\u2018\u2019\u02BC\u2032]/g, "'")
+    .replace(/[.,!?;:\u00bf\u00a1]+$/g, '')
+    .replace(/\s+/g, ' ');
+};
+
+const getAcceptedAnswers = (item: Pick<PracticeItem, 'correctValue' | 'acceptedAnswers'>): string[] => {
+  const all = [item.correctValue, ...(item.acceptedAnswers ?? [])]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(all)];
+};
+
 // Pre-processes time expressions for speaking/shadowing BEFORE punctuation stripping
 const normalizeSpeakingAnswer = (answer: string, lang?: string): string => {
   let s = answer.toLowerCase().trim();
@@ -195,6 +211,10 @@ const isSpeakingMatch = (response: string, target: string, lang?: string): boole
   // Strip am/pm from both sides and compare (handles o'clock ↔ am/pm equivalence)
   const stripAmPm = (s: string) => s.replace(/\s+(?:am|pm)\b/g, '').replace(/\s{2,}/g, ' ').trim();
   return stripAmPm(normResp) === stripAmPm(normTarget);
+};
+
+const isSpeakingMatchAny = (response: string, targets: string[], lang?: string): boolean => {
+  return targets.some((target) => isSpeakingMatch(response, target, lang));
 };
 
 const shuffle = <T,>(array: T[]): T[] => {
@@ -697,6 +717,7 @@ export const PracticeSection: React.FC<{
       textareaRef.current?.blur();
 
       const rawInput = userInput || selectedOption || '';
+      const acceptedAnswers = getAcceptedAnswers(item);
       const nextAttemptNumber = (lastAttemptMetaRef.current?.attemptNumber ?? 0) + 1;
       const reportAttempt = (answer: string, isCorrect: boolean) => {
         const payload = { answer, isCorrect, attemptNumber: nextAttemptNumber };
@@ -716,6 +737,33 @@ export const PracticeSection: React.FC<{
         return;
       }
 
+      if (isDictationWriting) {
+        const normalizedInput = normalizeStrictWritingAnswer(rawInput);
+        const isStrictWritingCorrect = acceptedAnswers.some(
+          (answer) => normalizeStrictWritingAnswer(answer) === normalizedInput,
+        );
+        reportAttempt(rawInput, isStrictWritingCorrect);
+        setFeedback(isStrictWritingCorrect ? 'correct' : 'wrong');
+        setShowFooter(true);
+        if (isStrictWritingCorrect) {
+          pendingOnResultRef.current = () => {
+            const payload = lastAttemptMetaRef.current;
+            if (payload) onContinue?.(payload);
+            onResult(true, rawInput);
+          };
+          new Audio(SUCCESS_SOUND).play().catch(() => {});
+          const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
+          setPraiseText(p);
+          speak(p, 1, feedbackVoice);
+        } else {
+          new Audio(ERR_SOUND).play().catch(() => {});
+          setPraiseText(PL.tryAgain);
+          speak(PL.speakNoMatch, 1, feedbackVoice);
+          setHasWrongAttempt(true);
+        }
+        return;
+      }
+
       // Sentence writing (math): answer must be a complete English sentence
       if (isSentenceWriting) {
         if (/^\s*\d[\d\s]*$/.test(rawInput)) {
@@ -730,7 +778,9 @@ export const PracticeSection: React.FC<{
         }
         const normSentence = (s: string) =>
           s.trim().toLowerCase().replace(/it'?s\s/g, 'it is ').replace(/[.,!?']/g, '').trim();
-        const isSentenceCorrect = normSentence(rawInput) === normSentence(item.correctValue);
+        const isSentenceCorrect = acceptedAnswers.some(
+          (answer) => normSentence(rawInput) === normSentence(answer),
+        );
         reportAttempt(rawInput, isSentenceCorrect);
         setFeedback(isSentenceCorrect ? 'correct' : 'wrong');
         setShowFooter(true);
@@ -754,13 +804,15 @@ export const PracticeSection: React.FC<{
       }
 
       const response = normalizeAnswer(rawInput);
-      const cleanTarget = normalizeAnswer(item.correctValue);
+      const normalizedTargets = acceptedAnswers.map(normalizeAnswer);
 
       const isCorrect = item.type === 'speaking'
-        ? isSpeakingMatch(rawInput, item.correctValue, currentLanguage)
-        : (response === cleanTarget) ||
-          (NUMBER_MAP[response] === cleanTarget) ||
-          (NUMBER_MAP[cleanTarget] === response);
+        ? isSpeakingMatchAny(rawInput, acceptedAnswers, currentLanguage)
+        : normalizedTargets.some((cleanTarget) =>
+            (response === cleanTarget) ||
+            (NUMBER_MAP[response] === cleanTarget) ||
+            (NUMBER_MAP[cleanTarget] === response),
+          );
 
       reportAttempt(rawInput, isCorrect);
       setFeedback(isCorrect ? 'correct' : 'wrong');
