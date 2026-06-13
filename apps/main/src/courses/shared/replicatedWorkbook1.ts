@@ -4,6 +4,13 @@ import { lesson2 as englishLesson2 } from '../../data/workbook1/lesson2';
 import { lesson3 as englishLesson3 } from '../../data/workbook1/lesson3';
 import { lesson4 as englishLesson4 } from '../../data/workbook1/lesson4';
 import { lesson5 as englishLesson5 } from '../../data/workbook1/lesson5';
+import { lesson6 as englishLesson6 } from '../../data/workbook1/lesson6';
+import { lesson7 as englishLesson7 } from '../../data/workbook1/lesson7';
+import { lesson8 as englishLesson8 } from '../../data/workbook1/lesson8';
+import { lesson9 as englishLesson9 } from '../../data/workbook1/lesson9';
+import { lesson10 as englishLesson10 } from '../../data/workbook1/lesson10';
+import { lesson11 as englishLesson11 } from '../../data/workbook1/lesson11';
+import { lesson12 as englishLesson12 } from '../../data/workbook1/lesson12';
 
 type LanguageKey = 'pt' | 'es' | 'el' | 'he';
 
@@ -17,7 +24,20 @@ interface LanguagePack {
 // English files are the authoritative source. When a new lesson is added or
 // corrected in English, add it here and extend every language pack's lessonTitles
 // and replacements accordingly (mirrored multilingual workflow).
-const BASE_LESSONS: Lesson[] = [englishLesson1, englishLesson2, englishLesson3, englishLesson4, englishLesson5];
+const BASE_LESSONS: Lesson[] = [
+  englishLesson1,
+  englishLesson2,
+  englishLesson3,
+  englishLesson4,
+  englishLesson5,
+  englishLesson6,
+  englishLesson7,
+  englishLesson8,
+  englishLesson9,
+  englishLesson10,
+  englishLesson11,
+  englishLesson12,
+];
 
 const languagePacks: Record<LanguageKey, LanguagePack> = {
   pt: {
@@ -29,6 +49,13 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Lição 3: Rotina Diária e Atividades',
       'Lição 4: Números Ordinais e Sequência',
       'Lição 5: Informações Pessoais e To Be',
+      'Licao 6: Saudacoes',
+      'Licao 7: Dias, Meses e Datas',
+      'Licao 8: Padroes da Fala',
+      'Licao 9: Fala Pratica',
+      'Licao 10: Meses e Estacoes',
+      'Licao 11: Fazendo Perguntas',
+      'Licao 12: Verbos Regulares no Passado',
     ],
     replacements: [
       // ── Lesson 1: alphabet & number instructions ─────────────────────────
@@ -182,6 +209,13 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Lección 3: Rutinas Diarias y Actividades',
       'Lección 4: Números Ordinales y Secuencia',
       'Lección 5: Informacion Personal y To Be',
+      'Leccion 6: Saludos',
+      'Leccion 7: Dias, Meses y Fechas',
+      'Leccion 8: Patrones Hablados',
+      'Leccion 9: Habla Practica',
+      'Leccion 10: Meses y Estaciones',
+      'Leccion 11: Haciendo Preguntas',
+      'Leccion 12: Verbos Regulares en Pasado',
     ],
     replacements: [
       // ── Lesson 1: alphabet & number instructions ─────────────────────────
@@ -325,8 +359,17 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
     lessonTitles: [
       'Mathima 1: Alfavito kai Arithmoi',
       'Mathima 2: Mia Imera sti Fysi',
-      'Mathima 3: Kathimerines Routines kai Drastiriotites',      'Mathima 4: Ordinal Numbers and Sequence',
-      'Mathima 5: Personal Information and To Be',    ],
+      'Mathima 3: Kathimerines Routines kai Drastiriotites',
+      'Mathima 4: Ordinal Numbers and Sequence',
+      'Mathima 5: Personal Information and To Be',
+      'Mathima 6: Greetings',
+      'Mathima 7: Days, Months, and Dates',
+      'Mathima 8: Spoken Patterns',
+      'Mathima 9: Practical Speaking',
+      'Mathima 10: Months and Seasons',
+      'Mathima 11: Asking Questions',
+      'Mathima 12: Past Tense Regular Verbs',
+    ],
     replacements: [
       ['Lesson ', 'Mathima '],
       ['Which letter has the same vowel sound?', 'Poio gramma exei ton idio fthinoggo?'],
@@ -377,6 +420,13 @@ const languagePacks: Record<LanguageKey, LanguagePack> = {
       'Shiur 3: Seder Yom VePeulot',
       'Shiur 4: Ordinal Numbers and Sequence',
       'Shiur 5: Personal Information and To Be',
+      'Shiur 6: Greetings',
+      'Shiur 7: Days, Months, and Dates',
+      'Shiur 8: Spoken Patterns',
+      'Shiur 9: Practical Speaking',
+      'Shiur 10: Months and Seasons',
+      'Shiur 11: Asking Questions',
+      'Shiur 12: Past Tense Regular Verbs',
     ],
     replacements: [
       ['Lesson ', 'Shiur '],

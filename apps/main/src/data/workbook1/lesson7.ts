@@ -4,6 +4,10 @@ export const lesson7: Lesson = {
   id: 'wb1_l7',
   title: 'Lesson 7: Days, Months, and Dates',
   days: [
+    {
+      id: 'wb1_l7_d1',
+      type: 'practice',
+      exercises: [
         {
           id: 'wb1_l7_d1_e1',
           type: 'multiple-choice',
@@ -75,6 +79,10 @@ export const lesson7: Lesson = {
         }
       ]
     },
+    {
+      id: 'wb1_l7_d2',
+      type: 'practice',
+      exercises: [
         {
           id: 'wb1_l7_d2_e1',
           type: 'multiple-choice',
@@ -140,6 +148,10 @@ export const lesson7: Lesson = {
         }
       ]
     },
+    {
+      id: 'wb1_l7_d3',
+      type: 'practice',
+      exercises: [
         {
           id: 'wb1_l7_d3_e1',
           type: 'identification',
@@ -205,6 +217,10 @@ export const lesson7: Lesson = {
         }
       ]
     },
+    {
+      id: 'wb1_l7_d4',
+      type: 'practice',
+      exercises: [
         {
           id: 'wb1_l7_d4_e1',
           type: 'speaking',
@@ -270,6 +286,10 @@ export const lesson7: Lesson = {
         }
       ]
     },
+    {
+      id: 'wb1_l7_d5',
+      type: 'practice',
+      exercises: [
         {
           id: 'wb1_l7_d5_e1',
           type: 'speaking',
@@ -335,6 +355,10 @@ export const lesson7: Lesson = {
         }
       ]
     },
+    {
+      id: 'wb1_l7_d6',
+      type: 'practice',
+      exercises: [
         {
           id: 'wb1_l7_d6_e1',
           type: 'speaking',
@@ -400,6 +424,10 @@ export const lesson7: Lesson = {
         }
       ]
     },
+    {
+      id: 'wb1_l7_d7',
+      type: 'review',
+      exercises: [
         {
           id: 'wb1_l7_d7_e1',
           type: 'multiple-choice',
