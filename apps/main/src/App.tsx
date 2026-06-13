@@ -1873,25 +1873,29 @@ const App: React.FC = () => {
       if (score === 100) {
         const testMarker = `${fullLessonTestPrefix}${lessonNumber}`;
         const alreadyDone = progress.completedActivities.includes(testMarker);
-        const nextLesson = Math.min(12, lessonNumber + 1);
+        const nextPath = computeNextPath({
+          workbook: progress.currentWorkbook,
+          lesson: lessonNumber,
+          day: 7,
+        });
+        const advancedWorkbook = nextPath.workbook > progress.currentWorkbook;
         const updated: UserProgress = {
           ...progress,
-          currentLesson: Math.max(progress.currentLesson, nextLesson),
+          currentWorkbook: nextPath.workbook,
+          currentLesson: nextPath.lesson,
+          currentDay: nextPath.day,
           completedActivities: alreadyDone
             ? progress.completedActivities
             : [...progress.completedActivities, testMarker],
           lastCompletedDate: new Date().toISOString(),
         };
 
-        // DO NOT call setProgress here — let Firestore snapshot update state
         try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
 
-        // Navigate immediately so the first CONTINUE click advances the UI without
-        // waiting for the Firestore round-trip (which blocked navigation before and
-        // caused users to see "Exercicio indisponivel." for 300–1000 ms, making
-        // them think their click had not registered).
+        setProgress(updated);
+        setCurrentWorkbookId(nextPath.workbook);
         setCurrentLessonId(null);
-        setCurrentSection(SectionType.WORKBOOK);
+        setCurrentSection(advancedWorkbook ? SectionType.WORKBOOK_LIST : SectionType.WORKBOOK);
 
         // Persist progress to Firestore — fire-and-forget (no await).
         if (user?.uid && db) {
@@ -1940,7 +1944,7 @@ const App: React.FC = () => {
             tests: {
               lessons: {
                 [key]: {
-                  workbook: progress.currentWorkbook,
+                  workbook: nextPath.workbook,
                   lesson: lessonNumber,
                   day: 7,
                   score,
@@ -2349,12 +2353,12 @@ const App: React.FC = () => {
             currentCourseId={currentCourseId}
             currentLanguage={uiLanguage}
             onLanguageChange={handleLanguageSelect}
-            onLogoClick={() => handleNavigate(SectionType.WORKBOOK)}
+            onLogoClick={() => setCurrentSection(SectionType.WORKBOOK_LIST)}
             onSelectCourse={(id) => {
               handleCourseChange(id);
               setCurrentLessonId(null);
               setCurrentDay(null);
-              handleNavigate(SectionType.WORKBOOK);
+              setCurrentSection(SectionType.WORKBOOK_LIST);
             }}
           />
         );
@@ -2407,7 +2411,15 @@ const App: React.FC = () => {
         const _courseId = currentCourseId ?? DEFAULT_COURSE_ID;
         const _registry = COURSE_WORKBOOKS[_courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
         const workbookIds = Object.keys(_registry).map(Number).sort((a, b) => a - b);
-        const currentWbkId = currentWorkbookId || progress.currentWorkbook || 1;
+        const currentWbkId = progress.currentWorkbook || currentWorkbookId || 1;
+        const maxWorkbookId = workbookIds[workbookIds.length - 1] ?? currentWbkId;
+        const nextUnlockedWorkbookId = Math.min(currentWbkId + 1, maxWorkbookId);
+        const getWorkbookState = (id: number): 'completed' | 'current' | 'available' | 'locked' => {
+          if (id < currentWbkId) return 'completed';
+          if (id === currentWbkId) return 'current';
+          if (id === nextUnlockedWorkbookId && currentWbkId < maxWorkbookId) return 'available';
+          return 'locked';
+        };
         return (
           <div className="min-h-screen bg-slate-900 pb-28 px-4 pt-6">
             <button
@@ -2436,33 +2448,95 @@ const App: React.FC = () => {
                 </button>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {workbookIds.map(id => (
-                <button
-                  key={id}
-                  onClick={() => handleSelectWorkbook(id)}
-                  className={`flex flex-col items-center justify-center gap-2 py-5 px-4 rounded-2xl border-2 transition-all active:scale-95 ${
-                    currentWbkId === id
-                      ? 'bg-blue-600 border-blue-400 text-white'
-                      : 'bg-slate-800 border-slate-600 text-slate-200 hover:border-blue-500'
-                  }`}
-                >
-                  <img
-                    src={`/islands/workbook/wbk${id}.png`}
-                    alt={`Workbook ${id}`}
-                    className="w-14 h-14 object-contain"
-                    onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
-                  />
-                  <span className="font-bold text-lg">
-                    {uiLanguage === 'pt' ? `Caderno ${id}` : uiLanguage === 'es' ? `Libro ${id}` : `Workbook ${id}`}
-                  </span>
-                  {currentWbkId === id && (
-                    <span className="text-xs font-semibold opacity-75">
-                      {uiLanguage === 'pt' ? '✓ atual' : uiLanguage === 'es' ? '✓ actual' : '✓ current'}
-                    </span>
-                  )}
-                </button>
-              ))}
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {workbookIds.map(id => {
+                const state = getWorkbookState(id);
+                const canOpenTracks = state !== 'locked';
+                const stateCopy =
+                  state === 'completed'
+                    ? (uiLanguage === 'pt' ? 'Concluido' : uiLanguage === 'es' ? 'Completado' : 'Completed')
+                    : state === 'current'
+                      ? (uiLanguage === 'pt' ? 'Em andamento' : uiLanguage === 'es' ? 'En progreso' : 'In progress')
+                      : state === 'available'
+                        ? (uiLanguage === 'pt' ? 'Proximo' : uiLanguage === 'es' ? 'Siguiente' : 'Next')
+                        : (uiLanguage === 'pt' ? 'Fechado' : uiLanguage === 'es' ? 'Bloqueado' : 'Locked');
+                const cardClasses =
+                  state === 'completed'
+                    ? 'border-emerald-400/70 bg-emerald-500/15 text-emerald-100'
+                    : state === 'current'
+                      ? 'border-blue-400/70 bg-blue-500/20 text-white'
+                      : state === 'available'
+                        ? 'border-yellow-300/70 bg-yellow-400/15 text-yellow-100'
+                        : 'border-slate-600 bg-slate-800 text-slate-400';
+                const badgeClasses =
+                  state === 'completed'
+                    ? 'bg-emerald-400 text-slate-950'
+                    : state === 'current'
+                      ? 'bg-blue-400 text-slate-950'
+                      : state === 'available'
+                        ? 'bg-yellow-300 text-slate-950'
+                        : 'bg-slate-700 text-slate-200';
+                return (
+                  <div
+                    key={id}
+                    className={`rounded-3xl border p-4 shadow-[0_18px_40px_rgba(15,23,42,0.35)] ${cardClasses}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <img
+                        src={`/islands/workbook/wbk${id}.png`}
+                        alt={`Workbook ${id}`}
+                        className="h-16 w-16 object-contain"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <span className={`rounded-full px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] ${badgeClasses}`}>
+                        {stateCopy}
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <p className="text-lg font-black">
+                        {uiLanguage === 'pt' ? `Caderno ${id}` : uiLanguage === 'es' ? `Libro ${id}` : `Workbook ${id}`}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 opacity-80">
+                        {state === 'current'
+                          ? (uiLanguage === 'pt' ? 'Este e o livro que a pessoa esta fazendo agora.' : uiLanguage === 'es' ? 'Este es el libro que la persona esta haciendo ahora.' : 'This is the workbook the learner is doing now.')
+                          : state === 'completed'
+                            ? (uiLanguage === 'pt' ? 'Livro ja concluido e liberado para revisao.' : uiLanguage === 'es' ? 'Libro ya completado y listo para repasar.' : 'Workbook already completed and open for review.')
+                            : state === 'available'
+                              ? (uiLanguage === 'pt' ? 'Proximo livro liberado para continuar a jornada.' : uiLanguage === 'es' ? 'Siguiente libro liberado para continuar la ruta.' : 'Next workbook unlocked for the next step.')
+                              : (uiLanguage === 'pt' ? 'Este livro ainda fica fechado ate avancar na sequencia.' : uiLanguage === 'es' ? 'Este libro sigue cerrado hasta avanzar en la secuencia.' : 'This workbook stays locked until the sequence advances.')}
+                      </p>
+                    </div>
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => canOpenTracks && handleSelectWorkbook(id)}
+                        disabled={!canOpenTracks}
+                        className={`flex-1 rounded-2xl px-4 py-3 text-sm font-black transition active:scale-95 ${
+                          state === 'completed'
+                            ? 'bg-emerald-400 text-slate-950'
+                            : state === 'current'
+                              ? 'bg-blue-400 text-slate-950'
+                              : state === 'available'
+                                ? 'bg-yellow-300 text-slate-950'
+                                : 'cursor-not-allowed bg-slate-700 text-slate-300'
+                        }`}
+                      >
+                        {uiLanguage === 'pt' ? 'Abrir trilha' : uiLanguage === 'es' ? 'Abrir ruta' : 'Open tracks'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentWorkbookId(id);
+                          setCurrentSection(SectionType.WORKBOOK_PDF);
+                        }}
+                        className="rounded-2xl border border-white/15 bg-slate-950/20 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-950/35"
+                      >
+                        PDF
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -2493,11 +2567,6 @@ const App: React.FC = () => {
         const hasAnyDays = Object.keys(progress.days ?? {}).some(k => (progress.days as any)?.[k] === true);
         const hasAnyActivity = (progress.completedActivities?.length ?? 0) > 0;
         const hasProgress = hasAnyDays || hasAnyActivity;
-        const workbookRegistry = COURSE_WORKBOOKS[currentCourseId ?? DEFAULT_COURSE_ID] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
-        const availableWorkbookIds = Object.keys(workbookRegistry)
-          .map(Number)
-          .filter((id) => Number.isFinite(id))
-          .sort((a, b) => a - b);
         console.log('[EMPTY_STATE_DEBUG]', { language, courseId: currentCourseId, hasProgress, isWorkbookLoading, hasWorkbook: !!currentWorkbook });
         if (isWorkbookLoading) {
           return (
@@ -2586,12 +2655,8 @@ const App: React.FC = () => {
             lessons={currentWorkbook.lessons || []}
             progress={progress}
             onSelectLesson={openLesson}
-            availableWorkbookIds={availableWorkbookIds}
             isAdmin={isAdmin}
             currentLanguage={language}
-            onSelectWorkbook={handleSelectWorkbook}
-            onOpenWorkbookList={() => setCurrentSection(SectionType.WORKBOOK_LIST)}
-            onOpenPdfLanding={() => handleNavigate(SectionType.WORKBOOK_PDF, { workbookId: currentWorkbookId || progress.currentWorkbook || 1 })}
             uiLanguage={uiLanguage}
             onBack={() => handleNavigate(SectionType.COURSES)}
           />
@@ -2754,7 +2819,6 @@ const App: React.FC = () => {
             lessons={currentWorkbook?.lessons || []}
             progress={progress}
             onSelectLesson={openLesson}
-            availableWorkbookIds={[currentWorkbookId || progress.currentWorkbook || 1]}
             isAdmin={isAdmin}
             currentLanguage={language}
             uiLanguage={uiLanguage}
@@ -2839,7 +2903,7 @@ const App: React.FC = () => {
           <button
             type="button"
             className="flex h-10 items-center rounded-lg sm:rounded-xl bg-slate-800 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-slate-200 shadow-sm active:scale-95 flex-shrink-0"
-            onClick={() => handleNavigate(SectionType.WORKBOOK)}
+            onClick={() => setCurrentSection(SectionType.WORKBOOK_LIST)}
             aria-label="Go to lesson list"
           >
             <span className="text-base leading-none">🏠</span>
