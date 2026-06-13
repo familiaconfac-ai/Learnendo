@@ -1197,7 +1197,11 @@ const App: React.FC = () => {
     const loadWorkbook = async () => {
       const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
       const registry = COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
-      setContentLoadError(null);
+      if (!cancelled) {
+        setCurrentWorkbook(null);
+        setContentLoadError(null);
+        setIsWorkbookLoading(true);
+      }
 
       // Guard: validate the combo before even attempting the import
       const validated = validateAndFixState({
@@ -1234,7 +1238,6 @@ const App: React.FC = () => {
         return;
       }
 
-      if (!cancelled) setIsWorkbookLoading(true);
       try {
         const module = await loader();
         if (cancelled) return;  // stale — discard result
@@ -1406,6 +1409,11 @@ const App: React.FC = () => {
     });
     const updated = { ...progress, currentWorkbook: workbookId };
     setProgress(updated);
+    setCurrentWorkbook(null);
+    setCurrentLessonId(null);
+    setCurrentDay(null);
+    setContentLoadError(null);
+    setIsWorkbookLoading(true);
     setCurrentWorkbookId(workbookId);
     // Stamp user-action time so the race-condition guard suppresses any
     // concurrent Firestore snapshot from reverting courseId/language.

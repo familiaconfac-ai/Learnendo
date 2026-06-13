@@ -162,13 +162,20 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
             const isLocked = status === 'locked';
             const isCompleted = status === 'completed';
             const lessonNumber = index + 1;
+            const lessonNumberFromId = Number((lesson.id || '').match(/lesson(\d+)/i)?.[1] ?? NaN);
+            const lessonNumberFromTitle = Number((lesson.title || '').match(/^Lesson\s*(\d+)/i)?.[1] ?? NaN);
+            const visibleLessonNumber = Number.isFinite(lessonNumberFromTitle)
+              ? lessonNumberFromTitle
+              : Number.isFinite(lessonNumberFromId)
+                ? lessonNumberFromId
+                : lessonNumber;
             const cleanTitle = lesson.title
               .replace(/^Workbook\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .replace(/^Lesson\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .trim();
             const displayTitle = /^placeholder$/i.test(cleanTitle) ? '' : cleanTitle;
             const isCurrent = status === 'in-progress' && index === firstUnlockedIndex;
-            const lessonLabel = displayTitle ? `Lesson ${lessonNumber} - ${displayTitle}` : `Lesson ${lessonNumber}`;
+            const lessonLabel = displayTitle ? `Lesson ${visibleLessonNumber} - ${displayTitle}` : `Lesson ${visibleLessonNumber}`;
             const offsetClass = (['ml-[-50px] sm:ml-[-60px]', 'ml-0', 'ml-[50px] sm:ml-[60px]', 'ml-0'] as const)[index % 4];
 
             return (
