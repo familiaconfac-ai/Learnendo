@@ -548,6 +548,9 @@ export const PracticeSection: React.FC<{
 
     const [selectedOption, setSelectedOption] = useState<string | null>(null);
     const [shuffledOptions, setShuffledOptions] = useState<string[]>([]);
+    const [viewportHeight, setViewportHeight] = useState(() =>
+      typeof window !== 'undefined' ? window.innerHeight : 800,
+    );
     // Tracks whether the student has had at least one wrong attempt on this item.
     // Writing exercises reveal the audio hint only after the first wrong attempt.
     const [hasWrongAttempt, setHasWrongAttempt] = useState(false);
@@ -578,6 +581,9 @@ export const PracticeSection: React.FC<{
 
     // Pure color listening: no icon/image, just the audio + color squares (no text labels)
     const isPureColorListening = isColorOptions && !item.displayValue;
+    const isListeningExercise = item.type === 'multiple-choice' || item.type === 'identification';
+    const isShortViewport = viewportHeight <= 760;
+    const useCompactChoiceGrid = isShortViewport && shuffledOptions.length >= 4 && shuffledOptions.every((opt) => opt.length <= 14);
 
     // Refs for STT lifecycle — prevents stale callbacks from bleeding across exercises
     const recRef = useRef<any>(null);
@@ -652,6 +658,14 @@ export const PracticeSection: React.FC<{
       }, 200);
       return () => _cleanups.forEach(c => c());
     }, [item.id]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => {
+      if (typeof window === 'undefined') return undefined;
+      const updateViewportHeight = () => setViewportHeight(window.innerHeight);
+      updateViewportHeight();
+      window.addEventListener('resize', updateViewportHeight);
+      return () => window.removeEventListener('resize', updateViewportHeight);
+    }, []);
 
     // Auto-grow textarea
     const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -990,8 +1004,12 @@ export const PracticeSection: React.FC<{
         );
       }
 
+      const displaySizeClass = isListeningExercise
+        ? (isShortViewport ? 'text-xl leading-tight' : 'text-2xl sm:text-4xl')
+        : (isShortViewport ? 'text-2xl leading-tight' : 'text-3xl sm:text-5xl');
+
       return (
-        <div className={`text-3xl sm:text-5xl font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
+        <div className={`${displaySizeClass} font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 break-words ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
           {renderInteractiveText(item.displayValue)}
         </div>
       );
@@ -1002,8 +1020,8 @@ export const PracticeSection: React.FC<{
 
     return (
       <div className={`${fullScreen ? 'fixed inset-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-hidden outline-none`}>
-        <div className="w-full max-sm:px-4 max-w-sm px-6 pt-5">
-          <div className="flex items-center gap-3 mb-4">
+        <div className={`w-full max-sm:px-4 max-w-sm px-6 ${isShortViewport ? 'pt-3' : 'pt-5'}`}>
+          <div className={`flex items-center gap-3 ${isShortViewport ? 'mb-3' : 'mb-4'}`}>
             {onBack && (
               <button
                 onPointerDown={(e) => { e.preventDefault(); onBack(); }}
@@ -1022,23 +1040,9 @@ export const PracticeSection: React.FC<{
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 w-full max-w-sm px-4 sm:px-6 flex flex-col items-center pt-2 sm:pt-4 pb-6 overflow-y-auto no-scrollbar">
-          {/* Lesson + exercise context header — scrolls with content */}
-          <div className="flex flex-col items-center mb-3 w-full">
-            {typeof unitNumber === 'number' && (
-              <span className="text-xs font-black text-cyan-300 uppercase tracking-[0.3em] leading-tight">
-                {PL.unitLabel(unitNumber)}
-              </span>
-            )}
-            <span className="text-xl sm:text-2xl font-black text-yellow-400 tracking-tight leading-tight">{PL.lessonLabel(lessonId)}</span>
-            <span className="text-sm font-semibold text-white uppercase tracking-widest mt-0.5">
-              {dayNumber != null && totalDays != null
-                ? PL.exerciseLabel(dayNumber, totalDays)
-                : PL.exerciseIdxLabel(currentIdx, totalItems)}
-            </span>
-          </div>
+        <div className={`flex-1 min-h-0 w-full max-w-sm px-4 sm:px-6 flex flex-col items-center ${isShortViewport ? 'pt-1 pb-3' : 'pt-2 sm:pt-4 pb-6'} overflow-y-auto no-scrollbar`}>
           <div
-            className="relative group mb-4 cursor-help w-full"
+            className={`relative group cursor-help w-full ${isShortViewport ? 'mb-3' : 'mb-4'}`}
             onClick={() => {
               if (!clickTranslatorMode) setShowHint(!showHint);
             }}
@@ -1088,7 +1092,29 @@ export const PracticeSection: React.FC<{
                 if (dlg) {
                   return (
                     <div className="flex flex-col items-center gap-2">
-                      <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            speak(item.audioValue, 1, promptVoice);
+                          }}
+                          className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
+                          title="Play audio"
+                        >
+                          <img src={speakerIcon} className="h-4 w-4 brightness-0 invert" alt="Play" />
+                        </button>
+                        <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            speak(item.audioValue, 0.5, feedbackVoice);
+                          }}
+                          className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
+                          title="Slow pronunciation"
+                        >
+                          <img src={turtleIcon} className="h-4 w-4 brightness-0 invert" alt="Slow" />
+                        </button>
+                      </div>
                       <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.chooseCorrect}</p>
                       <p className="text-sm font-semibold text-white text-center mt-1">{dlg[1]}:</p>
                       <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl">
@@ -1101,18 +1127,62 @@ export const PracticeSection: React.FC<{
                 if (OPTION_COLOR_HEX[(item.displayValue ?? '').toLowerCase()]) {
                   return (
                     <div className="flex flex-col items-center gap-2">
-                      <span className="inline-block px-3 py-1 text-base font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
-                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.chooseCorrect}</p>
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            speak(item.audioValue, 1, promptVoice);
+                          }}
+                          className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
+                          title="Play audio"
+                        >
+                          <img src={speakerIcon} className="h-4 w-4 brightness-0 invert" alt="Play" />
+                        </button>
+                        <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            speak(item.audioValue, 0.5, feedbackVoice);
+                          }}
+                          className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
+                          title="Slow pronunciation"
+                        >
+                          <img src={turtleIcon} className="h-4 w-4 brightness-0 invert" alt="Slow" />
+                        </button>
+                      </div>
+                      <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.whatColor}</p>
                       <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
-                        {renderInteractiveText(PL.whatColor)}
+                        {renderInteractiveText(item.instruction)}
                       </h2>
                     </div>
                   );
                 }
                 return (
                   <div className="flex flex-col items-center gap-2">
-                    <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
-                    <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap">
+                    <div className="flex items-center justify-center gap-2">
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          speak(item.audioValue, 1, promptVoice);
+                        }}
+                        className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
+                        title="Play audio"
+                      >
+                        <img src={speakerIcon} className="h-4 w-4 brightness-0 invert" alt="Play" />
+                      </button>
+                      <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          speak(item.audioValue, 0.5, feedbackVoice);
+                        }}
+                        className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
+                        title="Slow pronunciation"
+                      >
+                        <img src={turtleIcon} className="h-4 w-4 brightness-0 invert" alt="Slow" />
+                      </button>
+                    </div>
+                    <h2 className={`${isShortViewport ? 'text-base' : 'text-lg sm:text-xl'} font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap`}>
                       {renderInteractiveText(item.instruction)}
                     </h2>
                   </div>
@@ -1125,16 +1195,16 @@ export const PracticeSection: React.FC<{
               </div>
             )}
           </div>
-          <div className="flex flex-col items-center gap-4 sm:gap-6 w-full">
+          <div className={`flex flex-col items-center w-full ${isShortViewport ? 'gap-3' : 'gap-4 sm:gap-6'}`}>
             {/* ✅ Audio control buttons in correct order */}
-            <div className="flex gap-4">
-              {item.audioValue && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
-                <button onClick={() => speak(item.audioValue, 1, promptVoice)} className="w-14 h-14 bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center" title="Play audio">
+            <div className={`flex ${isShortViewport ? 'gap-3' : 'gap-4'}`}>
+              {item.audioValue && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
+                <button onClick={() => speak(item.audioValue, 1, promptVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center`} title="Play audio">
                   <img src={speakerIcon} className="w-6 h-6 brightness-0 invert" alt="Play" />
                 </button>
               )}
-              {item.audioValue && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
-                <button onClick={() => speak(item.audioValue, 0.5, feedbackVoice)} className="w-14 h-14 bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center" title="Slow pronunciation">
+              {item.audioValue && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
+                <button onClick={() => speak(item.audioValue, 0.5, feedbackVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center`} title="Slow pronunciation">
                   <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
               )}
@@ -1142,7 +1212,7 @@ export const PracticeSection: React.FC<{
                 <button 
                   onClick={handleSTT}
                   disabled={actionLocked || (showFooter && feedback === 'correct')}
-                  className={`w-14 h-14 rounded-2xl text-2xl active:translate-y-1 transition-all flex items-center justify-center ${isListening ? 'bg-red-500 text-white animate-pulse shadow-[0_4px_0_0_#b91c1c]' : 'bg-red-500 text-white shadow-[0_4px_0_0_#991b1b] hover:bg-red-600'}`}
+                  className={`${isShortViewport ? 'w-12 h-12 text-xl' : 'w-14 h-14 text-2xl'} rounded-2xl active:translate-y-1 transition-all flex items-center justify-center ${isListening ? 'bg-red-500 text-white animate-pulse shadow-[0_4px_0_0_#b91c1c]' : 'bg-red-500 text-white shadow-[0_4px_0_0_#991b1b] hover:bg-red-600'}`}
                   title="Tap to speak"
                 >
                   <i className="fas fa-microphone"></i>
@@ -1188,7 +1258,7 @@ export const PracticeSection: React.FC<{
                   })}
                 </div>
               ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+              <div className={`grid ${useCompactChoiceGrid ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2'} gap-2 w-full`}>
                 {shuffledOptions.map((opt) => (
                   <button
                     key={opt}
@@ -1200,8 +1270,8 @@ export const PracticeSection: React.FC<{
                       }
                       handleOptionClick(opt);
                     }}
-                    className={`p-3 border-2 rounded-3xl font-bold transition-all flex items-center justify-center text-center leading-snug break-words [touch-action:manipulation] min-h-[56px] ${
-                      opt.length > 14 ? 'text-xs sm:text-sm normal-case' : 'text-base sm:text-xl font-black uppercase'
+                    className={`${isShortViewport ? 'p-2.5 min-h-[50px]' : 'p-3 min-h-[56px]'} border-2 rounded-3xl font-bold transition-all flex items-center justify-center text-center leading-snug break-words [touch-action:manipulation] ${
+                      opt.length > 14 ? 'text-xs sm:text-sm normal-case' : isShortViewport ? 'text-sm font-black uppercase' : 'text-base sm:text-xl font-black uppercase'
                     } ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-500 shadow-lg' : 'bg-slate-800 border-slate-600 text-white hover:border-blue-500'}`}
                   >
                     <span className="whitespace-pre-wrap">{renderInteractiveText(opt)}</span>
@@ -1242,7 +1312,7 @@ export const PracticeSection: React.FC<{
           </div>
         </div>
 
-        <div className={`w-full shrink-0 p-4 sm:p-6 flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
+        <div className={`w-full shrink-0 ${isShortViewport ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
           <div className="w-full max-sm:max-w-xs max-w-sm">
             {showFooter ? (
               <div className="flex flex-col gap-3">
