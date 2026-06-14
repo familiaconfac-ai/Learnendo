@@ -151,8 +151,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
         {(() => {
           const colonIdx = lesson.title.indexOf(':');
           const rawMainTitle = colonIdx > -1 ? lesson.title.slice(0, colonIdx) : lesson.title;
-          const mainTitle = rawMainTitle.replace(/^Lesson\s+\d+\s*:?\s*/i, '').trim() || rawMainTitle;
-          const subtitle = colonIdx > -1 ? lesson.title.slice(colonIdx + 1).trim() : null;
+          const rawSubtitle = colonIdx > -1 ? lesson.title.slice(colonIdx + 1).trim() : '';
+          const strippedMainTitle = rawMainTitle.replace(/^Lesson\s+\d+\s*:?\s*/i, '').trim();
+          const mainTitle = strippedMainTitle || rawSubtitle || rawMainTitle;
+          const subtitle = strippedMainTitle && rawSubtitle ? rawSubtitle : null;
           return (
             <div className="text-center mb-6 sm:mb-8">
               <p className="text-xs font-black uppercase tracking-[0.35em] text-cyan-300 mb-2">Unit {unitNumber}</p>
@@ -270,5 +272,4 @@ export const LessonView: React.FC<LessonViewProps> = ({
     </div>
   );
 };
-
 

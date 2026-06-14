@@ -15,6 +15,19 @@ interface WorkbookViewProps {
 
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
 
+function getVisibleLessonNumber(lesson: Lesson, fallbackIndex: number): number {
+  const lessonNumberFromTitle = Number((lesson.title || '').match(/^Lesson\s*(\d+)/i)?.[1] ?? NaN);
+  if (Number.isFinite(lessonNumberFromTitle)) return lessonNumberFromTitle;
+
+  const wbMatch = (lesson.id || '').match(/_l(\d+)/i);
+  if (wbMatch) return Number(wbMatch[1]);
+
+  const lessonNumberFromId = Number((lesson.id || '').match(/lesson(\d+)/i)?.[1] ?? NaN);
+  if (Number.isFinite(lessonNumberFromId)) return lessonNumberFromId;
+
+  return fallbackIndex + 1;
+}
+
 export const WorkbookView: React.FC<WorkbookViewProps> = ({
   workbookId,
   lessons,
@@ -48,10 +61,11 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
   );
 
   const getLessonStatus = (index: number): 'completed' | 'in-progress' | 'locked' => {
-    const lessonNumber = index + 1;
+    const lesson = islandSlots[index];
+    const lessonNumber = lesson ? getVisibleLessonNumber(lesson, index) : index + 1;
     if (completedLessonSet.has(lessonNumber)) return 'completed';
     if (isAdmin) return 'in-progress';
-    if (lessonNumber === 1) return 'in-progress';
+    if (lessonNumber <= 1) return 'in-progress';
     if (completedLessonSet.has(lessonNumber - 1)) return 'in-progress';
     return 'locked';
   };
@@ -88,14 +102,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
             const status = getLessonStatus(index);
             const isLocked = status === 'locked';
             const isCompleted = status === 'completed';
-            const lessonNumber = index + 1;
-            const lessonNumberFromId = Number((lesson.id || '').match(/lesson(\d+)/i)?.[1] ?? NaN);
-            const lessonNumberFromTitle = Number((lesson.title || '').match(/^Lesson\s*(\d+)/i)?.[1] ?? NaN);
-            const visibleLessonNumber = Number.isFinite(lessonNumberFromTitle)
-              ? lessonNumberFromTitle
-              : Number.isFinite(lessonNumberFromId)
-                ? lessonNumberFromId
-                : lessonNumber;
+            const visibleLessonNumber = getVisibleLessonNumber(lesson, index);
             const cleanTitle = lesson.title
               .replace(/^Workbook\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
               .replace(/^Lesson\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
@@ -130,14 +137,14 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
                 >
                   <img
                     src="/islands/ilhaLesson1.png"
-                    alt={`Lesson ${lessonNumber}`}
+                    alt={`Lesson ${visibleLessonNumber}`}
                     className={`absolute inset-0 h-full w-full rounded-full object-cover ${isLocked ? 'opacity-10' : 'opacity-30'}`}
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.display = 'none';
                     }}
                   />
                   <span className="relative z-10">
-                    {isCompleted ? '✓' : isLocked ? '🔒' : lessonNumber}
+                    {isCompleted ? '✓' : isLocked ? '🔒' : visibleLessonNumber}
                   </span>
                 </button>
                 <p className={`mt-2 max-w-[140px] text-center text-xs leading-tight ${

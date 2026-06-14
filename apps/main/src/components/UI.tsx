@@ -1022,7 +1022,7 @@ export const PracticeSection: React.FC<{
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 w-full max-w-sm px-4 sm:px-6 flex flex-col items-center pt-2 sm:pt-4 pb-44 sm:pb-40 overflow-y-auto no-scrollbar">
+        <div className="flex-1 min-h-0 w-full max-w-sm px-4 sm:px-6 flex flex-col items-center pt-2 sm:pt-4 pb-6 overflow-y-auto no-scrollbar">
           {/* Lesson + exercise context header — scrolls with content */}
           <div className="flex flex-col items-center mb-3 w-full">
             {typeof unitNumber === 'number' && (
@@ -1242,7 +1242,7 @@ export const PracticeSection: React.FC<{
           </div>
         </div>
 
-        <div className={`absolute bottom-0 left-0 right-0 p-6 flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
+        <div className={`w-full shrink-0 p-4 sm:p-6 flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
           <div className="w-full max-sm:max-w-xs max-w-sm">
             {showFooter ? (
               <div className="flex flex-col gap-3">
