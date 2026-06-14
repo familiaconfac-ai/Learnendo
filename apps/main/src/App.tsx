@@ -185,6 +185,14 @@ function validateAndFixState(opts: {
     fixed = true;
   }
 
+  // Keep the content language synchronized with the selected course.
+  const courseLanguage = COURSE_TO_LANGUAGE[courseId] ?? DEFAULT_LANGUAGE;
+  if (lang !== courseLanguage) {
+    problems.push(`language/course mismatch: '${lang}' -> '${courseLanguage}' for course '${courseId}'`);
+    lang = courseLanguage;
+    fixed = true;
+  }
+
   // 3. WorkbookId must exist in the course registry
   const registry = COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
   const validWorkbookIds = new Set(Object.keys(registry).map(Number));
@@ -566,6 +574,21 @@ const App: React.FC = () => {
       setCurrentSection(SectionType.COURSES);
     }
   }, [canAccessTeacherDashboard, currentSection]);
+
+  // Self-heal navigation/restore races where the active course changes but the
+  // content language stays on the previous course, which makes TTS pick the
+  // wrong locale for exercise audio.
+  useEffect(() => {
+    if (!currentCourseId) return;
+    const expectedLanguage = COURSE_TO_LANGUAGE[currentCourseId];
+    if (!expectedLanguage || expectedLanguage === language) return;
+    console.warn('[LANG_SYNC] Fixing language to match active course', {
+      currentCourseId,
+      previousLanguage: language,
+      nextLanguage: expectedLanguage,
+    });
+    setLanguage(expectedLanguage);
+  }, [currentCourseId, language, setLanguage]);
 
   // Keep latestProgressRef in sync with the latest progress state
   useEffect(() => {

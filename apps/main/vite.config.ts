@@ -52,6 +52,32 @@ function getExpectedExpirationIso(nowMs: number, ttlSeconds: number) {
   return new Date(nowMs + ttlSeconds * 1000).toISOString();
 }
 
+function normalizeTranslateLang(langCode?: string) {
+  const value = (langCode || 'en-US').trim();
+  if (!value) return 'en';
+
+  const lower = value.toLowerCase();
+  if (lower.startsWith('en')) return 'en';
+  if (lower.startsWith('es')) return 'es';
+  if (lower.startsWith('pt-br')) return 'pt-BR';
+  if (lower.startsWith('pt')) return 'pt';
+  if (lower.startsWith('el')) return 'el';
+  if (lower.startsWith('he')) return 'he';
+  return value;
+}
+
+function buildTranslateTtsUrl(text: string, langCode: string, rate?: number) {
+  const url = new URL('https://translate.google.com/translate_tts');
+  url.searchParams.set('ie', 'UTF-8');
+  url.searchParams.set('client', 'tw-ob');
+  url.searchParams.set('tl', normalizeTranslateLang(langCode));
+  url.searchParams.set('q', text);
+  if ((rate ?? 1) < 0.75) {
+    url.searchParams.set('ttsspeed', '0.24');
+  }
+  return url.toString();
+}
+
 /**
  * Dev-only Vite plugin that serves /api/getToken so `npm run dev`
  * works without `vercel dev`.  Reads LIVEKIT_* env vars from `.env`.
@@ -206,6 +232,82 @@ function livekitTokenDevPlugin(env: Record<string, string>): Plugin {
   };
 }
 
+/**
+ * Dev-only Vite plugin that serves /api/tts so local practice audio does not
+ * depend on operating-system voices.
+ */
+function translateTtsDevPlugin(): Plugin {
+  return {
+    name: 'translate-tts-dev',
+    configureServer(server) {
+      server.middlewares.use(async (req, res, next) => {
+        if (req.url !== '/api/tts' || req.method !== 'POST') {
+          return next();
+        }
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        }
+
+        let body: { text?: string; langCode?: string; rate?: number } = {};
+        try {
+          const raw = Buffer.concat(chunks).toString('utf8').trim();
+          if (raw) body = JSON.parse(raw);
+        } catch {
+          res.statusCode = 400;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+          return;
+        }
+
+        const text = body.text?.trim() ?? '';
+        const langCode = body.langCode?.trim() || 'en-US';
+        const rate = Number(body.rate) || 1;
+
+        if (!text) {
+          res.statusCode = 400;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({ error: 'text is required.' }));
+          return;
+        }
+
+        try {
+          const upstream = await fetch(buildTranslateTtsUrl(text, langCode, rate), {
+            headers: {
+              'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36 LearnendoTTS/1.0',
+            },
+          });
+
+          if (!upstream.ok) {
+            const details = await upstream.text().catch(() => '');
+            res.statusCode = 502;
+            res.setHeader('content-type', 'application/json');
+            res.end(JSON.stringify({
+              error: 'Upstream TTS provider failed.',
+              status: upstream.status,
+              details: details.slice(0, 200),
+            }));
+            return;
+          }
+
+          const audioBuffer = Buffer.from(await upstream.arrayBuffer());
+          res.statusCode = 200;
+          res.setHeader('content-type', upstream.headers.get('content-type') || 'audio/mpeg');
+          res.setHeader('cache-control', 'no-store');
+          res.end(audioBuffer);
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({
+            error: err instanceof Error ? err.message : 'Unable to synthesize audio',
+          }));
+        }
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, __dirname, '');
     return {
@@ -225,6 +327,7 @@ export default defineConfig(({ mode }) => {
         react(),
         // Serve /api/getToken locally in dev so vercel dev is not required
         ...(mode !== 'production' ? [livekitTokenDevPlugin(env)] : []),
+        ...(mode !== 'production' ? [translateTtsDevPlugin()] : []),
         ...(mode === 'production' ? [
           VitePWA({
             registerType: 'autoUpdate',

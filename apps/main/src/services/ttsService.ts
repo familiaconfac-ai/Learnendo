@@ -50,6 +50,93 @@ const TTS_DEBUG = true;
 // ─────────────────────────────────────────────────────────────
 
 let _voices: SpeechSynthesisVoice[] = [];
+let _activeRemoteAudio: HTMLAudioElement | null = null;
+let _activeRemoteAudioUrl: string | null = null;
+let _remoteTtsAbortController: AbortController | null = null;
+
+function cleanupRemoteAudio(): void {
+  if (_activeRemoteAudio) {
+    _activeRemoteAudio.pause();
+    _activeRemoteAudio.src = '';
+    _activeRemoteAudio = null;
+  }
+  if (_activeRemoteAudioUrl) {
+    URL.revokeObjectURL(_activeRemoteAudioUrl);
+    _activeRemoteAudioUrl = null;
+  }
+}
+
+function stopRemoteAudio(): void {
+  _remoteTtsAbortController?.abort();
+  _remoteTtsAbortController = null;
+  cleanupRemoteAudio();
+}
+
+function canUseRemoteTts(langCode: string): boolean {
+  const lower = langCode.toLowerCase();
+  return lower.startsWith('en') || lower.startsWith('es') || lower.startsWith('pt') || lower.startsWith('el') || lower.startsWith('he');
+}
+
+async function playRemoteTts(
+  text: string,
+  langCode: string,
+  options: SpeakOptions,
+): Promise<void> {
+  stopRemoteAudio();
+
+  const controller = new AbortController();
+  _remoteTtsAbortController = controller;
+
+  const response = await fetch('/api/tts', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+      langCode,
+      rate: options.rate ?? 1,
+    }),
+    signal: controller.signal,
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const message = typeof payload?.error === 'string'
+      ? payload.error
+      : `Remote TTS failed with status ${response.status}`;
+    throw new Error(message);
+  }
+
+  const audioBlob = await response.blob();
+  if (controller.signal.aborted) return;
+
+  cleanupRemoteAudio();
+  const audioUrl = URL.createObjectURL(audioBlob);
+  const audio = new Audio(audioUrl);
+  audio.playbackRate = options.rate ?? 1;
+  audio.volume = options.volume ?? 1;
+  _activeRemoteAudio = audio;
+  _activeRemoteAudioUrl = audioUrl;
+
+  audio.onended = () => {
+    if (_activeRemoteAudio === audio) {
+      cleanupRemoteAudio();
+      _remoteTtsAbortController = null;
+    }
+    options.onEnd?.();
+  };
+
+  audio.onerror = () => {
+    if (_activeRemoteAudio === audio) {
+      cleanupRemoteAudio();
+      _remoteTtsAbortController = null;
+    }
+    options.onError?.();
+  };
+
+  await audio.play();
+}
 
 function logVoiceList(label: string): void {
   if (!TTS_DEBUG) return;
@@ -167,7 +254,7 @@ function detectVoiceGender(voice: SpeechSynthesisVoice): 'female' | 'male' | 'un
  *   2. Exact locale match  (any gender)
  *   3. Same language prefix + requested gender
  *   4. Same language prefix (any gender)
- *   5. First available voice (last-resort fallback)
+ *   5. No explicit voice selection (let the browser honor `utterance.lang`)
  */
 function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any'): SpeechSynthesisVoice | null {
   // Re-read from synthesis API in case the cache is still empty (first render race).
@@ -226,15 +313,21 @@ function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any')
     }
   }
 
-  if (!selected) {
-    selected = candidatesByLocale.length ? candidatesByLocale[0] : voices[0];
-    reason = candidatesByLocale.length ? 'any-gender, first candidate' : 'global fallback';
+  if (!selected && candidatesByLocale.length) {
+    selected = candidatesByLocale[0];
+    reason = 'any-gender, first candidate';
   }
 
   if (TTS_DEBUG) {
-    console.log(
-      `[TTS]   → selected: "${selected?.name}" (${selected?.lang}, ${selected ? detectVoiceGender(selected) : 'n/a'}) — ${reason}`
-    );
+    if (selected) {
+      console.log(
+        `[TTS]   -> selected: "${selected.name}" (${selected.lang}, ${detectVoiceGender(selected)}) - ${reason}`
+      );
+    } else {
+      console.warn(
+        `[TTS]   -> no compatible voice found for "${bcp47}" - leaving voice unset so the browser can honor utterance.lang`
+      );
+    }
   }
 
   return selected;
@@ -277,6 +370,7 @@ export function speak(
 ): void {
   if (!text || !('speechSynthesis' in window)) return;
 
+  stopRemoteAudio();
   window.speechSynthesis.cancel();
   // Some browsers (Chrome mobile) pause synthesis after device inactivity.
   if (window.speechSynthesis.paused) window.speechSynthesis.resume();
@@ -300,7 +394,20 @@ export function speak(
     );
   }
 
-  if (options.onEnd)   u.onend   = options.onEnd;
+  if (!voice && canUseRemoteTts(bcp47)) {
+    if (TTS_DEBUG) {
+      console.warn(`[TTS] REMOTE fallback for ${bcp47}`);
+    }
+    void playRemoteTts(text, bcp47, options).catch((error) => {
+      console.warn('[TTS] Remote fallback failed, using browser default voice', error);
+      if (options.onEnd) u.onend = options.onEnd;
+      if (options.onError) u.onerror = options.onError;
+      window.speechSynthesis.speak(u);
+    });
+    return;
+  }
+
+  if (options.onEnd) u.onend = options.onEnd;
   if (options.onError) u.onerror = options.onError;
 
   window.speechSynthesis.speak(u);
