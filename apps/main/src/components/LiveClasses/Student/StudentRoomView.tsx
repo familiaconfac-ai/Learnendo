@@ -71,6 +71,8 @@ const StudentStage: React.FC<{
   user: User;
   session: LiveClassSession;
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
+  teacherPresent: boolean;
+  allowSoloTrailAdvance: boolean;
   showExerciseSession: boolean;
   setShowExerciseSession: (show: boolean) => void;
   onOpenBattleHub: () => void;
@@ -82,6 +84,8 @@ const StudentStage: React.FC<{
   user,
   session,
   assignedRoster,
+  teacherPresent,
+  allowSoloTrailAdvance,
   showExerciseSession,
   setShowExerciseSession,
   onOpenBattleHub,
@@ -878,6 +882,8 @@ const StudentStage: React.FC<{
               assignedRoster={assignedRoster}
               defaultCourseId={liveClass.courseId ?? 'english'}
               uiLanguage={uiLang}
+              teacherPresent={teacherPresent}
+              allowSoloAdvance={allowSoloTrailAdvance}
             />
           ) : null}
           {isTrailStage && !hasActiveTrailSession ? (
@@ -965,6 +971,9 @@ const StudentStage: React.FC<{
 
 export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
   const { liveClass, user, session, onOpenBattleHub, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
+  const teacherPresent = props.presence.some((participant) => participant.isOnline && participant.role === 'teacher');
+  const onlineStudentCount = props.presence.filter((participant) => participant.isOnline && participant.role === 'student').length;
+  const allowSoloTrailAdvance = !teacherPresent && onlineStudentCount <= 1;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [liveKitError, setLiveKitError] = useState<string | null>(null);
@@ -1187,6 +1196,8 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
           user={user}
           session={session}
           assignedRoster={props.assignedRoster}
+          teacherPresent={teacherPresent}
+          allowSoloTrailAdvance={allowSoloTrailAdvance}
           showExerciseSession={showExerciseSession}
           setShowExerciseSession={setShowExerciseSession}
           onOpenBattleHub={onOpenBattleHub}

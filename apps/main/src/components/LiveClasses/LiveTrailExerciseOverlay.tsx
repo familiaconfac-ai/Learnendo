@@ -13,7 +13,9 @@ import {
   Workbook,
 } from '../../types';
 import {
+  clearExerciseBlockStudentResponse,
   saveExerciseSession,
+  setExerciseBlockStudentLock,
   subscribeExerciseBlocks,
   subscribeExerciseSession,
   updateExerciseBlockLivePreview,
@@ -42,12 +44,15 @@ interface LiveTrailExerciseOverlayProps {
   }>;
   defaultCourseId?: string | null;
   uiLanguage?: 'en' | 'pt' | 'es';
+  teacherPresent?: boolean;
+  allowSoloAdvance?: boolean;
   onReturnToWorkspace?: () => void | Promise<void>;
   onOpenSessionPanel?: () => void;
   onOpenBattleTemplate?: (template: SavedBattleTemplate) => void;
 }
 
 type TrailUiLanguage = NonNullable<LiveTrailExerciseOverlayProps['uiLanguage']>;
+const LIVE_TRAIL_COMPLETE_BLOCK_ID = '__complete__';
 
 const TRAIL_COPY = {
   en: {
@@ -90,6 +95,11 @@ const TRAIL_COPY = {
     verdictCorrect: 'got it right',
     verdictWrong: 'got it wrong',
     verdictAnswered: 'answered',
+    answerGroups: 'Class answers',
+    noGroupedAnswers: 'Waiting for the first student answer.',
+    releaseRetry: 'Release retry for wrong answers',
+    releasingRetry: 'Releasing...',
+    waitingTeacher: 'Waiting for teacher',
   },
   pt: {
     liveTrail: 'Trilha Ao Vivo',
@@ -131,6 +141,11 @@ const TRAIL_COPY = {
     verdictCorrect: 'acertou',
     verdictWrong: 'errou',
     verdictAnswered: 'respondeu',
+    answerGroups: 'Respostas da turma',
+    noGroupedAnswers: 'Aguardando a primeira resposta dos alunos.',
+    releaseRetry: 'Liberar nova tentativa para quem errou',
+    releasingRetry: 'Liberando...',
+    waitingTeacher: 'Aguardando o professor',
   },
   es: {
     liveTrail: 'Ruta En Vivo',
@@ -172,6 +187,11 @@ const TRAIL_COPY = {
     verdictCorrect: 'acertó',
     verdictWrong: 'falló',
     verdictAnswered: 'respondió',
+    answerGroups: 'Respuestas del grupo',
+    noGroupedAnswers: 'Esperando la primera respuesta de los alumnos.',
+    releaseRetry: 'Liberar nuevo intento para quienes fallaron',
+    releasingRetry: 'Liberando...',
+    waitingTeacher: 'Esperando al profesor',
   },
 } as const;
 
@@ -591,6 +611,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   assignedRoster,
   defaultCourseId,
   uiLanguage = 'pt',
+  teacherPresent = false,
+  allowSoloAdvance = false,
   onReturnToWorkspace,
   onOpenSessionPanel,
   onOpenBattleTemplate,
@@ -606,6 +628,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [vocabMode, setVocabMode] = useState(false);
   const [selectedVocab, setSelectedVocab] = useState<TrailTranslatorSelection | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [releasingRetry, setReleasingRetry] = useState(false);
 
   const actorName = getActorName(user);
   const courseId = defaultCourseId ?? 'english';
@@ -614,6 +637,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const lessonNumber = getLessonNumberFromId(lessonId);
   const courseLanguage = getCourseLanguageCode(courseId);
   const copy = getTrailCopy(uiLanguage);
+  const teacherGuidedMode = !isTeacher && teacherPresent && !allowSoloAdvance;
 
   useEffect(() => {
     setBlocksError(null);
@@ -665,6 +689,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
 
   const currentBlockIndex = useMemo(() => {
     if (blocks.length === 0) return -1;
+    if (exerciseSession.currentBlockId === LIVE_TRAIL_COMPLETE_BLOCK_ID) return blocks.length;
     const sharedIndex = exerciseSession.currentBlockId
       ? blocks.findIndex((block) => block.id === exerciseSession.currentBlockId)
       : -1;
@@ -674,6 +699,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
 
   const currentBlock = useMemo(() => {
     if (blocks.length === 0) return null;
+    if (currentBlockIndex >= blocks.length) return null;
     if (currentBlockIndex < 0) return blocks[0] ?? null;
     return blocks[currentBlockIndex] ?? blocks[0] ?? null;
   }, [blocks, currentBlockIndex]);
@@ -728,6 +754,52 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     };
   }, [assignedRoster, currentBlock]);
 
+  const teacherAnswerGroups = useMemo(() => {
+    if (!currentBlock || assignedRoster.length === 0) return [];
+
+    const groups = new Map<string, {
+      answer: string;
+      verdict: LiveExerciseAnswerVerdict | null;
+      labels: string[];
+    }>();
+
+    assignedRoster.forEach((student) => {
+      const answer = getStudentResponse(currentBlock, student.uid).trim();
+      const verdict = getStudentVerdict(currentBlock, student.uid);
+      if (!answer) return;
+      const key = `${verdict ?? 'answered'}::${answer.toLowerCase()}`;
+      const existing = groups.get(key);
+      if (existing) {
+        existing.labels.push(student.label);
+        return;
+      }
+      groups.set(key, {
+        answer,
+        verdict,
+        labels: [student.label],
+      });
+    });
+
+    const order = (verdict: LiveExerciseAnswerVerdict | null) => {
+      if (verdict === 'correct' || verdict === 'correct_second_try') return 0;
+      if (verdict === 'wrong') return 1;
+      return 2;
+    };
+
+    return Array.from(groups.values()).sort((left, right) => {
+      const verdictDelta = order(left.verdict) - order(right.verdict);
+      if (verdictDelta !== 0) return verdictDelta;
+      return right.labels.length - left.labels.length;
+    });
+  }, [assignedRoster, currentBlock]);
+
+  const wrongStudentIds = useMemo(() => {
+    if (!currentBlock) return [];
+    return assignedRoster
+      .filter((student) => getStudentVerdict(currentBlock, student.uid) === 'wrong')
+      .map((student) => student.uid);
+  }, [assignedRoster, currentBlock]);
+
   const grammarEntries = useMemo(
     () => Object.entries(GRAMMAR_GUIDES).filter(([key]) => key.startsWith(`L${lessonNumber}_`)),
     [lessonNumber],
@@ -739,6 +811,23 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       !isStudentLocked(currentBlock, user.uid) &&
       getStudentStatus(currentBlock, user.uid) !== 'done'
     : false;
+
+  const handleReleaseWrongAnswers = async () => {
+    if (!isTeacher || !currentBlock || wrongStudentIds.length === 0) return;
+    try {
+      setSaveError(null);
+      setReleasingRetry(true);
+      await Promise.all(
+        wrongStudentIds.map((studentUid) =>
+          clearExerciseBlockStudentResponse(classId, currentBlock.id, studentUid, user.uid, actorName),
+        ),
+      );
+    } catch {
+      setSaveError(copy.syncAnswerError);
+    } finally {
+      setReleasingRetry(false);
+    }
+  };
 
   useEffect(() => {
     setSelectedVocab(null);
@@ -812,7 +901,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     if (!currentBlock || (!isTeacher && !canEdit)) return;
     const answer = payload.answer.trim();
     const verdict = buildVerdict(answer, payload.isCorrect, payload.attemptNumber);
-    const nextStatus: LiveExerciseBlockStatus = answer ? 'in_progress' : 'pending';
 
     try {
       setSaveError(null);
@@ -830,6 +918,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           actorName,
         );
       } else {
+        const nextStatus: LiveExerciseBlockStatus = teacherGuidedMode
+          ? 'done'
+          : answer
+            ? 'in_progress'
+            : 'pending';
         await updateExerciseBlockResponse(
           classId,
           currentBlock.id,
@@ -844,6 +937,16 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             answeredAt: answer ? new Date().toISOString() : undefined,
           },
         );
+        if (teacherGuidedMode && answer) {
+          await setExerciseBlockStudentLock(
+            classId,
+            currentBlock.id,
+            user.uid,
+            true,
+            user.uid,
+            actorName,
+          );
+        }
       }
     } catch {
       setSaveError(copy.syncAnswerError);
@@ -856,6 +959,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     attemptNumber: number;
   }) => {
     if (!currentBlock || (!isTeacher && !canEdit)) return;
+    if (teacherGuidedMode && !isTeacher) return;
     const answer = payload.answer.trim();
     const verdict = buildVerdict(answer, payload.isCorrect, payload.attemptNumber);
 
@@ -889,6 +993,18 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             answeredAt: answer ? new Date().toISOString() : undefined,
           },
         );
+
+        const nextBlock = blocks[currentBlockIndex + 1] ?? null;
+        if (allowSoloAdvance) {
+          await saveExerciseSession(
+            classId,
+            {
+              currentBlockId: nextBlock?.id ?? LIVE_TRAIL_COMPLETE_BLOCK_ID,
+            },
+            user.uid,
+            actorName,
+          );
+        }
       }
 
       if (isTeacher) {
@@ -976,10 +1092,68 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                         : ` (${copy.incorrect})`}
                   </p>
                 ) : null}
+                <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-2.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-300">
+                      {copy.answerGroups}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleReleaseWrongAnswers();
+                      }}
+                      disabled={releasingRetry || wrongStudentIds.length === 0}
+                      className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-100 disabled:opacity-40"
+                    >
+                      {releasingRetry ? copy.releasingRetry : copy.releaseRetry}
+                    </button>
+                  </div>
+                  {teacherAnswerGroups.length > 0 ? (
+                    <div className="mt-2 space-y-1.5">
+                      {teacherAnswerGroups.map((group) => {
+                        const verdictLabel = getVerdictCopy(group.verdict, uiLanguage);
+                        const verdictClasses =
+                          group.verdict === 'correct' || group.verdict === 'correct_second_try'
+                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                            : group.verdict === 'wrong'
+                              ? 'border-rose-500/30 bg-rose-500/10 text-rose-100'
+                              : 'border-slate-700 bg-slate-800/80 text-slate-100';
+                        return (
+                          <div
+                            key={`${group.verdict ?? 'answered'}:${group.answer}:${group.labels.join('|')}`}
+                            className={`rounded-xl border px-2.5 py-2 text-xs ${verdictClasses}`}
+                          >
+                            <p className="font-black">
+                              "{group.answer}" - {verdictLabel}
+                            </p>
+                            <p className="mt-1 text-[11px] text-slate-200">
+                              {group.labels.join(', ')}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-400">
+                      {copy.noGroupedAnswers}
+                    </p>
+                  )}
+                </div>
                 {saveError ? <p className="mt-1 text-xs text-rose-200">{saveError}</p> : null}
               </div>
             ) : (
-              <div className="pointer-events-none h-0" />
+              teacherGuidedMode && !canEdit ? (
+                <div className="max-w-[320px] rounded-2xl border border-amber-400/40 bg-slate-950/92 px-3 py-2.5 shadow-2xl backdrop-blur-sm">
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-300">
+                    {copy.waitingTeacher}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-200">
+                    {lesson?.title || session.activeTrailLabel || copy.liveTrail}
+                  </p>
+                </div>
+              ) : (
+                <div className="pointer-events-none h-0" />
+              )
             )}
 
             <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">

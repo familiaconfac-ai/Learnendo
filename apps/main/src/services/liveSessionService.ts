@@ -891,6 +891,7 @@ export async function clearExerciseBlockStudentResponse(
     {
       [`responses.${studentUid}`]: '',
       [`responseStatuses.${studentUid}`]: 'pending',
+      [`responseLocks.${studentUid}`]: false,
       [`responseAttempts.${studentUid}`]: 0,
       [`responseVerdicts.${studentUid}`]: deleteField(),
       [`responseAnsweredAt.${studentUid}`]: deleteField(),

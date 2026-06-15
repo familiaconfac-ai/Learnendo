@@ -726,15 +726,20 @@ const TeacherStage: React.FC<{
           <button
             type="button"
             onClick={() => {
+              if (hasActiveTrailSession && !isTrailStage) {
+                setShowExerciseSession(false);
+                void handleUpdateSession({ mainStageMode: 'trail' });
+                return;
+              }
               setShowExerciseSession(!showExerciseSession);
             }}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
-              showExerciseSession
+              showExerciseSession || (hasActiveTrailSession && isTrailStage)
                 ? 'bg-violet-500 text-white hover:bg-violet-400'
                 : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
             }`}
-            title={labels.trailSession}
-            aria-label={labels.trailSession}
+            title={hasActiveTrailSession && !isTrailStage ? 'Voltar para a trilha ao vivo' : labels.trailSession}
+            aria-label={hasActiveTrailSession && !isTrailStage ? 'Voltar para a trilha ao vivo' : labels.trailSession}
           >
             {TEACHER_TRAIL_BUTTON_LABEL}
           </button>

@@ -221,7 +221,7 @@ export interface LiveClassSession {
   studentCameraMode?: 'off' | 'follow-mic' | 'required';
   allowStudentWhiteboardEdit?: boolean;
   audioNotesEnabled?: boolean;
-  mainStageMode?: 'workspace' | 'camera' | 'battle'; // 'workspace' = área de trabalho colaborativa, 'camera' = câmera principal
+  mainStageMode?: 'workspace' | 'camera' | 'battle' | 'trail'; // 'workspace' = área de trabalho colaborativa, 'camera' = câmera principal
   isBoardLocked?: boolean; // professor pode travar a lousa para alunos
   studentEditingEnabled?: boolean; // professor pode desabilitar edição de caixas por alunos
   lastUpdatedBy?: string;
