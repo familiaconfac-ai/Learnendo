@@ -34,6 +34,7 @@ import {
   saveVocabularyEntry,
   translateText,
 } from '../../services/vocabularyService';
+import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../utils/tabScopedStorage';
 
 interface LiveTrailExerciseOverlayProps {
   classId: string;
@@ -687,7 +688,15 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const lessonId = session.activeLessonId ?? null;
   const lessonNumber = getLessonNumberFromId(lessonId);
   const courseLanguage = getCourseLanguageCode(courseId);
-  const copy = getTrailCopy(uiLanguage);
+  const effectiveUiLanguage: TrailUiLanguage = (() => {
+    try {
+      const stored = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY);
+      return stored === 'en' || stored === 'pt' || stored === 'es' ? stored : uiLanguage;
+    } catch {
+      return uiLanguage;
+    }
+  })();
+  const copy = getTrailCopy(effectiveUiLanguage);
   const teacherGuidedMode = !isTeacher && !allowSoloAdvance;
   const [waitingTeacherRelease, setWaitingTeacherRelease] = useState(false);
 
@@ -925,6 +934,13 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       !isStudentLocked(currentBlock, user.uid) &&
       getStudentStatus(currentBlock, user.uid) !== 'done'
     : false;
+  const studentRetryReleased = Boolean(
+    !isTeacher
+    && teacherGuidedMode
+    && currentBlock
+    && getStudentStatus(currentBlock, user.uid) === 'pending'
+    && !isStudentLocked(currentBlock, user.uid),
+  );
 
   useEffect(() => {
     if (isTeacher || !currentBlock) return;
@@ -1236,7 +1252,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                 {teacherSummary.latestStudentAnswer ? (
                   <p className="mt-1 max-w-[460px] text-xs text-emerald-200">
                     {copy.latestAnswer}: <span className="font-black">{teacherSummary.latestStudentAnswer.label}</span>{' '}
-                    {getVerdictCopy(teacherSummary.latestStudentAnswer.verdict, uiLanguage)} "
+                    {getVerdictCopy(teacherSummary.latestStudentAnswer.verdict, effectiveUiLanguage)} "
                     {teacherSummary.latestStudentAnswer.answer}".
                   </p>
                 ) : (
@@ -1275,7 +1291,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   {teacherAnswerGroups.length > 0 ? (
                     <div className="mt-2 space-y-1.5">
                       {teacherAnswerGroups.map((group) => {
-                        const verdictLabel = getVerdictCopy(group.verdict, uiLanguage);
+                        const verdictLabel = getVerdictCopy(group.verdict, effectiveUiLanguage);
                         const verdictClasses =
                           group.verdict === 'correct' || group.verdict === 'correct_second_try'
                             ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
@@ -1422,7 +1438,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             totalItems={blocks.length}
             lessonId={lessonNumber}
             currentLanguage={courseLanguage}
-            uiLanguage={uiLanguage}
+            uiLanguage={effectiveUiLanguage}
             copyLanguage={courseLanguage === 'en' || courseLanguage === 'pt' || courseLanguage === 'es' ? courseLanguage : 'en'}
             onAttempt={handleAttempt}
             onContinue={handleContinue}
@@ -1430,6 +1446,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             feedbackActionLocked={!isTeacher && teacherGuidedMode && waitingTeacherRelease}
             persistCorrectFooterAction={isTeacher}
             lockWrongFeedbackImmediately={!isTeacher && teacherGuidedMode}
+            retryReleasedSignal={studentRetryReleased}
             fullScreen={true}
             viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
             clickTranslatorMode={vocabMode}
@@ -1491,8 +1508,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         <TrailVocabHelper
           selection={selectedVocab}
           courseLanguage={courseLanguage}
-          uiLanguage={uiLanguage}
-          userId={user.uid}
+            uiLanguage={effectiveUiLanguage}
+            userId={user.uid}
           onClose={() => setSelectedVocab(null)}
         />
       ) : null}

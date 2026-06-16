@@ -511,6 +511,7 @@ export const PracticeSection: React.FC<{
     persistCorrectFooterAction?: boolean;
     copyLanguage?: 'en' | 'pt' | 'es';
     lockWrongFeedbackImmediately?: boolean;
+    retryReleasedSignal?: boolean;
     fullScreen?: boolean;
     viewportTopOffset?: number;
     uiLanguage?: string;
@@ -538,6 +539,7 @@ export const PracticeSection: React.FC<{
       persistCorrectFooterAction = false,
       copyLanguage,
       lockWrongFeedbackImmediately = false,
+      retryReleasedSignal = false,
       fullScreen = false,
       viewportTopOffset = 0,
       uiLanguage,
@@ -687,6 +689,12 @@ export const PracticeSection: React.FC<{
       }
       previousFeedbackActionLockedRef.current = feedbackActionLocked;
     }, [feedbackActionLocked, localWrongFooterLocked]);
+
+    useEffect(() => {
+      if (retryReleasedSignal && localWrongFooterLocked) {
+        setLocalWrongFooterLocked(false);
+      }
+    }, [localWrongFooterLocked, retryReleasedSignal]);
 
     const wrongFooterLocked = feedbackActionLocked || localWrongFooterLocked;
 
