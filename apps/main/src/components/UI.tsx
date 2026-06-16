@@ -508,6 +508,7 @@ export const PracticeSection: React.FC<{
   onContinue?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
   actionLocked?: boolean;
   fullScreen?: boolean;
+  viewportTopOffset?: number;
   uiLanguage?: string;
   clickTranslatorMode?: boolean;
   onTranslatorWordSelect?: (payload: {
@@ -530,6 +531,7 @@ export const PracticeSection: React.FC<{
     onContinue,
     actionLocked = false,
     fullScreen = false,
+    viewportTopOffset = 0,
     uiLanguage,
     clickTranslatorMode = false,
     onTranslatorWordSelect,
@@ -895,7 +897,10 @@ export const PracticeSection: React.FC<{
     const openTranslatorForWord = (
       rawWord: string,
       target: EventTarget | null,
-      event?: React.MouseEvent<HTMLElement>,
+      event?: {
+        stopPropagation?: () => void;
+        preventDefault?: () => void;
+      },
     ) => {
       if (!clickTranslatorMode || !onTranslatorWordSelect) return;
       const normalizedWord = rawWord
@@ -905,6 +910,7 @@ export const PracticeSection: React.FC<{
       const element = target instanceof HTMLElement ? target : null;
       if (!element) return;
       event?.stopPropagation();
+      event?.preventDefault?.();
       const rect = element.getBoundingClientRect();
       onTranslatorWordSelect({
         word: normalizedWord,
@@ -947,6 +953,10 @@ export const PracticeSection: React.FC<{
                 ? 'cursor-pointer rounded-lg px-0.5 transition hover:bg-cyan-500/20 hover:text-cyan-100'
                 : ''
             }`}
+            onPointerDown={(event) => {
+              if (!isTranslatorEnabled) return;
+              openTranslatorForWord(part, event.currentTarget, event);
+            }}
             onClick={(event) => openTranslatorForWord(part, event.currentTarget, event)}
             onKeyDown={(event) => {
               if (!isTranslatorEnabled) return;
@@ -1009,7 +1019,7 @@ export const PracticeSection: React.FC<{
         : (isShortViewport ? 'text-2xl leading-tight' : 'text-3xl sm:text-5xl');
 
       return (
-        <div className={`${displaySizeClass} font-black mb-2 select-none tracking-tighter text-center transition-colors duration-500 break-words ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
+        <div className={`${displaySizeClass} font-black mb-2 tracking-tighter text-center transition-colors duration-500 break-words ${clickTranslatorMode ? '' : 'select-none'} ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
           {renderInteractiveText(item.displayValue)}
         </div>
       );
@@ -1019,7 +1029,10 @@ export const PracticeSection: React.FC<{
     const isMultipleChoice = item.type === 'multiple-choice' || item.type === 'identification';
 
     return (
-      <div className={`${fullScreen ? 'fixed inset-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-hidden outline-none`}>
+      <div
+        className={`${fullScreen ? 'fixed inset-x-0 bottom-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-hidden outline-none`}
+        style={fullScreen ? { top: viewportTopOffset } : undefined}
+      >
         <div className={`w-full max-sm:px-4 max-w-sm px-6 ${isShortViewport ? 'pt-3' : 'pt-5'}`}>
           <div className={`flex items-center gap-3 ${isShortViewport ? 'mb-3' : 'mb-4'}`}>
             {onBack && (
@@ -1263,6 +1276,11 @@ export const PracticeSection: React.FC<{
                   <button
                     key={opt}
                     disabled={actionLocked || (showFooter && feedback === 'correct')}
+                    onPointerDown={(event) => {
+                      if (clickTranslatorMode && onTranslatorWordSelect) {
+                        openTranslatorForWord(opt, event.currentTarget, event);
+                      }
+                    }}
                     onClick={(event) => {
                       if (clickTranslatorMode && onTranslatorWordSelect) {
                         openTranslatorForWord(opt, event.currentTarget, event);

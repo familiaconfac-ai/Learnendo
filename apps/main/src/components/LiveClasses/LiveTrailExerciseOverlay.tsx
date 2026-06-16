@@ -53,6 +53,8 @@ interface LiveTrailExerciseOverlayProps {
 
 type TrailUiLanguage = NonNullable<LiveTrailExerciseOverlayProps['uiLanguage']>;
 const LIVE_TRAIL_COMPLETE_BLOCK_ID = '__complete__';
+const LIVE_TRAIL_VIEWPORT_TOP_OFFSET = 88;
+const LIVE_TRAIL_CHROME_TOP_OFFSET = 100;
 
 const TRAIL_COPY = {
   en: {
@@ -1059,7 +1061,10 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     <>
       {practiceItem ? (
         <div className="fixed inset-0 z-[120] bg-slate-950">
-          <div className="fixed left-3 right-3 top-[58px] z-[135] flex flex-col gap-2 sm:left-4 sm:right-4 sm:top-[70px] sm:flex-row sm:items-start sm:justify-between">
+          <div
+            className="fixed left-3 right-3 z-[135] flex flex-col gap-2 sm:left-4 sm:right-4 sm:flex-row sm:items-start sm:justify-between"
+            style={{ top: `calc(env(safe-area-inset-top, 0px) + ${LIVE_TRAIL_CHROME_TOP_OFFSET}px)` }}
+          >
             {isTeacher ? (
               <div className="max-w-[520px] rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2.5 shadow-2xl backdrop-blur-sm">
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-300">
@@ -1244,6 +1249,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                 <img src="/apple-touch-icon.png" alt="" className="h-6 w-6 object-contain" />
               </button>
             </div>
+            {vocabMode ? (
+              <div className="rounded-2xl border border-cyan-400/30 bg-slate-950/92 px-3 py-2 text-[11px] font-bold text-cyan-100 shadow-2xl backdrop-blur-sm">
+                {copy.openTranslatorHint}
+              </div>
+            ) : null}
           </div>
 
           <PracticeSection
@@ -1258,6 +1268,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             onContinue={handleContinue}
             actionLocked={!isTeacher && !canEdit}
             fullScreen={true}
+            viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
             clickTranslatorMode={vocabMode}
             onTranslatorWordSelect={({ word, rect }) => {
               if (!vocabMode) return;
