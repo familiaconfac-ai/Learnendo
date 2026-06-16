@@ -334,6 +334,35 @@ function getLatestResponsesForBlock(
   return latest;
 }
 
+function getResolvedStudentAnswer(
+  block: LiveExerciseBlock,
+  studentUid: string,
+  latestResponsesByUser: Map<string, LiveClassResponse>,
+) {
+  const blockAnswer = getStudentResponse(block, studentUid).trim();
+  if (blockAnswer) return blockAnswer;
+
+  const status = getStudentStatus(block, studentUid);
+  if (status === 'pending') return '';
+
+  return latestResponsesByUser.get(studentUid)?.answer?.trim() ?? '';
+}
+
+function getResolvedStudentAnsweredAt(
+  block: LiveExerciseBlock,
+  studentUid: string,
+  latestResponsesByUser: Map<string, LiveClassResponse>,
+) {
+  const answer = getResolvedStudentAnswer(block, studentUid, latestResponsesByUser);
+  if (!answer) return '';
+
+  return currentBlockAnswerTimestamp(block, studentUid) ?? latestResponsesByUser.get(studentUid)?.createdAt ?? '';
+}
+
+function currentBlockAnswerTimestamp(block: LiveExerciseBlock, studentUid: string) {
+  return block.responseAnsweredAt[studentUid] ?? '';
+}
+
 function getExercisePrompt(block: LiveExerciseBlock) {
   const legacyPromptParts = parseLegacyPromptParts(block.prompt);
   return {
@@ -825,16 +854,13 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
 
     const respondedCount = trackedStudents.filter((student) => {
-      const latestResponse = latestResponsesByUser.get(student.uid);
-      if (latestResponse?.answer?.trim()) return true;
-      const response = getStudentResponse(currentBlock, student.uid).trim();
+      const response = getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser);
       const status = getStudentStatus(currentBlock, student.uid);
       return Boolean(response) || status !== 'pending';
     }).length;
 
     const correctCount = trackedStudents.filter((student) => {
-      const answer = latestResponsesByUser.get(student.uid)?.answer?.trim()
-        || getStudentResponse(currentBlock, student.uid).trim();
+      const answer = getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser);
       const verdict = getStudentVerdict(currentBlock, student.uid)
         ?? (answer ? (isStudentAnswerCorrect(currentBlock, answer) ? 'correct' : 'wrong') : null);
       return verdict === 'correct' || verdict === 'correct_second_try';
@@ -844,20 +870,15 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       trackedStudents
         .map((student) => ({
           label: student.label,
-          answer: latestResponsesByUser.get(student.uid)?.answer?.trim()
-            || getStudentResponse(currentBlock, student.uid).trim(),
+          answer: getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser),
           verdict: getStudentVerdict(currentBlock, student.uid)
-            ?? ((latestResponsesByUser.get(student.uid)?.answer?.trim()
-              || getStudentResponse(currentBlock, student.uid).trim())
+            ?? (getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser)
               ? (isStudentAnswerCorrect(
                 currentBlock,
-                latestResponsesByUser.get(student.uid)?.answer?.trim()
-                  || getStudentResponse(currentBlock, student.uid).trim(),
+                getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser),
               ) ? 'correct' : 'wrong')
               : null),
-          answeredAt: latestResponsesByUser.get(student.uid)?.createdAt
-            ?? currentBlock.responseAnsweredAt[student.uid]
-            ?? '',
+          answeredAt: getResolvedStudentAnsweredAt(currentBlock, student.uid, latestResponsesByUser),
         }))
         .filter((item) => item.answer)
         .sort((left, right) => right.answeredAt.localeCompare(left.answeredAt))[0] ?? null;
@@ -888,8 +909,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }>();
 
     trackedStudents.forEach((student) => {
-      const answer = latestResponsesByUser.get(student.uid)?.answer?.trim()
-        || getStudentResponse(currentBlock, student.uid).trim();
+      const answer = getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser);
       const storedVerdict = getStudentVerdict(currentBlock, student.uid);
       const verdict = storedVerdict ?? (answer ? (isStudentAnswerCorrect(currentBlock, answer) ? 'correct' : 'wrong') : null);
       if (!answer || verdict !== 'wrong') return;
@@ -912,8 +932,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     if (!currentBlock) return [];
     return trackedStudents
       .filter((student) => {
-        const answer = latestResponsesByUser.get(student.uid)?.answer?.trim()
-          || getStudentResponse(currentBlock, student.uid).trim();
+        const answer = getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser);
         if (!answer) return false;
         const verdict = getStudentVerdict(currentBlock, student.uid);
         if (verdict === 'wrong') return true;
@@ -934,13 +953,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       !isStudentLocked(currentBlock, user.uid) &&
       getStudentStatus(currentBlock, user.uid) !== 'done'
     : false;
-  const studentRetryReleased = Boolean(
-    !isTeacher
-    && teacherGuidedMode
-    && currentBlock
-    && getStudentStatus(currentBlock, user.uid) === 'pending'
-    && !isStudentLocked(currentBlock, user.uid),
-  );
 
   useEffect(() => {
     if (isTeacher || !currentBlock) return;
@@ -1446,7 +1458,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             feedbackActionLocked={!isTeacher && teacherGuidedMode && waitingTeacherRelease}
             persistCorrectFooterAction={isTeacher}
             lockWrongFeedbackImmediately={!isTeacher && teacherGuidedMode}
-            retryReleasedSignal={studentRetryReleased}
             fullScreen={true}
             viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
             clickTranslatorMode={vocabMode}
