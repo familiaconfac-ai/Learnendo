@@ -785,8 +785,16 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         isOnline: false,
       });
     });
+    liveResponses.forEach((response) => {
+      if (response.exerciseId !== currentBlock.id || !response.userId || tracked.has(response.userId)) return;
+      tracked.set(response.userId, {
+        uid: response.userId,
+        label: response.userName || response.userId,
+        isOnline: false,
+      });
+    });
     return Array.from(tracked.values());
-  }, [assignedRoster, currentBlock]);
+  }, [assignedRoster, currentBlock, liveResponses]);
 
   const latestResponsesByUser = useMemo(
     () => getLatestResponsesForBlock(currentBlock?.id, liveResponses),
@@ -1421,6 +1429,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             actionLocked={!isTeacher && (!canEdit || (teacherGuidedMode && waitingTeacherRelease))}
             feedbackActionLocked={!isTeacher && teacherGuidedMode && waitingTeacherRelease}
             persistCorrectFooterAction={isTeacher}
+            lockWrongFeedbackImmediately={!isTeacher && teacherGuidedMode}
             fullScreen={true}
             viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
             clickTranslatorMode={vocabMode}

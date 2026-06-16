@@ -510,6 +510,7 @@ export const PracticeSection: React.FC<{
     feedbackActionLocked?: boolean;
     persistCorrectFooterAction?: boolean;
     copyLanguage?: 'en' | 'pt' | 'es';
+    lockWrongFeedbackImmediately?: boolean;
     fullScreen?: boolean;
     viewportTopOffset?: number;
     uiLanguage?: string;
@@ -536,6 +537,7 @@ export const PracticeSection: React.FC<{
       feedbackActionLocked = false,
       persistCorrectFooterAction = false,
       copyLanguage,
+      lockWrongFeedbackImmediately = false,
       fullScreen = false,
       viewportTopOffset = 0,
       uiLanguage,
@@ -548,6 +550,7 @@ export const PracticeSection: React.FC<{
     const [showFooter, setShowFooter] = useState(false);
     const [showHint, setShowHint] = useState(false);
     const [praiseText, setPraiseText] = useState('');
+    const [localWrongFooterLocked, setLocalWrongFooterLocked] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const PL = getPL(copyLanguage || currentLanguage || uiLanguage);
@@ -618,6 +621,7 @@ export const PracticeSection: React.FC<{
       setShowHint(false);
       setSelectedOption(null);
       setHasWrongAttempt(false);
+      setLocalWrongFooterLocked(false);
 
       if (item.options && item.options.length > 0) {
         setShuffledOptions(shuffle(item.options));
@@ -674,6 +678,14 @@ export const PracticeSection: React.FC<{
       window.addEventListener('resize', updateViewportHeight);
       return () => window.removeEventListener('resize', updateViewportHeight);
     }, []);
+
+    useEffect(() => {
+      if (!feedbackActionLocked && localWrongFooterLocked) {
+        setLocalWrongFooterLocked(false);
+      }
+    }, [feedbackActionLocked, localWrongFooterLocked]);
+
+    const wrongFooterLocked = feedbackActionLocked || localWrongFooterLocked;
 
     // Auto-grow textarea
     const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -757,6 +769,7 @@ export const PracticeSection: React.FC<{
         reportAttempt(rawInput, false);
         setFeedback('wrong');
         setShowFooter(true);
+        if (lockWrongFeedbackImmediately) setLocalWrongFooterLocked(true);
         new Audio(ERR_SOUND).play().catch(() => {});
         setPraiseText(PL.typeWord);
         speak(PL.typeWordFull, 1, feedbackVoice);
@@ -787,6 +800,7 @@ export const PracticeSection: React.FC<{
           setPraiseText(PL.tryAgain);
           speak(PL.speakNoMatch, 1, feedbackVoice);
           setHasWrongAttempt(true);
+          if (lockWrongFeedbackImmediately) setLocalWrongFooterLocked(true);
         }
         return;
       }
@@ -826,6 +840,7 @@ export const PracticeSection: React.FC<{
           setPraiseText(PL.tryAgain);
           speak(PL.speakNoMatch, 1, feedbackVoice);
           setHasWrongAttempt(true);
+          if (lockWrongFeedbackImmediately) setLocalWrongFooterLocked(true);
         }
         return;
       }
@@ -860,6 +875,7 @@ export const PracticeSection: React.FC<{
         setPraiseText(PL.tryAgain);
         speak(PL.speakNoMatch, 1, feedbackVoice);
         if (item.type === 'writing') setHasWrongAttempt(true);
+        if (lockWrongFeedbackImmediately) setLocalWrongFooterLocked(true);
       }
     };
 
@@ -869,7 +885,7 @@ export const PracticeSection: React.FC<{
         if (e.key === 'Enter') {
           e.preventDefault();
           if (showFooter) {
-            if (feedbackActionLocked) return;
+            if (wrongFooterLocked) return;
             // If feedback is showing, trigger CONTINUE/GOT IT
             if (feedback === 'correct') {
               const cb = pendingOnResultRef.current;
@@ -890,11 +906,12 @@ export const PracticeSection: React.FC<{
       }
     };
 
-    const handleOptionClick = (opt: string) => {
-      if (actionLocked) return;
-      if (showFooter && feedback === 'correct') return;
-      if (clickTranslatorMode && onTranslatorWordSelect) return;
-      setSelectedOption(opt);
+      const handleOptionClick = (opt: string) => {
+        if (actionLocked) return;
+        if (showFooter && feedback === 'correct') return;
+        if (wrongFooterLocked) return;
+        if (clickTranslatorMode && onTranslatorWordSelect) return;
+        setSelectedOption(opt);
       speak(opt, 1, promptVoice);
       if (feedback === 'wrong') {
         setShowFooter(false);
@@ -1254,7 +1271,7 @@ export const PracticeSection: React.FC<{
                     return (
                       <button
                         key={opt}
-                        disabled={actionLocked || (showFooter && feedback === 'correct')}
+                        disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
                         onClick={() => handleOptionClick(opt)}
                         aria-label={opt}
                         className={`rounded-2xl overflow-hidden border-4 transition-all [touch-action:manipulation] ${isSelected ? 'border-blue-400 shadow-lg ring-2 ring-blue-400' : 'border-slate-700 hover:border-blue-400'}`}
@@ -1284,7 +1301,7 @@ export const PracticeSection: React.FC<{
                 {shuffledOptions.map((opt) => (
                   <button
                     key={opt}
-                    disabled={actionLocked || (showFooter && feedback === 'correct')}
+                    disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
                     onPointerDown={(event) => {
                       if (clickTranslatorMode && onTranslatorWordSelect) {
                         openTranslatorForWord(opt, event.currentTarget, event);
@@ -1311,7 +1328,7 @@ export const PracticeSection: React.FC<{
                 {/* Auto-growing textarea for speaking exercises - moved below buttons */}
                 <textarea
                   ref={textareaRef}
-                  disabled={actionLocked || (showFooter && feedback === 'correct')}
+                  disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
                   className={`w-full px-4 py-3 border-2 rounded-3xl text-center text-lg font-black focus:border-blue-500 outline-none transition-all resize-none overflow-hidden min-h-16 max-h-32 ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
                   onChange={handleTextareaChange}
@@ -1324,7 +1341,7 @@ export const PracticeSection: React.FC<{
               <div className="w-full">
                 <input
                   ref={inputRef}
-                  disabled={actionLocked || (showFooter && feedback === 'correct')}
+                  disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
                   className={`w-full p-4 border-2 rounded-3xl text-center text-2xl font-black focus:border-blue-500 outline-none transition-all ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
                   onChange={(e) => {
@@ -1371,9 +1388,9 @@ export const PracticeSection: React.FC<{
                     )}
                   </div>
                   <button
-                    disabled={feedbackActionLocked}
-                    onPointerDown={(e) => {
-                        if (feedbackActionLocked) return;
+                    disabled={wrongFooterLocked}
+                      onPointerDown={(e) => {
+                        if (wrongFooterLocked) return;
                         e.preventDefault();
                         if (feedback === 'correct') {
                           const cb = pendingOnResultRef.current;
