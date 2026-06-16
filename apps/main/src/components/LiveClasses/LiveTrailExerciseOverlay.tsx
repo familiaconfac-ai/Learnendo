@@ -343,9 +343,18 @@ function getResolvedStudentAnswer(
   if (blockAnswer) return blockAnswer;
 
   const status = getStudentStatus(block, studentUid);
-  if (status === 'pending') return '';
+  const latestResponse = latestResponsesByUser.get(studentUid);
+  const latestResponseAnswer = latestResponse?.answer?.trim() ?? '';
+  if (!latestResponseAnswer) return '';
+  if (status !== 'pending') return latestResponseAnswer;
 
-  return latestResponsesByUser.get(studentUid)?.answer?.trim() ?? '';
+  const blockUpdatedAt = block.updatedAt ?? '';
+  const responseCreatedAt = latestResponse?.createdAt ?? '';
+  if (responseCreatedAt && (!blockUpdatedAt || responseCreatedAt.localeCompare(blockUpdatedAt) > 0)) {
+    return latestResponseAnswer;
+  }
+
+  return '';
 }
 
 function getResolvedStudentAnsweredAt(
@@ -726,7 +735,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
   })();
   const copy = getTrailCopy(effectiveUiLanguage);
-  const teacherGuidedMode = !isTeacher && !allowSoloAdvance;
+  const teacherGuidedMode = !isTeacher && teacherPresent;
   const [waitingTeacherRelease, setWaitingTeacherRelease] = useState(false);
 
   useEffect(() => {
