@@ -550,7 +550,7 @@ export const PracticeSection: React.FC<{
     const [praiseText, setPraiseText] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const PL = getPL(copyLanguage || uiLanguage || currentLanguage);
+    const PL = getPL(copyLanguage || currentLanguage || uiLanguage);
     // Deterministic voice pair for this exercise: odd #→ female prompt, even #→ male prompt
     const { prompt: promptVoice, feedback: feedbackVoice } = exerciseVoices(currentIdx);
 

@@ -5,6 +5,7 @@ import { PracticeSection } from '../UI';
 import type { BattleConfig, BattleQuestion, SavedBattleTemplate } from './Battle/battleTypes';
 import { buildSavedBattleTemplate, sanitizeBattleQuestion } from './Battle/battleUtils';
 import {
+  LiveClassResponse,
   LiveClassSession,
   LiveExerciseAnswerVerdict,
   LiveExerciseBlock,
@@ -16,7 +17,9 @@ import {
   clearExerciseBlockStudentResponse,
   saveExerciseSession,
   setExerciseBlockStudentLock,
+  submitLiveResponse,
   subscribeExerciseBlocks,
+  subscribeLiveResponses,
   subscribeExerciseSession,
   updateExerciseBlockLivePreview,
   updateExerciseBlockResponse,
@@ -306,6 +309,28 @@ function getVerdictCopy(verdict: LiveExerciseAnswerVerdict | null, language: Tra
   if (verdict === 'correct' || verdict === 'correct_second_try') return copy.verdictCorrect;
   if (verdict === 'wrong') return copy.verdictWrong;
   return copy.verdictAnswered;
+}
+
+function getLatestResponsesForBlock(
+  blockId: string | null | undefined,
+  responses: LiveClassResponse[],
+) {
+  if (!blockId) return new Map<string, LiveClassResponse>();
+  const latest = new Map<string, LiveClassResponse>();
+  responses.forEach((response) => {
+    if (response.exerciseId !== blockId) return;
+    const existing = latest.get(response.userId);
+    if (!existing) {
+      latest.set(response.userId, response);
+      return;
+    }
+    const existingCreatedAt = existing.createdAt ?? '';
+    const nextCreatedAt = response.createdAt ?? '';
+    if (nextCreatedAt.localeCompare(existingCreatedAt) >= 0) {
+      latest.set(response.userId, response);
+    }
+  });
+  return latest;
 }
 
 function getExercisePrompt(block: LiveExerciseBlock) {
@@ -654,6 +679,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [selectedVocab, setSelectedVocab] = useState<TrailTranslatorSelection | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [releasingRetry, setReleasingRetry] = useState(false);
+  const [liveResponses, setLiveResponses] = useState<LiveClassResponse[]>([]);
 
   const actorName = getActorName(user);
   const courseId = defaultCourseId ?? 'english';
@@ -686,6 +712,16 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
 
     return unsubscribe;
   }, [classId, copy.loadError]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeLiveResponses(
+      classId,
+      (next) => setLiveResponses(next),
+      () => undefined,
+    );
+
+    return unsubscribe;
+  }, [classId]);
 
   useEffect(() => {
     let active = true;
@@ -752,6 +788,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     return Array.from(tracked.values());
   }, [assignedRoster, currentBlock]);
 
+  const latestResponsesByUser = useMemo(
+    () => getLatestResponsesForBlock(currentBlock?.id, liveResponses),
+    [currentBlock?.id, liveResponses],
+  );
+
   const teacherSummary = useMemo(() => {
     if (!currentBlock || trackedStudents.length === 0) {
       return {
@@ -767,13 +808,16 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
 
     const respondedCount = trackedStudents.filter((student) => {
+      const latestResponse = latestResponsesByUser.get(student.uid);
+      if (latestResponse?.answer?.trim()) return true;
       const response = getStudentResponse(currentBlock, student.uid).trim();
       const status = getStudentStatus(currentBlock, student.uid);
       return Boolean(response) || status !== 'pending';
     }).length;
 
     const correctCount = trackedStudents.filter((student) => {
-      const answer = getStudentResponse(currentBlock, student.uid).trim();
+      const answer = latestResponsesByUser.get(student.uid)?.answer?.trim()
+        || getStudentResponse(currentBlock, student.uid).trim();
       const verdict = getStudentVerdict(currentBlock, student.uid)
         ?? (answer ? (isStudentAnswerCorrect(currentBlock, answer) ? 'correct' : 'wrong') : null);
       return verdict === 'correct' || verdict === 'correct_second_try';
@@ -783,12 +827,20 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       trackedStudents
         .map((student) => ({
           label: student.label,
-          answer: getStudentResponse(currentBlock, student.uid).trim(),
+          answer: latestResponsesByUser.get(student.uid)?.answer?.trim()
+            || getStudentResponse(currentBlock, student.uid).trim(),
           verdict: getStudentVerdict(currentBlock, student.uid)
-            ?? (getStudentResponse(currentBlock, student.uid).trim()
-              ? (isStudentAnswerCorrect(currentBlock, getStudentResponse(currentBlock, student.uid)) ? 'correct' : 'wrong')
+            ?? ((latestResponsesByUser.get(student.uid)?.answer?.trim()
+              || getStudentResponse(currentBlock, student.uid).trim())
+              ? (isStudentAnswerCorrect(
+                currentBlock,
+                latestResponsesByUser.get(student.uid)?.answer?.trim()
+                  || getStudentResponse(currentBlock, student.uid).trim(),
+              ) ? 'correct' : 'wrong')
               : null),
-          answeredAt: currentBlock.responseAnsweredAt[student.uid] ?? '',
+          answeredAt: latestResponsesByUser.get(student.uid)?.createdAt
+            ?? currentBlock.responseAnsweredAt[student.uid]
+            ?? '',
         }))
         .filter((item) => item.answer)
         .sort((left, right) => right.answeredAt.localeCompare(left.answeredAt))[0] ?? null;
@@ -807,7 +859,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           }
         : null,
     };
-  }, [currentBlock, trackedStudents]);
+  }, [currentBlock, latestResponsesByUser, trackedStudents]);
 
   const teacherAnswerGroups = useMemo(() => {
     if (!currentBlock || trackedStudents.length === 0) return [];
@@ -819,7 +871,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }>();
 
     trackedStudents.forEach((student) => {
-      const answer = getStudentResponse(currentBlock, student.uid).trim();
+      const answer = latestResponsesByUser.get(student.uid)?.answer?.trim()
+        || getStudentResponse(currentBlock, student.uid).trim();
       const storedVerdict = getStudentVerdict(currentBlock, student.uid);
       const verdict = storedVerdict ?? (answer ? (isStudentAnswerCorrect(currentBlock, answer) ? 'correct' : 'wrong') : null);
       if (!answer || verdict !== 'wrong') return;
@@ -836,13 +889,14 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       });
     });
     return Array.from(groups.values()).sort((left, right) => right.labels.length - left.labels.length);
-  }, [currentBlock, trackedStudents]);
+  }, [currentBlock, latestResponsesByUser, trackedStudents]);
 
   const wrongStudentIds = useMemo(() => {
     if (!currentBlock) return [];
     return trackedStudents
       .filter((student) => {
-        const answer = getStudentResponse(currentBlock, student.uid).trim();
+        const answer = latestResponsesByUser.get(student.uid)?.answer?.trim()
+          || getStudentResponse(currentBlock, student.uid).trim();
         if (!answer) return false;
         const verdict = getStudentVerdict(currentBlock, student.uid);
         if (verdict === 'wrong') return true;
@@ -850,7 +904,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         return !isStudentAnswerCorrect(currentBlock, answer);
       })
       .map((student) => student.uid);
-  }, [currentBlock, trackedStudents]);
+  }, [currentBlock, latestResponsesByUser, trackedStudents]);
 
   const grammarEntries = useMemo(
     () => Object.entries(GRAMMAR_GUIDES).filter(([key]) => key.startsWith(`L${lessonNumber}_`)),
@@ -1009,6 +1063,16 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             answeredAt: answer ? new Date().toISOString() : undefined,
           },
         );
+        if (answer) {
+          await submitLiveResponse(classId, {
+            userId: user.uid,
+            userName: actorName,
+            workbookId,
+            lessonId,
+            exerciseId: currentBlock.id,
+            answer: payload.answer,
+          });
+        }
         if (teacherGuidedMode && answer) {
           await setExerciseBlockStudentLock(
             classId,
