@@ -688,7 +688,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const lessonNumber = getLessonNumberFromId(lessonId);
   const courseLanguage = getCourseLanguageCode(courseId);
   const copy = getTrailCopy(uiLanguage);
-  const teacherGuidedMode = !isTeacher && teacherPresent && !allowSoloAdvance;
+  const teacherGuidedMode = !isTeacher && !allowSoloAdvance;
   const [waitingTeacherRelease, setWaitingTeacherRelease] = useState(false);
 
   useEffect(() => {
@@ -1052,6 +1052,16 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         if (teacherGuidedMode && answer) {
           setWaitingTeacherRelease(true);
         }
+        if (answer) {
+          await submitLiveResponse(classId, {
+            userId: user.uid,
+            userName: actorName,
+            workbookId,
+            lessonId,
+            exerciseId: currentBlock.id,
+            answer: payload.answer,
+          });
+        }
         const nextStatus: LiveExerciseBlockStatus = teacherGuidedMode
           ? 'done'
           : answer
@@ -1071,16 +1081,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             answeredAt: answer ? new Date().toISOString() : undefined,
           },
         );
-        if (answer) {
-          await submitLiveResponse(classId, {
-            userId: user.uid,
-            userName: actorName,
-            workbookId,
-            lessonId,
-            exerciseId: currentBlock.id,
-            answer: payload.answer,
-          });
-        }
         if (teacherGuidedMode && answer) {
           await setExerciseBlockStudentLock(
             classId,

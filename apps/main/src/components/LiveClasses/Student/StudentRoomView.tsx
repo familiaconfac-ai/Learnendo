@@ -972,8 +972,8 @@ const StudentStage: React.FC<{
 export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
   const { liveClass, user, session, onOpenBattleHub, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
   const teacherPresent = props.presence.some((participant) => participant.isOnline && participant.role === 'teacher');
-  const onlineStudentCount = props.presence.filter((participant) => participant.isOnline && participant.role === 'student').length;
-  const allowSoloTrailAdvance = !teacherPresent && onlineStudentCount <= 1;
+  const onlineParticipantCount = props.presence.filter((participant) => participant.isOnline).length;
+  const allowSoloTrailAdvance = onlineParticipantCount <= 1;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [liveKitError, setLiveKitError] = useState<string | null>(null);
