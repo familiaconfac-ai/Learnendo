@@ -511,6 +511,8 @@ export const PracticeSection: React.FC<{
     persistCorrectFooterAction?: boolean;
     copyLanguage?: 'en' | 'pt' | 'es';
     lockWrongFeedbackImmediately?: boolean;
+    retryReleaseVersion?: number;
+    autoPlayAudio?: boolean;
     fullScreen?: boolean;
     viewportTopOffset?: number;
     uiLanguage?: string;
@@ -538,6 +540,8 @@ export const PracticeSection: React.FC<{
       persistCorrectFooterAction = false,
       copyLanguage,
       lockWrongFeedbackImmediately = false,
+      retryReleaseVersion = 0,
+      autoPlayAudio = true,
       fullScreen = false,
       viewportTopOffset = 0,
       uiLanguage,
@@ -603,6 +607,7 @@ export const PracticeSection: React.FC<{
     const pendingOnResultRef = useRef<(() => void) | null>(null);
     const lastAttemptMetaRef = useRef<{ answer: string; isCorrect: boolean; attemptNumber: number } | null>(null);
     const previousFeedbackActionLockedRef = useRef(feedbackActionLocked);
+    const previousRetryReleaseVersionRef = useRef(retryReleaseVersion);
 
     useEffect(() => {
       // Cancel any ongoing STT from the previous exercise so its callbacks can't
@@ -648,15 +653,15 @@ export const PracticeSection: React.FC<{
 
       const _cleanups: Array<() => void> = [];
 
-      if (item.audioValue && item.type !== 'speaking' && item.type !== 'writing') {
+      if (autoPlayAudio && item.audioValue && item.type !== 'speaking' && item.type !== 'writing') {
         _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
-      } else if (item.audioValue && item.type === 'speaking') {
+      } else if (autoPlayAudio && item.audioValue && item.type === 'speaking') {
         // ✅ Auto-play audio for speaking/shadowing exercises
         const t = setTimeout(() => {
           _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
         }, 500);
         _cleanups.push(() => clearTimeout(t));
-      } else if (item.audioValue && isDictationWriting) {
+      } else if (autoPlayAudio && item.audioValue && isDictationWriting) {
         // Dictation writing: play audio upfront so students can hear before typing
         _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
       }
@@ -687,6 +692,16 @@ export const PracticeSection: React.FC<{
       }
       previousFeedbackActionLockedRef.current = feedbackActionLocked;
     }, [feedbackActionLocked, localWrongFooterLocked]);
+
+    useEffect(() => {
+      if (
+        retryReleaseVersion !== previousRetryReleaseVersionRef.current
+        && localWrongFooterLocked
+      ) {
+        setLocalWrongFooterLocked(false);
+      }
+      previousRetryReleaseVersionRef.current = retryReleaseVersion;
+    }, [localWrongFooterLocked, retryReleaseVersion]);
 
     const wrongFooterLocked = feedbackActionLocked || localWrongFooterLocked;
 
@@ -1391,9 +1406,9 @@ export const PracticeSection: React.FC<{
                     )}
                   </div>
                   <button
-                    disabled={wrongFooterLocked}
+                    disabled={feedback === 'wrong' ? wrongFooterLocked : false}
                       onPointerDown={(e) => {
-                        if (wrongFooterLocked) return;
+                        if (feedback === 'wrong' && wrongFooterLocked) return;
                         e.preventDefault();
                         if (feedback === 'correct') {
                           const cb = pendingOnResultRef.current;

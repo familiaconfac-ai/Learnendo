@@ -399,6 +399,15 @@ export function speak(
       console.warn(`[TTS] REMOTE fallback for ${bcp47}`);
     }
     void playRemoteTts(text, bcp47, options).catch((error) => {
+      if (
+        (error instanceof DOMException && error.name === 'AbortError')
+        || (typeof error === 'object' && error !== null && 'name' in error && (error as { name?: string }).name === 'AbortError')
+      ) {
+        if (TTS_DEBUG) {
+          console.log('[TTS] Remote fallback aborted by a newer speak call');
+        }
+        return;
+      }
       console.warn('[TTS] Remote fallback failed, using browser default voice', error);
       if (options.onEnd) u.onend = options.onEnd;
       if (options.onError) u.onerror = options.onError;

@@ -719,6 +719,13 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [saveError, setSaveError] = useState<string | null>(null);
   const [releasingRetry, setReleasingRetry] = useState(false);
   const [liveResponses, setLiveResponses] = useState<LiveClassResponse[]>([]);
+  const [retryReleaseVersion, setRetryReleaseVersion] = useState(0);
+  const previousStudentBlockStateRef = useRef<{
+    blockId: string | null;
+    status: LiveExerciseBlockStatus;
+    locked: boolean;
+    response: string;
+  } | null>(null);
 
   const actorName = getActorName(user);
   const courseId = defaultCourseId ?? 'english';
@@ -974,6 +981,28 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       setWaitingTeacherRelease(true);
     }
   }, [currentBlock, isTeacher, teacherGuidedMode, user.uid]);
+
+  useEffect(() => {
+    if (isTeacher || !currentBlock) return;
+    const nextState = {
+      blockId: currentBlock.id,
+      status: getStudentStatus(currentBlock, user.uid),
+      locked: isStudentLocked(currentBlock, user.uid),
+      response: getStudentResponse(currentBlock, user.uid).trim(),
+    };
+    const previousState = previousStudentBlockStateRef.current;
+    if (
+      previousState
+      && previousState.blockId === nextState.blockId
+      && (previousState.status !== 'pending' || previousState.locked || previousState.response)
+      && nextState.status === 'pending'
+      && !nextState.locked
+      && !nextState.response
+    ) {
+      setRetryReleaseVersion((current) => current + 1);
+    }
+    previousStudentBlockStateRef.current = nextState;
+  }, [currentBlock, isTeacher, user.uid]);
 
   const releaseWrongAnswers = async () => {
     if (!isTeacher || !currentBlock || wrongStudentIds.length === 0) return;
@@ -1467,6 +1496,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             feedbackActionLocked={!isTeacher && teacherGuidedMode && waitingTeacherRelease}
             persistCorrectFooterAction={isTeacher}
             lockWrongFeedbackImmediately={!isTeacher && teacherGuidedMode}
+            retryReleaseVersion={retryReleaseVersion}
+            autoPlayAudio={!isTeacher}
             fullScreen={true}
             viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
             clickTranslatorMode={vocabMode}
