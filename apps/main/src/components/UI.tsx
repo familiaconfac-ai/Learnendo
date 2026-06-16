@@ -860,16 +860,17 @@ export const PracticeSection: React.FC<{
     };
 
     // ✅ Handle ENTER key
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-      if (actionLocked) return;
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (showFooter) {
-          // If feedback is showing, trigger CONTINUE/GOT IT
-          if (feedback === 'correct') {
-            const cb = pendingOnResultRef.current;
-            pendingOnResultRef.current = null;
-            cb?.();
+      const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (actionLocked) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (showFooter) {
+            if (feedbackActionLocked) return;
+            // If feedback is showing, trigger CONTINUE/GOT IT
+            if (feedback === 'correct') {
+              const cb = pendingOnResultRef.current;
+              pendingOnResultRef.current = null;
+              cb?.();
           } else {
             setFeedback('none');
             setShowFooter(false);
