@@ -665,28 +665,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const teacherGuidedMode = !isTeacher && teacherPresent && !allowSoloAdvance;
   const [waitingTeacherRelease, setWaitingTeacherRelease] = useState(false);
 
-  const trackedStudents = useMemo(() => {
-    if (!currentBlock) return assignedRoster;
-    const tracked = new Map<string, { uid: string; label: string; isOnline: boolean }>();
-    assignedRoster.forEach((student) => {
-      tracked.set(student.uid, student);
-    });
-    [
-      ...Object.keys(currentBlock.responses ?? {}),
-      ...Object.keys(currentBlock.responseStatuses ?? {}),
-      ...Object.keys(currentBlock.responseVerdicts ?? {}),
-      ...Object.keys(currentBlock.responseLocks ?? {}),
-    ].forEach((uid) => {
-      if (!uid || tracked.has(uid)) return;
-      tracked.set(uid, {
-        uid,
-        label: uid,
-        isOnline: false,
-      });
-    });
-    return Array.from(tracked.values());
-  }, [assignedRoster, currentBlock]);
-
   useEffect(() => {
     setBlocksError(null);
     const unsubscribe = subscribeExerciseSession(
@@ -751,6 +729,28 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     if (currentBlockIndex < 0) return blocks[0] ?? null;
     return blocks[currentBlockIndex] ?? blocks[0] ?? null;
   }, [blocks, currentBlockIndex]);
+
+  const trackedStudents = useMemo(() => {
+    if (!currentBlock) return assignedRoster;
+    const tracked = new Map<string, { uid: string; label: string; isOnline: boolean }>();
+    assignedRoster.forEach((student) => {
+      tracked.set(student.uid, student);
+    });
+    [
+      ...Object.keys(currentBlock.responses ?? {}),
+      ...Object.keys(currentBlock.responseStatuses ?? {}),
+      ...Object.keys(currentBlock.responseVerdicts ?? {}),
+      ...Object.keys(currentBlock.responseLocks ?? {}),
+    ].forEach((uid) => {
+      if (!uid || tracked.has(uid)) return;
+      tracked.set(uid, {
+        uid,
+        label: uid,
+        isOnline: false,
+      });
+    });
+    return Array.from(tracked.values());
+  }, [assignedRoster, currentBlock]);
 
   const teacherSummary = useMemo(() => {
     if (!currentBlock || trackedStudents.length === 0) {
