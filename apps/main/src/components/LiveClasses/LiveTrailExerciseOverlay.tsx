@@ -248,6 +248,26 @@ function getStudentVerdict(
   return block.responseVerdicts[studentUid] ?? null;
 }
 
+function normalizeComparableAnswer(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[.,!?;:()[\]{}"'`]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+function isStudentAnswerCorrect(block: LiveExerciseBlock, answer: string) {
+  const normalizedAnswer = normalizeComparableAnswer(answer);
+  if (!normalizedAnswer) return false;
+  const acceptedAnswers = [
+    block.expectedAnswer ?? '',
+    ...(block.acceptedAnswers ?? []),
+  ]
+    .map((item) => normalizeComparableAnswer(item))
+    .filter(Boolean);
+  return acceptedAnswers.includes(normalizedAnswer);
+}
+
 function parseLegacyPromptParts(prompt: string) {
   const lines = prompt
     .split('\n')
@@ -643,6 +663,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const courseLanguage = getCourseLanguageCode(courseId);
   const copy = getTrailCopy(uiLanguage);
   const teacherGuidedMode = !isTeacher && teacherPresent && !allowSoloAdvance;
+  const [waitingTeacherRelease, setWaitingTeacherRelease] = useState(false);
 
   useEffect(() => {
     setBlocksError(null);
@@ -770,7 +791,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
 
     assignedRoster.forEach((student) => {
       const answer = getStudentResponse(currentBlock, student.uid).trim();
-      const verdict = getStudentVerdict(currentBlock, student.uid);
+      const storedVerdict = getStudentVerdict(currentBlock, student.uid);
+      const verdict = storedVerdict ?? (answer ? (isStudentAnswerCorrect(currentBlock, answer) ? 'correct' : 'wrong') : null);
       if (!answer || verdict !== 'wrong') return;
       const key = `${verdict ?? 'answered'}::${answer.toLowerCase()}`;
       const existing = groups.get(key);
@@ -790,7 +812,14 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const wrongStudentIds = useMemo(() => {
     if (!currentBlock) return [];
     return assignedRoster
-      .filter((student) => getStudentVerdict(currentBlock, student.uid) === 'wrong')
+      .filter((student) => {
+        const answer = getStudentResponse(currentBlock, student.uid).trim();
+        if (!answer) return false;
+        const verdict = getStudentVerdict(currentBlock, student.uid);
+        if (verdict === 'wrong') return true;
+        if (verdict === 'correct' || verdict === 'correct_second_try') return false;
+        return !isStudentAnswerCorrect(currentBlock, answer);
+      })
       .map((student) => student.uid);
   }, [assignedRoster, currentBlock]);
 
@@ -806,16 +835,33 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       getStudentStatus(currentBlock, user.uid) !== 'done'
     : false;
 
+  useEffect(() => {
+    if (isTeacher || !currentBlock) return;
+    const status = getStudentStatus(currentBlock, user.uid);
+    if (status === 'pending' && !isStudentLocked(currentBlock, user.uid)) {
+      setWaitingTeacherRelease(false);
+      return;
+    }
+    if (teacherGuidedMode && status === 'done') {
+      setWaitingTeacherRelease(true);
+    }
+  }, [currentBlock, isTeacher, teacherGuidedMode, user.uid]);
+
+  const releaseWrongAnswers = async () => {
+    if (!isTeacher || !currentBlock || wrongStudentIds.length === 0) return;
+    await Promise.all(
+      wrongStudentIds.map((studentUid) =>
+        clearExerciseBlockStudentResponse(classId, currentBlock.id, studentUid, user.uid, actorName),
+      ),
+    );
+  };
+
   const handleReleaseWrongAnswers = async () => {
     if (!isTeacher || !currentBlock || wrongStudentIds.length === 0) return;
     try {
       setSaveError(null);
       setReleasingRetry(true);
-      await Promise.all(
-        wrongStudentIds.map((studentUid) =>
-          clearExerciseBlockStudentResponse(classId, currentBlock.id, studentUid, user.uid, actorName),
-        ),
-      );
+      await releaseWrongAnswers();
     } catch {
       setSaveError(copy.syncAnswerError);
     } finally {
@@ -932,6 +978,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           },
         );
         if (teacherGuidedMode && answer) {
+          setWaitingTeacherRelease(true);
+        }
+        if (teacherGuidedMode && answer) {
           await setExerciseBlockStudentLock(
             classId,
             currentBlock.id,
@@ -972,6 +1021,18 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           user.uid,
           actorName,
         );
+        if (payload.isCorrect && wrongStudentIds.length > 0) {
+          setReleasingRetry(true);
+          try {
+            await releaseWrongAnswers();
+          } finally {
+            setReleasingRetry(false);
+          }
+          return;
+        }
+        if (teacherSummary.pendingCount > 0 || wrongStudentIds.length > 0) {
+          return;
+        }
       } else {
         await updateExerciseBlockResponse(
           classId,
@@ -987,6 +1048,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             answeredAt: answer ? new Date().toISOString() : undefined,
           },
         );
+        if (teacherGuidedMode && answer) {
+          setWaitingTeacherRelease(true);
+        }
 
         const nextBlock = blocks[currentBlockIndex + 1] ?? null;
         if (allowSoloAdvance) {
@@ -1261,7 +1325,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             onAttempt={handleAttempt}
             onContinue={handleContinue}
             actionLocked={!isTeacher && !canEdit}
-            feedbackActionLocked={!isTeacher && teacherGuidedMode}
+            feedbackActionLocked={!isTeacher && teacherGuidedMode && waitingTeacherRelease}
             fullScreen={true}
             viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
             clickTranslatorMode={vocabMode}
