@@ -494,9 +494,9 @@ const getPL = (lang: string) =>
   PRACTICE_LABELS[(lang as PracticeLang) in PRACTICE_LABELS ? (lang as PracticeLang) : 'en'];
 
 export const PracticeSection: React.FC<{
-  item: PracticeItem;
-  onResult: (correct: boolean, val: string) => void;
-  currentIdx: number;
+    item: PracticeItem;
+    onResult: (correct: boolean, val: string) => void;
+    currentIdx: number;
   totalItems: number;
   lessonId: number;
   unitNumber?: number;
@@ -509,9 +509,10 @@ export const PracticeSection: React.FC<{
     actionLocked?: boolean;
     feedbackActionLocked?: boolean;
     persistCorrectFooterAction?: boolean;
+    copyLanguage?: 'en' | 'pt' | 'es';
     fullScreen?: boolean;
-  viewportTopOffset?: number;
-  uiLanguage?: string;
+    viewportTopOffset?: number;
+    uiLanguage?: string;
   clickTranslatorMode?: boolean;
   onTranslatorWordSelect?: (payload: {
     word: string;
@@ -530,14 +531,15 @@ export const PracticeSection: React.FC<{
     totalDays,
     currentLanguage = 'en',
     onAttempt,
-    onContinue,
-    actionLocked = false,
-    feedbackActionLocked = false,
-    persistCorrectFooterAction = false,
-    fullScreen = false,
-    viewportTopOffset = 0,
-    uiLanguage,
-    clickTranslatorMode = false,
+      onContinue,
+      actionLocked = false,
+      feedbackActionLocked = false,
+      persistCorrectFooterAction = false,
+      copyLanguage,
+      fullScreen = false,
+      viewportTopOffset = 0,
+      uiLanguage,
+      clickTranslatorMode = false,
     onTranslatorWordSelect,
   }) => {
     const [userInput, setUserInput] = useState('');
@@ -548,7 +550,7 @@ export const PracticeSection: React.FC<{
     const [praiseText, setPraiseText] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const PL = getPL(uiLanguage || currentLanguage);
+    const PL = getPL(copyLanguage || uiLanguage || currentLanguage);
     // Deterministic voice pair for this exercise: odd #→ female prompt, even #→ male prompt
     const { prompt: promptVoice, feedback: feedbackVoice } = exerciseVoices(currentIdx);
 

@@ -987,6 +987,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           actorName,
         );
       } else {
+        if (teacherGuidedMode && answer) {
+          setWaitingTeacherRelease(true);
+        }
         const nextStatus: LiveExerciseBlockStatus = teacherGuidedMode
           ? 'done'
           : answer
@@ -1006,9 +1009,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             answeredAt: answer ? new Date().toISOString() : undefined,
           },
         );
-        if (teacherGuidedMode && answer) {
-          setWaitingTeacherRelease(true);
-        }
         if (teacherGuidedMode && answer) {
           await setExerciseBlockStudentLock(
             classId,
@@ -1351,9 +1351,10 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             lessonId={lessonNumber}
             currentLanguage={courseLanguage}
             uiLanguage={uiLanguage}
+            copyLanguage={courseLanguage === 'en' || courseLanguage === 'pt' || courseLanguage === 'es' ? courseLanguage : 'en'}
             onAttempt={handleAttempt}
             onContinue={handleContinue}
-            actionLocked={!isTeacher && !canEdit}
+            actionLocked={!isTeacher && (!canEdit || (teacherGuidedMode && waitingTeacherRelease))}
             feedbackActionLocked={!isTeacher && teacherGuidedMode && waitingTeacherRelease}
             persistCorrectFooterAction={isTeacher}
             fullScreen={true}
