@@ -602,6 +602,7 @@ export const PracticeSection: React.FC<{
     // Stores the onResult action prepared at CHECK time so Continue never reads stale state
     const pendingOnResultRef = useRef<(() => void) | null>(null);
     const lastAttemptMetaRef = useRef<{ answer: string; isCorrect: boolean; attemptNumber: number } | null>(null);
+    const previousFeedbackActionLockedRef = useRef(feedbackActionLocked);
 
     useEffect(() => {
       // Cancel any ongoing STT from the previous exercise so its callbacks can't
@@ -680,9 +681,11 @@ export const PracticeSection: React.FC<{
     }, []);
 
     useEffect(() => {
-      if (!feedbackActionLocked && localWrongFooterLocked) {
+      const wasFeedbackLocked = previousFeedbackActionLockedRef.current;
+      if (wasFeedbackLocked && !feedbackActionLocked && localWrongFooterLocked) {
         setLocalWrongFooterLocked(false);
       }
+      previousFeedbackActionLockedRef.current = feedbackActionLocked;
     }, [feedbackActionLocked, localWrongFooterLocked]);
 
     const wrongFooterLocked = feedbackActionLocked || localWrongFooterLocked;
