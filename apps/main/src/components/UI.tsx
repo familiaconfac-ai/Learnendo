@@ -507,6 +507,7 @@ export const PracticeSection: React.FC<{
   onAttempt?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
   onContinue?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
   actionLocked?: boolean;
+  feedbackActionLocked?: boolean;
   fullScreen?: boolean;
   viewportTopOffset?: number;
   uiLanguage?: string;
@@ -530,6 +531,7 @@ export const PracticeSection: React.FC<{
     onAttempt,
     onContinue,
     actionLocked = false,
+    feedbackActionLocked = false,
     fullScreen = false,
     viewportTopOffset = 0,
     uiLanguage,
@@ -1336,12 +1338,12 @@ export const PracticeSection: React.FC<{
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex flex-col flex-1">
-                    <div className={`font-black uppercase text-lg tracking-widest animate-in slide-in-from-left-2 ${feedback === 'correct' ? 'text-yellow-400' : 'text-red-400'}`}>
+                    <div className={`font-black uppercase text-lg tracking-widest animate-in slide-in-from-left-2 ${feedback === 'correct' ? 'text-yellow-400' : 'text-white'}`}>
                       {praiseText}
                     </div>
                     {feedback === 'wrong' && (
-                      <div className="text-red-300 font-bold text-xs mt-1 animate-in fade-in">
-                        {PL.correctAnswer} <span className="font-black text-sm uppercase underline decoration-2">{item.correctValue}</span>
+                      <div className="text-white font-bold text-xs mt-1 animate-in fade-in">
+                        {PL.correctAnswer} <span className="rounded-md bg-amber-400/15 px-1.5 py-0.5 font-black text-sm uppercase text-amber-300 underline decoration-2">{item.correctValue}</span>
                       </div>
                     )}
                     {feedback === 'wrong' && item.type === 'writing' && item.audioValue && hasWrongAttempt && (
@@ -1362,7 +1364,9 @@ export const PracticeSection: React.FC<{
                     )}
                   </div>
                   <button
+                    disabled={feedbackActionLocked}
                     onPointerDown={(e) => {
+                      if (feedbackActionLocked) return;
                       e.preventDefault();
                       if (feedback === 'correct') {
                         const cb = pendingOnResultRef.current;
@@ -1373,7 +1377,7 @@ export const PracticeSection: React.FC<{
                         setShowFooter(false);
                       }
                     }}
-                    className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0 [touch-action:manipulation]`}
+                    className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0 [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
                   >
                     {feedback === 'correct' ? PL.continueBtn : PL.gotItBtn}
                   </button>

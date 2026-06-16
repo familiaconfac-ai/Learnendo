@@ -99,6 +99,7 @@ const TRAIL_COPY = {
     verdictAnswered: 'answered',
     answerGroups: 'Class answers',
     noGroupedAnswers: 'Waiting for the first student answer.',
+    noWrongAnswers: 'No wrong answers on this question.',
     releaseRetry: 'Release retry for wrong answers',
     releasingRetry: 'Releasing...',
     waitingTeacher: 'Waiting for teacher',
@@ -145,6 +146,7 @@ const TRAIL_COPY = {
     verdictAnswered: 'respondeu',
     answerGroups: 'Respostas da turma',
     noGroupedAnswers: 'Aguardando a primeira resposta dos alunos.',
+    noWrongAnswers: 'Nenhum erro nesta questão.',
     releaseRetry: 'Liberar nova tentativa para quem errou',
     releasingRetry: 'Liberando...',
     waitingTeacher: 'Aguardando o professor',
@@ -191,6 +193,7 @@ const TRAIL_COPY = {
     verdictAnswered: 'respondió',
     answerGroups: 'Respuestas del grupo',
     noGroupedAnswers: 'Esperando la primera respuesta de los alumnos.',
+    noWrongAnswers: 'No hubo errores en esta pregunta.',
     releaseRetry: 'Liberar nuevo intento para quienes fallaron',
     releasingRetry: 'Liberando...',
     waitingTeacher: 'Esperando al profesor',
@@ -768,7 +771,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     assignedRoster.forEach((student) => {
       const answer = getStudentResponse(currentBlock, student.uid).trim();
       const verdict = getStudentVerdict(currentBlock, student.uid);
-      if (!answer) return;
+      if (!answer || verdict !== 'wrong') return;
       const key = `${verdict ?? 'answered'}::${answer.toLowerCase()}`;
       const existing = groups.get(key);
       if (existing) {
@@ -781,18 +784,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         labels: [student.label],
       });
     });
-
-    const order = (verdict: LiveExerciseAnswerVerdict | null) => {
-      if (verdict === 'correct' || verdict === 'correct_second_try') return 0;
-      if (verdict === 'wrong') return 1;
-      return 2;
-    };
-
-    return Array.from(groups.values()).sort((left, right) => {
-      const verdictDelta = order(left.verdict) - order(right.verdict);
-      if (verdictDelta !== 0) return verdictDelta;
-      return right.labels.length - left.labels.length;
-    });
+    return Array.from(groups.values()).sort((left, right) => right.labels.length - left.labels.length);
   }, [assignedRoster, currentBlock]);
 
   const wrongStudentIds = useMemo(() => {
@@ -1102,16 +1094,18 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                     <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-300">
                       {copy.answerGroups}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleReleaseWrongAnswers();
-                      }}
-                      disabled={releasingRetry || wrongStudentIds.length === 0}
-                      className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-100 disabled:opacity-40"
-                    >
-                      {releasingRetry ? copy.releasingRetry : copy.releaseRetry}
-                    </button>
+                    {wrongStudentIds.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleReleaseWrongAnswers();
+                        }}
+                        disabled={releasingRetry}
+                        className="rounded-xl border border-amber-400/40 bg-amber-500/10 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide text-amber-100 disabled:opacity-40"
+                      >
+                        {releasingRetry ? copy.releasingRetry : copy.releaseRetry}
+                      </button>
+                    ) : null}
                   </div>
                   {teacherAnswerGroups.length > 0 ? (
                     <div className="mt-2 space-y-1.5">
@@ -1140,7 +1134,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                     </div>
                   ) : (
                     <p className="mt-2 text-xs text-slate-400">
-                      {copy.noGroupedAnswers}
+                      {teacherSummary.respondedCount > 0 ? copy.noWrongAnswers : copy.noGroupedAnswers}
                     </p>
                   )}
                 </div>
@@ -1267,6 +1261,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             onAttempt={handleAttempt}
             onContinue={handleContinue}
             actionLocked={!isTeacher && !canEdit}
+            feedbackActionLocked={!isTeacher && teacherGuidedMode && !canEdit}
             fullScreen={true}
             viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
             clickTranslatorMode={vocabMode}
