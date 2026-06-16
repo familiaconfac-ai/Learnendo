@@ -665,6 +665,28 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const teacherGuidedMode = !isTeacher && teacherPresent && !allowSoloAdvance;
   const [waitingTeacherRelease, setWaitingTeacherRelease] = useState(false);
 
+  const trackedStudents = useMemo(() => {
+    if (!currentBlock) return assignedRoster;
+    const tracked = new Map<string, { uid: string; label: string; isOnline: boolean }>();
+    assignedRoster.forEach((student) => {
+      tracked.set(student.uid, student);
+    });
+    [
+      ...Object.keys(currentBlock.responses ?? {}),
+      ...Object.keys(currentBlock.responseStatuses ?? {}),
+      ...Object.keys(currentBlock.responseVerdicts ?? {}),
+      ...Object.keys(currentBlock.responseLocks ?? {}),
+    ].forEach((uid) => {
+      if (!uid || tracked.has(uid)) return;
+      tracked.set(uid, {
+        uid,
+        label: uid,
+        isOnline: false,
+      });
+    });
+    return Array.from(tracked.values());
+  }, [assignedRoster, currentBlock]);
+
   useEffect(() => {
     setBlocksError(null);
     const unsubscribe = subscribeExerciseSession(
@@ -731,7 +753,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   }, [blocks, currentBlockIndex]);
 
   const teacherSummary = useMemo(() => {
-    if (!currentBlock || assignedRoster.length === 0) {
+    if (!currentBlock || trackedStudents.length === 0) {
       return {
         respondedCount: 0,
         accuracyRate: 0,
@@ -744,32 +766,39 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       };
     }
 
-    const respondedCount = assignedRoster.filter((student) => {
+    const respondedCount = trackedStudents.filter((student) => {
       const response = getStudentResponse(currentBlock, student.uid).trim();
       const status = getStudentStatus(currentBlock, student.uid);
       return Boolean(response) || status !== 'pending';
     }).length;
 
-    const correctCount = assignedRoster.filter((student) => {
-      const verdict = getStudentVerdict(currentBlock, student.uid);
+    const correctCount = trackedStudents.filter((student) => {
+      const answer = getStudentResponse(currentBlock, student.uid).trim();
+      const verdict = getStudentVerdict(currentBlock, student.uid)
+        ?? (answer ? (isStudentAnswerCorrect(currentBlock, answer) ? 'correct' : 'wrong') : null);
       return verdict === 'correct' || verdict === 'correct_second_try';
     }).length;
 
     const latestStudentAnswer =
-      assignedRoster
+      trackedStudents
         .map((student) => ({
           label: student.label,
           answer: getStudentResponse(currentBlock, student.uid).trim(),
-          verdict: getStudentVerdict(currentBlock, student.uid),
+          verdict: getStudentVerdict(currentBlock, student.uid)
+            ?? (getStudentResponse(currentBlock, student.uid).trim()
+              ? (isStudentAnswerCorrect(currentBlock, getStudentResponse(currentBlock, student.uid)) ? 'correct' : 'wrong')
+              : null),
           answeredAt: currentBlock.responseAnsweredAt[student.uid] ?? '',
         }))
         .filter((item) => item.answer)
         .sort((left, right) => right.answeredAt.localeCompare(left.answeredAt))[0] ?? null;
 
+    const trackedStudentCount = trackedStudents.length;
+
     return {
       respondedCount,
-      accuracyRate: Math.round((correctCount / assignedRoster.length) * 100),
-      pendingCount: Math.max(assignedRoster.length - respondedCount, 0),
+      accuracyRate: trackedStudentCount > 0 ? Math.round((correctCount / trackedStudentCount) * 100) : 0,
+      pendingCount: Math.max(trackedStudentCount - respondedCount, 0),
       latestStudentAnswer: latestStudentAnswer
         ? {
             label: latestStudentAnswer.label,
@@ -778,10 +807,10 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           }
         : null,
     };
-  }, [assignedRoster, currentBlock]);
+  }, [currentBlock, trackedStudents]);
 
   const teacherAnswerGroups = useMemo(() => {
-    if (!currentBlock || assignedRoster.length === 0) return [];
+    if (!currentBlock || trackedStudents.length === 0) return [];
 
     const groups = new Map<string, {
       answer: string;
@@ -789,7 +818,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       labels: string[];
     }>();
 
-    assignedRoster.forEach((student) => {
+    trackedStudents.forEach((student) => {
       const answer = getStudentResponse(currentBlock, student.uid).trim();
       const storedVerdict = getStudentVerdict(currentBlock, student.uid);
       const verdict = storedVerdict ?? (answer ? (isStudentAnswerCorrect(currentBlock, answer) ? 'correct' : 'wrong') : null);
@@ -807,11 +836,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       });
     });
     return Array.from(groups.values()).sort((left, right) => right.labels.length - left.labels.length);
-  }, [assignedRoster, currentBlock]);
+  }, [currentBlock, trackedStudents]);
 
   const wrongStudentIds = useMemo(() => {
     if (!currentBlock) return [];
-    return assignedRoster
+    return trackedStudents
       .filter((student) => {
         const answer = getStudentResponse(currentBlock, student.uid).trim();
         if (!answer) return false;
@@ -821,7 +850,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         return !isStudentAnswerCorrect(currentBlock, answer);
       })
       .map((student) => student.uid);
-  }, [assignedRoster, currentBlock]);
+  }, [currentBlock, trackedStudents]);
 
   const grammarEntries = useMemo(
     () => Object.entries(GRAMMAR_GUIDES).filter(([key]) => key.startsWith(`L${lessonNumber}_`)),
@@ -1030,7 +1059,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           }
           return;
         }
-        if (teacherSummary.pendingCount > 0 || wrongStudentIds.length > 0) {
+        if (wrongStudentIds.length > 0) {
           return;
         }
       } else {
@@ -1130,7 +1159,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   {copy.question} {Math.max(currentBlockIndex + 1, 1)}/{Math.max(blocks.length, 1)}
                 </p>
                 <p className="mt-1 text-xs text-slate-200">
-                  {copy.answered}: {teacherSummary.respondedCount}/{assignedRoster.length || 0} | {copy.waiting}: {teacherSummary.pendingCount} | {copy.accuracy}: {teacherSummary.accuracyRate}%
+                  {copy.answered}: {teacherSummary.respondedCount}/{trackedStudents.length || 0} | {copy.waiting}: {teacherSummary.pendingCount} | {copy.accuracy}: {teacherSummary.accuracyRate}%
                 </p>
                 {teacherSummary.latestStudentAnswer ? (
                   <p className="mt-1 max-w-[460px] text-xs text-emerald-200">
@@ -1326,6 +1355,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             onContinue={handleContinue}
             actionLocked={!isTeacher && !canEdit}
             feedbackActionLocked={!isTeacher && teacherGuidedMode && waitingTeacherRelease}
+            persistCorrectFooterAction={isTeacher}
             fullScreen={true}
             viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
             clickTranslatorMode={vocabMode}

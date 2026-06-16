@@ -505,10 +505,11 @@ export const PracticeSection: React.FC<{
   totalDays?: number;
   currentLanguage?: string;
   onAttempt?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
-  onContinue?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
-  actionLocked?: boolean;
-  feedbackActionLocked?: boolean;
-  fullScreen?: boolean;
+    onContinue?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
+    actionLocked?: boolean;
+    feedbackActionLocked?: boolean;
+    persistCorrectFooterAction?: boolean;
+    fullScreen?: boolean;
   viewportTopOffset?: number;
   uiLanguage?: string;
   clickTranslatorMode?: boolean;
@@ -532,6 +533,7 @@ export const PracticeSection: React.FC<{
     onContinue,
     actionLocked = false,
     feedbackActionLocked = false,
+    persistCorrectFooterAction = false,
     fullScreen = false,
     viewportTopOffset = 0,
     uiLanguage,
@@ -869,7 +871,9 @@ export const PracticeSection: React.FC<{
             // If feedback is showing, trigger CONTINUE/GOT IT
             if (feedback === 'correct') {
               const cb = pendingOnResultRef.current;
-              pendingOnResultRef.current = null;
+              if (!persistCorrectFooterAction) {
+                pendingOnResultRef.current = null;
+              }
               cb?.();
           } else {
             setFeedback('none');
@@ -1367,12 +1371,14 @@ export const PracticeSection: React.FC<{
                   <button
                     disabled={feedbackActionLocked}
                     onPointerDown={(e) => {
-                      if (feedbackActionLocked) return;
-                      e.preventDefault();
-                      if (feedback === 'correct') {
-                        const cb = pendingOnResultRef.current;
-                        pendingOnResultRef.current = null;
-                        cb?.();
+                        if (feedbackActionLocked) return;
+                        e.preventDefault();
+                        if (feedback === 'correct') {
+                          const cb = pendingOnResultRef.current;
+                          if (!persistCorrectFooterAction) {
+                            pendingOnResultRef.current = null;
+                          }
+                          cb?.();
                       } else {
                         setFeedback('none');
                         setShowFooter(false);
