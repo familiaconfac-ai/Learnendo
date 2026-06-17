@@ -762,6 +762,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const lessonNumber = getLessonNumberFromId(lessonId);
   const courseLanguage = getCourseLanguageCode(courseId);
   const effectiveUiLanguage: TrailUiLanguage = (() => {
+    if (courseLanguage === 'en' || courseLanguage === 'pt' || courseLanguage === 'es') {
+      return courseLanguage;
+    }
     try {
       const stored = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY);
       return stored === 'en' || stored === 'pt' || stored === 'es' ? stored : uiLanguage;
@@ -1317,27 +1320,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                 <p className="mt-1 text-xs text-slate-200">
                   {copy.answered}: {teacherSummary.respondedCount}/{trackedStudents.length || 0} | {copy.waiting}: {teacherSummary.pendingCount} | {copy.accuracy}: {teacherSummary.accuracyRate}%
                 </p>
-                {teacherSummary.latestStudentAnswer ? (
-                  <p className="mt-1 max-w-[460px] text-xs text-emerald-200">
-                    {copy.latestAnswer}: <span className="font-black">{teacherSummary.latestStudentAnswer.label}</span>{' '}
-                    {getVerdictCopy(teacherSummary.latestStudentAnswer.verdict, effectiveUiLanguage)} "
-                    {teacherSummary.latestStudentAnswer.answer}".
-                  </p>
-                ) : teacherSummary.respondedCount === 0 ? (
-                  <p className="mt-1 text-xs text-slate-400">
-                    {copy.noAnswersYet}
-                  </p>
-                ) : null}
-                {currentBlock.livePreviewAnswer?.trim() ? (
-                  <p className="mt-1 max-w-[460px] text-xs text-sky-200">
-                    {copy.yourDemo}: "{currentBlock.livePreviewAnswer.trim()}"
-                    {currentBlock.livePreviewCorrect == null
-                      ? ''
-                      : currentBlock.livePreviewCorrect
-                        ? ` (${copy.correct})`
-                        : ` (${copy.incorrect})`}
-                  </p>
-                ) : null}
                 <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-2.5">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-300">
@@ -1513,6 +1495,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             actionLocked={!isTeacher && (!canEdit || (teacherGuidedMode && waitingTeacherRelease))}
             feedbackActionLocked={!isTeacher && teacherGuidedMode && waitingTeacherRelease}
             persistCorrectFooterAction={isTeacher}
+            allowContinueWithoutAnswer={isTeacher}
             lockWrongFeedbackImmediately={!isTeacher && teacherGuidedMode}
             retryReleaseVersion={retryReleaseVersion}
             autoPlayAudio={!isTeacher}

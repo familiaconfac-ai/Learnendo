@@ -509,6 +509,7 @@ export const PracticeSection: React.FC<{
     actionLocked?: boolean;
     feedbackActionLocked?: boolean;
     persistCorrectFooterAction?: boolean;
+    allowContinueWithoutAnswer?: boolean;
     copyLanguage?: 'en' | 'pt' | 'es';
     lockWrongFeedbackImmediately?: boolean;
     retryReleaseVersion?: number;
@@ -538,6 +539,7 @@ export const PracticeSection: React.FC<{
       actionLocked = false,
       feedbackActionLocked = false,
       persistCorrectFooterAction = false,
+      allowContinueWithoutAnswer = false,
       copyLanguage,
       lockWrongFeedbackImmediately = false,
       retryReleaseVersion = 0,
@@ -704,6 +706,7 @@ export const PracticeSection: React.FC<{
     }, [localWrongFooterLocked, retryReleaseVersion]);
 
     const wrongFooterLocked = feedbackActionLocked || localWrongFooterLocked;
+    const footerActionLocked = feedbackActionLocked || (feedback === 'wrong' && localWrongFooterLocked);
 
     // Auto-grow textarea
     const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -774,6 +777,14 @@ export const PracticeSection: React.FC<{
       textareaRef.current?.blur();
 
       const rawInput = userInput || selectedOption || '';
+      if (!rawInput.trim() && allowContinueWithoutAnswer) {
+        onContinue?.({
+          answer: '',
+          isCorrect: false,
+          attemptNumber: lastAttemptMetaRef.current?.attemptNumber ?? 0,
+        });
+        return;
+      }
       const acceptedAnswers = getAcceptedAnswers(item);
       const nextAttemptNumber = (lastAttemptMetaRef.current?.attemptNumber ?? 0) + 1;
       const reportAttempt = (answer: string, isCorrect: boolean) => {
@@ -903,7 +914,7 @@ export const PracticeSection: React.FC<{
         if (e.key === 'Enter') {
           e.preventDefault();
           if (showFooter) {
-            if (wrongFooterLocked) return;
+            if (footerActionLocked) return;
             // If feedback is showing, trigger CONTINUE/GOT IT
             if (feedback === 'correct') {
               const cb = pendingOnResultRef.current;
@@ -917,7 +928,7 @@ export const PracticeSection: React.FC<{
           }
         } else {
           // If no feedback, trigger CHECK
-          if (isMultipleChoice ? selectedOption : userInput.trim()) {
+          if (allowContinueWithoutAnswer || (isMultipleChoice ? selectedOption : userInput.trim())) {
             handleCheck();
           }
         }
@@ -1406,9 +1417,9 @@ export const PracticeSection: React.FC<{
                     )}
                   </div>
                   <button
-                    disabled={feedback === 'wrong' ? wrongFooterLocked : false}
+                    disabled={footerActionLocked}
                       onPointerDown={(e) => {
-                        if (feedback === 'wrong' && wrongFooterLocked) return;
+                        if (footerActionLocked) return;
                         e.preventDefault();
                         if (feedback === 'correct') {
                           const cb = pendingOnResultRef.current;
@@ -1430,11 +1441,18 @@ export const PracticeSection: React.FC<{
             ) : (
               <div className="flex gap-3">
                 <button
-                  disabled={actionLocked || (isMultipleChoice ? !selectedOption : !userInput.trim())}
+                  disabled={
+                    actionLocked
+                    || (!allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim()))
+                  }
                   onClick={() => handleCheck()}
                   className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-40 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center [touch-action:manipulation]"
                 >
-                  <img src={checkIcon} className="w-6 h-6 brightness-0 invert" alt="Check" />
+                  {allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim()) ? (
+                    <span>{PL.continueBtn}</span>
+                  ) : (
+                    <img src={checkIcon} className="w-6 h-6 brightness-0 invert" alt="Check" />
+                  )}
                 </button>
               </div>
             )}
