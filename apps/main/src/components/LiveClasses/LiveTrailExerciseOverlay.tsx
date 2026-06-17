@@ -334,6 +334,34 @@ function getLatestResponsesForBlock(
   return latest;
 }
 
+function getLatestWrongResponsesForBlock(
+  block: LiveExerciseBlock | null,
+  responses: LiveClassResponse[],
+) {
+  const latestWrong = new Map<string, LiveClassResponse>();
+  if (!block) return latestWrong;
+
+  responses.forEach((response) => {
+    if (response.exerciseId !== block.id) return;
+    const answer = response.answer?.trim() ?? '';
+    if (!answer || isStudentAnswerCorrect(block, answer)) return;
+
+    const existing = latestWrong.get(response.userId);
+    if (!existing) {
+      latestWrong.set(response.userId, response);
+      return;
+    }
+
+    const existingCreatedAt = existing.createdAt ?? '';
+    const nextCreatedAt = response.createdAt ?? '';
+    if (nextCreatedAt.localeCompare(existingCreatedAt) >= 0) {
+      latestWrong.set(response.userId, response);
+    }
+  });
+
+  return latestWrong;
+}
+
 function getResolvedStudentAnswer(
   block: LiveExerciseBlock,
   studentUid: string,
@@ -854,6 +882,10 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     () => getLatestResponsesForBlock(currentBlock?.id, liveResponses),
     [currentBlock?.id, liveResponses],
   );
+  const latestWrongResponsesByUser = useMemo(
+    () => getLatestWrongResponsesForBlock(currentBlock, liveResponses),
+    [currentBlock, liveResponses],
+  );
 
   const teacherSummary = useMemo(() => {
     if (!currentBlock || trackedStudents.length === 0) {
@@ -886,15 +918,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       trackedStudents
         .map((student) => ({
           label: student.label,
-          answer: getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser),
-          verdict: getStudentVerdict(currentBlock, student.uid)
-            ?? (getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser)
-              ? (isStudentAnswerCorrect(
-                currentBlock,
-                getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser),
-              ) ? 'correct' : 'wrong')
-              : null),
-          answeredAt: getResolvedStudentAnsweredAt(currentBlock, student.uid, latestResponsesByUser),
+          answer: latestWrongResponsesByUser.get(student.uid)?.answer?.trim() ?? '',
+          verdict: (
+            latestWrongResponsesByUser.get(student.uid)?.answer?.trim() ? 'wrong' : null
+          ) as LiveExerciseAnswerVerdict | null,
+          answeredAt: latestWrongResponsesByUser.get(student.uid)?.createdAt ?? '',
         }))
         .filter((item) => item.answer)
         .sort((left, right) => right.answeredAt.localeCompare(left.answeredAt))[0] ?? null;
@@ -913,7 +941,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           }
         : null,
     };
-  }, [currentBlock, latestResponsesByUser, trackedStudents]);
+  }, [currentBlock, latestResponsesByUser, latestWrongResponsesByUser, trackedStudents]);
 
   const teacherAnswerGroups = useMemo(() => {
     if (!currentBlock || trackedStudents.length === 0) return [];
@@ -925,9 +953,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }>();
 
     trackedStudents.forEach((student) => {
-      const answer = getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser);
-      const storedVerdict = getStudentVerdict(currentBlock, student.uid);
-      const verdict = storedVerdict ?? (answer ? (isStudentAnswerCorrect(currentBlock, answer) ? 'correct' : 'wrong') : null);
+      const answer = latestWrongResponsesByUser.get(student.uid)?.answer?.trim() ?? '';
+      const verdict = (answer ? 'wrong' : null) as LiveExerciseAnswerVerdict | null;
       if (!answer || verdict !== 'wrong') return;
       const key = `${verdict ?? 'answered'}::${answer.toLowerCase()}`;
       const existing = groups.get(key);
@@ -942,7 +969,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       });
     });
     return Array.from(groups.values()).sort((left, right) => right.labels.length - left.labels.length);
-  }, [currentBlock, latestResponsesByUser, trackedStudents]);
+  }, [currentBlock, latestWrongResponsesByUser, trackedStudents]);
 
   const wrongStudentIds = useMemo(() => {
     if (!currentBlock) return [];
@@ -1188,15 +1215,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           user.uid,
           actorName,
         );
-        if (payload.isCorrect && wrongStudentIds.length > 0) {
-          setReleasingRetry(true);
-          try {
-            await releaseWrongAnswers();
-          } finally {
-            setReleasingRetry(false);
-          }
-          return;
-        }
         if (wrongStudentIds.length > 0) {
           return;
         }
@@ -1305,11 +1323,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                     {getVerdictCopy(teacherSummary.latestStudentAnswer.verdict, effectiveUiLanguage)} "
                     {teacherSummary.latestStudentAnswer.answer}".
                   </p>
-                ) : (
+                ) : teacherSummary.respondedCount === 0 ? (
                   <p className="mt-1 text-xs text-slate-400">
                     {copy.noAnswersYet}
                   </p>
-                )}
+                ) : null}
                 {currentBlock.livePreviewAnswer?.trim() ? (
                   <p className="mt-1 max-w-[460px] text-xs text-sky-200">
                     {copy.yourDemo}: "{currentBlock.livePreviewAnswer.trim()}"
