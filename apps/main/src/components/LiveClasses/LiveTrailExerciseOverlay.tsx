@@ -1218,9 +1218,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           user.uid,
           actorName,
         );
-        if (wrongStudentIds.length > 0) {
-          return;
-        }
       } else {
         await updateExerciseBlockResponse(
           classId,
