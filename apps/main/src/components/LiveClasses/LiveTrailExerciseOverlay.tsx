@@ -974,11 +974,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     return Array.from(groups.values()).sort((left, right) => right.labels.length - left.labels.length);
   }, [currentBlock, latestWrongResponsesByUser, trackedStudents]);
 
-  const wrongStudentIds = useMemo(() => {
+  const releasableWrongStudentIds = useMemo(() => {
     if (!currentBlock) return [];
     return trackedStudents
       .filter((student) => {
-        const answer = getResolvedStudentAnswer(currentBlock, student.uid, latestResponsesByUser);
+        const answer = getStudentResponse(currentBlock, student.uid).trim();
         if (!answer) return false;
         const verdict = getStudentVerdict(currentBlock, student.uid);
         if (verdict === 'wrong') return true;
@@ -986,7 +986,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         return !isStudentAnswerCorrect(currentBlock, answer);
       })
       .map((student) => student.uid);
-  }, [currentBlock, latestResponsesByUser, trackedStudents]);
+  }, [currentBlock, trackedStudents]);
 
   const grammarEntries = useMemo(
     () => Object.entries(GRAMMAR_GUIDES).filter(([key]) => key.startsWith(`L${lessonNumber}_`)),
@@ -1035,16 +1035,16 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   }, [currentBlock, isTeacher, user.uid]);
 
   const releaseWrongAnswers = async () => {
-    if (!isTeacher || !currentBlock || wrongStudentIds.length === 0) return;
+    if (!isTeacher || !currentBlock || releasableWrongStudentIds.length === 0) return;
     await Promise.all(
-      wrongStudentIds.map((studentUid) =>
+      releasableWrongStudentIds.map((studentUid) =>
         clearExerciseBlockStudentResponse(classId, currentBlock.id, studentUid, user.uid, actorName),
       ),
     );
   };
 
   const handleReleaseWrongAnswers = async () => {
-    if (!isTeacher || !currentBlock || wrongStudentIds.length === 0) return;
+    if (!isTeacher || !currentBlock || releasableWrongStudentIds.length === 0) return;
     try {
       setSaveError(null);
       setReleasingRetry(true);
@@ -1322,7 +1322,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                     <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-300">
                       {copy.answerGroups}
                     </p>
-                    {wrongStudentIds.length > 0 ? (
+                    {releasableWrongStudentIds.length > 0 ? (
                       <button
                         type="button"
                         onClick={() => {
