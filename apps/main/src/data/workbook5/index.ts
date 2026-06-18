@@ -1,6 +1,7 @@
-// Workbook 5 - Placeholder
+import { workbook5Lessons } from './lessons';
+
 export const workbook5 = {
   id: 'wb5',
   title: 'Workbook 5',
-  lessons: []
+  lessons: workbook5Lessons,
 };
