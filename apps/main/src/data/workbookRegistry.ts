@@ -6,5 +6,6 @@ export const WORKBOOKS = {
   5: () => import("./workbook5/index"),
   6: () => import("./workbook6/index"),
   7: () => import("./workbook7/index"),
-  8: () => import("./workbook8/index")
+  8: () => import("./workbook8/index"),
+   9: () => import("./workbook9/index")
 };
