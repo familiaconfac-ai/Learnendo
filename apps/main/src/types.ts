@@ -14,6 +14,8 @@ export interface Exercise {
   instruction: string;
   displayValue?: string;
   audioValue: string;
+  audioValueBeforeAnswer?: string;
+  fullSentenceAfterAnswer?: string;
   options?: string[];
   correctValue: string;
   acceptedAnswers?: string[];
@@ -398,6 +400,8 @@ export interface PracticeItem {
   instruction: string;
   displayValue?: string;
   audioValue: string;
+  audioValueBeforeAnswer?: string;
+  fullSentenceAfterAnswer?: string;
   options?: string[];
   correctValue: string;
   acceptedAnswers?: string[];

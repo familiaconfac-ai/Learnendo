@@ -1,5 +1,6 @@
 import { Lesson } from "../../types";
 import { buildLesson, ChoiceSeed, makeChoices, makeSpeakings, makeWritings, SpeakingSeed, WritingSeed } from "./helpers";
+import { buildBlankAudioText, buildFullSentenceFromPrompt, hasBlankPlaceholder } from "../../utils/fillInBlankAudio";
 
 const VOCABULARY_INSTRUCTION = "Listen and choose the correct word.";
 const GRAMMAR_INSTRUCTION = "Listen and choose the correct option.";
@@ -57,10 +58,14 @@ function choice(
   type: "multiple-choice" | "identification" = "multiple-choice",
   accepted?: string[],
 ): ChoiceSeed {
+  const promptText = display || audio;
+  const hasBlank = hasBlankPlaceholder(promptText);
   return {
     display,
     audio,
+    audioBeforeAnswer: hasBlank ? buildBlankAudioText(promptText) : undefined,
     correct,
+    fullSentenceAfterAnswer: hasBlank ? buildFullSentenceFromPrompt(promptText, correct) : undefined,
     options: optionsFor(correct, distractors),
     type,
     accepted,
@@ -153,8 +158,10 @@ function buildWorkbook4Lesson(config: LessonConfig): Lesson {
       config.grammar.slice(5).map((item) => ({
         display: item.prompt,
         audio: item.fullSentence,
+        audioBeforeAnswer: hasBlankPlaceholder(item.prompt) ? buildBlankAudioText(item.prompt) : undefined,
         correct: item.answer,
         accepted: item.accepted,
+        fullSentenceAfterAnswer: item.fullSentence,
       })),
       WRITE_BLANK,
     ),

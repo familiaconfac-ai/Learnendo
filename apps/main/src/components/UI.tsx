@@ -3,6 +3,7 @@ import { speak as ttsSpeakImpl, appLangToTts, exerciseVoices, getVoiceCount, onV
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
+import { isFillInBlankExercise, resolveFullSentenceAfterAnswer, resolvePromptAudioText } from '../utils/fillInBlankAudio';
 import speakerIcon from '../assets/icons/speaker.svg';
 import turtleIcon from '../assets/icons/turtle.svg';
 import backIcon from '../assets/icons/back.svg';
@@ -587,6 +588,14 @@ export const PracticeSection: React.FC<{
     // Math writing exercises that require a full English sentence answer
     const isSentenceWriting = item.type === 'writing' &&
       item.instruction.toLowerCase().includes('full sentence');
+    const isFillInBlank = isFillInBlankExercise(item);
+    const isFillInBlankWriting = item.type === 'writing' && isFillInBlank;
+    const promptAudioText = resolvePromptAudioText(item);
+    const fullSentenceAfterAnswer = isFillInBlank ? resolveFullSentenceAfterAnswer(item) : '';
+    const activeAudioText =
+      showFooter && feedback === 'correct' && fullSentenceAfterAnswer
+        ? fullSentenceAfterAnswer
+        : promptAudioText;
 
     // Reading exercises: displayValue contains a multi-line passage with translations
     const isReadingExercise = !!(item.displayValue?.includes('\n') && item.displayValue?.includes('('));
@@ -638,14 +647,14 @@ export const PracticeSection: React.FC<{
       }
 
       // ── Diagnostic: log every autoplay trigger so cold-start issues are traceable ──
-      if (item.audioValue) {
+      if (promptAudioText) {
         const vc = getVoiceCount();
         console.log('[AUTOPLAY]', {
           origin: 'autoplay',
           exerciseId: item.id,
           type: item.type,
           currentLanguage,
-          audioText: item.audioValue.slice(0, 60),
+          audioText: promptAudioText.slice(0, 60),
           voicesReady: vc > 0,
           voiceCount: vc,
           promptVoice,
@@ -655,17 +664,17 @@ export const PracticeSection: React.FC<{
 
       const _cleanups: Array<() => void> = [];
 
-      if (autoPlayAudio && item.audioValue && item.type !== 'speaking' && item.type !== 'writing') {
-        _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
-      } else if (autoPlayAudio && item.audioValue && item.type === 'speaking') {
+      if (autoPlayAudio && promptAudioText && item.type !== 'speaking' && item.type !== 'writing') {
+        _cleanups.push(onVoicesReady(() => speak(promptAudioText, 1, promptVoice)));
+      } else if (autoPlayAudio && promptAudioText && item.type === 'speaking') {
         // ✅ Auto-play audio for speaking/shadowing exercises
         const t = setTimeout(() => {
-          _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
+          _cleanups.push(onVoicesReady(() => speak(promptAudioText, 1, promptVoice)));
         }, 500);
         _cleanups.push(() => clearTimeout(t));
-      } else if (autoPlayAudio && item.audioValue && isDictationWriting) {
+      } else if (autoPlayAudio && promptAudioText && isDictationWriting) {
         // Dictation writing: play audio upfront so students can hear before typing
-        _cleanups.push(onVoicesReady(() => speak(item.audioValue, 1, promptVoice)));
+        _cleanups.push(onVoicesReady(() => speak(promptAudioText, 1, promptVoice)));
       }
       // non-dictation writing: audio is only revealed after the first wrong attempt
 
@@ -1164,7 +1173,7 @@ export const PracticeSection: React.FC<{
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            speak(item.audioValue, 1, promptVoice);
+                            speak(activeAudioText, 1, promptVoice);
                           }}
                           className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
                           title="Play audio"
@@ -1175,7 +1184,7 @@ export const PracticeSection: React.FC<{
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            speak(item.audioValue, 0.5, feedbackVoice);
+                            speak(activeAudioText, 0.5, feedbackVoice);
                           }}
                           className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
                           title="Slow pronunciation"
@@ -1199,7 +1208,7 @@ export const PracticeSection: React.FC<{
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            speak(item.audioValue, 1, promptVoice);
+                            speak(activeAudioText, 1, promptVoice);
                           }}
                           className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
                           title="Play audio"
@@ -1210,7 +1219,7 @@ export const PracticeSection: React.FC<{
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            speak(item.audioValue, 0.5, feedbackVoice);
+                            speak(activeAudioText, 0.5, feedbackVoice);
                           }}
                           className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
                           title="Slow pronunciation"
@@ -1231,7 +1240,7 @@ export const PracticeSection: React.FC<{
                       <button
                         onClick={(event) => {
                           event.stopPropagation();
-                          speak(item.audioValue, 1, promptVoice);
+                          speak(activeAudioText, 1, promptVoice);
                         }}
                         className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
                         title="Play audio"
@@ -1242,7 +1251,7 @@ export const PracticeSection: React.FC<{
                       <button
                         onClick={(event) => {
                           event.stopPropagation();
-                          speak(item.audioValue, 0.5, feedbackVoice);
+                          speak(activeAudioText, 0.5, feedbackVoice);
                         }}
                         className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
                         title="Slow pronunciation"
@@ -1266,13 +1275,13 @@ export const PracticeSection: React.FC<{
           <div className={`flex flex-col items-center w-full ${isShortViewport ? 'gap-3' : 'gap-4 sm:gap-6'}`}>
             {/* ✅ Audio control buttons in correct order */}
             <div className={`flex ${isShortViewport ? 'gap-3' : 'gap-4'}`}>
-              {item.audioValue && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
-                <button onClick={() => speak(item.audioValue, 1, promptVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center`} title="Play audio">
+              {promptAudioText && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || isFillInBlankWriting || hasWrongAttempt) && (
+                <button onClick={() => speak(activeAudioText, 1, promptVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center`} title="Play audio">
                   <img src={speakerIcon} className="w-6 h-6 brightness-0 invert" alt="Play" />
                 </button>
               )}
-              {item.audioValue && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || hasWrongAttempt) && (
-                <button onClick={() => speak(item.audioValue, 0.5, feedbackVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center`} title="Slow pronunciation">
+              {promptAudioText && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || isFillInBlankWriting || hasWrongAttempt) && (
+                <button onClick={() => speak(activeAudioText, 0.5, feedbackVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center`} title="Slow pronunciation">
                   <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
               )}
@@ -1399,9 +1408,14 @@ export const PracticeSection: React.FC<{
                         {PL.correctAnswer} <span className="rounded-md bg-amber-400/15 px-1.5 py-0.5 font-black text-sm uppercase text-amber-300 underline decoration-2">{item.correctValue}</span>
                       </div>
                     )}
-                    {feedback === 'wrong' && item.type === 'writing' && item.audioValue && hasWrongAttempt && (
+                    {feedback === 'wrong' && item.type === 'writing' && !isFillInBlankWriting && promptAudioText && hasWrongAttempt && (
                       <div className="text-blue-400 font-bold text-xs mt-1 animate-in fade-in">
                         {PL.listenHint}
+                      </div>
+                    )}
+                    {feedback === 'correct' && isFillInBlank && fullSentenceAfterAnswer && (
+                      <div className="text-white font-bold text-xs mt-2 animate-in fade-in">
+                        {fullSentenceAfterAnswer}
                       </div>
                     )}
                     {/* Show translation on both correct and wrong feedback */}

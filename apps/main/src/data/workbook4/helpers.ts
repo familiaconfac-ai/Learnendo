@@ -9,6 +9,8 @@ export interface ChoiceSeed {
   options: string[];
   correct: string;
   display?: string;
+  audioBeforeAnswer?: string;
+  fullSentenceAfterAnswer?: string;
   translation?: string;
   accepted?: string[];
   instruction?: string;
@@ -20,6 +22,8 @@ export interface WritingSeed {
   audio: string;
   correct: string;
   display?: string;
+  audioBeforeAnswer?: string;
+  fullSentenceAfterAnswer?: string;
   accepted?: string[];
   translation?: string;
   instruction?: string;
@@ -30,6 +34,8 @@ export interface SpeakingSeed {
   audio: string;
   correct: string;
   display?: string;
+  audioBeforeAnswer?: string;
+  fullSentenceAfterAnswer?: string;
   accepted?: string[];
   translation?: string;
   instruction?: string;
@@ -58,6 +64,8 @@ export function makeChoices(
     instruction: seed.instruction ?? defaultInstruction,
     displayValue: seed.display,
     audioValue: seed.audio,
+    audioValueBeforeAnswer: seed.audioBeforeAnswer,
+    fullSentenceAfterAnswer: seed.fullSentenceAfterAnswer,
     options: seed.options,
     correctValue: seed.correct,
     acceptedAnswers: uniqueAccepted(seed.correct, seed.accepted),
@@ -72,6 +80,8 @@ export function makeWritings(seeds: WritingSeed[], defaultInstruction: string): 
     instruction: seed.instruction ?? defaultInstruction,
     displayValue: seed.display,
     audioValue: seed.audio,
+    audioValueBeforeAnswer: seed.audioBeforeAnswer,
+    fullSentenceAfterAnswer: seed.fullSentenceAfterAnswer,
     correctValue: seed.correct,
     acceptedAnswers: uniqueAccepted(seed.correct, seed.accepted),
     translation: seed.translation,
@@ -85,6 +95,8 @@ export function makeSpeakings(seeds: SpeakingSeed[], defaultInstruction: string)
     instruction: seed.instruction ?? defaultInstruction,
     displayValue: seed.display,
     audioValue: seed.audio,
+    audioValueBeforeAnswer: seed.audioBeforeAnswer,
+    fullSentenceAfterAnswer: seed.fullSentenceAfterAnswer,
     correctValue: seed.correct,
     acceptedAnswers: uniqueAccepted(seed.correct, seed.accepted),
     translation: seed.translation,
