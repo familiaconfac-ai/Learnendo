@@ -8,6 +8,7 @@ import { BottomNavigation } from './components/BottomNavigation';
 import { BattleHubPage } from './components/BattleHub/BattleHubPage';
 import { LoginScreen } from './components/LoginScreen';
 import { PlacementTest } from './components/PlacementTest';
+import type { PlacementTestCompletionPayload } from './components/PlacementTest';
 import { WorkbookView } from './components/WorkbookView';
 import { WorkbookPdfView } from './components/WorkbookPdfView/WorkbookPdfView';
 import { LessonView } from './components/LessonView';
@@ -20,7 +21,6 @@ import { RankScreen } from './components/RankScreen';
 import { LiveClassesPage } from './components/LiveClasses/LiveClassesPage';
 import { MyVocabularyPage } from './components/MyVocabularyPage';
 import { ProgressEngine } from './engine/progressEngine';
-import { PlacementEngine } from './engine/placementEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { GRAMMAR_GUIDES } from './constants';
@@ -1783,9 +1783,9 @@ const App: React.FC = () => {
     setLanguage,
   ]);
 
-  const handlePlacementComplete = (score: number, level: string) => {
-    const workbook = PlacementEngine.determineWorkbook(score);
-    const updated = { ...progress, currentWorkbook: workbook, placementScore: score };
+  const handlePlacementComplete = (result: PlacementTestCompletionPayload) => {
+    const workbook = result.recommendedBook ?? 9;
+    const updated = { ...progress, currentWorkbook: workbook, placementScore: result.percentage };
     setProgress(updated);
     setCurrentWorkbookId(workbook);
     try { ProgressEngine.saveProgress(updated); } catch { /* non-blocking */ }
@@ -1796,37 +1796,14 @@ const App: React.FC = () => {
       localStorage.setItem(`learnendo_placement_${user.uid}_${language}`, '1');
     }
 
-    // Persist placement test result (score + level) to flat progress doc.
-    // Write both the legacy `placement` key and the per-language `placements[lang]`
-    // key so future multi-language dashboard reads work correctly.
     if (user?.uid && db) {
-      const placementRecord = { score, level, date: new Date().toISOString(), languageCode: language };
-      const placementPayload = {
-        tests: {
-          placement: placementRecord,
-          placements: { [language]: placementRecord },
-        },
-      };
-      console.log('[WRITE] setDoc', {
-        path: `progress/${user.uid}`,
-        workbookId: progress.currentWorkbook,
-        courseId: currentCourseId ?? DEFAULT_COURSE_ID,
-        completedDays: countCompletedDays(progress.days),
-        payloadKeys: Object.keys(placementPayload),
-      });
-      setDoc(
-        doc(db, 'progress', user.uid),
-        placementPayload,
-        { merge: true },
-      ).catch(e => console.warn('[PROGRESS] placement test save failed:', e));
-
-      // Also persist placementScore + determined workbook to courseProgress/main
-      // so the Firestore snapshot re-hydrates these fields on the next session.
+      // The PlacementTest component already persists the rich placement record
+      // to progress/history. The App layer only syncs workbook selection.
       const now = new Date().toISOString();
       lastLocalUpdateRef.current = now;
       setDoc(
         doc(db, 'users', user.uid, 'courseProgress', 'main'),
-        { placementScore: score, currentWorkbook: workbook, lastUpdated: now },
+        { placementScore: result.percentage, currentWorkbook: workbook, lastUpdated: now },
         { merge: true },
       ).catch(e => console.warn('[PROGRESS] courseProgress/main placement persist failed:', e));
     }

@@ -1,382 +1,557 @@
-import React, { useState } from 'react';
-import { CEFR_LEVELS, classifyPlacementLevel, getQuestionsForLanguage } from '../../data/placementTestQuestions';
-import { LessonLanguageCode } from '../../types';
+import React, { useMemo, useState } from 'react';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  CONFIDENCE_LABELS,
+  PlacementConfidence,
+  PlacementEvaluation,
+  PlacementResponse,
+  PlacementQuestion,
+  evaluatePlacementTest,
+  getPlacementOutcome,
+  getQuestionsForLanguage,
+  scorePlacementAnswer,
+} from '../../data/placementTestQuestions';
+import { LessonLanguageCode, PlacementAnswerItem, PlacementBlockScore } from '../../types';
 import { auth, db, ensureAnonAuth } from '../../services/firebase';
-import { doc, setDoc } from 'firebase/firestore';
 import { speak } from '../../services/ttsService';
 
-// ── Placement-test UI strings by language ──────────────────────────────────
-const PLACEMENT_UI = {
+type PlacementUILanguage = 'en' | 'pt' | 'es';
+
+interface PlacementTestProps {
+  currentLanguage?: LessonLanguageCode;
+  onComplete: (result: PlacementTestCompletionPayload) => void;
+  onTriggerConversion?: (reason?: string) => void;
+}
+
+export interface PlacementTestCompletionPayload {
+  percentage: number;
+  recommendedBook: number | null;
+  recommendedEntryPoint: string;
+  level: string;
+}
+
+interface ConfirmedResponse {
+  question: PlacementQuestion;
+  response: PlacementResponse;
+  isCorrect: boolean;
+  awardedPoints: number;
+}
+
+interface FeedbackState {
+  confirmed: ConfirmedResponse;
+  evaluation: PlacementEvaluation;
+  bookScore?: PlacementBlockScore;
+  willFinish: boolean;
+}
+
+const UI = {
   en: {
-    title: 'Placement Test',
-    subtitle: 'Discover your English level',
+    title: 'General Placement Test',
+    subtitle: 'Listening-based adaptive placement for Learnendo Books 1 to 9',
     whatToExpect: 'What to expect:',
-    questionsTotal: (n: number) => `✓ ${n} questions total`,
-    skills: '✓ Listening, Grammar, Reading & Vocabulary',
-    difficulty: '✓ Progressive difficulty (Beginner to C2)',
-    duration: '✓ Takes about 15-20 minutes',
+    bullets: [
+      '45 listening questions, divided into 9 books',
+      '5 questions per book with adaptive stopping',
+      'You must choose an answer and a confidence level',
+      'Audio can be replayed as many times as needed',
+    ],
     labelName: 'Your Full Name *',
     placeholderName: 'Enter your full name',
     labelWhatsapp: 'WhatsApp Number *',
     placeholderWhatsapp: '55 11 99999-9999',
-    whatsappHint: "We'll use this to send you your results",
-    disclaimer: 'You will be classified from Beginner to C2 level based on your answers.',
-    startBtn: 'Start Test',
+    whatsappHint: "We'll use this to send you the result if needed",
+    disclaimer: 'This test places you in the best starting Learnendo book based on listening performance.',
+    startBtn: 'Start Placement Test',
     fillIn: 'Fill in name and WhatsApp',
-    questionOf: (cur: number, total: number) => `Question ${cur} of ${total}`,
-    skillType: { listening: 'Listening', reading: 'Reading', vocabulary: 'Vocabulary', grammar: 'Grammar' },
+    progressLabel: (book: number, question: number, total: number) => `Book ${book} - Question ${question} of ${total}`,
+    overallProgress: (current: number, total: number) => `${current}/${total} answered`,
     playAudio: 'Play Audio',
     playing: 'Playing...',
-    playHint: 'Press Play to hear the audio, then choose your answer.',
-    back: 'Back',
-    next: 'Next',
-    finish: 'Finish Test',
-    yourLevel: (l: string) => `Your Level: ${l}`,
-    yourResults: 'Your Results',
-    correctOf: (c: number, t: number) => `${c}/${t} Correct`,
-    gotRight: (pct: number) => `You got ${pct}% of questions right`,
-    recommended: '📍 Recommended Starting Point',
-    contactTeacher: 'Contact Teacher on WhatsApp',
-    createAccount: '📧 Create Account',
+    replayHint: 'Replay the audio if needed, then choose the best answer.',
+    answerLabel: 'Choose your answer',
+    confidenceLabel: 'How confident are you?',
+    confirmAnswer: 'Confirm Answer',
+    continue: 'Continue',
+    correct: 'Correct answer',
+    pointsReceived: 'Points received',
+    explanation: 'Explanation',
+    bookSummary: 'Book Summary',
+    bookPassed: (book: number, score: number) => `You scored ${score.toFixed(1)}/5 in Book ${book} and will continue.`,
+    bookStopped: (book: number, score: number) => `You scored ${score.toFixed(1)}/5 in Book ${book}. The test stops here.`,
+    resultTitle: 'Recommended Starting Point',
+    resultScore: 'Confidence-weighted score',
+    correctAnswers: 'Correct answers',
+    blockScores: 'Scores by Book',
     startLearning: 'Start Learning',
-    idontknow: "I don't know",
-    partLabel: (n: number) => `Part ${n}`,
-    whatsappMessage: (name: string, wa: string, correct: number, total: number, pct: number, level: string, range: string, entry: string) =>
-      `Hello! I have just completed the English Placement Test.\n\nName: ${name}\nWhatsApp: ${wa}\nScore: ${correct}/${total} (${pct}%)\nEstimated Level: ${level} — ${range}\nRecommended Starting Point: ${entry}\n\nI completed the placement test and would like to receive my detailed PDF report with my answers, mistakes, and level analysis.`,
-    cefrDescription: (level: string) => CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.description ?? '',
-    cefrRecommendation: (level: string) => CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.recommendation ?? '',
-    cefrEntryPoint: (level: string) => CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.entryPoint ?? '',
+    contactTeacher: 'Contact Teacher on WhatsApp',
+    createAccount: 'Create Account',
+    advancedTag: 'Advanced / Conversation / C1',
+    confidence: {
+      sure: 'I am sure',
+      maybe: 'I think I know',
+      guess: 'I will guess',
+    },
+    whatsappMessage: (
+      name: string,
+      whatsapp: string,
+      result: PlacementEvaluation,
+      blockScores: string,
+    ) => `Hello! I have completed the Learnendo General Placement Test.
+
+Name: ${name}
+WhatsApp: ${whatsapp}
+Recommendation: ${result.recommendedEntryPoint}
+Score: ${result.percentage}% (${result.overallPoints}/${result.maxPoints} points)
+Correct answers: ${result.correctAnswers}/${result.totalQuestions}
+Scores by book: ${blockScores}`,
   },
   pt: {
-    title: 'Teste de Nivelamento',
-    subtitle: 'Descubra seu nível de inglês',
+    title: 'Placement Test Geral',
+    subtitle: 'Teste adaptativo por listening para os Livros 1 a 9 do Learnendo',
     whatToExpect: 'O que esperar:',
-    questionsTotal: (n: number) => `✓ ${n} questões no total`,
-    skills: '✓ Escuta, Gramática, Leitura e Vocabulário',
-    difficulty: '✓ Dificuldade progressiva (Iniciante a C2)',
-    duration: '✓ Dura cerca de 15 a 20 minutos',
+    bullets: [
+      '45 questoes de listening divididas em 9 livros',
+      '5 questoes por livro com parada automatica',
+      'Voce precisa escolher resposta e confianca',
+      'O audio pode ser repetido quantas vezes precisar',
+    ],
     labelName: 'Seu nome completo *',
     placeholderName: 'Digite seu nome completo',
-    labelWhatsapp: 'Número do WhatsApp *',
+    labelWhatsapp: 'Numero do WhatsApp *',
     placeholderWhatsapp: '55 11 99999-9999',
-    whatsappHint: 'Usaremos isso para enviar seus resultados',
-    disclaimer: 'Você será classificado do Iniciante ao nível C2 com base nas suas respostas.',
-    startBtn: 'Começar Teste',
+    whatsappHint: 'Usaremos isso para enviar seu resultado se necessario',
+    disclaimer: 'Este teste recomenda o melhor livro inicial do Learnendo com base no seu desempenho em listening.',
+    startBtn: 'Comecar Placement Test',
     fillIn: 'Preencha nome e WhatsApp',
-    questionOf: (cur: number, total: number) => `Questão ${cur} de ${total}`,
-    skillType: { listening: 'Escuta', reading: 'Leitura', vocabulary: 'Vocabulário', grammar: 'Gramática' },
-    playAudio: 'Reproduzir',
-    playing: 'Reproduzindo...',
-    playHint: 'Pressione Reproduzir para ouvir o áudio e depois escolha sua resposta.',
-    back: 'Voltar',
-    next: 'Próximo',
-    finish: 'Finalizar Teste',
-    yourLevel: (l: string) => `Seu Nível: ${l}`,
-    yourResults: 'Seus Resultados',
-    correctOf: (c: number, t: number) => `${c}/${t} Corretas`,
-    gotRight: (pct: number) => `Você acertou ${pct}% das questões`,
-    recommended: '📍 Ponto de Partida Recomendado',
-    contactTeacher: 'Contatar Professor no WhatsApp',
-    createAccount: '📧 Criar Conta',
-    startLearning: 'Começar a Aprender',
-    idontknow: 'Não sei.',
-    partLabel: (n: number) => `Parte ${n}`,
-    whatsappMessage: (name: string, wa: string, correct: number, total: number, pct: number, level: string, range: string, entry: string) =>
-      `Olá! Acabei de completar o Teste de Nivelamento de Inglês.\n\nNome: ${name}\nWhatsApp: ${wa}\nPontuação: ${correct}/${total} (${pct}%)\nNível Estimado: ${level} — ${range}\nPonto de Partida Recomendado: ${entry}\n\nConcluí o teste e gostaria de receber meu relatório PDF detalhado com minhas respostas, erros e análise de nível.`,
-    cefrDescription: (level: string) => ({
-      Beginner: 'Você está no início da sua jornada no inglês. Foque em palavras básicas, cumprimentos e frases simples.',
-      A1: 'Você entende e usa inglês muito básico. Consegue se apresentar e fazer perguntas simples.',
-      A2: 'Você lida com situações cotidianas e conversas curtas. Continue construindo confiança com novo vocabulário e tempos verbais.',
-      B1: 'Você discute tópicos familiares, expressa opiniões e acompanha pontos principais em conversas claras.',
-      B2: 'Você tem sólido domínio do inglês e participa de discussões mais complexas com confiança.',
-      C1: 'Você se expressa com fluência e espontaneidade, compreendendo textos e conversas sofisticados.',
-      C2: 'Você tem proficiência quase nativa. Entende praticamente tudo e se expressa com precisão.',
-    }[level] ?? CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.description ?? ''),
-    cefrRecommendation: (level: string) => ({
-      Beginner: 'Comece do zero: cumprimentos básicos, números e palavras do dia a dia.',
-      A1: 'Comece com gramática fundamental: o verbo "to be", pronomes e presente simples.',
-      A2: 'Continue com passado simples, can/could, presente contínuo e conversas cotidianas.',
-      B1: 'Foque em present perfect, condicionais, verbos modais e leitura de textos mais longos.',
-      B2: 'Trabalhe com voz passiva, condicionais avançadas, marcadores discursivos e vocabulário acadêmico.',
-      C1: 'Fortaleça modais perfeitos, inversão, vocabulário nuançado e escuta prolongada.',
-      C2: 'Desafie-se com conteúdos avançados e especializados em inglês.',
-    }[level] ?? CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.recommendation ?? ''),
-    cefrEntryPoint: (level: string) => CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.entryPoint ?? '',
+    progressLabel: (book: number, question: number, total: number) => `Livro ${book} - Questao ${question} de ${total}`,
+    overallProgress: (current: number, total: number) => `${current}/${total} respondidas`,
+    playAudio: 'Tocar Audio',
+    playing: 'Tocando...',
+    replayHint: 'Repita o audio se precisar e depois escolha a melhor resposta.',
+    answerLabel: 'Escolha sua resposta',
+    confidenceLabel: 'Qual e a sua confianca?',
+    confirmAnswer: 'Confirmar Resposta',
+    continue: 'Continuar',
+    correct: 'Resposta correta',
+    pointsReceived: 'Pontuacao recebida',
+    explanation: 'Explicacao',
+    bookSummary: 'Resumo do Livro',
+    bookPassed: (book: number, score: number) => `Voce fez ${score.toFixed(1)}/5 no Livro ${book} e vai continuar.`,
+    bookStopped: (book: number, score: number) => `Voce fez ${score.toFixed(1)}/5 no Livro ${book}. O teste para aqui.`,
+    resultTitle: 'Livro Recomendado',
+    resultScore: 'Pontuacao ponderada por confianca',
+    correctAnswers: 'Respostas corretas',
+    blockScores: 'Pontuacao por Livro',
+    startLearning: 'Comecar a Aprender',
+    contactTeacher: 'Falar com Professor no WhatsApp',
+    createAccount: 'Criar Conta',
+    advancedTag: 'Avancado / Conversacao / C1',
+    confidence: {
+      sure: 'Tenho certeza',
+      maybe: 'Acho que sei',
+      guess: 'Vou chutar',
+    },
+    whatsappMessage: (
+      name: string,
+      whatsapp: string,
+      result: PlacementEvaluation,
+      blockScores: string,
+    ) => `Ola! Conclui o Placement Test Geral do Learnendo.
+
+Nome: ${name}
+WhatsApp: ${whatsapp}
+Recomendacao: ${result.recommendedEntryPoint}
+Pontuacao: ${result.percentage}% (${result.overallPoints}/${result.maxPoints} pontos)
+Respostas corretas: ${result.correctAnswers}/${result.totalQuestions}
+Pontuacao por livro: ${blockScores}`,
   },
   es: {
-    title: 'Prueba de Nivel',
-    subtitle: 'Descubre tu nivel de inglés',
-    whatToExpect: 'Qué esperar:',
-    questionsTotal: (n: number) => `✓ ${n} preguntas en total`,
-    skills: '✓ Escucha, Gramática, Lectura y Vocabulario',
-    difficulty: '✓ Dificultad progresiva (Principiante a C2)',
-    duration: '✓ Dura unos 15-20 minutos',
+    title: 'Placement Test General',
+    subtitle: 'Prueba adaptativa de listening para los Libros 1 al 9 de Learnendo',
+    whatToExpect: 'Que esperar:',
+    bullets: [
+      '45 preguntas de listening divididas en 9 libros',
+      '5 preguntas por libro con parada automatica',
+      'Debes elegir respuesta y nivel de confianza',
+      'El audio puede repetirse todas las veces que necesites',
+    ],
     labelName: 'Tu nombre completo *',
     placeholderName: 'Escribe tu nombre completo',
-    labelWhatsapp: 'Número de WhatsApp *',
+    labelWhatsapp: 'Numero de WhatsApp *',
     placeholderWhatsapp: '55 11 99999-9999',
-    whatsappHint: 'Lo usaremos para enviarte tus resultados',
-    disclaimer: 'Serás clasificado desde Principiante hasta el nivel C2 según tus respuestas.',
-    startBtn: 'Comenzar Prueba',
+    whatsappHint: 'Lo usaremos para enviarte el resultado si hace falta',
+    disclaimer: 'Esta prueba recomienda el mejor libro inicial de Learnendo segun tu listening.',
+    startBtn: 'Empezar Placement Test',
     fillIn: 'Completa nombre y WhatsApp',
-    questionOf: (cur: number, total: number) => `Pregunta ${cur} de ${total}`,
-    skillType: { listening: 'Escucha', reading: 'Lectura', vocabulary: 'Vocabulario', grammar: 'Gramática' },
-    playAudio: 'Reproducir',
+    progressLabel: (book: number, question: number, total: number) => `Libro ${book} - Pregunta ${question} de ${total}`,
+    overallProgress: (current: number, total: number) => `${current}/${total} respondidas`,
+    playAudio: 'Reproducir Audio',
     playing: 'Reproduciendo...',
-    playHint: 'Pulsa Reproducir para escuchar el audio y elige tu respuesta.',
-    back: 'Volver',
-    next: 'Siguiente',
-    finish: 'Finalizar Prueba',
-    yourLevel: (l: string) => `Tu Nivel: ${l}`,
-    yourResults: 'Tus Resultados',
-    correctOf: (c: number, t: number) => `${c}/${t} Correctas`,
-    gotRight: (pct: number) => `Respondiste correctamente el ${pct}% de las preguntas`,
-    recommended: '📍 Punto de Partida Recomendado',
-    contactTeacher: 'Contactar al Profesor por WhatsApp',
-    createAccount: '📧 Crear Cuenta',
+    replayHint: 'Repite el audio si hace falta y luego elige la mejor respuesta.',
+    answerLabel: 'Elige tu respuesta',
+    confidenceLabel: 'Que tan seguro estas?',
+    confirmAnswer: 'Confirmar Respuesta',
+    continue: 'Continuar',
+    correct: 'Respuesta correcta',
+    pointsReceived: 'Puntos recibidos',
+    explanation: 'Explicacion',
+    bookSummary: 'Resumen del Libro',
+    bookPassed: (book: number, score: number) => `Has conseguido ${score.toFixed(1)}/5 en el Libro ${book} y continuaras.`,
+    bookStopped: (book: number, score: number) => `Has conseguido ${score.toFixed(1)}/5 en el Libro ${book}. La prueba termina aqui.`,
+    resultTitle: 'Libro Recomendado',
+    resultScore: 'Puntuacion ponderada por confianza',
+    correctAnswers: 'Respuestas correctas',
+    blockScores: 'Puntuacion por Libro',
     startLearning: 'Empezar a Aprender',
-    idontknow: 'No sé.',
-    partLabel: (n: number) => `Parte ${n}`,
-    whatsappMessage: (name: string, wa: string, correct: number, total: number, pct: number, level: string, range: string, entry: string) =>
-      `¡Hola! Acabo de completar la Prueba de Nivel de Inglés.\n\nNombre: ${name}\nWhatsApp: ${wa}\nPuntuación: ${correct}/${total} (${pct}%)\nNivel Estimado: ${level} — ${range}\nPunto de Partida Recomendado: ${entry}\n\nCompletó la prueba y me gustaría recibir mi informe PDF detallado con mis respuestas, errores y análisis de nivel.`,
-    cefrDescription: (level: string) => ({
-      Beginner: 'Estás al inicio de tu camino en inglés. Concéntrate en palabras básicas, saludos y frases simples.',
-      A1: 'Puedes entender y usar inglés muy básico. Puedes presentarte y hacer preguntas simples.',
-      A2: 'Manejas situaciones cotidianas y conversaciones cortas. Sigue ganando confianza con vocabulario nuevo y tiempos verbales.',
-      B1: 'Puedes hablar de temas familiares, expresar opiniones y seguir los puntos principales en una conversación clara.',
-      B2: 'Tienes un buen dominio del inglés y puedes participar en discusiones más complejas con confianza.',
-      C1: 'Puedes expresarte con fluidez y espontaneidad, y comprender textos y conversaciones sofisticados.',
-      C2: 'Tienes dominio casi nativo. Comprendes prácticamente todo y te expresas con precisión.',
-    }[level] ?? CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.description ?? ''),
-    cefrRecommendation: (level: string) => ({
-      Beginner: 'Empieza desde cero: saludos básicos, números y palabras del día a día.',
-      A1: 'Comienza con gramática fundamental: el verbo "to be", pronombres y presente simple.',
-      A2: 'Continúa con pasado simple, can/could, presente continuo y conversaciones cotidianas.',
-      B1: 'Enfócate en el present perfect, condicionales, verbos modales y lectura de textos más largos.',
-      B2: 'Trabaja con voz pasiva, condicionales avanzadas, marcadores del discurso y vocabulario académico.',
-      C1: 'Fortalece los modales perfectos, la inversión, vocabulario matizado y comprensión auditiva extendida.',
-      C2: 'Desafíate con contenido avanzado y especializado en inglés.',
-    }[level] ?? CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.recommendation ?? ''),
-    cefrEntryPoint: (level: string) => CEFR_LEVELS[level as keyof typeof CEFR_LEVELS]?.entryPoint ?? '',
+    contactTeacher: 'Hablar con el Profesor por WhatsApp',
+    createAccount: 'Crear Cuenta',
+    advancedTag: 'Avanzado / Conversacion / C1',
+    confidence: {
+      sure: 'Estoy seguro',
+      maybe: 'Creo que lo se',
+      guess: 'Voy a adivinar',
+    },
+    whatsappMessage: (
+      name: string,
+      whatsapp: string,
+      result: PlacementEvaluation,
+      blockScores: string,
+    ) => `Hola! Complete el Placement Test General de Learnendo.
+
+Nombre: ${name}
+WhatsApp: ${whatsapp}
+Recomendacion: ${result.recommendedEntryPoint}
+Puntuacion: ${result.percentage}% (${result.overallPoints}/${result.maxPoints} puntos)
+Respuestas correctas: ${result.correctAnswers}/${result.totalQuestions}
+Puntuacion por libro: ${blockScores}`,
   },
 } as const;
 
-type PlacementUILang = 'en' | 'pt' | 'es';
-const getUI = (lang: string) => {
-  if (lang === 'pt') return PLACEMENT_UI.pt;
-  if (lang === 'es') return PLACEMENT_UI.es;
-  return PLACEMENT_UI.en;
-};
-
-interface PlacementTestProps {
-  currentLanguage?: LessonLanguageCode;
-  onComplete: (score: number, level: string) => void;
-  onTriggerConversion?: (reason?: string) => void;
+function resolveUiLanguage(language: LessonLanguageCode): PlacementUILanguage {
+  if (language === 'pt' || language === 'es') return language;
+  return 'en';
 }
 
-export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 'en', onComplete, onTriggerConversion }) => {
-  // Resolve questions and UI strings for the active language.
-  const questions = getQuestionsForLanguage(currentLanguage);
-  const ui = getUI(currentLanguage);
+function getQuestionNumberInsideBook(question: PlacementQuestion, questions: PlacementQuestion[]): number {
+  return questions.filter((item) => item.book === question.book).findIndex((item) => item.id === question.id) + 1;
+}
+
+export const PlacementTest: React.FC<PlacementTestProps> = ({
+  currentLanguage = 'en',
+  onComplete,
+  onTriggerConversion,
+}) => {
+  const uiLanguage = resolveUiLanguage(currentLanguage);
+  const ui = UI[uiLanguage];
+  const questions = useMemo(() => getQuestionsForLanguage(currentLanguage), [currentLanguage]);
 
   const [studentName, setStudentName] = useState('');
   const [studentWhatsApp, setStudentWhatsApp] = useState('');
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<(number | null)[]>(new Array(questions.length).fill(null));
   const [testStarted, setTestStarted] = useState(false);
   const [testCompleted, setTestCompleted] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [responses, setResponses] = useState<PlacementResponse[]>([]);
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
+  const [selectedConfidence, setSelectedConfidence] = useState<PlacementConfidence | null>(null);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [finalResult, setFinalResult] = useState<PlacementEvaluation | null>(null);
 
   const currentQuestion = questions[currentQuestionIndex];
-  const progress = Math.round(((currentQuestionIndex + 1) / questions.length) * 100);
+  const currentQuestionInBook = currentQuestion ? getQuestionNumberInsideBook(currentQuestion, questions) : 1;
+  const overallProgress = Math.round(((responses.length + (feedback ? 1 : 0)) / questions.length) * 100);
+  const isFormValid = studentName.trim() !== '' && studentWhatsApp.trim() !== '';
 
   const playAudio = (text: string) => {
-    speak(text, currentLanguage, {
-      rate: 0.9,
-      onEnd:   () => setIsPlayingAudio(false),
+    setIsPlayingAudio(true);
+    speak(text, 'en', {
+      rate: 0.92,
+      onEnd: () => setIsPlayingAudio(false),
       onError: () => setIsPlayingAudio(false),
     });
-    setIsPlayingAudio(true);
   };
 
-  // classifyPlacementLevel is imported from placementTestQuestions.ts (weighted band scoring)
+  const handleSubmitAnswer = () => {
+    if (!currentQuestion || selectedAnswer === null || !selectedConfidence) return;
 
-  const handleSelectAnswer = (answerIndex: number) => {
-    setSelectedAnswer(answerIndex);
+    const response: PlacementResponse = {
+      questionId: currentQuestion.id,
+      answerIndex: selectedAnswer,
+      confidence: selectedConfidence,
+    };
+    const isCorrect = selectedAnswer === currentQuestion.correctAnswerIndex;
+    const awardedPoints = scorePlacementAnswer(isCorrect, selectedConfidence);
+    const nextResponses = [...responses, response];
+    const evaluation = evaluatePlacementTest(nextResponses, questions);
+    const bookScore = currentQuestionInBook === 5
+      ? evaluation.blockScores[evaluation.blockScores.length - 1]
+      : undefined;
+    const willFinish = currentQuestionInBook === 5 && (
+      (bookScore ? !bookScore.passed : false)
+      || currentQuestion.book === 9
+    );
+
+    setFeedback({
+      confirmed: {
+        question: currentQuestion,
+        response,
+        isCorrect,
+        awardedPoints,
+      },
+      evaluation,
+      bookScore,
+      willFinish,
+    });
   };
 
-  const handleNext = () => {
-    if (selectedAnswer !== null) {
-      const newAnswers = [...answers];
-      newAnswers[currentQuestionIndex] = selectedAnswer;
-      setAnswers(newAnswers);
-      setSelectedAnswer(null);
+  const handleContinue = () => {
+    if (!feedback) return;
 
-      if (currentQuestionIndex < questions.length - 1) {
-        setCurrentQuestionIndex(currentQuestionIndex + 1);
-      } else {
-        handleCompleteTest(newAnswers);
-      }
+    const nextResponses = [...responses, feedback.confirmed.response];
+    setResponses(nextResponses);
+    setFeedback(null);
+    setSelectedAnswer(null);
+    setSelectedConfidence(null);
+
+    if (feedback.willFinish) {
+      void finalizeTest(nextResponses, feedback.evaluation);
+      return;
     }
+
+    setCurrentQuestionIndex((previous) => previous + 1);
   };
 
-  const handleCompleteTest = async (finalAnswers: (number | null)[]) => {
-    const correctCount = finalAnswers.reduce((count, answer, index) => {
-      if (answer === questions[index].correctAnswerIndex) {
-        return count + 1;
-      }
-      return count;
-    }, 0);
+  const finalizeTest = async (
+    confirmedResponses: PlacementResponse[],
+    evaluation: PlacementEvaluation,
+  ) => {
+    const answerBreakdown = buildAnswerBreakdown(
+      confirmedResponses,
+      questions,
+      ui.confidence,
+    );
 
-    const { percentage, level } = classifyPlacementLevel(finalAnswers, questions);
-    
-    // Ensure user is authenticated before saving to Firebase
+    const placementRecord = {
+      score: evaluation.percentage,
+      level: evaluation.level,
+      date: new Date().toISOString(),
+      languageCode: currentLanguage,
+      correctAnswers: evaluation.correctAnswers,
+      totalQuestions: evaluation.totalQuestions,
+      fullName: studentName,
+      whatsapp: studentWhatsApp,
+      answerBreakdown,
+      recommendedBook: evaluation.recommendedBook,
+      recommendedEntryPoint: evaluation.recommendedEntryPoint,
+      stoppedAtBook: evaluation.stoppedAtBook,
+      overallPoints: evaluation.overallPoints,
+      maxPoints: evaluation.maxPoints,
+      blockScores: evaluation.blockScores,
+    };
+
     let authUser = auth.currentUser;
     if (!authUser) {
       try {
-        console.log('[PlacementTest] 🔐 Attempting anonymous authentication...');
         await ensureAnonAuth();
-        authUser = auth.currentUser;  // Get the real user that was just authenticated
-        if (!authUser) {
-          throw new Error('Authentication failed: auth.currentUser is still null after ensureAnonAuth()');
-        }
-        console.log('[PlacementTest] 🔐 Anonymous authentication successful:', authUser.uid);
-      } catch (authError) {
-        console.error('[PlacementTest] ❌ Authentication failed:', authError);
-        setTestCompleted(true);  // Show result screen even if auth fails
-        return;  // Do NOT attempt Firestore write without authenticated user
+        authUser = auth.currentUser;
+      } catch (error) {
+        console.warn('[PlacementTest] Anonymous auth failed during placement save', error);
       }
     }
-    
-    // Safety check: ensure user is authenticated before any Firestore write
-    if (!authUser) {
-      console.error('[PlacementTest] ❌ User not authenticated - cannot save to Firebase');
-      setTestCompleted(true);  // Show result screen locally
-      return;
-    }
-    
-    // Single authoritative write — all downstream consumers (dashboard, PDF) read from here.
-    try {
-      console.log('[PlacementTest] Saving to Firebase with uid:', authUser.uid);
-      if (db) {
-        const answerBreakdown = finalAnswers.map((ans, i) => ({
-          questionId: questions[i].id,
-          prompt: questions[i].prompt,
-          studentAnswer: ans !== null ? questions[i].options[ans] : null,
-          correctAnswer: questions[i].options[questions[i].correctAnswerIndex],
-          isCorrect: ans === questions[i].correctAnswerIndex,
-          explanation: questions[i].explanation ?? null,
-          grammarTopic: questions[i].grammarTopic ?? null,
-          levelBand: questions[i].levelBand,
-          skillType: questions[i].type,
-        }));
 
-        const placementRecord = {
-          score: percentage,
-          level,
-          date: new Date().toISOString(),
-          languageCode: currentLanguage,
-          correctAnswers: correctCount,
-          totalQuestions: questions.length,
-          fullName: studentName,
-          whatsapp: studentWhatsApp,
-          answerBreakdown,
-        };
-        await setDoc(
-          doc(db, 'progress', authUser.uid),
-          {
-            tests: {
-              placement: placementRecord,
-              placements: { [currentLanguage]: placementRecord },
-            },
+    if (authUser && db) {
+      try {
+        const progressRef = doc(db, 'progress', authUser.uid);
+        await setDoc(progressRef, {
+          tests: {
+            placement: placementRecord,
+            placements: { [currentLanguage]: placementRecord },
           },
-          { merge: true },
-        );
-        console.log('[PlacementTest] ✅ Saved to progress/', authUser.uid, { level, percentage });
+        }, { merge: true });
+
+        const historyRef = doc(db, 'users', authUser.uid, 'placementTests', `placement_${Date.now()}`);
+        await setDoc(historyRef, {
+          ...placementRecord,
+          userId: authUser.uid,
+          createdAt: serverTimestamp(),
+        });
+      } catch (error) {
+        console.warn('[PlacementTest] Placement save failed', error);
       }
-    } catch (error) {
-      console.warn('[PlacementTest] ⚠️ Firebase save failed:', error);
-      // Continue showing results even if Firebase fails
     }
 
+    setFinalResult(evaluation);
     setTestCompleted(true);
-    // NOTE: do NOT call onComplete() here — the result screen handles navigation
   };
 
-  if (testCompleted) {
-    const correctCount = answers.reduce((count, answer, index) => {
-      if (answer === questions[index].correctAnswerIndex) {
-        return count + 1;
-      }
-      return count;
-    }, 0);
-    const { level, percentage } = classifyPlacementLevel(answers, questions);
-    const levelInfo = CEFR_LEVELS[level as keyof typeof CEFR_LEVELS];
+  if (!testStarted) {
+    return (
+      <div className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
+        <div className="mx-auto max-w-md">
+          <div className="overflow-hidden rounded-[2rem] border border-slate-800 bg-slate-900 shadow-2xl">
+            <div className="bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.35),_transparent_45%),linear-gradient(135deg,#0f172a,#111827_60%,#020617)] p-8">
+              <div className="mb-6 inline-flex rounded-full border border-cyan-400/40 bg-cyan-400/10 px-4 py-1 text-xs font-bold uppercase tracking-[0.2em] text-cyan-200">
+                Learnendo Listening Placement
+              </div>
+              <h1 className="text-3xl font-black leading-tight text-white">{ui.title}</h1>
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">{ui.subtitle}</p>
+            </div>
+
+            <div className="space-y-6 p-6">
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/60 p-5">
+                <h2 className="mb-3 text-sm font-bold uppercase tracking-[0.18em] text-cyan-300">{ui.whatToExpect}</h2>
+                <ul className="space-y-2 text-sm text-slate-300">
+                  {ui.bullets.map((bullet) => (
+                    <li key={bullet} className="flex gap-3">
+                      <span className="mt-0.5 text-cyan-300">•</span>
+                      <span>{bullet}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-200">{ui.labelName}</label>
+                  <input
+                    type="text"
+                    value={studentName}
+                    onChange={(event) => setStudentName(event.target.value)}
+                    placeholder={ui.placeholderName}
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-bold text-slate-200">{ui.labelWhatsapp}</label>
+                  <input
+                    type="tel"
+                    value={studentWhatsApp}
+                    onChange={(event) => setStudentWhatsApp(event.target.value.replace(/\D/g, ''))}
+                    placeholder={ui.placeholderWhatsapp}
+                    className="w-full rounded-2xl border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-400"
+                  />
+                  <p className="mt-2 text-xs text-slate-400">{ui.whatsappHint}</p>
+                </div>
+              </div>
+
+              <p className="text-center text-xs leading-relaxed text-slate-400">{ui.disclaimer}</p>
+
+              <button
+                type="button"
+                disabled={!isFormValid}
+                onClick={() => setTestStarted(true)}
+                className="w-full rounded-2xl bg-cyan-400 px-6 py-4 text-sm font-black uppercase tracking-[0.18em] text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+              >
+                {isFormValid ? ui.startBtn : ui.fillIn}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (testCompleted && finalResult) {
+    const outcome = getPlacementOutcome(finalResult.level);
+    const blockScoreSummary = finalResult.blockScores
+      .map((block) => `${block.book}: ${block.score.toFixed(1)}/${block.maxScore}`)
+      .join(' | ');
 
     const handleContactTeacher = () => {
-      const message = ui.whatsappMessage(
-        studentName, studentWhatsApp,
-        correctCount, questions.length, percentage,
-        level, levelInfo.range,
-        ui.cefrEntryPoint(level),
+      const text = encodeURIComponent(
+        ui.whatsappMessage(studentName, studentWhatsApp, finalResult, blockScoreSummary),
       );
-      const encodedMessage = encodeURIComponent(message);
-      const teacherWhatsAppUrl = `https://wa.me/5517991010930?text=${encodedMessage}`;
-      window.open(teacherWhatsAppUrl, '_blank');
+      window.open(`https://wa.me/5517991010930?text=${text}`, '_blank');
     };
 
     return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-100 to-blue-50 pb-28 w-full overflow-x-hidden flex items-center justify-center px-4 py-8">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 text-center">
-            <div className="mb-6">
-              <div className="inline-flex items-center justify-center w-24 h-24 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full mb-4">
-                <span className="text-5xl font-bold text-white">{percentage}%</span>
+      <div className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
+        <div className="mx-auto max-w-md">
+          <div className="overflow-hidden rounded-[2rem] border border-slate-800 bg-slate-900 shadow-2xl">
+            <div className="bg-[radial-gradient(circle_at_top,_rgba(250,204,21,0.25),_transparent_40%),linear-gradient(135deg,#0f172a,#111827_60%,#020617)] p-8 text-center">
+              <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-full border border-cyan-300/30 bg-cyan-400/10 text-4xl font-black text-cyan-200">
+                {finalResult.percentage}%
               </div>
+              <p className="mt-6 text-xs font-bold uppercase tracking-[0.22em] text-cyan-300">{ui.resultTitle}</p>
+              <h1 className="mt-3 text-3xl font-black text-white">{finalResult.recommendedEntryPoint}</h1>
+              <p className="mt-3 text-sm leading-relaxed text-slate-300">{outcome.description}</p>
             </div>
 
-            <h1 className="text-3xl font-bold text-blue-900 mb-2">{ui.yourLevel(level)}</h1>
-            <p className="text-sm text-slate-500 mb-4">({levelInfo.range})</p>
+            <div className="space-y-5 p-6">
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/60 p-5">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">{ui.resultScore}</p>
+                <p className="mt-3 text-2xl font-black text-white">
+                  {finalResult.overallPoints.toFixed(1)} / {finalResult.maxPoints}
+                </p>
+                <p className="mt-2 text-sm text-slate-400">
+                  {ui.correctAnswers}: {finalResult.correctAnswers}/{finalResult.totalQuestions}
+                </p>
+              </div>
 
-            <p className="text-slate-700 text-sm leading-relaxed mb-6">{ui.cefrDescription(level)}</p>
+              <div className="rounded-3xl border border-amber-400/20 bg-amber-400/10 p-5">
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-200">{ui.resultTitle}</p>
+                <p className="mt-2 text-lg font-black text-white">{outcome.entryPoint}</p>
+                <p className="mt-2 text-sm leading-relaxed text-amber-100">{outcome.recommendation}</p>
+              </div>
 
-            <div className="bg-blue-50 rounded-2xl p-4 mb-6 border border-blue-200">
-              <p className="text-sm font-semibold text-blue-900 mb-2">{ui.yourResults}</p>
-              <p className="text-2xl font-bold text-blue-600 mb-1">{ui.correctOf(correctCount, questions.length)}</p>
-              <p className="text-xs text-slate-600">{ui.gotRight(percentage)}</p>
-            </div>
+              <div className="rounded-3xl border border-slate-800 bg-slate-950/60 p-5">
+                <p className="mb-4 text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">{ui.blockScores}</p>
+                <div className="space-y-3">
+                  {finalResult.blockScores.map((block) => (
+                    <div
+                      key={block.book}
+                      className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900 px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-bold text-white">Book {block.book}</p>
+                        <p className="text-xs text-slate-400">{block.level}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-black text-cyan-200">
+                          {block.score.toFixed(1)}/{block.maxScore}
+                        </p>
+                        <p className={`text-xs font-bold ${block.passed ? 'text-emerald-300' : 'text-amber-300'}`}>
+                          {block.passed ? 'Passou / Passed' : 'Parou / Stopped'}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
-            <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200 mb-6">
-              <p className="text-sm font-semibold text-amber-900 mb-1">{ui.recommended}</p>
-              <p className="text-lg font-bold text-amber-700 mb-2">{ui.cefrEntryPoint(level)}</p>
-              <p className="text-xs text-amber-800">{ui.cefrRecommendation(level)}</p>
-            </div>
-
-            <div className="space-y-3">
-              <button
-                onClick={handleContactTeacher}
-                className="w-full bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
-              >
-                <i className="fab fa-whatsapp text-xl"></i>
-                {ui.contactTeacher}
-              </button>
-
-              {auth.currentUser?.isAnonymous && (
+              <div className="space-y-3">
                 <button
-                  onClick={() => onTriggerConversion?.('Create an account to save your placement test score and progress.')}
-                  className="w-full bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
+                  type="button"
+                  onClick={handleContactTeacher}
+                  className="w-full rounded-2xl bg-emerald-500 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-emerald-400"
                 >
-                  {ui.createAccount}
+                  {ui.contactTeacher}
                 </button>
-              )}
 
-              <button
-                onClick={() => onComplete(percentage, level)}
-                className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
-              >
-                {ui.startLearning}
-              </button>
+                {auth.currentUser?.isAnonymous && (
+                  <button
+                    type="button"
+                    onClick={() => onTriggerConversion?.('Create an account to save your placement test result and recommendation.')}
+                    className="w-full rounded-2xl border border-violet-400/40 bg-violet-500/10 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-violet-100 transition hover:bg-violet-500/20"
+                  >
+                    {ui.createAccount}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => onComplete({
+                    percentage: finalResult.percentage,
+                    recommendedBook: finalResult.recommendedBook,
+                    recommendedEntryPoint: finalResult.recommendedEntryPoint,
+                    level: finalResult.level,
+                  })}
+                  className="w-full rounded-2xl bg-cyan-400 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-300"
+                >
+                  {ui.startLearning}
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -384,171 +559,204 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({ currentLanguage = 
     );
   }
 
-  if (!testStarted) {
-    const isFormValid = studentName.trim() !== '' && studentWhatsApp.trim() !== '';
-
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-blue-100 to-blue-50 pb-28 w-full overflow-x-hidden flex items-center justify-center px-4 py-8">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-3xl shadow-2xl p-8">
-            <div className="mb-6 text-center">
-              <div className="text-6xl mb-4">📝</div>
-              <h1 className="text-3xl font-bold text-blue-900 mb-2">{ui.title}</h1>
-              <p className="text-slate-500 text-sm">{ui.subtitle}</p>
-            </div>
-
-            <div className="bg-blue-50 rounded-2xl p-4 mb-6 border border-blue-200 text-left">
-              <h2 className="font-bold text-blue-900 text-sm mb-3">{ui.whatToExpect}</h2>
-              <ul className="text-sm text-slate-700 space-y-2">
-                <li>{ui.questionsTotal(questions.length)}</li>
-                <li>{ui.skills}</li>
-                <li>{ui.difficulty}</li>
-                <li>{ui.duration}</li>
-              </ul>
-            </div>
-
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">{ui.labelName}</label>
-                <input
-                  type="text"
-                  value={studentName}
-                  onChange={(e) => setStudentName(e.target.value)}
-                  placeholder={ui.placeholderName}
-                  className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">{ui.labelWhatsapp}</label>
-                <input
-                  type="tel"
-                  value={studentWhatsApp}
-                  onChange={(e) => setStudentWhatsApp(e.target.value.replace(/\D/g, ''))}
-                  placeholder={ui.placeholderWhatsapp}
-                  className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                />
-                <p className="text-xs text-slate-500 mt-1">{ui.whatsappHint}</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-500 mb-6 text-center">{ui.disclaimer}</p>
-
-            <button
-              onClick={() => setTestStarted(true)}
-              disabled={!isFormValid}
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-400 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
-            >
-              {isFormValid ? ui.startBtn : ui.fillIn}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  if (!currentQuestion) return null;
 
   return (
-    <div className="min-h-screen bg-blue-50 pb-28 w-full overflow-x-hidden">
-      <div className="w-full max-w-full mx-auto px-3 sm:px-4 py-6 sm:py-8">
-        {/* Progress Bar */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-semibold text-slate-700">{ui.questionOf(currentQuestionIndex + 1, questions.length)}</p>
-            <p className="text-sm font-bold text-blue-600">{progress}%</p>
-          </div>
-          <div className="w-full bg-slate-200 rounded-full h-2">
-            <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${progress}%` }}></div>
-          </div>
-        </div>
-
-        {/* Question Container */}
-        <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          {/* Part Badge */}
-          <div className="inline-block mb-4">
-            <span className="text-xs font-bold text-white bg-blue-500 px-3 py-1 rounded-full">
-              {ui.partLabel(currentQuestion.part)} - {ui.skillType[currentQuestion.type as keyof typeof ui.skillType] ?? currentQuestion.type}
-            </span>
-          </div>
-
-          {/* Question Text */}
-          <h2 className="text-lg sm:text-xl font-bold text-slate-800 mb-6">{currentQuestion.prompt}</h2>
-
-          {/* Audio Button for Listening Questions */}
-          {currentQuestion.type === 'listening' && currentQuestion.audioText && (
-            <div className="mb-6">
-              {/* audioText is NEVER rendered as text — only used for TTS via playAudio() */}
-              <button
-                onClick={() => playAudio(currentQuestion.audioText!)}
-                disabled={isPlayingAudio}
-                className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-green-400 to-green-500 hover:from-green-500 hover:to-green-600 disabled:from-slate-300 disabled:to-slate-400 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl transition-all active:scale-95"
-              >
-                <span className="text-xl">{isPlayingAudio ? '🔊' : '▶️'}</span>
-                {isPlayingAudio ? ui.playing : ui.playAudio}
-              </button>
-              <p className="text-xs text-slate-400 mt-2 text-center">{ui.playHint}</p>
+    <div className="min-h-screen bg-slate-950 px-4 py-6 text-slate-100">
+      <div className="mx-auto max-w-md">
+        <div className="mb-5 rounded-3xl border border-slate-800 bg-slate-900 p-5 shadow-xl">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">
+                {ui.progressLabel(currentQuestion.book, currentQuestionInBook, 5)}
+              </p>
+              <p className="mt-1 text-sm text-slate-400">{ui.overallProgress(responses.length + 1, questions.length)}</p>
             </div>
-          )}
-
-          {/* Answer Options */}
-          <div className="space-y-3">
-            {currentQuestion.options.map((option, index) => {
-              // The "I don't know" option is always last and styled differently.
-              const isIDontKnow = index === currentQuestion.options.length - 1 &&
-                ["I don't know", 'Não sei.', 'No sé.'].includes(option);
-              const isSelected = selectedAnswer === index;
-              return (
-                <button
-                  key={index}
-                  onClick={() => handleSelectAnswer(index)}
-                  className={`w-full text-left p-4 rounded-xl border-2 transition-all active:scale-95 ${
-                    isSelected
-                      ? 'border-blue-500 bg-blue-50'
-                      : isIDontKnow
-                        ? 'border-slate-200 bg-slate-50 hover:border-slate-400'
-                        : 'border-slate-200 bg-white hover:border-blue-300'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                      isSelected
-                        ? 'border-blue-500 bg-blue-500'
-                        : 'border-slate-300'
-                    }`}>
-                      {isSelected && <span className="text-white text-sm font-bold">✓</span>}
-                    </div>
-                    <span className={`font-medium ${isIDontKnow ? 'text-slate-400 italic text-sm' : 'text-slate-700'}`}>
-                      {option}
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
+            <div className="rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-sm font-black text-cyan-200">
+              {overallProgress}%
+            </div>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-emerald-400 transition-all"
+              style={{ width: `${Math.max(overallProgress, 4)}%` }}
+            />
           </div>
         </div>
 
-        {/* Navigation Buttons */}
-        <div className="flex gap-3">
-          <button
-            onClick={() => {
-              if (currentQuestionIndex > 0) {
-                setCurrentQuestionIndex(currentQuestionIndex - 1);
-                setSelectedAnswer(answers[currentQuestionIndex - 1]);
-              }
-            }}
-            disabled={currentQuestionIndex === 0}
-            className="flex-1 border-2 border-slate-300 text-slate-700 font-bold py-3 px-4 rounded-xl hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
-          >
-            {ui.back}
-          </button>
-          <button
-            onClick={handleNext}
-            disabled={selectedAnswer === null}
-            className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:from-slate-300 disabled:to-slate-400 text-white font-bold py-3 px-4 rounded-xl shadow-lg hover:shadow-xl disabled:shadow-none transition-all active:scale-95"
-          >
-            {currentQuestionIndex === questions.length - 1 ? ui.finish : ui.next}
-          </button>
+        <div className="overflow-hidden rounded-[2rem] border border-slate-800 bg-slate-900 shadow-2xl">
+          <div className="border-b border-slate-800 bg-[radial-gradient(circle_at_top,_rgba(34,211,238,0.12),_transparent_45%),linear-gradient(135deg,#0f172a,#111827)] p-6">
+            <div className="mb-4 inline-flex rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-cyan-200">
+              Book {currentQuestion.book} · {currentQuestion.level}
+            </div>
+            <h1 className="text-2xl font-black text-white">{currentQuestion.prompt}</h1>
+            <p className="mt-3 text-sm leading-relaxed text-slate-400">{ui.replayHint}</p>
+          </div>
+
+          <div className="space-y-6 p-6">
+            <button
+              type="button"
+              onClick={() => playAudio(currentQuestion.audioText)}
+              disabled={isPlayingAudio}
+              className="flex w-full items-center justify-center gap-3 rounded-2xl bg-emerald-500 px-4 py-4 text-sm font-black uppercase tracking-[0.16em] text-white transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:bg-slate-700"
+            >
+              <span className="text-lg">{isPlayingAudio ? '||' : '>'}</span>
+              <span>{isPlayingAudio ? ui.playing : ui.playAudio}</span>
+            </button>
+
+            {!feedback ? (
+              <>
+                <div>
+                  <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">{ui.answerLabel}</p>
+                  <div className="space-y-3">
+                    {currentQuestion.options.map((option, index) => (
+                      <button
+                        key={`${currentQuestion.id}_${index}`}
+                        type="button"
+                        onClick={() => setSelectedAnswer(index)}
+                        className={`w-full rounded-2xl border px-4 py-4 text-left transition ${
+                          selectedAnswer === index
+                            ? 'border-cyan-400 bg-cyan-400/10 text-white'
+                            : 'border-slate-800 bg-slate-950 text-slate-200 hover:border-slate-600'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <span className={`mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${
+                            selectedAnswer === index
+                              ? 'border-cyan-300 bg-cyan-300 text-slate-950'
+                              : 'border-slate-600 text-slate-400'
+                          }`}>
+                            {String.fromCharCode(65 + index)}
+                          </span>
+                          <span className="text-sm leading-relaxed">{option}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-3 text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">{ui.confidenceLabel}</p>
+                  <div className="grid gap-3">
+                    {(Object.keys(CONFIDENCE_LABELS) as PlacementConfidence[]).map((confidence) => (
+                      <button
+                        key={confidence}
+                        type="button"
+                        onClick={() => setSelectedConfidence(confidence)}
+                        className={`rounded-2xl border px-4 py-3 text-left text-sm font-bold transition ${
+                          selectedConfidence === confidence
+                            ? 'border-amber-300 bg-amber-300/10 text-amber-100'
+                            : 'border-slate-800 bg-slate-950 text-slate-300 hover:border-slate-600'
+                        }`}
+                      >
+                        {ui.confidence[confidence]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={selectedAnswer === null || !selectedConfidence}
+                  onClick={handleSubmitAnswer}
+                  className="w-full rounded-2xl bg-cyan-400 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+                >
+                  {ui.confirmAnswer}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className={`rounded-3xl border p-5 ${
+                  feedback.confirmed.isCorrect
+                    ? 'border-emerald-400/30 bg-emerald-400/10'
+                    : 'border-amber-400/30 bg-amber-400/10'
+                }`}>
+                  <p className={`text-xs font-bold uppercase tracking-[0.18em] ${
+                    feedback.confirmed.isCorrect ? 'text-emerald-200' : 'text-amber-200'
+                  }`}>
+                    {feedback.confirmed.isCorrect ? 'Correct / Acertou' : 'Review / Revisar'}
+                  </p>
+                  <p className="mt-4 text-sm font-bold text-white">{ui.correct}: {feedback.confirmed.question.options[feedback.confirmed.question.correctAnswerIndex]}</p>
+                  <p className="mt-3 text-sm text-slate-200">
+                    {ui.pointsReceived}: {feedback.confirmed.awardedPoints.toFixed(1)}
+                  </p>
+                  {feedback.confirmed.question.explanation && (
+                    <p className="mt-3 text-sm leading-relaxed text-slate-200">
+                      <span className="font-bold text-white">{ui.explanation}: </span>
+                      {feedback.confirmed.question.explanation}
+                    </p>
+                  )}
+                </div>
+
+                {feedback.bookScore && (
+                  <div className="rounded-3xl border border-slate-800 bg-slate-950/70 p-5">
+                    <p className="text-xs font-bold uppercase tracking-[0.18em] text-cyan-300">{ui.bookSummary}</p>
+                    <p className="mt-3 text-lg font-black text-white">
+                      Book {feedback.bookScore.book}: {feedback.bookScore.score.toFixed(1)}/{feedback.bookScore.maxScore}
+                    </p>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-300">
+                      {feedback.bookScore.passed
+                        ? ui.bookPassed(feedback.bookScore.book, feedback.bookScore.score)
+                        : ui.bookStopped(feedback.bookScore.book, feedback.bookScore.score)}
+                    </p>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleContinue}
+                  className="w-full rounded-2xl bg-cyan-400 px-6 py-4 text-sm font-black uppercase tracking-[0.16em] text-slate-950 transition hover:bg-cyan-300"
+                >
+                  {ui.continue}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 };
+
+function buildAnswerBreakdown(
+  responses: PlacementResponse[],
+  questions: PlacementQuestion[],
+  confidenceLabels: Record<PlacementConfidence, string>,
+): PlacementAnswerItem[] {
+  const questionMap = new Map(questions.map((question) => [question.id, question]));
+
+  return responses.map((response) => {
+    const question = questionMap.get(response.questionId);
+    if (!question) {
+      return {
+        questionId: response.questionId,
+        prompt: '',
+        studentAnswer: null,
+        correctAnswer: '',
+        isCorrect: false,
+        explanation: null,
+        grammarTopic: null,
+        levelBand: '',
+        skillType: 'listening',
+      };
+    }
+
+    const isCorrect = response.answerIndex === question.correctAnswerIndex;
+    const awardedPoints = scorePlacementAnswer(isCorrect, response.confidence);
+
+    return {
+      questionId: question.id,
+      prompt: question.audioText,
+      studentAnswer: question.options[response.answerIndex] ?? null,
+      correctAnswer: question.options[question.correctAnswerIndex],
+      isCorrect,
+      explanation: question.explanation ?? null,
+      grammarTopic: question.grammarTopic ?? null,
+      levelBand: question.level,
+      skillType: question.type,
+      confidence: confidenceLabels[response.confidence],
+      awardedPoints,
+      book: question.book,
+    };
+  });
+}

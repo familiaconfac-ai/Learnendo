@@ -14,8 +14,7 @@
 import jsPDF from 'jspdf';
 import { TeacherStudentRow } from '../engine/teacherService';
 import { PlacementAnswerItem } from '../types';
-import { CEFR_LEVELS } from '../data/placementTestQuestions';
-import { PLACEMENT_TEST_QUESTIONS_PT } from '../data/placementTestQuestions_pt';
+import { getPlacementOutcome } from '../data/placementTestQuestions';
 
 // ─────────────────────────────────────────────────────────────
 // Layout constants
@@ -26,9 +25,6 @@ const PAGE_H   = 297;
 const MARGIN   = 16;
 const COL_W    = PAGE_W - MARGIN * 2;
 const HALF_W   = COL_W / 2;
-
-// Fast lookup for PT question translations (by question ID)
-const ptQuestionMap = new Map(PLACEMENT_TEST_QUESTIONS_PT.map(q => [q.id, q]));
 
 // ─────────────────────────────────────────────────────────────
 // Helpers
@@ -211,9 +207,9 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
       })()
     : '—';
 
-  const levelInfo = CEFR_LEVELS[level as keyof typeof CEFR_LEVELS];
-  const entryPoint = levelInfo?.entryPoint ?? '—';
-  const levelRange = levelInfo?.range ?? '—';
+  const outcome = getPlacementOutcome(pt.recommendedEntryPoint ?? level);
+  const entryPoint = pt.recommendedEntryPoint ?? outcome.entryPoint ?? '—';
+  const levelRange = outcome.range ?? '—';
 
   const breakdown: PlacementAnswerItem[] = pt.answerBreakdown ?? [];
   const wrongItems = breakdown.filter(i => !i.isCorrect);
@@ -320,8 +316,8 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
       const promptLen = item.prompt.length;
       const promptLines = Math.ceil(promptLen / 90) + 1;
       const explanationLines = item.explanation ? Math.ceil(item.explanation.length / 90) + 1 : 0;
-      // PT explanations render in 3 languages — allocate ~3.5× the single-language height
-      const explanationBlockH = explanationLines * 5 * (isPT ? 3.5 : 1) + (isPT && item.explanation ? 18 : 0);
+      // Explanation height estimate for the current answer note
+      const explanationBlockH = explanationLines * 5;
       const blockH = 8 + promptLines * 5 + 14 + (item.grammarTopic ? 6 : 0) + explanationBlockH + 6;
 
       y = checkPage(doc, y, L.footerLabel, L.pageLabel, blockH);
@@ -381,60 +377,13 @@ export function generatePlacementReport(student: TeacherStudentRow): void {
 
       // Explanation
       if (item.explanation) {
-        if (isPT) {
-          // ── Trilingual explanation block ──────────────────
-          const ptTranslations = ptQuestionMap.get(item.questionId)?.explanationTranslations;
-
-          // Nota (Português):
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7.5);
-          doc.setTextColor('#1e40af');
-          doc.text('Nota (Português):', MARGIN + 3, y);
-          y += 4;
-          doc.setFont('helvetica', 'italic');
-          doc.setFontSize(7.5);
-          doc.setTextColor('#475569');
-          const ptWrapped = doc.splitTextToSize(item.explanation, COL_W - 10);
-          doc.text(ptWrapped, MARGIN + 3, y);
-          y += ptWrapped.length * 4 + 3;
-
-          if (ptTranslations) {
-            y = checkPage(doc, y, L.footerLabel, L.pageLabel, 14);
-            // English:
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.setTextColor('#166534');
-            doc.text('English:', MARGIN + 3, y);
-            y += 4;
-            doc.setFont('helvetica', 'italic');
-            doc.setFontSize(7.5);
-            doc.setTextColor('#475569');
-            const enWrapped = doc.splitTextToSize(ptTranslations.en, COL_W - 10);
-            doc.text(enWrapped, MARGIN + 3, y);
-            y += enWrapped.length * 4 + 3;
-
-            y = checkPage(doc, y, L.footerLabel, L.pageLabel, 14);
-            // Español:
-            doc.setFont('helvetica', 'bold');
-            doc.setFontSize(7.5);
-            doc.setTextColor('#7c3aed');
-            doc.text('Español:', MARGIN + 3, y);
-            y += 4;
-            doc.setFont('helvetica', 'italic');
-            doc.setFontSize(7.5);
-            doc.setTextColor('#475569');
-            const esWrapped = doc.splitTextToSize(ptTranslations.es, COL_W - 10);
-            doc.text(esWrapped, MARGIN + 3, y);
-            y += esWrapped.length * 4 + 2;
-          }
-        } else {
-          doc.setFont('helvetica', 'italic');
-          doc.setFontSize(7.5);
-          doc.setTextColor('#475569');
-          const explWrapped = doc.splitTextToSize(`Note: ${item.explanation}`, COL_W - 10);
-          doc.text(explWrapped, MARGIN + 3, y);
-          y += explWrapped.length * 4 + 2;
-        }
+        doc.setFont('helvetica', 'italic');
+        doc.setFontSize(7.5);
+        doc.setTextColor('#475569');
+        const prefix = isPT ? 'Nota: ' : 'Note: ';
+        const explWrapped = doc.splitTextToSize(`${prefix}${item.explanation}`, COL_W - 10);
+        doc.text(explWrapped, MARGIN + 3, y);
+        y += explWrapped.length * 4 + 2;
       }
 
       y += 6;

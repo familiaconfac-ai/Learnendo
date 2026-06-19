@@ -1,54 +1,160 @@
-﻿// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Placement Test — Question bank v2
-//
-// 50 questions across 5 levels (10 each): A1 · A2 · B1 · B2 · C1/C2
-// All questions have "I don't know" as the LAST option.
-// "I don't know" is NEVER the correct answer (correctAnswerIndex is always 0–3).
-// audioText is NEVER shown in the UI prompt — component reads it only for TTS.
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-import { PLACEMENT_TEST_QUESTIONS_PT } from './placementTestQuestions_pt';
-import { PLACEMENT_TEST_QUESTIONS_ES } from './placementTestQuestions_es';
+export type PlacementConfidence = 'sure' | 'maybe' | 'guess';
 
 export interface PlacementQuestion {
   id: string;
-  part: number; // 1-5
-  levelBand: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
-  type: 'multiple-choice' | 'listening' | 'reading' | 'vocabulary';
-  /** Shown to the student as the question text. NEVER include audioText here. */
+  book: number;
+  level: string;
+  type: 'listening';
   prompt: string;
-  /** TTS text — read aloud. NEVER rendered in the UI. */
-  audioText?: string;
-  /** Always 5 options: 4 real + "I don't know" as index 4. */
-  options: string[];
-  /** Index of the correct answer within options[]. Always 0–3. */
+  audioText: string;
+  options: [string, string, string, string];
   correctAnswerIndex: number;
-  /** Short explanation of why the correct answer is right. Used in PDF/report. */
   explanation?: string;
-  /** Grammar or vocabulary topic tested (e.g. "Present Perfect", "Modal Verbs"). Used in PDF/report. */
   grammarTopic?: string;
-  /** Faithful translations of the explanation into other languages. Used in localized PDF reports. */
-  explanationTranslations?: { en: string; es: string };
 }
 
-// â”€â”€â”€ HELPER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-/** Append "I don't know" to a 4-option list and return a 5-option list. */
+export interface PlacementResponse {
+  questionId: string;
+  answerIndex: number;
+  confidence: PlacementConfidence;
+}
+
+export interface PlacementBookScore {
+  book: number;
+  level: string;
+  score: number;
+  maxScore: number;
+  passed: boolean;
+}
+
+export interface PlacementOutcome {
+  label: string;
+  description: string;
+  recommendation: string;
+  entryPoint: string;
+  range: string;
+}
+
+export interface PlacementEvaluation {
+  level: string;
+  percentage: number;
+  recommendedBook: number | null;
+  recommendedEntryPoint: string;
+  stoppedAtBook: number | null;
+  overallPoints: number;
+  maxPoints: number;
+  correctAnswers: number;
+  totalQuestions: number;
+  blockScores: PlacementBookScore[];
+}
+
+const PASSING_SCORE_PER_BOOK = 4;
+const MAX_POINTS_PER_BOOK = 5;
+
+export const CONFIDENCE_LABELS: Record<PlacementConfidence, string> = {
+  sure: 'Tenho certeza',
+  maybe: 'Acho que sei',
+  guess: 'Vou chutar',
+};
+
+export const CONFIDENCE_SCORES: Record<PlacementConfidence, { correct: number; incorrect: number }> = {
+  sure: { correct: 1, incorrect: -0.5 },
+  maybe: { correct: 0.7, incorrect: -0.2 },
+  guess: { correct: 0.3, incorrect: 0 },
+};
+
+const OUTCOME_BY_BOOK: Record<number, PlacementOutcome> = {
+  1: {
+    label: 'Book 1',
+    description: 'You should start with the first Learnendo book and strengthen the foundations of English.',
+    recommendation: 'Start in Book 1 and focus on basic identification, numbers, and simple structures.',
+    entryPoint: 'Book 1',
+    range: 'A1 Initial',
+  },
+  2: {
+    label: 'Book 2',
+    description: 'You already handle the first block and are ready for basic daily communication.',
+    recommendation: 'Start in Book 2 and reinforce present simple questions, routines, and short answers.',
+    entryPoint: 'Book 2',
+    range: 'A1 Basic',
+  },
+  3: {
+    label: 'Book 3',
+    description: 'You can move into early A2 content with more confidence in past forms.',
+    recommendation: 'Start in Book 3 and focus on past simple comprehension and basic translations.',
+    entryPoint: 'Book 3',
+    range: 'A2 Initial',
+  },
+  4: {
+    label: 'Book 4',
+    description: 'You are ready for stronger A2 work, including continuous forms and future plans.',
+    recommendation: 'Start in Book 4 and consolidate comparisons, ongoing actions, and future intentions.',
+    entryPoint: 'Book 4',
+    range: 'A2 Strong',
+  },
+  5: {
+    label: 'Book 5',
+    description: 'Your listening already supports early B1 content and longer structures.',
+    recommendation: 'Start in Book 5 and deepen present perfect, duration, and first conditional patterns.',
+    entryPoint: 'Book 5',
+    range: 'B1 Initial',
+  },
+  6: {
+    label: 'Book 6',
+    description: 'You are comfortable with B1 material and can move into more nuanced grammar.',
+    recommendation: 'Start in Book 6 and work on conditionals, advice, and passive voice.',
+    entryPoint: 'Book 6',
+    range: 'B1 Strong',
+  },
+  7: {
+    label: 'Book 7',
+    description: 'You are ready for B2 structures such as reported ideas and relative clauses.',
+    recommendation: 'Start in Book 7 and refine complex past narratives and connectors.',
+    entryPoint: 'Book 7',
+    range: 'B2 Initial',
+  },
+  8: {
+    label: 'Book 8',
+    description: 'You can handle stronger B2 listening and advanced conditional meanings.',
+    recommendation: 'Start in Book 8 and strengthen hypotheticals, wishes, and advanced passive structures.',
+    entryPoint: 'Book 8',
+    range: 'B2 Strong',
+  },
+  9: {
+    label: 'Book 9',
+    description: 'You reached the advanced block and should start with Learnendo Book 9.',
+    recommendation: 'Start in Book 9 and focus on higher-level inference, nuance, and academic listening.',
+    entryPoint: 'Book 9',
+    range: 'C1',
+  },
+};
+
+export const ADVANCED_OUTCOME: PlacementOutcome = {
+  label: 'Advanced / Conversation / C1',
+  description: 'You successfully passed all nine books and can move into advanced conversation work.',
+  recommendation: 'Continue with advanced conversation, fluency, and C1-level listening and discussion practice.',
+  entryPoint: 'Advanced / Conversation / C1',
+  range: 'Advanced',
+};
+
 function q(
   id: string,
-  part: number,
-  levelBand: PlacementQuestion['levelBand'],
-  type: PlacementQuestion['type'],
-  prompt: string,
-  opts4: [string, string, string, string],
+  book: number,
+  level: string,
+  audioText: string,
+  options: [string, string, string, string],
   correctAnswerIndex: number,
-  audioText?: string,
   explanation?: string,
   grammarTopic?: string,
 ): PlacementQuestion {
   return {
-    id, part, levelBand, type, prompt,
+    id,
+    book,
+    level,
+    type: 'listening',
+    prompt: 'Listen to the audio and choose the best answer.',
     audioText,
-    options: [...opts4, "I don't know"],
+    options,
     correctAnswerIndex,
     explanation,
     grammarTopic,
@@ -56,602 +162,177 @@ function q(
 }
 
 export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
+  q('pt_b1_q1', 1, 'A1 Initial', 'What is your name?', ['My name is John.', 'I am ten years old.', 'I live in Brazil.', 'It is a book.'], 0, 'The audio asks for a name, so the correct answer is a self-introduction.', 'basic identification / to be'),
+  q('pt_b1_q2', 1, 'A1 Initial', 'How old are you?', ['I am fine.', 'I am twelve years old.', 'My name is Anna.', 'This is a pen.'], 1, 'The question asks about age, so the answer must give an age.', 'age / to be'),
+  q('pt_b1_q3', 1, 'A1 Initial', 'Is this a letter or a number?', ['It is a letter.', 'I am a student.', 'He likes pizza.', 'She is at home.'], 0, 'The audio asks for a classification, and only one option answers that directly.', 'basic classification'),
+  q('pt_b1_q4', 1, 'A1 Initial', 'What number is this? Twenty-one.', ['12', '20', '21', '31'], 2, 'The audio clearly says twenty-one.', 'numbers'),
+  q('pt_b1_q5', 1, 'A1 Initial', 'This is an apple.', ['This is a apple.', 'This is an apple.', 'These is an apple.', 'This are an apple.'], 1, 'The correct sentence uses "an" before a vowel sound.', 'articles / this is'),
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 1 — A1  (questions 1–10)
-  // Coverage: verb to be, subject pronouns, basic vocabulary, listening
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  q('pt_b2_q1', 2, 'A1 Basic', 'Do you like pizza?', ['Yes, I do.', 'Yes, I does.', 'Yes, I am.', 'Yes, I like.'], 0, 'Short answers with "do" must match the auxiliary in the question.', 'present simple short answers'),
+  q('pt_b2_q2', 2, 'A1 Basic', 'Does he play soccer?', ['Yes, he do.', 'Yes, he does.', 'Yes, she does.', 'Yes, he play.'], 1, 'With "does", the correct short answer is "Yes, he does."', 'present simple / does'),
+  q('pt_b2_q3', 2, 'A1 Basic', 'Where do you live?', ['I live in Brazil.', 'I am fine.', 'I like apples.', 'He lives here.'], 0, 'The question asks about place, so the answer must say where the speaker lives.', 'place / present simple'),
+  q('pt_b2_q4', 2, 'A1 Basic', 'She works at school.', ['Ela trabalha na escola.', 'Ela trabalhou na escola.', 'Ela vai trabalhar na escola.', 'Ela está trabalhando agora.'], 0, 'The sentence is in the present simple and means she works there in general.', 'translation / present simple'),
+  q('pt_b2_q5', 2, 'A1 Basic', 'What time do you wake up?', ['I wake up at seven.', 'I am seven.', 'I like seven.', 'I live at seven.'], 0, 'The answer must give a time for the routine.', 'daily routines / time'),
 
-  q('a1_01', 1, 'A1', 'listening',
-    'Listen and choose what the speaker says.',
-    ['Hello! My name is Tom.', 'Goodbye! See you tomorrow.', 'Thank you very much.', 'I am sorry, I don\'t understand.'],
-    0,
-    'Hello! My name is Tom.',
-    '"Hello! My name is Tom." is a greeting and self-introduction.',
-    'Listening Comprehension',
-  ),
+  q('pt_b3_q1', 3, 'A2 Initial', 'What did you do yesterday?', ['I play soccer.', 'I played soccer.', 'I am playing soccer.', 'I have played soccer.'], 1, 'The time marker "yesterday" requires past simple.', 'past simple'),
+  q('pt_b3_q2', 3, 'A2 Initial', 'Were you at home last night?', ['Yes, I was.', 'Yes, I were.', 'Yes, I am.', 'Yes, I did.'], 0, 'Past questions with "were" take short answers with "was/were".', 'past of to be'),
+  q('pt_b3_q3', 3, 'A2 Initial', 'Did she go to school?', ['Yes, she go.', 'Yes, she goes.', 'Yes, she did.', 'Yes, she was.'], 2, 'Past simple yes/no questions use "did" in the short answer.', 'past simple short answers'),
+  q('pt_b3_q4', 3, 'A2 Initial', 'It rained yesterday.', ['Está chovendo agora.', 'Choveu ontem.', 'Vai chover amanhã.', 'Tem chovido.'], 1, 'The sentence describes a finished action yesterday.', 'translation / past simple'),
+  q('pt_b3_q5', 3, 'A2 Initial', 'I didn’t watch TV last night.', ['Eu assisti TV ontem.', 'Eu não assisti TV ontem à noite.', 'Eu não assisto TV.', 'Eu estou assistindo TV.'], 1, 'The negative in past simple means the speaker did not watch TV last night.', 'negative past simple'),
 
-  q('a1_02', 1, 'A1', 'listening',
-    'Listen and choose the correct number.',
-    ['Fifteen', 'Fifty', 'Fourteen', 'Forty'],
-    0,
-    'Fifteen.',
-    'The speaker says "fifteen" — 15.',
-    'Numbers (Listening)',
-  ),
+  q('pt_b4_q1', 4, 'A2 Strong', 'What are you doing now?', ['I study every day.', 'I studied yesterday.', 'I am studying now.', 'I will study tomorrow.'], 2, 'The question asks about an action happening now, so present continuous is needed.', 'present continuous'),
+  q('pt_b4_q2', 4, 'A2 Strong', 'It is raining now.', ['Está chovendo agora.', 'Choveu ontem.', 'Vai chover.', 'Chove todos os dias.'], 0, 'The sentence describes an action in progress now.', 'translation / present continuous'),
+  q('pt_b4_q3', 4, 'A2 Strong', 'I am going to travel tomorrow.', ['Eu viajei ontem.', 'Eu viajo todos os dias.', 'Eu vou viajar amanhã.', 'Eu estou viajando agora.'], 2, 'The structure "going to" signals a future plan.', 'future with going to'),
+  q('pt_b4_q4', 4, 'A2 Strong', 'This car is faster than that car.', ['Este carro é mais rápido que aquele.', 'Este carro é o mais rápido.', 'Aquele carro é mais rápido.', 'Este carro é lento.'], 0, 'The sentence compares two cars using the comparative form.', 'comparatives'),
+  q('pt_b4_q5', 4, 'A2 Strong', 'Have you ever eaten Japanese food?', ['Yes, I did.', 'Yes, I have.', 'Yes, I am.', 'Yes, I eat.'], 1, 'Present perfect questions take answers with "have".', 'present perfect'),
 
-  q('a1_03', 1, 'A1', 'multiple-choice',
-    'Choose the correct form: "He ___ a teacher."',
-    ['is', 'are', 'am', 'be'],
-    0,
-    undefined,
-    '"He" (3rd person singular) takes "is".',
-    'Verb To Be',
-  ),
+  q('pt_b5_q1', 5, 'B1 Initial', 'How long have you lived here?', ['Since 2020.', 'Tomorrow.', 'Yesterday.', 'Every day.'], 0, 'The question asks about duration, and "since 2020" gives a starting point in time.', 'present perfect with since'),
+  q('pt_b5_q2', 5, 'B1 Initial', 'I have lived here for five years.', ['Moro aqui há cinco anos.', 'Morei aqui ontem.', 'Vou morar aqui.', 'Estou morando agora.'], 0, 'The sentence connects the past to the present and expresses duration.', 'translation / present perfect'),
+  q('pt_b5_q3', 5, 'B1 Initial', 'It has been raining since morning.', ['Choveu de manhã.', 'Está chovendo desde a manhã.', 'Vai chover de manhã.', 'Chove todos os dias.'], 1, 'The action started in the morning and continues now.', 'present perfect continuous meaning'),
+  q('pt_b5_q4', 5, 'B1 Initial', 'If it rains tomorrow, I will stay home.', ['Se chover amanhã, ficarei em casa.', 'Se chovesse amanhã, eu ficaria em casa.', 'Se tivesse chovido, eu teria ficado.', 'Choveu e fiquei em casa.'], 0, 'This is a first conditional about a real future possibility.', 'first conditional'),
+  q('pt_b5_q5', 5, 'B1 Initial', 'She has already finished her homework.', ['Ela ainda não terminou.', 'Ela já terminou a lição.', 'Ela vai terminar.', 'Ela está terminando agora.'], 1, 'The adverb "already" shows the homework is complete.', 'already / present perfect'),
 
-  q('a1_04', 1, 'A1', 'multiple-choice',
-    '"___ you from Brazil?"',
-    ['Are', 'Is', 'Am', 'Be'],
-    0,
-    undefined,
-    '"Are you" is the correct question form with "you".',
-    'Verb To Be — Questions',
-  ),
+  q('pt_b6_q1', 6, 'B1 Strong', 'What would you do if you won the lottery?', ['I buy a house.', 'I bought a house.', 'I would buy a house.', 'I have bought a house.'], 2, 'The question uses the second conditional, so the answer needs "would".', 'second conditional'),
+  q('pt_b6_q2', 6, 'B1 Strong', 'If I had more time, I would study more.', ['Se eu tiver mais tempo, estudarei mais.', 'Se eu tivesse mais tempo, eu estudaria mais.', 'Se eu tive mais tempo, estudei.', 'Tenho mais tempo para estudar.'], 1, 'This is a hypothetical present situation, so the translation uses the second conditional.', 'translation / second conditional'),
+  q('pt_b6_q3', 6, 'B1 Strong', 'You should see a doctor.', ['Você viu um médico.', 'Você deveria procurar um médico.', 'Você verá um médico.', 'Você está vendo um médico.'], 1, 'The modal "should" gives advice.', 'modals / advice'),
+  q('pt_b6_q4', 6, 'B1 Strong', 'English is spoken in many countries.', ['Inglês fala muitos países.', 'Inglês é falado em muitos países.', 'Inglês falou em muitos países.', 'Inglês será falado amanhã.'], 1, 'The sentence is in the passive voice.', 'passive voice'),
+  q('pt_b6_q5', 6, 'B1 Strong', 'This book was written in 1998.', ['Este livro escreveu em 1998.', 'Este livro foi escrito em 1998.', 'Este livro está escrevendo.', 'Este livro será escrito.'], 1, 'Past passive uses "was written".', 'past passive'),
 
-  q('a1_05', 1, 'A1', 'multiple-choice',
-    'Choose the correct pronoun: "___ is my sister."',
-    ['She', 'Her', 'He', 'Him'],
-    0,
-    undefined,
-    '"She" is the subject pronoun for a female.',
-    'Subject Pronouns',
-  ),
+  q('pt_b7_q1', 7, 'B2 Initial', 'By the time we arrived, they had already left.', ['Eles saíram depois que chegamos.', 'Eles já tinham saído quando chegamos.', 'Eles estavam saindo quando chegamos.', 'Eles vão sair quando chegarmos.'], 1, 'Past perfect shows the leaving happened before the arrival.', 'past perfect'),
+  q('pt_b7_q2', 7, 'B2 Initial', 'She said that she was tired.', ['Ela diz que está cansada.', 'Ela disse que estava cansada.', 'Ela dirá que está cansada.', 'Ela está dizendo que cansou.'], 1, 'This sentence reports what she said in the past.', 'reported speech'),
+  q('pt_b7_q3', 7, 'B2 Initial', 'The man who called you is my teacher.', ['O homem que ligou para você é meu professor.', 'O homem ligou porque é professor.', 'Meu professor ligará para o homem.', 'O homem chamou meu professor.'], 0, 'The relative clause identifies the man.', 'relative clauses'),
+  q('pt_b7_q4', 7, 'B2 Initial', 'I had never seen that movie before.', ['Eu nunca tinha visto aquele filme antes.', 'Eu nunca verei aquele filme.', 'Eu não vejo filmes.', 'Eu tinha visto aquele filme ontem.'], 0, 'The structure expresses a previous experience before another past moment.', 'past perfect experience'),
+  q('pt_b7_q5', 7, 'B2 Initial', 'Although it was raining, we went out.', ['Porque estava chovendo, saímos.', 'Embora estivesse chovendo, saímos.', 'Se chover, sairemos.', 'Não saímos porque choveu.'], 1, 'Although introduces contrast, not cause.', 'concession / although'),
 
-  q('a1_06', 1, 'A1', 'vocabulary',
-    'Which word is a DAY of the week?',
-    ['April', 'Monday', 'Summer', 'Morning'],
-    1,
-    undefined,
-    'Monday is a day of the week.',
-    'Days of the Week',
-  ),
+  q('pt_b8_q1', 8, 'B2 Strong', 'If it had stopped raining earlier, we would have gone out.', ['Se parasse de chover, sairíamos.', 'Se tivesse parado de chover mais cedo, teríamos saído.', 'Se parar de chover, vamos sair.', 'Como parou de chover, saímos.'], 1, 'This is a third conditional about an unreal past situation.', 'third conditional'),
+  q('pt_b8_q2', 8, 'B2 Strong', 'The project would have succeeded if the team had communicated better.', ['O projeto teria dado certo se a equipe tivesse se comunicado melhor.', 'O projeto dará certo se a equipe se comunicar melhor.', 'O projeto deu certo porque a equipe se comunicou.', 'O projeto está dando certo agora.'], 0, 'The sentence describes a hypothetical past result.', 'third conditional / causality'),
+  q('pt_b8_q3', 8, 'B2 Strong', 'Despite being tired, he kept working.', ['Apesar de estar cansado, ele continuou trabalhando.', 'Porque estava cansado, parou.', 'Ele continuou porque não estava cansado.', 'Ele trabalhou para ficar cansado.'], 0, 'Despite introduces contrast with the action that followed.', 'despite / contrast'),
+  q('pt_b8_q4', 8, 'B2 Strong', 'I wish I had studied more.', ['Eu gostaria de estudar mais agora.', 'Eu queria ter estudado mais.', 'Eu estudarei mais.', 'Eu estudo mais todos os dias.'], 1, 'This expresses regret about the past.', 'wish / past regret'),
+  q('pt_b8_q5', 8, 'B2 Strong', 'The decision has been criticized by many experts.', ['A decisão criticou muitos especialistas.', 'A decisão foi criticada por muitos especialistas.', 'Os especialistas decidiram criticar.', 'A decisão criticará os especialistas.'], 1, 'The sentence uses present perfect passive.', 'present perfect passive'),
 
-  q('a1_07', 1, 'A1', 'vocabulary',
-    'What do you use to drink water?',
-    ['Plate', 'Fork', 'Glass', 'Pen'],
-    2,
-    undefined,
-    'A glass is used for drinking.',
-    'Everyday Vocabulary',
-  ),
-
-  q('a1_08', 1, 'A1', 'multiple-choice',
-    'Choose the correct negative: "I ___ a doctor."',
-    ['am not', 'are not', 'is not', 'not am'],
-    0,
-    undefined,
-    '"I am not" is the correct negative of "I am".',
-    'Verb To Be — Negatives',
-  ),
-
-  q('a1_09', 1, 'A1', 'listening',
-    'Listen and choose where the person is.',
-    ['At school', 'At home', 'At the park', 'At work'],
-    1,
-    'I am at home with my family today.',
-    'The speaker says "at home".',
-    'Prepositions of Place (Listening)',
-  ),
-
-  q('a1_10', 1, 'A1', 'vocabulary',
-    'Which word means "the opposite of hot"?',
-    ['Big', 'Fast', 'Cold', 'Dark'],
-    2,
-    undefined,
-    'Cold is the opposite of hot.',
-    'Antonyms — Basic Adjectives',
-  ),
-
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 2 — A2  (questions 11–20)
-  // Coverage: there is/are, can/can't, present simple, prepositions, listening
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
-  q('a2_11', 2, 'A2', 'listening',
-    'Listen and choose what the person can do.',
-    ['She can drive a car.', 'She can play the guitar.', 'She can speak French.', 'She can swim very well.'],
-    3,
-    'She can swim very well.',
-    'The speaker says "she can swim".',
-    'Modal Verbs — Can (Listening)',
-  ),
-
-  q('a2_12', 2, 'A2', 'multiple-choice',
-    '"___ a supermarket near your house?"',
-    ['Is there', 'Are there', 'There is', 'There are'],
-    0,
-    undefined,
-    '"Is there" is used to ask about a single countable noun.',
-    'There Is / There Are',
-  ),
-
-  q('a2_13', 2, 'A2', 'multiple-choice',
-    '"There ___ five students in the room."',
-    ['is', 'are', 'am', 'be'],
-    1,
-    undefined,
-    '"There are" is used with plural nouns.',
-    'There Is / There Are',
-  ),
-
-  q('a2_14', 2, 'A2', 'multiple-choice',
-    'Complete: "She ___ coffee every morning."',
-    ['drink', 'drinks', 'is drinking', 'drank'],
-    1,
-    undefined,
-    'Present simple 3rd person singular takes -s.',
-    'Present Simple — 3rd Person',
-  ),
-
-  q('a2_15', 2, 'A2', 'multiple-choice',
-    '"I ___ play chess. I never learned."',
-    ['can', 'can\'t', 'don\'t', 'won\'t'],
-    1,
-    undefined,
-    '"Can\'t" expresses inability.',
-    'Modal Verbs — Can / Cannot',
-  ),
-
-  q('a2_16', 2, 'A2', 'vocabulary',
-    'Choose the correct preposition: "The cat is ___ the box."',
-    ['on', 'in', 'at', 'to'],
-    1,
-    undefined,
-    '"In the box" means inside.',
-    'Prepositions of Place',
-  ),
-
-  q('a2_17', 2, 'A2', 'listening',
-    'Listen and choose how often the person exercises.',
-    ['Every day', 'Never', 'Three times a week', 'Once a month'],
-    2,
-    'I go to the gym three times a week.',
-    'The speaker says "three times a week".',
-    'Adverbs of Frequency (Listening)',
-  ),
-
-  q('a2_18', 2, 'A2', 'multiple-choice',
-    'Which question is correct?',
-    ['Do she work here?', 'Does she works here?', 'Does she work here?', 'Is she work here?'],
-    2,
-    undefined,
-    '"Does she work?" is correct — 3rd person question with base form.',
-    'Present Simple — Questions',
-  ),
-
-  q('a2_19', 2, 'A2', 'vocabulary',
-    'What is the opposite of "expensive"?',
-    ['Rich', 'Large', 'Cheap', 'Slow'],
-    2,
-    undefined,
-    '"Cheap" is the opposite of "expensive".',
-    'Antonyms — Adjectives',
-  ),
-
-  q('a2_20', 2, 'A2', 'multiple-choice',
-    '"They ___ watching TV right now."',
-    ['is', 'are', 'be', 'was'],
-    1,
-    undefined,
-    '"They are" + present continuous (-ing).',
-    'Present Continuous',
-  ),
-
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 3 — B1  (questions 21–30)
-  // Coverage: past simple, going to, comparatives, modals, reading, listening
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
-  q('b1_21', 3, 'B1', 'multiple-choice',
-    'Complete: "We ___ to Paris last summer."',
-    ['go', 'gone', 'went', 'goes'],
-    2,
-    undefined,
-    '"Went" is the past simple of "go".',
-    'Past Simple — Irregular Verbs',
-  ),
-
-  q('b1_22', 3, 'B1', 'multiple-choice',
-    '"___ you ___ the film last night?"',
-    ['Did / see', 'Do / see', 'Did / saw', 'Have / seen'],
-    0,
-    undefined,
-    'Past simple question: "Did + subject + base verb".',
-    'Past Simple — Questions',
-  ),
-
-  q('b1_23', 3, 'B1', 'multiple-choice',
-    '"We ___ going to visit my parents this weekend."',
-    ['are', 'is', 'will', 'have'],
-    0,
-    undefined,
-    '"Be going to" = future plan. "We are going to".',
-    'Future — Be Going To',
-  ),
-
-  q('b1_24', 3, 'B1', 'multiple-choice',
-    '"This bag is ___ than that one."',
-    ['more heavy', 'heavier', 'heaviest', 'heavy'],
-    1,
-    undefined,
-    'One-syllable adjective → add -er for comparative.',
-    'Comparative Adjectives',
-  ),
-
-  q('b1_25', 3, 'B1', 'multiple-choice',
-    '"You ___ wear a seatbelt. It\'s the law."',
-    ['might', 'must', 'should', 'can'],
-    1,
-    undefined,
-    '"Must" expresses obligation (legal requirement).',
-    'Modal Verbs — Must / Should',
-  ),
-
-  q('b1_26', 3, 'B1', 'listening',
-    'Listen and answer: What is the person going to do tomorrow?',
-    ['Go to the cinema', 'Visit a friend', 'Go to the gym', 'Stay at home'],
-    2,
-    'Tomorrow morning I am going to the gym. I want to get fit.',
-    'The speaker says "going to the gym".',
-    'Future Plans (Listening)',
-  ),
-
-  q('b1_27', 3, 'B1', 'reading',
-    'Read: "Maria left work early because she had a headache. She went home and rested all afternoon." Why did Maria leave early?',
-    ['She was hungry.', 'She had a meeting.', 'She had a headache.', 'She was bored.'],
-    2,
-    undefined,
-    'Text states "because she had a headache".',
-    'Reading Comprehension — Cause & Effect',
-  ),
-
-  q('b1_28', 3, 'B1', 'multiple-choice',
-    '"I ___ my keys. Have you seen them anywhere?"',
-    ['lose', 'lost', 'have lost', 'was losing'],
-    2,
-    undefined,
-    'Present perfect ("have lost") for a recent action with present relevance.',
-    'Present Perfect',
-  ),
-
-  q('b1_29', 3, 'B1', 'vocabulary',
-    'Choose the word that best completes: "She gave a very ___ speech — everyone was moved."',
-    ['boring', 'powerful', 'silent', 'short'],
-    1,
-    undefined,
-    '"Powerful" fits a speech that moved people.',
-    'Vocabulary in Context',
-  ),
-
-  q('b1_30', 3, 'B1', 'reading',
-    'Read: "If you practise speaking every day, your fluency will improve quickly." What is the condition for improvement?',
-    ['Reading every day', 'Studying grammar', 'Practising speaking daily', 'Watching films'],
-    2,
-    undefined,
-    '"If you practise speaking every day" is the condition stated.',
-    'Conditional Sentences — First Conditional (Reading)',
-  ),
-
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 4 — B2  (questions 31–40)
-  // Coverage: present perfect continuous, passive, conditionals, listening, reading
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
-  q('b2_31', 4, 'B2', 'multiple-choice',
-    '"She ___ been working here for ten years."',
-    ['have', 'has', 'is', 'was'],
-    1,
-    undefined,
-    'Present perfect: "has been" with 3rd person singular.',
-    'Present Perfect',
-  ),
-
-  q('b2_32', 4, 'B2', 'multiple-choice',
-    '"I ___ waiting for you for an hour! Where were you?"',
-    ['have been', 'had been', 'was', 'am'],
-    0,
-    undefined,
-    'Present perfect continuous ("have been waiting") — ongoing action until now.',
-    'Present Perfect Continuous',
-  ),
-
-  q('b2_33', 4, 'B2', 'multiple-choice',
-    '"The report ___ written by the team last week."',
-    ['is', 'was', 'were', 'has'],
-    1,
-    undefined,
-    'Passive voice past: "was written".',
-    'Passive Voice — Past Simple',
-  ),
-
-  q('b2_34', 4, 'B2', 'multiple-choice',
-    '"If I ___ more money, I would buy a bigger house."',
-    ['have', 'had', 'have had', 'will have'],
-    1,
-    undefined,
-    'Second conditional: "If + past simple, would + base verb".',
-    'Second Conditional',
-  ),
-
-  q('b2_35', 4, 'B2', 'listening',
-    'Listen and choose the main idea of the message.',
-    ['The meeting has been cancelled.', 'The meeting has been moved to Thursday.', 'There is no meeting this week.', 'The meeting time has been changed to 2 pm.'],
-    1,
-    'Hi, just to let you know that Monday\'s meeting has been moved to Thursday at the same time. Please update your calendar.',
-    'The speaker says the meeting was moved to Thursday.',
-    'Passive Voice (Listening)',
-  ),
-
-  q('b2_36', 4, 'B2', 'reading',
-    'Read: "Although social media platforms offer connectivity, excessive use has been linked to increased levels of anxiety and reduced attention spans in adolescents." What is the writer\'s concern?',
-    ['Social media is not popular among teens.', 'Teens cannot connect with each other.', 'Too much social media may harm teenagers\' wellbeing.', 'Social media should be banned in schools.'],
-    2,
-    undefined,
-    'The text links excessive use to anxiety and reduced attention spans.',
-    'Reading Comprehension — Critical Analysis',
-  ),
-
-  q('b2_37', 4, 'B2', 'vocabulary',
-    'What does "meticulous" mean?',
-    ['Careless and rushed', 'Paying very careful attention to detail', 'Loud and aggressive', 'Flexible and easy-going'],
-    1,
-    undefined,
-    '"Meticulous" means very careful and precise.',
-    'Advanced Vocabulary',
-  ),
-
-  q('b2_38', 4, 'B2', 'multiple-choice',
-    '"Not only ___ he speak French, but he also writes it fluently."',
-    ['does', 'do', 'is', 'did'],
-    0,
-    undefined,
-    'Inversion after "Not only": auxiliary + subject.',
-    'Inversion — Not Only',
-  ),
-
-  q('b2_39', 4, 'B2', 'multiple-choice',
-    'Choose the sentence where "used to" is correct.',
-    ['I used to going to school by bus.', 'She uses to wake up early.', 'They used to live in London when they were children.', 'He use to play football every week.'],
-    2,
-    undefined,
-    '"Used to + base verb" for past habits. Only option C uses this correctly.',
-    'Used To — Past Habits',
-  ),
-
-  q('b2_40', 4, 'B2', 'vocabulary',
-    'Which word is closest in meaning to "ambiguous"?',
-    ['Clear and direct', 'Open to more than one interpretation', 'Completely false', 'Strongly opinionated'],
-    1,
-    undefined,
-    '"Ambiguous" means having more than one possible meaning.',
-    'Synonyms — Advanced',
-  ),
-
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-  // PART 5 — C1/C2  (questions 41–50)
-  // Coverage: modal perfects, inversion, connectors, nuanced reading, listening
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-
-  q('c1_41', 5, 'C1', 'multiple-choice',
-    '"If only I ___ harder for the exam. I regret it now."',
-    ['study', 'studied', 'had studied', 'would study'],
-    2,
-    undefined,
-    '"If only + past perfect" expresses regret about a past action.',
-    'If Only — Past Perfect (Regret)',
-  ),
-
-  q('c1_42', 5, 'C1', 'multiple-choice',
-    '"You ___ have called me — I was worried about you."',
-    ['should', 'must', 'would', 'might'],
-    0,
-    undefined,
-    '"Should have" expresses criticism or regret about a past action.',
-    'Modal Perfects — Should Have',
-  ),
-
-  q('c1_43', 5, 'C1', 'multiple-choice',
-    '"___ the weather been better, we would have gone hiking."',
-    ['If', 'Had', 'Should', 'Were'],
-    1,
-    undefined,
-    'Inversion in third conditional: "Had the weather been better" = "If the weather had been better".',
-    'Third Conditional — Inversion',
-  ),
-
-  q('c1_44', 5, 'C1', 'multiple-choice',
-    '"The factory failed to meet safety regulations. ___, it was shut down by the authorities."',
-    ['Despite', 'Although', 'Consequently', 'Nevertheless'],
-    2,
-    undefined,
-    '"Consequently" expresses a direct causal result: the violation caused the shutdown. "Despite" requires a noun/gerund phrase, not an independent clause. "Although" must introduce a subordinate clause, not a standalone sentence. "Nevertheless" signals contrast or concession, not cause-and-effect.',
-    'Discourse Markers — Cause & Effect',
-  ),
-
-  q('c1_45', 5, 'C1', 'listening',
-    'Listen and choose the best summary of the speaker\'s argument.',
-    [
-      'Technology always makes learning easier.',
-      'Students should avoid all forms of technology.',
-      'Technology can benefit learning when used critically and selectively.',
-      'Teachers should use technology instead of books.',
-    ],
-    2,
-    'While technology can certainly enhance learning, it\'s important that students develop the critical skills to evaluate digital information rather than accepting everything they read online. Used wisely, it\'s a powerful tool.',
-    'The speaker advocates critical use of technology, not total avoidance or uncritical acceptance.',
-    'Extended Listening Comprehension',
-  ),
-
-  q('c1_46', 5, 'C1', 'reading',
-    'Read: "The no-communication theorem establishes that quantum entanglement, while theoretically intriguing, cannot be exploited to transmit information faster than light, thereby refuting earlier speculation." What is the text\'s main claim?',
-    ['Quantum entanglement enables instant communication.', 'Faster-than-light communication is theoretically possible.', 'A theorem rules out using entanglement for faster-than-light information transfer.', 'Quantum physics is too complex to understand.'],
-    2,
-    undefined,
-    'The theorem "refutes" the speculation — it cannot be used for faster-than-light communication.',
-    'Reading Comprehension — Academic / Scientific Text',
-  ),
-
-  q('c1_47', 5, 'C1', 'vocabulary',
-    'What is a synonym for "elucidate"?',
-    ['Obscure', 'Clarify', 'Complicate', 'Contradict'],
-    1,
-    undefined,
-    '"Elucidate" means to make something clear.',
-    'Advanced Vocabulary — Synonyms',
-  ),
-
-  q('c1_48', 5, 'C1', 'vocabulary',
-    '"The company\'s ___ of the scandal damaged public trust irreparably."',
-    ['documentation', 'discovery', 'concealment', 'analysis'],
-    2,
-    undefined,
-    '"Concealment" (hiding information) would damage trust.',
-    'Vocabulary in Context — Advanced',
-  ),
-
-  q('c2_49', 5, 'C2', 'reading',
-    'Read: "The obfuscation inherent in postmodern discourse obstructs meaningful hermeneutical engagement with textual primitives. Notwithstanding the proliferation of deconstructionist methodologies, fundamental epistemological quandaries remain unresolved." What does the author imply?',
-    [
-      'Postmodern writing is admirably clear and rigorous.',
-      'Deconstruction has solved the major questions of philosophy.',
-      'Postmodern complexity prevents genuine understanding and leaves key questions open.',
-      'Hermeneutics is no longer a relevant discipline.',
-    ],
-    2,
-    undefined,
-    '"Obfuscation", "quandaries remain unresolved", and "notwithstanding" all signal that complexity persists despite theoretical efforts.',
-    'Reading Comprehension — Postmodern / Academic Prose',
-  ),
-
-  q('c2_50', 5, 'C2', 'vocabulary',
-    'Which word means "deliberately unclear or designed to confuse"?',
-    ['Pellucid', 'Perspicuous', 'Obfuscatory', 'Lucid'],
-    2,
-    undefined,
-    '"Obfuscatory" means intended to make something unclear or difficult to understand.',
-    'Advanced Vocabulary — Register',
-  ),
+  q('pt_b9_q1', 9, 'C1', 'The speaker implies that technology can improve communication, but only when people use it intentionally.', ['A tecnologia sempre melhora a comunicação.', 'A tecnologia nunca ajuda.', 'A tecnologia pode ajudar, mas depende do uso consciente.', 'A comunicação não depende de tecnologia.'], 2, 'The key idea is not unlimited benefit but intentional use.', 'inference / implication'),
+  q('pt_b9_q2', 9, 'C1', 'Had I known about the problem, I would have helped you earlier.', ['Se eu soubesse do problema agora, ajudaria.', 'Se eu tivesse sabido do problema, teria ajudado antes.', 'Eu sabia do problema e ajudei.', 'Eu saberei do problema e ajudarei.'], 1, 'This is an inverted third conditional.', 'advanced inversion / third conditional'),
+  q('pt_b9_q3', 9, 'C1', 'Not only did she finish the report, but she also presented it perfectly.', ['Ela não terminou o relatório.', 'Ela terminou o relatório, mas apresentou mal.', 'Ela não apenas terminou o relatório, como também o apresentou perfeitamente.', 'Ela apresentou o relatório antes de terminar.'], 2, 'The structure emphasizes two achievements using inversion.', 'not only ... but also'),
+  q('pt_b9_q4', 9, 'C1', 'The issue is far more complicated than it first appears.', ['O problema é mais simples do que parece.', 'O problema é muito mais complicado do que parece inicialmente.', 'O problema apareceu primeiro.', 'O problema não é complicado.'], 1, 'The sentence highlights hidden complexity.', 'comparison / nuance'),
+  q('pt_b9_q5', 9, 'C1', 'He tends to avoid confrontation, even when speaking up would be necessary.', ['Ele sempre confronta as pessoas.', 'Ele evita confronto, mesmo quando deveria se posicionar.', 'Ele fala demais em conflitos.', 'Ele nunca evita problemas.'], 1, 'The main idea is avoidance despite the need to speak up.', 'advanced inference'),
 ];
 
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Weighted classification
-// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-/** Point weight per CEFR band. Higher bands contribute more so easy guessing cannot inflate the result. */
-const LEVEL_WEIGHTS: Record<string, number> = {
-  A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6,
-};
-
-/**
- * Classify a student's CEFR level using weighted band scoring.
- *
- * - `percentage` = raw % correct (for student display only — NOT used to classify).
- * - `weightedPct` = weighted score / max possible weighted score × 100.
- * - Cutoffs are calibrated so random guessing (20% on 5-option questions) always
- *   lands in Beginner or A1.
- * - "I don't know" (index 4) is never the correct answer, so choosing it always
- *   counts as wrong, reducing the incentive to guess.
- */
-export function classifyPlacementLevel(
-  answers: (number | null)[],
-  questions: PlacementQuestion[],
-): { level: string; percentage: number } {
-  const correctCount = answers.reduce(
-    (n, a, i) => n + (a === questions[i].correctAnswerIndex ? 1 : 0),
-    0,
-  );
-  const rawPercentage = Math.round((correctCount / questions.length) * 100);
-
-  let weightedScore = 0;
-  let maxScore = 0;
-  questions.forEach((q, i) => {
-    const w = LEVEL_WEIGHTS[q.levelBand] ?? 1;
-    maxScore += w;
-    if (answers[i] === q.correctAnswerIndex) weightedScore += w;
-  });
-  const weightedPct = maxScore > 0 ? Math.round((weightedScore / maxScore) * 100) : 0;
-
-  // Cutoffs (v2) — more rigorous, calibrated for 5-option questions (random ≈ 20%)
-  let level: string;
-  if      (weightedPct < 25) level = 'Beginner';
-  else if (weightedPct < 41) level = 'A1';
-  else if (weightedPct < 56) level = 'A2';
-  else if (weightedPct < 71) level = 'B1';
-  else if (weightedPct < 83) level = 'B2';
-  else if (weightedPct < 93) level = 'C1';
-  else                       level = 'C2';
-
-  return { level, percentage: rawPercentage };
+export function getQuestionsForLanguage(_languageCode: string): PlacementQuestion[] {
+  return PLACEMENT_TEST_QUESTIONS;
 }
 
-/**
- * Return the placement test question bank for a given language code.
- * 'pt' and 'es' return their own pedagogically-adapted banks.
- * All other languages fall back to English.
- */
-export function getQuestionsForLanguage(languageCode: string): PlacementQuestion[] {
-  switch (languageCode) {
-    case 'pt':
-      return PLACEMENT_TEST_QUESTIONS_PT;
-    case 'es':
-      return PLACEMENT_TEST_QUESTIONS_ES;
-    case 'en':
-    default:
-      return PLACEMENT_TEST_QUESTIONS;
+export function getPlacementOutcomeByBook(book: number): PlacementOutcome {
+  return OUTCOME_BY_BOOK[book] ?? OUTCOME_BY_BOOK[1];
+}
+
+export function getPlacementOutcome(level: string): PlacementOutcome {
+  if (level === ADVANCED_OUTCOME.label) return ADVANCED_OUTCOME;
+  const match = Object.values(OUTCOME_BY_BOOK).find((item) => item.label === level || item.entryPoint === level);
+  return match ?? OUTCOME_BY_BOOK[1];
+}
+
+export function scorePlacementAnswer(
+  isCorrect: boolean,
+  confidence: PlacementConfidence,
+): number {
+  const weights = CONFIDENCE_SCORES[confidence];
+  return isCorrect ? weights.correct : weights.incorrect;
+}
+
+export function evaluatePlacementTest(
+  responses: PlacementResponse[],
+  questions: PlacementQuestion[] = PLACEMENT_TEST_QUESTIONS,
+): PlacementEvaluation {
+  const byId = new Map(questions.map((question) => [question.id, question]));
+  const groupedScores = new Map<number, PlacementBookScore>();
+  let overallPoints = 0;
+  let correctAnswers = 0;
+
+  for (const response of responses) {
+    const question = byId.get(response.questionId);
+    if (!question) continue;
+
+    const isCorrect = response.answerIndex === question.correctAnswerIndex;
+    const awardedPoints = scorePlacementAnswer(isCorrect, response.confidence);
+
+    overallPoints += awardedPoints;
+    if (isCorrect) correctAnswers += 1;
+
+    const existing = groupedScores.get(question.book) ?? {
+      book: question.book,
+      level: question.level,
+      score: 0,
+      maxScore: MAX_POINTS_PER_BOOK,
+      passed: false,
+    };
+
+    existing.score = roundToOneDecimal(existing.score + awardedPoints);
+    groupedScores.set(question.book, existing);
   }
+
+  const attemptedBooks = Array.from(groupedScores.values()).sort((left, right) => left.book - right.book);
+  let recommendedBook: number | null = 1;
+  let stoppedAtBook: number | null = attemptedBooks[attemptedBooks.length - 1]?.book ?? 1;
+
+  for (const block of attemptedBooks) {
+    block.passed = block.score >= PASSING_SCORE_PER_BOOK;
+    if (!block.passed) {
+      recommendedBook = block.book;
+      stoppedAtBook = block.book;
+      break;
+    }
+    recommendedBook = block.book === 9 ? null : block.book + 1;
+    stoppedAtBook = block.book;
+  }
+
+  if (attemptedBooks.length === 9 && attemptedBooks.every((block) => block.passed)) {
+    recommendedBook = null;
+    stoppedAtBook = 9;
+  }
+
+  const maxPoints = attemptedBooks.length * MAX_POINTS_PER_BOOK;
+  const percentage = maxPoints > 0
+    ? Math.max(0, Math.round((overallPoints / maxPoints) * 100))
+    : 0;
+
+  const outcome = recommendedBook === null
+    ? ADVANCED_OUTCOME
+    : getPlacementOutcomeByBook(recommendedBook);
+
+  return {
+    level: outcome.label,
+    percentage,
+    recommendedBook,
+    recommendedEntryPoint: outcome.entryPoint,
+    stoppedAtBook,
+    overallPoints: roundToOneDecimal(overallPoints),
+    maxPoints,
+    correctAnswers,
+    totalQuestions: responses.length,
+    blockScores: attemptedBooks,
+  };
+}
+
+function roundToOneDecimal(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 export const CEFR_LEVELS = {
-  'Beginner': {
-    range: 'Below A1',
-    description: 'You are at the very beginning of your English journey. Focus on basic words, greetings, and simple sentences.',
-    recommendation: 'Start at the very beginning — basic greetings, numbers, and everyday words.',
-    entryPoint: 'Workbook 1 / Unit 1',
+  ...Object.fromEntries(
+    Object.values(OUTCOME_BY_BOOK).map((outcome) => [
+      outcome.label,
+      {
+        range: outcome.range,
+        description: outcome.description,
+        recommendation: outcome.recommendation,
+        entryPoint: outcome.entryPoint,
+      },
+    ]),
+  ),
+  [ADVANCED_OUTCOME.label]: {
+    range: ADVANCED_OUTCOME.range,
+    description: ADVANCED_OUTCOME.description,
+    recommendation: ADVANCED_OUTCOME.recommendation,
+    entryPoint: ADVANCED_OUTCOME.entryPoint,
   },
-  'A1': {
-    range: 'Elementary',
-    description: 'You can understand and use very basic English. You can introduce yourself and ask simple questions.',
-    recommendation: 'Begin with foundational grammar: the verb "to be", pronouns, and present simple.',
-    entryPoint: 'Workbook 1 / Unit 2',
-  },
-  'A2': {
-    range: 'Pre-Intermediate',
-    description: 'You can handle everyday situations and short conversations. Keep building confidence with new vocabulary and tenses.',
-    recommendation: 'Continue with past simple, can/could, present continuous, and everyday conversations.',
-    entryPoint: 'Workbook 2 / Unit 1',
-  },
-  'B1': {
-    range: 'Intermediate',
-    description: 'You can discuss familiar topics, express opinions, and follow the main points in clear speech.',
-    recommendation: 'Focus on present perfect, conditionals, modal verbs, and reading longer texts.',
-    entryPoint: 'Workbook 4 / Unit 1',
-  },
-  'B2': {
-    range: 'Upper-Intermediate',
-    description: 'You have a solid command of English and can engage in more complex discussions with confidence.',
-    recommendation: 'Work on passive voice, advanced conditionals, discourse markers, and academic vocabulary.',
-    entryPoint: 'Workbook 6 / Unit 1',
-  },
-  'C1': {
-    range: 'Advanced',
-    description: 'You can express yourself fluently and spontaneously and understand sophisticated texts and conversations.',
-    recommendation: 'Strengthen modal perfects, inversion, nuanced vocabulary, and extended listening.',
-    entryPoint: 'Workbook 8 / Unit 1',
-  },
-  'C2': {
-    range: 'Mastery',
-    description: 'You have near-native proficiency. You can understand virtually anything and express yourself with precision.',
-    recommendation: 'Challenge yourself with advanced and specialised English content.',
-    entryPoint: 'Advanced & Specialised Content',
-  },
-};
+} as const;

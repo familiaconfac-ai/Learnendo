@@ -52,6 +52,17 @@ export interface PlacementAnswerItem {
   grammarTopic: string | null;
   levelBand: string;
   skillType: string;
+  confidence?: string;
+  awardedPoints?: number;
+  book?: number;
+}
+
+export interface PlacementBlockScore {
+  book: number;
+  level: string;
+  score: number;
+  maxScore: number;
+  passed: boolean;
 }
 
 export interface TestRecord {
@@ -69,6 +80,18 @@ export interface TestRecord {
   correctAnswers?: number;
   /** Total questions in the test. */
   totalQuestions?: number;
+  /** Book recommended after the adaptive listening placement. */
+  recommendedBook?: number | null;
+  /** Final label shown to the student, e.g. "Book 4" or "Advanced / Conversation / C1". */
+  recommendedEntryPoint?: string;
+  /** Book where the adaptive flow stopped. */
+  stoppedAtBook?: number | null;
+  /** Total confidence-weighted points earned. */
+  overallPoints?: number;
+  /** Maximum available points for the attempted books. */
+  maxPoints?: number;
+  /** Per-book scores used by the adaptive placement flow. */
+  blockScores?: PlacementBlockScore[];
 }
 
 export interface UserTestData {
