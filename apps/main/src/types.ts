@@ -63,6 +63,7 @@ export interface PlacementBlockScore {
   score: number;
   maxScore: number;
   passed: boolean;
+  percentage?: number;
 }
 
 export interface TestRecord {
@@ -92,6 +93,10 @@ export interface TestRecord {
   maxPoints?: number;
   /** Per-book scores used by the adaptive placement flow. */
   blockScores?: PlacementBlockScore[];
+  /** Sequential attempt number for this language placement. */
+  attemptNumber?: number;
+  /** True when the learner reached the last book and saw the full final result. */
+  completedAllBooks?: boolean;
 }
 
 export interface UserTestData {

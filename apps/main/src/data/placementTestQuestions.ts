@@ -25,6 +25,7 @@ export interface PlacementBookScore {
   score: number;
   maxScore: number;
   passed: boolean;
+  percentage: number;
 }
 
 export interface PlacementOutcome {
@@ -46,10 +47,12 @@ export interface PlacementEvaluation {
   correctAnswers: number;
   totalQuestions: number;
   blockScores: PlacementBookScore[];
+  completedAllBooks: boolean;
 }
 
 const PASSING_SCORE_PER_BOOK = 4;
 const MAX_POINTS_PER_BOOK = 5;
+const BALANCED_CORRECT_PATTERN: Array<0 | 1 | 2 | 3> = [0, 2, 3, 1];
 
 export const CONFIDENCE_LABELS: Record<PlacementConfidence, string> = {
   sure: 'Tenho certeza',
@@ -131,7 +134,7 @@ const OUTCOME_BY_BOOK: Record<number, PlacementOutcome> = {
 
 export const ADVANCED_OUTCOME: PlacementOutcome = {
   label: 'Advanced / Conversation / C1',
-  description: 'You successfully passed all nine books and can move into advanced conversation work.',
+  description: 'You successfully finished the full placement and are ready for advanced conversation work.',
   recommendation: 'Continue with advanced conversation, fluency, and C1-level listening and discussion practice.',
   entryPoint: 'Advanced / Conversation / C1',
   range: 'Advanced',
@@ -161,61 +164,63 @@ function q(
   };
 }
 
-export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
-  q('pt_b1_q1', 1, 'A1 Initial', 'What is your name?', ['My name is John.', 'I am ten years old.', 'I live in Brazil.', 'It is a book.'], 0, 'The audio asks for a name, so the correct answer is a self-introduction.', 'basic identification / to be'),
-  q('pt_b1_q2', 1, 'A1 Initial', 'How old are you?', ['I am fine.', 'I am twelve years old.', 'My name is Anna.', 'This is a pen.'], 1, 'The question asks about age, so the answer must give an age.', 'age / to be'),
-  q('pt_b1_q3', 1, 'A1 Initial', 'Is this a letter or a number?', ['It is a letter.', 'I am a student.', 'He likes pizza.', 'She is at home.'], 0, 'The audio asks for a classification, and only one option answers that directly.', 'basic classification'),
-  q('pt_b1_q4', 1, 'A1 Initial', 'What number is this? Twenty-one.', ['12', '20', '21', '31'], 2, 'The audio clearly says twenty-one.', 'numbers'),
-  q('pt_b1_q5', 1, 'A1 Initial', 'This is an apple.', ['This is a apple.', 'This is an apple.', 'These is an apple.', 'This are an apple.'], 1, 'The correct sentence uses "an" before a vowel sound.', 'articles / this is'),
+const BASE_PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
+  q('pt_b1_q1', 1, 'A1 Initial', 'What is your name?', ['My name is John.', 'I am ten years old.', 'I live in Brazil.', 'It is a book.'], 0, 'The audio asks for a name, so the correct answer is a self-introduction.', 'Basic Identification'),
+  q('pt_b1_q2', 1, 'A1 Initial', 'How old are you?', ['I am fine.', 'I am twelve years old.', 'My name is Anna.', 'This is a pen.'], 1, 'The question asks about age, so the answer must give an age.', 'Age / To Be'),
+  q('pt_b1_q3', 1, 'A1 Initial', 'Is this a letter or a number?', ['It is a letter.', 'I am a student.', 'He likes pizza.', 'She is at home.'], 0, 'The audio asks for a classification, and only one option answers that directly.', 'Basic Classification'),
+  q('pt_b1_q4', 1, 'A1 Initial', 'What number is this? Twenty-one.', ['12', '20', '21', '31'], 2, 'The audio clearly says twenty-one.', 'Numbers'),
+  q('pt_b1_q5', 1, 'A1 Initial', 'This is an apple.', ['This is a apple.', 'This is an apple.', 'These is an apple.', 'This are an apple.'], 1, 'The correct sentence uses "an" before a vowel sound.', 'Articles'),
 
-  q('pt_b2_q1', 2, 'A1 Basic', 'Do you like pizza?', ['Yes, I do.', 'Yes, I does.', 'Yes, I am.', 'Yes, I like.'], 0, 'Short answers with "do" must match the auxiliary in the question.', 'present simple short answers'),
-  q('pt_b2_q2', 2, 'A1 Basic', 'Does he play soccer?', ['Yes, he do.', 'Yes, he does.', 'Yes, she does.', 'Yes, he play.'], 1, 'With "does", the correct short answer is "Yes, he does."', 'present simple / does'),
-  q('pt_b2_q3', 2, 'A1 Basic', 'Where do you live?', ['I live in Brazil.', 'I am fine.', 'I like apples.', 'He lives here.'], 0, 'The question asks about place, so the answer must say where the speaker lives.', 'place / present simple'),
-  q('pt_b2_q4', 2, 'A1 Basic', 'She works at school.', ['Ela trabalha na escola.', 'Ela trabalhou na escola.', 'Ela vai trabalhar na escola.', 'Ela está trabalhando agora.'], 0, 'The sentence is in the present simple and means she works there in general.', 'translation / present simple'),
-  q('pt_b2_q5', 2, 'A1 Basic', 'What time do you wake up?', ['I wake up at seven.', 'I am seven.', 'I like seven.', 'I live at seven.'], 0, 'The answer must give a time for the routine.', 'daily routines / time'),
+  q('pt_b2_q1', 2, 'A1 Basic', 'Do you like pizza?', ['Yes, I do.', 'Yes, I does.', 'Yes, I am.', 'Yes, I like.'], 0, 'Short answers with "do" must match the auxiliary in the question.', 'Present Simple'),
+  q('pt_b2_q2', 2, 'A1 Basic', 'Does he play soccer?', ['Yes, he do.', 'Yes, he does.', 'Yes, she does.', 'Yes, he play.'], 1, 'With "does", the correct short answer is "Yes, he does."', 'Present Simple'),
+  q('pt_b2_q3', 2, 'A1 Basic', 'Where do you live?', ['I live in Brazil.', 'I am fine.', 'I like apples.', 'He lives here.'], 0, 'The question asks about place, so the answer must say where the speaker lives.', 'Present Simple'),
+  q('pt_b2_q4', 2, 'A1 Basic', 'She works at school.', ['Ela trabalha na escola.', 'Ela trabalhou na escola.', 'Ela vai trabalhar na escola.', 'Ela esta trabalhando agora.'], 0, 'The sentence is in the present simple and means she works there in general.', 'Present Simple'),
+  q('pt_b2_q5', 2, 'A1 Basic', 'What time do you wake up?', ['I wake up at seven.', 'I am seven.', 'I like seven.', 'I live at seven.'], 0, 'The answer must give a time for the routine.', 'Daily Routines'),
 
-  q('pt_b3_q1', 3, 'A2 Initial', 'What did you do yesterday?', ['I play soccer.', 'I played soccer.', 'I am playing soccer.', 'I have played soccer.'], 1, 'The time marker "yesterday" requires past simple.', 'past simple'),
-  q('pt_b3_q2', 3, 'A2 Initial', 'Were you at home last night?', ['Yes, I was.', 'Yes, I were.', 'Yes, I am.', 'Yes, I did.'], 0, 'Past questions with "were" take short answers with "was/were".', 'past of to be'),
-  q('pt_b3_q3', 3, 'A2 Initial', 'Did she go to school?', ['Yes, she go.', 'Yes, she goes.', 'Yes, she did.', 'Yes, she was.'], 2, 'Past simple yes/no questions use "did" in the short answer.', 'past simple short answers'),
-  q('pt_b3_q4', 3, 'A2 Initial', 'It rained yesterday.', ['Está chovendo agora.', 'Choveu ontem.', 'Vai chover amanhã.', 'Tem chovido.'], 1, 'The sentence describes a finished action yesterday.', 'translation / past simple'),
-  q('pt_b3_q5', 3, 'A2 Initial', 'I didn’t watch TV last night.', ['Eu assisti TV ontem.', 'Eu não assisti TV ontem à noite.', 'Eu não assisto TV.', 'Eu estou assistindo TV.'], 1, 'The negative in past simple means the speaker did not watch TV last night.', 'negative past simple'),
+  q('pt_b3_q1', 3, 'A2 Initial', 'What did you do yesterday?', ['I play soccer.', 'I played soccer.', 'I am playing soccer.', 'I have played soccer.'], 1, 'The time marker "yesterday" requires past simple.', 'Past Simple'),
+  q('pt_b3_q2', 3, 'A2 Initial', 'Were you at home last night?', ['Yes, I was.', 'Yes, I were.', 'Yes, I am.', 'Yes, I did.'], 0, 'Past questions with "were" take short answers with "was/were".', 'Past Of To Be'),
+  q('pt_b3_q3', 3, 'A2 Initial', 'Did she go to school?', ['Yes, she go.', 'Yes, she goes.', 'Yes, she did.', 'Yes, she was.'], 2, 'Past simple yes/no questions use "did" in the short answer.', 'Past Simple'),
+  q('pt_b3_q4', 3, 'A2 Initial', 'It rained yesterday.', ['Esta chovendo agora.', 'Choveu ontem.', 'Vai chover amanha.', 'Tem chovido.'], 1, 'The sentence describes a finished action yesterday.', 'Past Simple'),
+  q('pt_b3_q5', 3, 'A2 Initial', 'I didn’t watch TV last night.', ['Eu assisti TV ontem.', 'Eu nao assisti TV ontem a noite.', 'Eu nao assisto TV.', 'Eu estou assistindo TV.'], 1, 'The negative in past simple means the speaker did not watch TV last night.', 'Past Simple'),
 
-  q('pt_b4_q1', 4, 'A2 Strong', 'What are you doing now?', ['I study every day.', 'I studied yesterday.', 'I am studying now.', 'I will study tomorrow.'], 2, 'The question asks about an action happening now, so present continuous is needed.', 'present continuous'),
-  q('pt_b4_q2', 4, 'A2 Strong', 'It is raining now.', ['Está chovendo agora.', 'Choveu ontem.', 'Vai chover.', 'Chove todos os dias.'], 0, 'The sentence describes an action in progress now.', 'translation / present continuous'),
-  q('pt_b4_q3', 4, 'A2 Strong', 'I am going to travel tomorrow.', ['Eu viajei ontem.', 'Eu viajo todos os dias.', 'Eu vou viajar amanhã.', 'Eu estou viajando agora.'], 2, 'The structure "going to" signals a future plan.', 'future with going to'),
-  q('pt_b4_q4', 4, 'A2 Strong', 'This car is faster than that car.', ['Este carro é mais rápido que aquele.', 'Este carro é o mais rápido.', 'Aquele carro é mais rápido.', 'Este carro é lento.'], 0, 'The sentence compares two cars using the comparative form.', 'comparatives'),
-  q('pt_b4_q5', 4, 'A2 Strong', 'Have you ever eaten Japanese food?', ['Yes, I did.', 'Yes, I have.', 'Yes, I am.', 'Yes, I eat.'], 1, 'Present perfect questions take answers with "have".', 'present perfect'),
+  q('pt_b4_q1', 4, 'A2 Strong', 'What are you doing now?', ['I study every day.', 'I studied yesterday.', 'I am studying now.', 'I will study tomorrow.'], 2, 'The question asks about an action happening now, so present continuous is needed.', 'Present Continuous'),
+  q('pt_b4_q2', 4, 'A2 Strong', 'It is raining now.', ['Esta chovendo agora.', 'Choveu ontem.', 'Vai chover.', 'Chove todos os dias.'], 0, 'The sentence describes an action in progress now.', 'Present Continuous'),
+  q('pt_b4_q3', 4, 'A2 Strong', 'I am going to travel tomorrow.', ['Eu viajei ontem.', 'Eu viajo todos os dias.', 'Eu vou viajar amanha.', 'Eu estou viajando agora.'], 2, 'The structure "going to" signals a future plan.', 'Going To'),
+  q('pt_b4_q4', 4, 'A2 Strong', 'This car is faster than that car.', ['Este carro e mais rapido que aquele.', 'Este carro e o mais rapido.', 'Aquele carro e mais rapido.', 'Este carro e lento.'], 0, 'The sentence compares two cars using the comparative form.', 'Comparatives'),
+  q('pt_b4_q5', 4, 'A2 Strong', 'Have you ever eaten Japanese food?', ['Yes, I did.', 'Yes, I have.', 'Yes, I am.', 'Yes, I eat.'], 1, 'Present perfect questions take answers with "have".', 'Present Perfect'),
 
-  q('pt_b5_q1', 5, 'B1 Initial', 'How long have you lived here?', ['Since 2020.', 'Tomorrow.', 'Yesterday.', 'Every day.'], 0, 'The question asks about duration, and "since 2020" gives a starting point in time.', 'present perfect with since'),
-  q('pt_b5_q2', 5, 'B1 Initial', 'I have lived here for five years.', ['Moro aqui há cinco anos.', 'Morei aqui ontem.', 'Vou morar aqui.', 'Estou morando agora.'], 0, 'The sentence connects the past to the present and expresses duration.', 'translation / present perfect'),
-  q('pt_b5_q3', 5, 'B1 Initial', 'It has been raining since morning.', ['Choveu de manhã.', 'Está chovendo desde a manhã.', 'Vai chover de manhã.', 'Chove todos os dias.'], 1, 'The action started in the morning and continues now.', 'present perfect continuous meaning'),
-  q('pt_b5_q4', 5, 'B1 Initial', 'If it rains tomorrow, I will stay home.', ['Se chover amanhã, ficarei em casa.', 'Se chovesse amanhã, eu ficaria em casa.', 'Se tivesse chovido, eu teria ficado.', 'Choveu e fiquei em casa.'], 0, 'This is a first conditional about a real future possibility.', 'first conditional'),
-  q('pt_b5_q5', 5, 'B1 Initial', 'She has already finished her homework.', ['Ela ainda não terminou.', 'Ela já terminou a lição.', 'Ela vai terminar.', 'Ela está terminando agora.'], 1, 'The adverb "already" shows the homework is complete.', 'already / present perfect'),
+  q('pt_b5_q1', 5, 'B1 Initial', 'How long have you lived here?', ['Since 2020.', 'Tomorrow.', 'Yesterday.', 'Every day.'], 0, 'The question asks about duration, and "since 2020" gives a starting point in time.', 'Present Perfect'),
+  q('pt_b5_q2', 5, 'B1 Initial', 'I have lived here for five years.', ['Moro aqui ha cinco anos.', 'Morei aqui ontem.', 'Vou morar aqui.', 'Estou morando agora.'], 0, 'The sentence connects the past to the present and expresses duration.', 'Present Perfect'),
+  q('pt_b5_q3', 5, 'B1 Initial', 'It has been raining since morning.', ['Choveu de manha.', 'Esta chovendo desde a manha.', 'Vai chover de manha.', 'Chove todos os dias.'], 1, 'The action started in the morning and continues now.', 'Present Perfect'),
+  q('pt_b5_q4', 5, 'B1 Initial', 'If it rains tomorrow, I will stay home.', ['Se chover amanha, ficarei em casa.', 'Se chovesse amanha, eu ficaria em casa.', 'Se tivesse chovido, eu teria ficado.', 'Choveu e fiquei em casa.'], 0, 'This is a first conditional about a real future possibility.', 'First Conditional'),
+  q('pt_b5_q5', 5, 'B1 Initial', 'She has already finished her homework.', ['Ela ainda nao terminou.', 'Ela ja terminou a licao.', 'Ela vai terminar.', 'Ela esta terminando agora.'], 1, 'The adverb "already" shows the homework is complete.', 'Present Perfect'),
 
-  q('pt_b6_q1', 6, 'B1 Strong', 'What would you do if you won the lottery?', ['I buy a house.', 'I bought a house.', 'I would buy a house.', 'I have bought a house.'], 2, 'The question uses the second conditional, so the answer needs "would".', 'second conditional'),
-  q('pt_b6_q2', 6, 'B1 Strong', 'If I had more time, I would study more.', ['Se eu tiver mais tempo, estudarei mais.', 'Se eu tivesse mais tempo, eu estudaria mais.', 'Se eu tive mais tempo, estudei.', 'Tenho mais tempo para estudar.'], 1, 'This is a hypothetical present situation, so the translation uses the second conditional.', 'translation / second conditional'),
-  q('pt_b6_q3', 6, 'B1 Strong', 'You should see a doctor.', ['Você viu um médico.', 'Você deveria procurar um médico.', 'Você verá um médico.', 'Você está vendo um médico.'], 1, 'The modal "should" gives advice.', 'modals / advice'),
-  q('pt_b6_q4', 6, 'B1 Strong', 'English is spoken in many countries.', ['Inglês fala muitos países.', 'Inglês é falado em muitos países.', 'Inglês falou em muitos países.', 'Inglês será falado amanhã.'], 1, 'The sentence is in the passive voice.', 'passive voice'),
-  q('pt_b6_q5', 6, 'B1 Strong', 'This book was written in 1998.', ['Este livro escreveu em 1998.', 'Este livro foi escrito em 1998.', 'Este livro está escrevendo.', 'Este livro será escrito.'], 1, 'Past passive uses "was written".', 'past passive'),
+  q('pt_b6_q1', 6, 'B1 Strong', 'What would you do if you won the lottery?', ['I buy a house.', 'I bought a house.', 'I would buy a house.', 'I have bought a house.'], 2, 'The question uses the second conditional, so the answer needs "would".', 'Second Conditional'),
+  q('pt_b6_q2', 6, 'B1 Strong', 'If I had more time, I would study more.', ['Se eu tiver mais tempo, estudarei mais.', 'Se eu tivesse mais tempo, eu estudaria mais.', 'Se eu tive mais tempo, estudei.', 'Tenho mais tempo para estudar.'], 1, 'This is a hypothetical present situation, so the translation uses the second conditional.', 'Second Conditional'),
+  q('pt_b6_q3', 6, 'B1 Strong', 'You should see a doctor.', ['Voce viu um medico.', 'Voce deveria procurar um medico.', 'Voce vera um medico.', 'Voce esta vendo um medico.'], 1, 'The modal "should" gives advice.', 'Modals'),
+  q('pt_b6_q4', 6, 'B1 Strong', 'English is spoken in many countries.', ['Ingles fala muitos paises.', 'Ingles e falado em muitos paises.', 'Ingles falou em muitos paises.', 'Ingles sera falado amanha.'], 1, 'The sentence is in the passive voice.', 'Passive Voice'),
+  q('pt_b6_q5', 6, 'B1 Strong', 'This book was written in 1998.', ['Este livro escreveu em 1998.', 'Este livro foi escrito em 1998.', 'Este livro esta escrevendo.', 'Este livro sera escrito.'], 1, 'Past passive uses "was written".', 'Passive Voice'),
 
-  q('pt_b7_q1', 7, 'B2 Initial', 'By the time we arrived, they had already left.', ['Eles saíram depois que chegamos.', 'Eles já tinham saído quando chegamos.', 'Eles estavam saindo quando chegamos.', 'Eles vão sair quando chegarmos.'], 1, 'Past perfect shows the leaving happened before the arrival.', 'past perfect'),
-  q('pt_b7_q2', 7, 'B2 Initial', 'She said that she was tired.', ['Ela diz que está cansada.', 'Ela disse que estava cansada.', 'Ela dirá que está cansada.', 'Ela está dizendo que cansou.'], 1, 'This sentence reports what she said in the past.', 'reported speech'),
-  q('pt_b7_q3', 7, 'B2 Initial', 'The man who called you is my teacher.', ['O homem que ligou para você é meu professor.', 'O homem ligou porque é professor.', 'Meu professor ligará para o homem.', 'O homem chamou meu professor.'], 0, 'The relative clause identifies the man.', 'relative clauses'),
-  q('pt_b7_q4', 7, 'B2 Initial', 'I had never seen that movie before.', ['Eu nunca tinha visto aquele filme antes.', 'Eu nunca verei aquele filme.', 'Eu não vejo filmes.', 'Eu tinha visto aquele filme ontem.'], 0, 'The structure expresses a previous experience before another past moment.', 'past perfect experience'),
-  q('pt_b7_q5', 7, 'B2 Initial', 'Although it was raining, we went out.', ['Porque estava chovendo, saímos.', 'Embora estivesse chovendo, saímos.', 'Se chover, sairemos.', 'Não saímos porque choveu.'], 1, 'Although introduces contrast, not cause.', 'concession / although'),
+  q('pt_b7_q1', 7, 'B2 Initial', 'By the time we arrived, they had already left.', ['Eles sairam depois que chegamos.', 'Eles ja tinham saído quando chegamos.', 'Eles estavam saindo quando chegamos.', 'Eles vao sair quando chegarmos.'], 1, 'Past perfect shows the leaving happened before the arrival.', 'Past Perfect'),
+  q('pt_b7_q2', 7, 'B2 Initial', 'She said that she was tired.', ['Ela diz que esta cansada.', 'Ela disse que estava cansada.', 'Ela dira que esta cansada.', 'Ela esta dizendo que cansou.'], 1, 'This sentence reports what she said in the past.', 'Reported Speech'),
+  q('pt_b7_q3', 7, 'B2 Initial', 'The man who called you is my teacher.', ['O homem que ligou para voce e meu professor.', 'O homem ligou porque e professor.', 'Meu professor ligara para o homem.', 'O homem chamou meu professor.'], 0, 'The relative clause identifies the man.', 'Relative Clauses'),
+  q('pt_b7_q4', 7, 'B2 Initial', 'I had never seen that movie before.', ['Eu nunca tinha visto aquele filme antes.', 'Eu nunca verei aquele filme.', 'Eu nao vejo filmes.', 'Eu tinha visto aquele filme ontem.'], 0, 'The structure expresses a previous experience before another past moment.', 'Past Perfect'),
+  q('pt_b7_q5', 7, 'B2 Initial', 'Although it was raining, we went out.', ['Porque estava chovendo, saimos.', 'Embora estivesse chovendo, saimos.', 'Se chover, sairemos.', 'Nao saimos porque choveu.'], 1, 'Although introduces contrast, not cause.', 'Connectors'),
 
-  q('pt_b8_q1', 8, 'B2 Strong', 'If it had stopped raining earlier, we would have gone out.', ['Se parasse de chover, sairíamos.', 'Se tivesse parado de chover mais cedo, teríamos saído.', 'Se parar de chover, vamos sair.', 'Como parou de chover, saímos.'], 1, 'This is a third conditional about an unreal past situation.', 'third conditional'),
-  q('pt_b8_q2', 8, 'B2 Strong', 'The project would have succeeded if the team had communicated better.', ['O projeto teria dado certo se a equipe tivesse se comunicado melhor.', 'O projeto dará certo se a equipe se comunicar melhor.', 'O projeto deu certo porque a equipe se comunicou.', 'O projeto está dando certo agora.'], 0, 'The sentence describes a hypothetical past result.', 'third conditional / causality'),
-  q('pt_b8_q3', 8, 'B2 Strong', 'Despite being tired, he kept working.', ['Apesar de estar cansado, ele continuou trabalhando.', 'Porque estava cansado, parou.', 'Ele continuou porque não estava cansado.', 'Ele trabalhou para ficar cansado.'], 0, 'Despite introduces contrast with the action that followed.', 'despite / contrast'),
-  q('pt_b8_q4', 8, 'B2 Strong', 'I wish I had studied more.', ['Eu gostaria de estudar mais agora.', 'Eu queria ter estudado mais.', 'Eu estudarei mais.', 'Eu estudo mais todos os dias.'], 1, 'This expresses regret about the past.', 'wish / past regret'),
-  q('pt_b8_q5', 8, 'B2 Strong', 'The decision has been criticized by many experts.', ['A decisão criticou muitos especialistas.', 'A decisão foi criticada por muitos especialistas.', 'Os especialistas decidiram criticar.', 'A decisão criticará os especialistas.'], 1, 'The sentence uses present perfect passive.', 'present perfect passive'),
+  q('pt_b8_q1', 8, 'B2 Strong', 'If it had stopped raining earlier, we would have gone out.', ['Se parasse de chover, sairiamos.', 'Se tivesse parado de chover mais cedo, teriamos saído.', 'Se parar de chover, vamos sair.', 'Como parou de chover, saimos.'], 1, 'This is a third conditional about an unreal past situation.', 'Third Conditional'),
+  q('pt_b8_q2', 8, 'B2 Strong', 'The project would have succeeded if the team had communicated better.', ['O projeto teria dado certo se a equipe tivesse se comunicado melhor.', 'O projeto dara certo se a equipe se comunicar melhor.', 'O projeto deu certo porque a equipe se comunicou.', 'O projeto esta dando certo agora.'], 0, 'The sentence describes a hypothetical past result.', 'Third Conditional'),
+  q('pt_b8_q3', 8, 'B2 Strong', 'Despite being tired, he kept working.', ['Apesar de estar cansado, ele continuou trabalhando.', 'Porque estava cansado, parou.', 'Ele continuou porque nao estava cansado.', 'Ele trabalhou para ficar cansado.'], 0, 'Despite introduces contrast with the action that followed.', 'Connectors'),
+  q('pt_b8_q4', 8, 'B2 Strong', 'I wish I had studied more.', ['Eu gostaria de estudar mais agora.', 'Eu queria ter estudado mais.', 'Eu estudarei mais.', 'Eu estudo mais todos os dias.'], 1, 'This expresses regret about the past.', 'Wish / Regret'),
+  q('pt_b8_q5', 8, 'B2 Strong', 'The decision has been criticized by many experts.', ['A decisao criticou muitos especialistas.', 'A decisao foi criticada por muitos especialistas.', 'Os especialistas decidiram criticar.', 'A decisao criticara os especialistas.'], 1, 'The sentence uses present perfect passive.', 'Passive Voice'),
 
-  q('pt_b9_q1', 9, 'C1', 'The speaker implies that technology can improve communication, but only when people use it intentionally.', ['A tecnologia sempre melhora a comunicação.', 'A tecnologia nunca ajuda.', 'A tecnologia pode ajudar, mas depende do uso consciente.', 'A comunicação não depende de tecnologia.'], 2, 'The key idea is not unlimited benefit but intentional use.', 'inference / implication'),
-  q('pt_b9_q2', 9, 'C1', 'Had I known about the problem, I would have helped you earlier.', ['Se eu soubesse do problema agora, ajudaria.', 'Se eu tivesse sabido do problema, teria ajudado antes.', 'Eu sabia do problema e ajudei.', 'Eu saberei do problema e ajudarei.'], 1, 'This is an inverted third conditional.', 'advanced inversion / third conditional'),
-  q('pt_b9_q3', 9, 'C1', 'Not only did she finish the report, but she also presented it perfectly.', ['Ela não terminou o relatório.', 'Ela terminou o relatório, mas apresentou mal.', 'Ela não apenas terminou o relatório, como também o apresentou perfeitamente.', 'Ela apresentou o relatório antes de terminar.'], 2, 'The structure emphasizes two achievements using inversion.', 'not only ... but also'),
-  q('pt_b9_q4', 9, 'C1', 'The issue is far more complicated than it first appears.', ['O problema é mais simples do que parece.', 'O problema é muito mais complicado do que parece inicialmente.', 'O problema apareceu primeiro.', 'O problema não é complicado.'], 1, 'The sentence highlights hidden complexity.', 'comparison / nuance'),
-  q('pt_b9_q5', 9, 'C1', 'He tends to avoid confrontation, even when speaking up would be necessary.', ['Ele sempre confronta as pessoas.', 'Ele evita confronto, mesmo quando deveria se posicionar.', 'Ele fala demais em conflitos.', 'Ele nunca evita problemas.'], 1, 'The main idea is avoidance despite the need to speak up.', 'advanced inference'),
+  q('pt_b9_q1', 9, 'C1', 'The speaker implies that technology can improve communication, but only when people use it intentionally.', ['A tecnologia sempre melhora a comunicacao.', 'A tecnologia nunca ajuda.', 'A tecnologia pode ajudar, mas depende do uso consciente.', 'A comunicacao nao depende de tecnologia.'], 2, 'The key idea is not unlimited benefit but intentional use.', 'Inference'),
+  q('pt_b9_q2', 9, 'C1', 'Had I known about the problem, I would have helped you earlier.', ['Se eu soubesse do problema agora, ajudaria.', 'Se eu tivesse sabido do problema, teria ajudado antes.', 'Eu sabia do problema e ajudei.', 'Eu saberei do problema e ajudarei.'], 1, 'This is an inverted third conditional.', 'Advanced Conditionals'),
+  q('pt_b9_q3', 9, 'C1', 'Not only did she finish the report, but she also presented it perfectly.', ['Ela nao terminou o relatorio.', 'Ela terminou o relatorio, mas apresentou mal.', 'Ela nao apenas terminou o relatorio, como tambem o apresentou perfeitamente.', 'Ela apresentou o relatorio antes de terminar.'], 2, 'The structure emphasizes two achievements using inversion.', 'Advanced Structure'),
+  q('pt_b9_q4', 9, 'C1', 'The issue is far more complicated than it first appears.', ['O problema e mais simples do que parece.', 'O problema e muito mais complicado do que parece inicialmente.', 'O problema apareceu primeiro.', 'O problema nao e complicado.'], 1, 'The sentence highlights hidden complexity.', 'Inference'),
+  q('pt_b9_q5', 9, 'C1', 'He tends to avoid confrontation, even when speaking up would be necessary.', ['Ele sempre confronta as pessoas.', 'Ele evita confronto, mesmo quando deveria se posicionar.', 'Ele fala demais em conflitos.', 'Ele nunca evita problemas.'], 1, 'The main idea is avoidance despite the need to speak up.', 'Inference'),
 ];
+
+export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = buildBalancedQuestions(BASE_PLACEMENT_TEST_QUESTIONS);
 
 export function getQuestionsForLanguage(_languageCode: string): PlacementQuestion[] {
   return PLACEMENT_TEST_QUESTIONS;
@@ -264,52 +269,110 @@ export function evaluatePlacementTest(
       score: 0,
       maxScore: MAX_POINTS_PER_BOOK,
       passed: false,
+      percentage: 0,
     };
 
     existing.score = roundToOneDecimal(existing.score + awardedPoints);
     groupedScores.set(question.book, existing);
   }
 
-  const attemptedBooks = Array.from(groupedScores.values()).sort((left, right) => left.book - right.book);
-  let recommendedBook: number | null = 1;
-  let stoppedAtBook: number | null = attemptedBooks[attemptedBooks.length - 1]?.book ?? 1;
+  const attemptedBooks = Array.from(groupedScores.values())
+    .sort((left, right) => left.book - right.book)
+    .map((block) => ({
+      ...block,
+      score: roundToOneDecimal(block.score),
+      passed: block.score >= PASSING_SCORE_PER_BOOK,
+      percentage: buildBookPercentage(block.score, block.maxScore),
+    }));
 
-  for (const block of attemptedBooks) {
-    block.passed = block.score >= PASSING_SCORE_PER_BOOK;
-    if (!block.passed) {
-      recommendedBook = block.book;
-      stoppedAtBook = block.book;
-      break;
-    }
-    recommendedBook = block.book === 9 ? null : block.book + 1;
-    stoppedAtBook = block.book;
-  }
-
-  if (attemptedBooks.length === 9 && attemptedBooks.every((block) => block.passed)) {
-    recommendedBook = null;
-    stoppedAtBook = 9;
-  }
-
+  const completedAllBooks = attemptedBooks.length === 9;
+  const recommendedBook = resolveRecommendedBook(attemptedBooks);
+  const outcome = recommendedBook === null
+    ? ADVANCED_OUTCOME
+    : getPlacementOutcomeByBook(recommendedBook);
   const maxPoints = attemptedBooks.length * MAX_POINTS_PER_BOOK;
   const percentage = maxPoints > 0
     ? Math.max(0, Math.round((overallPoints / maxPoints) * 100))
     : 0;
-
-  const outcome = recommendedBook === null
-    ? ADVANCED_OUTCOME
-    : getPlacementOutcomeByBook(recommendedBook);
 
   return {
     level: outcome.label,
     percentage,
     recommendedBook,
     recommendedEntryPoint: outcome.entryPoint,
-    stoppedAtBook,
+    stoppedAtBook: attemptedBooks[attemptedBooks.length - 1]?.book ?? null,
     overallPoints: roundToOneDecimal(overallPoints),
     maxPoints,
     correctAnswers,
     totalQuestions: responses.length,
     blockScores: attemptedBooks,
+    completedAllBooks,
+  };
+}
+
+function resolveRecommendedBook(blockScores: PlacementBookScore[]): number | null {
+  if (!blockScores.length) return 1;
+
+  let highestConsistentBook = 1;
+
+  for (let index = 0; index < blockScores.length; index += 1) {
+    const current = blockScores[index];
+    const previous = blockScores[index - 1];
+    const rollingAverage = previous
+      ? (previous.percentage + current.percentage) / 2
+      : current.percentage;
+
+    const currentStrongEnough = current.percentage >= 60;
+    const rollingStableEnough = rollingAverage >= 70;
+
+    if (currentStrongEnough && rollingStableEnough) {
+      highestConsistentBook = current.book;
+    }
+  }
+
+  const lastBook = blockScores[blockScores.length - 1];
+  if (
+    lastBook?.book === 9
+    && highestConsistentBook === 9
+    && lastBook.percentage >= 80
+    && blockScores.filter((block) => block.percentage >= 60).length >= 8
+  ) {
+    return null;
+  }
+
+  return highestConsistentBook;
+}
+
+function buildBookPercentage(score: number, maxScore: number): number {
+  if (maxScore <= 0) return 0;
+  return Math.max(0, Math.min(100, Math.round((score / maxScore) * 100)));
+}
+
+function buildBalancedQuestions(questions: PlacementQuestion[]): PlacementQuestion[] {
+  return questions.map((question, index) => moveCorrectAnswerToTarget(question, BALANCED_CORRECT_PATTERN[index % BALANCED_CORRECT_PATTERN.length]));
+}
+
+function moveCorrectAnswerToTarget(
+  question: PlacementQuestion,
+  targetIndex: 0 | 1 | 2 | 3,
+): PlacementQuestion {
+  if (question.correctAnswerIndex === targetIndex) {
+    return {
+      ...question,
+      options: [...question.options] as [string, string, string, string],
+    };
+  }
+
+  const nextOptions = [...question.options] as [string, string, string, string];
+  const currentCorrect = question.correctAnswerIndex;
+  const targetValue = nextOptions[targetIndex];
+  nextOptions[targetIndex] = nextOptions[currentCorrect];
+  nextOptions[currentCorrect] = targetValue;
+
+  return {
+    ...question,
+    options: nextOptions,
+    correctAnswerIndex: targetIndex,
   };
 }
 
