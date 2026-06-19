@@ -89,6 +89,7 @@ const RECOGNITION_INSTRUCTION = 'Listen and choose the correct sentence.';
 const READING_INSTRUCTION = 'Read and choose the correct answer.';
 const WRITING_INSTRUCTION = 'Write the correct answer.';
 const SPEAKING_INSTRUCTION = 'Listen and repeat. Then say the sentence aloud.';
+const SPEAKING_MODEL_INSTRUCTION = 'Choose the model sentence before saying it aloud.';
 const REVIEW_INSTRUCTION = 'Review the lesson and choose the correct answer.';
 
 function uniqueAccepted(correct: string, accepted?: string[]): string[] | undefined {
@@ -308,7 +309,8 @@ function buildSpeakingSeeds(config: Workbook9LessonConfig): SpeakingSeed[] {
         audio: item,
         display: item,
         correct: item,
-        instruction: SPEAKING_INSTRUCTION,
+        fullSentenceAfterAnswer: item,
+        instruction: `Say: ${item}`,
       };
     }
 
@@ -316,14 +318,66 @@ function buildSpeakingSeeds(config: Workbook9LessonConfig): SpeakingSeed[] {
     const correct = firstText(item, ['answer', 'correct', 'prompt', 'question', 'text', 'audio'], prompt);
 
     return {
-      audio: prompt,
-      display: prompt,
+      audio: correct,
+      display: correct,
       correct,
       accepted: item.accepted,
       translation: item.translation,
-      instruction: SPEAKING_INSTRUCTION,
+      fullSentenceAfterAnswer: correct,
+      instruction: `Say: ${correct}`,
     };
   });
+}
+
+function buildSpeakingSequenceExercises(config: Workbook9LessonConfig): ExerciseInput[] {
+  const promptPairs = config.speakingPrompts.map((item) => {
+    if (typeof item === 'string') {
+      return { prompt: item, answer: item, accepted: undefined as string[] | undefined, translation: undefined as string | undefined };
+    }
+
+    return {
+      prompt: firstText(item, ['prompt', 'question', 'text', 'audio']),
+      answer: firstText(item, ['answer', 'correct', 'prompt', 'question', 'text', 'audio']),
+      accepted: item.accepted,
+      translation: item.translation,
+    };
+  });
+
+  const fallbackAnswers = promptPairs.map((item) => item.answer).filter(Boolean);
+  const sequence: ExerciseInput[] = [];
+
+  promptPairs.forEach((item) => {
+    sequence.push(
+      ...makeChoices([
+        {
+          audio: item.prompt,
+          display: item.prompt,
+          correct: item.answer,
+          options: compactOptions(item.answer, fallbackAnswers.filter((answer) => answer !== item.answer)),
+          accepted: item.accepted,
+          translation: item.translation,
+          instruction: SPEAKING_MODEL_INSTRUCTION,
+          type: 'identification',
+        },
+      ], SPEAKING_MODEL_INSTRUCTION, 'identification'),
+    );
+
+    sequence.push(
+      ...makeSpeakings([
+        {
+          audio: item.answer,
+          display: item.answer,
+          correct: item.answer,
+          accepted: item.accepted,
+          translation: item.translation,
+          fullSentenceAfterAnswer: item.answer,
+          instruction: `Say: ${item.answer}`,
+        },
+      ], SPEAKING_INSTRUCTION),
+    );
+  });
+
+  return sequence;
 }
 
 function buildFactSeeds(config: Workbook9LessonConfig): ChoiceSeed[] {
@@ -384,7 +438,7 @@ export function buildWorkbook9Lesson(config: Workbook9LessonConfig): Lesson {
     'identification',
   );
   const writingExercises = makeWritings(buildWritingSeeds(config), WRITING_INSTRUCTION);
-  const speakingExercises = makeSpeakings(buildSpeakingSeeds(config), SPEAKING_INSTRUCTION);
+  const speakingExercises = buildSpeakingSequenceExercises(config);
   const factExercises = makeChoices(buildFactSeeds(config), READING_INSTRUCTION, 'identification');
 
   const reviewPool = [

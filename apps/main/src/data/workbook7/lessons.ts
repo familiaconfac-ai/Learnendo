@@ -6,6 +6,7 @@ const VOCABULARY_INSTRUCTION = "Listen and choose the correct word.";
 const GRAMMAR_INSTRUCTION = "Listen and choose the correct option.";
 const RECOGNITION_INSTRUCTION = "Listen and choose the correct answer.";
 const SPEAK_REPEAT = "Listen and repeat.";
+const SPEAK_MODEL_INSTRUCTION = "Choose the model sentence before saying it aloud.";
 const WRITE_BLANK = "Complete the sentence.";
 const READ_INSTRUCTION = "Read and choose the correct answer.";
 
@@ -293,16 +294,39 @@ function buildReadingSeeds(facts: FactItem[]): ChoiceSeed[] {
   return [...directSeeds, ...detailSeeds, ...vocabSeeds];
 }
 
-function buildSpeakingSeeds(grammar: GrammarItem[], prompts: PromptItem[]): SpeakingSeed[] {
-  const repeatSeeds = grammar.slice(0, 5).map((item) =>
-    speaking(item.fullSentence, item.fullSentence, item.fullSentence, item.accepted),
-  );
+function buildSpeakingSequenceExercises(prompts: PromptItem[]): ExerciseInput[] {
+  const fallbackAnswers = prompts.map((item) => item.answer);
+  const sequence = prompts.flatMap((item) => {
+    const recognition = makeChoices([
+      choice(
+        item.prompt,
+        item.answer,
+        item.answer,
+        fallbackAnswers.filter((answer) => answer !== item.answer),
+        "identification",
+        item.accepted,
+      ),
+    ], SPEAK_MODEL_INSTRUCTION, "identification").map((exercise) => ({
+      ...exercise,
+      instruction: SPEAK_MODEL_INSTRUCTION,
+    }));
 
-  const promptSeeds = prompts.map((item) =>
-    speaking(item.prompt, item.prompt, item.answer, item.accepted),
-  );
+    const shadowing = makeSpeakings([
+      speaking(item.answer, item.answer, item.answer, item.accepted),
+    ], SPEAK_REPEAT).map((exercise) => ({
+      ...exercise,
+      instruction: `Say: ${item.answer}`,
+      fullSentenceAfterAnswer: item.answer,
+    }));
 
-  return [...repeatSeeds, ...promptSeeds];
+    return [...recognition, ...shadowing];
+  });
+
+  if (sequence.length !== 10) {
+    throw new Error(`Speaking sequence must have exactly 10 exercises, got ${sequence.length}.`);
+  }
+
+  return sequence;
 }
 
 function buildWritingSeeds(grammar: GrammarItem[], writing: WritingTransform[]): WritingSeed[] {
@@ -348,7 +372,7 @@ function buildWorkbook7Lesson(config: LessonConfig): Lesson {
   const vocabularyExercises = makeChoices(buildVocabularySeeds(config.vocab), VOCABULARY_INSTRUCTION);
   const grammarExercises = makeChoices(buildGrammarSeeds(config.grammar), GRAMMAR_INSTRUCTION);
   const recognitionExercises = makeChoices(buildRecognitionSeeds(config.listening), RECOGNITION_INSTRUCTION);
-  const speakingExercises = makeSpeakings(buildSpeakingSeeds(config.grammar, config.speakingPrompts), SPEAK_REPEAT);
+  const speakingExercises = buildSpeakingSequenceExercises(config.speakingPrompts);
   const writingExercises = makeWritings(buildWritingSeeds(config.grammar, config.writing), WRITE_BLANK);
   const readingExercises = makeChoices(buildReadingSeeds(config.facts), READ_INSTRUCTION);
   const reviewExercises = makeChoices(buildReviewSeeds(config.vocab, config.grammar, config.facts), READ_INSTRUCTION);
