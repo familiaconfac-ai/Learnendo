@@ -16,6 +16,7 @@ import {
 import {
   clearExerciseBlockStudentResponse,
   saveExerciseSession,
+  seedExerciseSessionFromLessonTrails,
   setExerciseBlockStudentLock,
   submitLiveResponse,
   subscribeExerciseBlocks,
@@ -23,6 +24,7 @@ import {
   subscribeExerciseSession,
   updateExerciseBlockLivePreview,
   updateExerciseBlockResponse,
+  updateLiveSession,
 } from '../../services/liveSessionService';
 import {
   loadWorkbookForWhiteboard,
@@ -97,7 +99,7 @@ const TRAIL_COPY = {
     saving: 'Saving...',
     saveFlashcard: 'Save flashcard',
     close: 'Close',
-    openTranslatorHint: 'Click a word to translate it',
+    openTranslatorHint: 'Click a word or select a phrase to translate it',
     verdictCorrect: 'got it right',
     verdictWrong: 'got it wrong',
     verdictAnswered: 'answered',
@@ -144,7 +146,7 @@ const TRAIL_COPY = {
     saving: 'Salvando...',
     saveFlashcard: 'Salvar flashcard',
     close: 'Fechar',
-    openTranslatorHint: 'Clique em uma palavra para traduzir',
+    openTranslatorHint: 'Clique em uma palavra ou selecione uma frase para traduzir',
     verdictCorrect: 'acertou',
     verdictWrong: 'errou',
     verdictAnswered: 'respondeu',
@@ -191,7 +193,7 @@ const TRAIL_COPY = {
     saving: 'Guardando...',
     saveFlashcard: 'Guardar flashcard',
     close: 'Cerrar',
-    openTranslatorHint: 'Haz clic en una palabra para traducir',
+    openTranslatorHint: 'Haz clic en una palabra o selecciona una frase para traducir',
     verdictCorrect: 'acertó',
     verdictWrong: 'falló',
     verdictAnswered: 'respondió',
@@ -421,8 +423,11 @@ function getPracticeItem(block: LiveExerciseBlock, lessonNumber: number): Practi
     instruction: prompt.instruction,
     displayValue: prompt.displayValue,
     audioValue: prompt.audioValue,
+    audioValueBeforeAnswer: block.sourceAudioValueBeforeAnswer?.trim() || undefined,
+    fullSentenceAfterAnswer: block.sourceFullSentenceAfterAnswer?.trim() || undefined,
     options: prompt.options.length ? prompt.options : undefined,
     correctValue: block.expectedAnswer?.trim() || '',
+    acceptedAnswers: block.acceptedAnswers?.length ? block.acceptedAnswers : undefined,
     translation: prompt.translation,
   };
 }
@@ -626,6 +631,10 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
     document.addEventListener('mousedown', handlePointerDown, true);
     return () => document.removeEventListener('mousedown', handlePointerDown, true);
   }, [onClose]);
+
+  useEffect(() => {
+    void ttsSpeakImpl(selection.text, courseLanguage);
+  }, [courseLanguage, selection.text]);
 
   const handleSpeak = () => {
     void ttsSpeakImpl(selection.text, courseLanguage);
@@ -1254,6 +1263,40 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         const nextBlock = blocks[currentBlockIndex + 1] ?? null;
         if (nextBlock) {
           await setSharedCurrentBlock(nextBlock.id);
+        } else if (lesson) {
+          const currentTrailId = currentBlock.sourceTrailId ?? session.activeTrailIds?.[session.activeTrailIds.length - 1] ?? null;
+          const currentTrailIndex = lesson.days.findIndex((day) => day.id === currentTrailId);
+          const nextTrail = currentTrailIndex >= 0 ? lesson.days[currentTrailIndex + 1] ?? null : null;
+
+          if (nextTrail) {
+            const seeded = await seedExerciseSessionFromLessonTrails({
+              classId,
+              courseId,
+              workbookId,
+              lessonId: lesson.id,
+              trailIds: [nextTrail.id],
+              updatedByUid: user.uid,
+              updatedByName: actorName,
+            });
+
+            await updateLiveSession(
+              classId,
+              {
+                sessionStatus: 'active',
+                activeWorkbookId: workbookId,
+                activeLessonId: lesson.id,
+                activeExerciseId: seeded.trailIds[0] ?? null,
+                activeTrailIds: seeded.trailIds,
+                activeTrailLabel: seeded.trailLabel,
+                mainStageMode: 'trail',
+              },
+              user.uid,
+            );
+          } else {
+            await setSharedCurrentBlock(LIVE_TRAIL_COMPLETE_BLOCK_ID);
+          }
+        } else {
+          await setSharedCurrentBlock(LIVE_TRAIL_COMPLETE_BLOCK_ID);
         }
       }
     } catch {
@@ -1472,7 +1515,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               </button>
             </div>
             {vocabMode ? (
-              <div className="rounded-2xl border border-cyan-400/30 bg-slate-950/92 px-3 py-2 text-[11px] font-bold text-cyan-100 shadow-2xl backdrop-blur-sm">
+              <div className="pointer-events-none max-w-xs rounded-2xl border border-cyan-400/30 bg-slate-950/92 px-3 py-2 text-center text-[11px] font-bold text-cyan-100 shadow-2xl backdrop-blur-sm sm:text-right">
                 {copy.openTranslatorHint}
               </div>
             ) : null}

@@ -92,7 +92,7 @@ const lesson25 = buildStandardLesson({
     choice('The students ___ in the library after lunch.', 'The students study in the library after lunch.', ['study', 'studies', 'is studying', 'studied'], 'study', 'Os alunos estudam na biblioteca depois do almoco.'),
     choice('The bell ___ at seven thirty.', 'The bell rings at seven thirty.', ['ring', 'rings', 'ringing', 'ringed'], 'rings', 'O sinal toca as sete e meia.'),
     choice('A student ___ the date on the board.', 'A student writes the date on the board.', ['write', 'writes', 'writing', 'wrote'], 'writes', 'Um aluno escreve a data no quadro.'),
-    choice('The backpacks ___ under the desks.', 'The backpacks stay under the desks.', ['stay', 'stays', 'staying', 'stayed'], 'stay', 'As mochilas ficam debaixo das cardeiras.'),
+    choice('The backpacks ___ under the desks.', 'The backpacks stay under the desks.', ['stay', 'stays', 'staying', 'stayed'], 'stay', 'As mochilas ficam debaixo das carteiras.'),
     choice('Our English class ___ at eight oclock.', 'Our English class starts at eight oclock.', ['start', 'starts', 'starting', 'started'], 'starts', 'Nossa aula de ingles comeca às oito horas.'),
     choice('The school library ___ many story books.', 'The school library has many story books.', ['have', 'has', 'having', 'had'], 'has', 'A biblioteca da escola tem muitos livros de historia.'),
     choice('The principal ___ the students at the gate.', 'The principal greets the students at the gate.', ['greet', 'greets', 'greeting', 'greeted'], 'greets', 'O diretor ou a diretora cumprimenta os(as) alunos(as) no portão.'),

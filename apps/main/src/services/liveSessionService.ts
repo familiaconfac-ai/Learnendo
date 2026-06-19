@@ -70,6 +70,10 @@ function buildAcceptedAnswers(exercise: Exercise): string[] {
   if (correctValue) {
     pool.add(correctValue);
   }
+  (exercise.acceptedAnswers ?? [])
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .forEach((value) => pool.add(value));
   if (exercise.options?.length) {
     const directMatch = exercise.options.find((option) => normalizeExerciseAnswer(option) === normalizeExerciseAnswer(correctValue));
     if (directMatch) pool.add(directMatch);
@@ -266,6 +270,8 @@ const mapExerciseBlock = (id: string, data: Record<string, any>): LiveExerciseBl
     sourceInstruction: data.sourceInstruction ?? '',
     sourceDisplayValue: data.sourceDisplayValue ?? '',
     sourceAudioValue: data.sourceAudioValue ?? '',
+    sourceAudioValueBeforeAnswer: data.sourceAudioValueBeforeAnswer ?? '',
+    sourceFullSentenceAfterAnswer: data.sourceFullSentenceAfterAnswer ?? '',
     sourceOptions: Array.isArray(data.sourceOptions)
       ? data.sourceOptions.filter((value: unknown): value is string => typeof value === 'string')
       : [],
@@ -935,6 +941,8 @@ function buildTrailBlocksFromSelection(
         sourceInstruction: exercise.instruction?.trim() ?? '',
         sourceDisplayValue: exercise.displayValue?.trim() ?? '',
         sourceAudioValue: exercise.audioValue?.trim() ?? '',
+        sourceAudioValueBeforeAnswer: exercise.audioValueBeforeAnswer?.trim() ?? '',
+        sourceFullSentenceAfterAnswer: exercise.fullSentenceAfterAnswer?.trim() ?? '',
         sourceOptions: Array.isArray(exercise.options) ? exercise.options : [],
         sourceTranslation: exercise.translation?.trim() ?? '',
         questionType: exercise.type,

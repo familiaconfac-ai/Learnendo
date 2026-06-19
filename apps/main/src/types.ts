@@ -322,6 +322,8 @@ export interface LiveExerciseBlock {
   sourceInstruction?: string;
   sourceDisplayValue?: string;
   sourceAudioValue?: string;
+  sourceAudioValueBeforeAnswer?: string;
+  sourceFullSentenceAfterAnswer?: string;
   sourceOptions?: string[];
   sourceTranslation?: string;
   questionType?: Exercise['type'] | string;

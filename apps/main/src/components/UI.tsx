@@ -591,11 +591,15 @@ export const PracticeSection: React.FC<{
     const isFillInBlank = isFillInBlankExercise(item);
     const isFillInBlankWriting = item.type === 'writing' && isFillInBlank;
     const promptAudioText = resolvePromptAudioText(item);
-    const fullSentenceAfterAnswer = isFillInBlank ? resolveFullSentenceAfterAnswer(item) : '';
+    const fullSentenceAfterAnswer = item.fullSentenceAfterAnswer?.trim()
+      || (isFillInBlank ? resolveFullSentenceAfterAnswer(item) : '');
     const activeAudioText =
       showFooter && feedback === 'correct' && fullSentenceAfterAnswer
         ? fullSentenceAfterAnswer
         : promptAudioText;
+    const feedbackSentence = fullSentenceAfterAnswer && normalizeAnswer(fullSentenceAfterAnswer) !== normalizeAnswer(item.correctValue)
+      ? fullSentenceAfterAnswer
+      : '';
 
     // Reading exercises: displayValue contains a multi-line passage with translations
     const isReadingExercise = !!(item.displayValue?.includes('\n') && item.displayValue?.includes('('));
@@ -987,6 +991,39 @@ export const PracticeSection: React.FC<{
       });
     };
 
+    const openTranslatorForSelection = (target: EventTarget | null) => {
+      if (!clickTranslatorMode || !onTranslatorWordSelect) return;
+      const element = target instanceof HTMLElement ? target : null;
+      if (!element) return;
+
+      window.setTimeout(() => {
+        const selection = window.getSelection();
+        const selectedText = selection?.toString().replace(/\s+/g, ' ').trim() ?? '';
+        if (!selectedText || selectedText.length < 2) return;
+        const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        if (!range) return;
+        const commonNode = range.commonAncestorContainer;
+        if (commonNode && !element.contains(commonNode)) return;
+
+        const normalizedText = selectedText
+          .replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}.?!]+$/gu, '')
+          .trim();
+        if (normalizedText.length < 2) return;
+
+        const rect = range.getBoundingClientRect();
+        const fallbackRect = element.getBoundingClientRect();
+        onTranslatorWordSelect({
+          word: normalizedText,
+          rect: {
+            top: rect.top || fallbackRect.top,
+            left: rect.left || fallbackRect.left,
+            bottom: rect.bottom || fallbackRect.bottom,
+            right: rect.right || fallbackRect.right,
+          },
+        });
+      }, 0);
+    };
+
     const renderInteractiveText = (
       text: string,
       options?: {
@@ -1014,14 +1051,15 @@ export const PracticeSection: React.FC<{
             tabIndex={isTranslatorEnabled ? 0 : undefined}
             className={`${options?.wordClassName ?? ''} ${
               isTranslatorEnabled
-                ? 'cursor-pointer rounded-lg px-0.5 transition hover:bg-cyan-500/20 hover:text-cyan-100'
+                ? 'cursor-pointer select-text rounded-lg px-0.5 transition hover:bg-cyan-500/20 hover:text-cyan-100'
                 : ''
             }`}
-            onPointerDown={(event) => {
+            onClick={(event) => {
               if (!isTranslatorEnabled) return;
+              const hasSelection = window.getSelection()?.toString().trim();
+              if (hasSelection) return;
               openTranslatorForWord(part, event.currentTarget, event);
             }}
-            onClick={(event) => openTranslatorForWord(part, event.currentTarget, event)}
             onKeyDown={(event) => {
               if (!isTranslatorEnabled) return;
               if (event.key === 'Enter' || event.key === ' ') {
@@ -1111,7 +1149,7 @@ export const PracticeSection: React.FC<{
             <div className="flex-1 h-3 bg-slate-700 rounded-full overflow-hidden shadow-inner">
               <div
                 className="h-full bg-green-500 transition-all duration-300"
-                style={{ width: `${feedback === 'correct' && currentIdx === totalItems - 1 ? 100 : (currentIdx / totalItems) * 100}%` }}
+                style={{ width: `${totalItems > 0 ? (Math.min(currentIdx + 1, totalItems) / totalItems) * 100 : 0}%` }}
               />
             </div>
           </div>
@@ -1127,7 +1165,10 @@ export const PracticeSection: React.FC<{
             {isReadingExercise ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">{PL.badgeReading}</span>
-                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap">
+                <h2
+                  className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
+                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                >
                   {renderInteractiveText(item.instruction.replace(/^(Read and write:|Read:)\s*/i, ''))}
                 </h2>
               </div>
@@ -1135,28 +1176,40 @@ export const PracticeSection: React.FC<{
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-base font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
                 <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.answerFullSentence}</p>
-                <h2 className="text-xl sm:text-2xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
+                <h2
+                  className="text-xl sm:text-2xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1"
+                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                >
                   {renderInteractiveText(item.instruction.replace(/\s*answer in a full sentence\.?/i, '').trim())}
                 </h2>
               </div>
             ) : item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
-                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap">
+                <h2
+                  className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
+                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                >
                   {renderInteractiveText(item.instruction)}
                 </h2>
               </div>
             ) : item.type === 'speaking' && !item.instruction.toLowerCase().includes('listen and answer') ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">{PL.badgeShadowing}</span>
-                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap">
+                <h2
+                  className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
+                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                >
                   {renderInteractiveText(item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, ''))}
                 </h2>
               </div>
             ) : item.type === 'speaking' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-orange-300 bg-orange-900/60 border border-orange-700 rounded-full uppercase tracking-widest">{PL.badgeSpeaking}</span>
-                <h2 className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words">
+                <h2
+                  className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words"
+                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                >
                   {PL.listenAndAnswer}
                 </h2>
               </div>
@@ -1194,7 +1247,10 @@ export const PracticeSection: React.FC<{
                       </div>
                       <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.chooseCorrect}</p>
                       <p className="text-sm font-semibold text-white text-center mt-1">{dlg[1]}:</p>
-                      <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl">
+                      <h2
+                        className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl"
+                        onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                      >
                         "{renderInteractiveText(dlg[2])}"
                       </h2>
                     </div>
@@ -1228,7 +1284,10 @@ export const PracticeSection: React.FC<{
                         </button>
                       </div>
                       <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.whatColor}</p>
-                      <h2 className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1">
+                      <h2
+                        className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1"
+                        onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                      >
                         {renderInteractiveText(item.instruction)}
                       </h2>
                     </div>
@@ -1259,7 +1318,10 @@ export const PracticeSection: React.FC<{
                         <img src={turtleIcon} className="h-4 w-4 brightness-0 invert" alt="Slow" />
                       </button>
                     </div>
-                    <h2 className={`${isShortViewport ? 'text-base' : 'text-lg sm:text-xl'} font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap`}>
+                    <h2
+                      className={`${isShortViewport ? 'text-base' : 'text-lg sm:text-xl'} font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap`}
+                      onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                    >
                       {renderInteractiveText(item.instruction)}
                     </h2>
                   </div>
@@ -1267,7 +1329,7 @@ export const PracticeSection: React.FC<{
               })()
             )}
             {translation && showHint && (
-              <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-white text-slate-900 text-[10px] px-3 py-1.5 rounded-lg whitespace-nowrap z-10 animate-in fade-in slide-in-from-top-1 font-bold shadow">
+              <div className="pointer-events-none absolute -bottom-8 left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-lg bg-white px-3 py-1.5 text-center text-[10px] font-bold text-slate-900 shadow animate-in fade-in slide-in-from-top-1 whitespace-normal">
                 {translation}
               </div>
             )}
@@ -1298,7 +1360,11 @@ export const PracticeSection: React.FC<{
             </div>
 
             {/* Shadowing: never show the target visually — the whole point is to listen */}
-            {item.displayValue && !isShadowing && renderDisplay()}
+            {item.displayValue && !isShadowing && (
+              <div className="w-full" onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}>
+                {renderDisplay()}
+              </div>
+            )}
 
             {isMultipleChoice && shuffledOptions.length > 0 ? (
               isColorOptions ? (
@@ -1413,20 +1479,18 @@ export const PracticeSection: React.FC<{
                         {PL.listenHint}
                       </div>
                     )}
-                    {feedback === 'correct' && isFillInBlank && fullSentenceAfterAnswer && (
-                      <div className="text-white font-bold text-xs mt-2 animate-in fade-in">
-                        {fullSentenceAfterAnswer}
-                      </div>
-                    )}
-                    {/* Show translation on both correct and wrong feedback */}
-                    {feedback === 'correct' && translation && (
-                      <div className="text-white font-bold text-xs mt-2 animate-in fade-in italic">
-                        {translation}
-                      </div>
-                    )}
-                    {feedback === 'wrong' && translation && (
-                      <div className="text-white font-bold text-xs mt-2 animate-in fade-in italic">
-                        {translation}
+                    {(feedbackSentence || translation) && (
+                      <div className="mt-2 space-y-1 animate-in fade-in">
+                        {feedbackSentence ? (
+                          <div className="text-xs font-bold text-white">
+                            {feedbackSentence}
+                          </div>
+                        ) : null}
+                        {translation ? (
+                          <div className="text-xs font-bold italic text-slate-100">
+                            {translation}
+                          </div>
+                        ) : null}
                       </div>
                     )}
                   </div>
