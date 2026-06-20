@@ -2412,6 +2412,7 @@ const App: React.FC = () => {
             currentCourse={activeCourse}
             isAdmin={isAdmin}
             userId={user?.uid ?? null}
+            currentCourseId={activeCourseId}
             currentLanguage={uiLanguage}
             currentUser={user ? { displayName: user.displayName, email: user.email } : undefined}
             onNavigate={handleNavigate}
@@ -2458,6 +2459,11 @@ const App: React.FC = () => {
         const maxWorkbookId = workbookIds[workbookIds.length - 1] ?? currentWbkId;
         const nextUnlockedWorkbookId = Math.min(currentWbkId + 1, maxWorkbookId);
         const getWorkbookState = (id: number): 'completed' | 'current' | 'available' | 'locked' => {
+          if (isAdmin) {
+            if (id < currentWbkId) return 'completed';
+            if (id === currentWbkId) return 'current';
+            return 'available';
+          }
           if (id < currentWbkId) return 'completed';
           if (id === currentWbkId) return 'current';
           if (id === nextUnlockedWorkbookId && currentWbkId < maxWorkbookId) return 'available';

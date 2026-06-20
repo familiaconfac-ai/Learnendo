@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Course, UserProgress, SectionType } from '../../types';
 import { LessonStats } from '../../engine/courseProgressEngine';
 import { getProgressStats, formatTime, formatAccuracy, getCurrentPath } from '../../engine/progressStatsService';
+import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
 
 interface DashboardProps {
   progress: UserProgress;
   currentCourse?: Course | null;
+  currentCourseId?: string | null;
   isAdmin?: boolean;
   /** Firebase UID — required to load real progress data. */
   userId?: string | null;
@@ -81,11 +83,10 @@ const DASHBOARD_LABELS = {
   },
 } as const;
 
-const TOTAL_BOOKS = 8;
-
 export const Dashboard: React.FC<DashboardProps> = ({
   progress,
   currentCourse,
+  currentCourseId,
   isAdmin = false,
   userId,
   currentLanguage = 'en',
@@ -95,6 +96,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const L = DASHBOARD_LABELS[currentLanguage] ?? DASHBOARD_LABELS.en;
   const [stats, setStats] = useState<LessonStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  const resolvedCourseId = currentCourse?.id ?? currentCourseId ?? 'english';
+  const availableWorkbookIds = Object.keys(COURSE_WORKBOOKS[resolvedCourseId] ?? COURSE_WORKBOOKS.english)
+    .map(Number)
+    .filter((id) => Number.isFinite(id))
+    .sort((a, b) => a - b);
 
   /**
    * Load the current lesson's stats from Firestore whenever the
@@ -185,7 +191,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* ── Books grid ────────────────────────────────── */}
       <h2 className="text-sm font-semibold text-slate-600 uppercase tracking-wide mb-3">{L.books}</h2>
       <div className="grid grid-cols-4 gap-3">
-        {Array.from({ length: TOTAL_BOOKS }, (_, i) => i + 1).map(bookNum => {
+        {availableWorkbookIds.map(bookNum => {
           const isCompleted = bookNum < progress.currentWorkbook;
           const isCurrent   = bookNum === progress.currentWorkbook;
           const isLocked    = !isAdmin && bookNum > progress.currentWorkbook;
