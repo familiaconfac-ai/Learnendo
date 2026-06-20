@@ -1024,6 +1024,14 @@ export const PracticeSection: React.FC<{
       }, 0);
     };
 
+    const selectionGestureProps =
+      clickTranslatorMode && onTranslatorWordSelect
+        ? {
+            onMouseUp: (event: React.MouseEvent<HTMLElement>) => openTranslatorForSelection(event.currentTarget),
+            onTouchEnd: (event: React.TouchEvent<HTMLElement>) => openTranslatorForSelection(event.currentTarget),
+          }
+        : {};
+
     const renderInteractiveText = (
       text: string,
       options?: {
@@ -1058,6 +1066,10 @@ export const PracticeSection: React.FC<{
               if (!isTranslatorEnabled) return;
               const hasSelection = window.getSelection()?.toString().trim();
               if (hasSelection) return;
+              openTranslatorForWord(part, event.currentTarget, event);
+            }}
+            onDoubleClick={(event) => {
+              if (!isTranslatorEnabled) return;
               openTranslatorForWord(part, event.currentTarget, event);
             }}
             onKeyDown={(event) => {
@@ -1167,7 +1179,7 @@ export const PracticeSection: React.FC<{
                 <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">{PL.badgeReading}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
-                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                  {...selectionGestureProps}
                 >
                   {renderInteractiveText(item.instruction.replace(/^(Read and write:|Read:)\s*/i, ''))}
                 </h2>
@@ -1178,7 +1190,7 @@ export const PracticeSection: React.FC<{
                 <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.answerFullSentence}</p>
                 <h2
                   className="text-xl sm:text-2xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1"
-                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                  {...selectionGestureProps}
                 >
                   {renderInteractiveText(item.instruction.replace(/\s*answer in a full sentence\.?/i, '').trim())}
                 </h2>
@@ -1188,7 +1200,7 @@ export const PracticeSection: React.FC<{
                 <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
-                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                  {...selectionGestureProps}
                 >
                   {renderInteractiveText(item.instruction)}
                 </h2>
@@ -1198,7 +1210,7 @@ export const PracticeSection: React.FC<{
                 <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">{PL.badgeShadowing}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
-                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                  {...selectionGestureProps}
                 >
                   {renderInteractiveText(item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, ''))}
                 </h2>
@@ -1208,7 +1220,7 @@ export const PracticeSection: React.FC<{
                 <span className="inline-block px-3 py-1 text-sm font-black text-orange-300 bg-orange-900/60 border border-orange-700 rounded-full uppercase tracking-widest">{PL.badgeSpeaking}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words"
-                  onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                  {...selectionGestureProps}
                 >
                   {PL.listenAndAnswer}
                 </h2>
@@ -1249,7 +1261,7 @@ export const PracticeSection: React.FC<{
                       <p className="text-sm font-semibold text-white text-center mt-1">{dlg[1]}:</p>
                       <h2
                         className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl"
-                        onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                        {...selectionGestureProps}
                       >
                         "{renderInteractiveText(dlg[2])}"
                       </h2>
@@ -1286,7 +1298,7 @@ export const PracticeSection: React.FC<{
                       <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.whatColor}</p>
                       <h2
                         className="text-xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1"
-                        onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                        {...selectionGestureProps}
                       >
                         {renderInteractiveText(item.instruction)}
                       </h2>
@@ -1320,7 +1332,7 @@ export const PracticeSection: React.FC<{
                     </div>
                     <h2
                       className={`${isShortViewport ? 'text-base' : 'text-lg sm:text-xl'} font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap`}
-                      onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}
+                      {...selectionGestureProps}
                     >
                       {renderInteractiveText(item.instruction)}
                     </h2>
@@ -1361,7 +1373,7 @@ export const PracticeSection: React.FC<{
 
             {/* Shadowing: never show the target visually — the whole point is to listen */}
             {item.displayValue && !isShadowing && (
-              <div className="w-full" onMouseUp={(event) => openTranslatorForSelection(event.currentTarget)}>
+              <div className="w-full" {...selectionGestureProps}>
                 {renderDisplay()}
               </div>
             )}

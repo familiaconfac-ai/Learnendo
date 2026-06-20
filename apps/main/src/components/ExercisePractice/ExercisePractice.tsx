@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Day, UserProgress, LessonLanguageCode } from '../../types';
 import { getUnitNumberFromLessonNumber } from '../../utils/workbookUnits';
 
@@ -31,6 +31,12 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const [correctCount, setCorrectCount] = useState(0);
   // Guard against onComplete being called multiple times on the last exercise
   const isCompletedRef = React.useRef(false);
+
+  useEffect(() => {
+    setCurrentIdx(0);
+    setCorrectCount(0);
+    isCompletedRef.current = false;
+  }, [day.id, lessonId]);
 
   // Parse the day number from the day id (e.g. "w1l1d3" or "d3" → 3)
   const dayNumber = (() => {

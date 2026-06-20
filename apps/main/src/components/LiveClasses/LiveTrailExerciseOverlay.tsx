@@ -596,6 +596,10 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
   const [phonetic, setPhonetic] = useState('');
   const popupRef = useRef<HTMLDivElement>(null);
   const copy = getTrailCopy(uiLanguage);
+  const isCompactViewport =
+    typeof window !== 'undefined'
+      ? window.innerWidth < 640 || window.innerHeight < 720
+      : false;
 
   useEffect(() => {
     let active = true;
@@ -622,14 +626,14 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
   }, [courseLanguage, selection.text]);
 
   useEffect(() => {
-    const handlePointerDown = (event: MouseEvent) => {
+    const handlePointerDown = (event: PointerEvent) => {
       if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
         onClose();
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown, true);
-    return () => document.removeEventListener('mousedown', handlePointerDown, true);
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    return () => document.removeEventListener('pointerdown', handlePointerDown, true);
   }, [onClose]);
 
   useEffect(() => {
@@ -667,6 +671,74 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
   const desiredLeft = selection.rect.left + (selection.rect.right - selection.rect.left) / 2 - popupWidth / 2;
   const top = Math.max(8, Math.min(desiredTop, window.innerHeight - popupHeight - 8));
   const left = Math.max(8, Math.min(desiredLeft, window.innerWidth - popupWidth - 8));
+
+  if (isCompactViewport) {
+    return (
+      <div
+        className="fixed inset-0 z-[145] flex items-end bg-slate-950/45 p-3 backdrop-blur-[2px]"
+        onPointerDown={(event) => {
+          if (event.target === event.currentTarget) onClose();
+        }}
+      >
+        <div
+          ref={popupRef}
+          className="max-h-[72vh] w-full overflow-y-auto rounded-[28px] border border-slate-200 bg-white p-4 shadow-2xl"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                {copy.dictionary}
+              </p>
+              <p className="mt-1 break-words text-lg font-black text-slate-900">{selection.text}</p>
+              {phonetic ? <p className="mt-1 text-xs font-semibold text-slate-500">{phonetic}</p> : null}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-slate-100 px-2 py-1 text-xs font-black text-slate-600"
+              aria-label={copy.close}
+            >
+              x
+            </button>
+          </div>
+
+          <div className="mt-4 space-y-3 text-sm text-slate-700">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                {copy.portuguese}
+              </p>
+              <p className="mt-1">{loading ? copy.loading : translations.pt || selection.text}</p>
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                {copy.spanish}
+              </p>
+              <p className="mt-1">{loading ? copy.loading : translations.es || selection.text}</p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={handleSpeak}
+              className="rounded-2xl bg-slate-900 px-4 py-3 text-xs font-black uppercase tracking-wide text-white"
+            >
+              {copy.audio}
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={saving || saved}
+              className="rounded-2xl bg-blue-600 px-4 py-3 text-xs font-black uppercase tracking-wide text-white disabled:opacity-50"
+            >
+              {saved ? copy.saved : saving ? copy.saving : copy.saveFlashcard}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -757,12 +829,14 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [releasingRetry, setReleasingRetry] = useState(false);
   const [liveResponses, setLiveResponses] = useState<LiveClassResponse[]>([]);
   const [retryReleaseVersion, setRetryReleaseVersion] = useState(0);
+  const [practiceViewportTopOffset, setPracticeViewportTopOffset] = useState(LIVE_TRAIL_VIEWPORT_TOP_OFFSET);
   const previousStudentBlockStateRef = useRef<{
     blockId: string | null;
     status: LiveExerciseBlockStatus;
     locked: boolean;
     response: string;
   } | null>(null);
+  const chromeRef = useRef<HTMLDivElement>(null);
 
   const actorName = getActorName(user);
   const courseId = defaultCourseId ?? 'english';
@@ -1070,6 +1144,38 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   }, [currentBlock?.id]);
 
   useEffect(() => {
+    const chromeElement = chromeRef.current;
+    if (!chromeElement || typeof window === 'undefined') {
+      setPracticeViewportTopOffset(LIVE_TRAIL_VIEWPORT_TOP_OFFSET);
+      return;
+    }
+
+    const measureOffset = () => {
+      const rect = chromeElement.getBoundingClientRect();
+      const nextOffset = Math.max(LIVE_TRAIL_VIEWPORT_TOP_OFFSET, Math.ceil(rect.bottom + 12));
+      setPracticeViewportTopOffset((current) => (
+        Math.abs(current - nextOffset) > 1 ? nextOffset : current
+      ));
+    };
+
+    measureOffset();
+    window.addEventListener('resize', measureOffset);
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(() => measureOffset());
+      observer.observe(chromeElement);
+      return () => {
+        window.removeEventListener('resize', measureOffset);
+        observer.disconnect();
+      };
+    }
+
+    return () => {
+      window.removeEventListener('resize', measureOffset);
+    };
+  }, [isTeacher, teacherGuidedMode, canEdit, vocabMode, currentBlock?.id, teacherAnswerGroups.length]);
+
+  useEffect(() => {
     if (!vocabMode) {
       setSelectedVocab(null);
     }
@@ -1346,6 +1452,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       {practiceItem ? (
         <div className="fixed inset-0 z-[120] bg-slate-950">
           <div
+            ref={chromeRef}
             className="fixed left-3 right-3 z-[135] flex flex-col gap-2 sm:left-4 sm:right-4 sm:flex-row sm:items-start sm:justify-between"
             style={{ top: `calc(env(safe-area-inset-top, 0px) + ${LIVE_TRAIL_CHROME_TOP_OFFSET}px)` }}
           >
@@ -1540,7 +1647,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             retryReleaseVersion={retryReleaseVersion}
             autoPlayAudio={!isTeacher}
             fullScreen={true}
-            viewportTopOffset={LIVE_TRAIL_VIEWPORT_TOP_OFFSET}
+            viewportTopOffset={practiceViewportTopOffset}
             clickTranslatorMode={vocabMode}
             onTranslatorWordSelect={({ word, rect }) => {
               if (!vocabMode) return;
