@@ -6,6 +6,7 @@ interface WorkbookViewProps {
   lessons: Lesson[];
   progress: UserProgress;
   onSelectLesson: (lessonId: string) => void;
+  onOpenGrammarOverview?: () => void;
   isAdmin?: boolean;
   // Used to scope lesson completion markers by course language.
   currentLanguage?: string;
@@ -33,6 +34,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
   lessons,
   progress,
   onSelectLesson,
+  onOpenGrammarOverview,
   isAdmin = false,
   currentLanguage = 'en',
   uiLanguage = 'en',
@@ -92,6 +94,14 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
             style={{ width: '156px' }}
             className="h-[156px] w-[156px] object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,0.45)]"
           />
+          {onOpenGrammarOverview && (
+            <button
+              onClick={onOpenGrammarOverview}
+              className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95"
+            >
+              <span>Grammar Focus</span>
+            </button>
+          )}
           <p className="mt-3 text-center text-sm font-black uppercase tracking-[0.24em] text-yellow-300">
             {workbookLabel} {workbookId}
           </p>

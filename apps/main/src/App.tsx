@@ -282,6 +282,133 @@ const getDefaultWorkbookIdForCourse = (courseId: string | null | undefined): num
   return workbookIds[0] ?? 1;
 };
 
+type NormalizedGrammarSection = {
+  title: string;
+  lines: string[];
+};
+
+type NormalizedGrammarGuide = {
+  label?: string;
+  lessonTitle?: string;
+  grammarTitle?: string;
+  sections: NormalizedGrammarSection[];
+};
+
+const normalizeGrammarGuide = (guide: (typeof GRAMMAR_GUIDES)[string]): NormalizedGrammarGuide => {
+  if (Array.isArray(guide)) {
+    return {
+      sections: [{ title: 'Notes', lines: guide }],
+    };
+  }
+
+  const lessonTitle = guide.sections.find((section) => section.title === 'Lesson Title')?.lines[0];
+  const grammarTitle = guide.sections.find((section) => section.title === 'Grammar Title')?.lines[0];
+  const sections = guide.sections.filter(
+    (section) => section.title !== 'Lesson Title' && section.title !== 'Grammar Title',
+  );
+
+  return {
+    label: guide.label,
+    lessonTitle,
+    grammarTitle,
+    sections,
+  };
+};
+
+const renderInlineFormatting = (text: string): React.ReactNode[] => {
+  let nodeKey = 0;
+
+  const parse = (value: string): React.ReactNode[] => {
+    const nodes: React.ReactNode[] = [];
+    let index = 0;
+
+    while (index < value.length) {
+      if (value.startsWith('**', index)) {
+        const end = value.indexOf('**', index + 2);
+        if (end !== -1) {
+          nodes.push(
+            <strong key={`strong-${nodeKey++}`}>
+              {parse(value.slice(index + 2, end))}
+            </strong>,
+          );
+          index = end + 2;
+          continue;
+        }
+      }
+
+      if (value[index] === '*') {
+        const end = value.indexOf('*', index + 1);
+        if (end !== -1) {
+          nodes.push(
+            <em key={`em-${nodeKey++}`}>
+              {parse(value.slice(index + 1, end))}
+            </em>,
+          );
+          index = end + 1;
+          continue;
+        }
+      }
+
+      const nextStrong = value.indexOf('**', index);
+      const nextEm = value.indexOf('*', index);
+      const nextIndex = [nextStrong, nextEm]
+        .filter((candidate) => candidate !== -1)
+        .reduce((smallest, candidate) => Math.min(smallest, candidate), value.length);
+
+      nodes.push(value.slice(index, nextIndex));
+      index = nextIndex;
+    }
+
+    return nodes;
+  };
+
+  return parse(text);
+};
+
+const findLessonGrammarKey = (lessonNumber: number): string | null => {
+  const grammarKey = `L${lessonNumber}_GRAMMAR`;
+  return Object.prototype.hasOwnProperty.call(GRAMMAR_GUIDES, grammarKey) ? grammarKey : null;
+};
+
+const getGrammarGuideForLesson = (lessonNumber: number): NormalizedGrammarGuide | null => {
+  const grammarKey = findLessonGrammarKey(lessonNumber);
+  if (!grammarKey) return null;
+  return normalizeGrammarGuide(GRAMMAR_GUIDES[grammarKey]);
+};
+
+const getGrammarSectionTitle = (title: string): string => {
+  if (title === 'Examples by Person or Structure') return 'Examples';
+  return title;
+};
+
+const shouldRenderGrammarBullets = (section: NormalizedGrammarSection): boolean => {
+  if (section.lines.length > 1) return true;
+  return ['Main Notes', 'Examples by Person or Structure', 'Questions', 'Negative Sentences', 'Common Mistakes'].includes(section.title);
+};
+
+const renderGrammarLine = (line: string, sectionTitle: string): React.ReactNode => {
+  if (sectionTitle !== 'Common Mistakes') {
+    return renderInlineFormatting(line);
+  }
+
+  const match = line.match(/^(Correct|Incorrect):\s*(.*)$/i);
+  if (!match) return renderInlineFormatting(line);
+
+  const status = match[1].toLowerCase();
+  const content = match[2];
+  const statusClass = status === 'correct' ? 'text-blue-600' : 'text-red-600';
+
+  return (
+    <>
+      <strong className={statusClass}>
+        {match[1]}
+        :
+      </strong>{' '}
+      {renderInlineFormatting(content)}
+    </>
+  );
+};
+
 const findLessonIdInWorkbook = (workbook: any, lessonReference: string | null | undefined): string | null => {
   const lessons = workbook?.lessons ?? [];
   if (!lessonReference || !lessons.length) return null;
@@ -398,6 +525,7 @@ const App: React.FC = () => {
   const [conversionReason, setConversionReason] = useState<string | undefined>();
   const [conversionSuccess, setConversionSuccess] = useState(false);
   const [showGrammarModal, setShowGrammarModal] = useState(false);
+  const [activeGrammarLessonNumber, setActiveGrammarLessonNumber] = useState<number | null>(null);
   const userRole = userAccountProfile?.role ?? 'student';
   const isAdmin = userRole === 'admin';
   const isTeacherAccount = userRole === 'teacher' || userRole === 'admin';
@@ -1581,12 +1709,6 @@ const App: React.FC = () => {
       });
     }
 
-    // Auto-show grammar on first visit to this lesson.
-    const grammarKey = `grammar_seen_${courseId}_${activeWorkbookNumber}_${lessonNumber}`;
-    if (!localStorage.getItem(grammarKey)) {
-      localStorage.setItem(grammarKey, '1');
-      setShowGrammarModal(true);
-    }
   };
 
   const startWeeklyTest = (lessonId: string, lessonNumber: number, day: Day) => {
@@ -1596,6 +1718,16 @@ const App: React.FC = () => {
     setActiveWeeklyTest({ lessonNumber, lessonId });
     setCurrentSection(SectionType.PRACTICE);
   };
+
+  const openGrammarForLesson = useCallback((lessonNumber: number) => {
+    setActiveGrammarLessonNumber(lessonNumber);
+    setShowGrammarModal(true);
+  }, []);
+
+  const openGrammarOverview = useCallback(() => {
+    setActiveGrammarLessonNumber(null);
+    setShowGrammarModal(true);
+  }, []);
 
   const openLiveClassContent = useCallback((liveClass: LiveClass) => {
     console.log('[ONLINE_DEBUG] openLiveClassContent called', {
@@ -2704,6 +2836,14 @@ const App: React.FC = () => {
             lessons={currentWorkbook.lessons || []}
             progress={progress}
             onSelectLesson={openLesson}
+            onOpenGrammarOverview={
+              (currentWorkbook.lessons || []).some((lesson) => {
+                const lessonNumber = getLessonNumberFromId(lesson.id);
+                return Number.isFinite(lessonNumber) && !!getGrammarGuideForLesson(lessonNumber);
+              })
+                ? openGrammarOverview
+                : undefined
+            }
             isAdmin={isAdmin}
             currentLanguage={language}
             uiLanguage={uiLanguage}
@@ -2759,7 +2899,7 @@ const App: React.FC = () => {
               }
             }}
             onBack={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook })}
-            onGrammar={() => setShowGrammarModal(true)}
+            onGrammar={() => openGrammarForLesson(lessonNumber)}
           />
         );
       }
@@ -2819,7 +2959,12 @@ const App: React.FC = () => {
             progress={progress}
             onComplete={handleDayComplete}
             totalDays={practiceTotalDays}
-            onGrammar={() => setShowGrammarModal(true)}
+            onGrammar={() => {
+              const lessonNumber = getLessonNumberFromId(currentLessonId || `lesson${progress.currentLesson}`);
+              if (Number.isFinite(lessonNumber)) {
+                openGrammarForLesson(lessonNumber);
+              }
+            }}
             onBack={() => {
               setCurrentDay(null);
               setActiveWeeklyTest(null);
@@ -2870,6 +3015,14 @@ const App: React.FC = () => {
             lessons={currentWorkbook?.lessons || []}
             progress={progress}
             onSelectLesson={openLesson}
+            onOpenGrammarOverview={
+              (currentWorkbook?.lessons || []).some((lesson) => {
+                const lessonNumber = getLessonNumberFromId(lesson.id);
+                return Number.isFinite(lessonNumber) && !!getGrammarGuideForLesson(lessonNumber);
+              })
+                ? openGrammarOverview
+                : undefined
+            }
             isAdmin={isAdmin}
             currentLanguage={language}
             uiLanguage={uiLanguage}
@@ -3068,45 +3221,146 @@ const App: React.FC = () => {
         </div>
       )}
       {showGrammarModal && (() => {
-        const lessonNum = getLessonNumberFromId(currentLessonId) || progress.currentLesson || 1;
-        const entries = Object.entries(GRAMMAR_GUIDES).filter(([k]) => k.startsWith(`L${lessonNum}_`));
+        const fallbackLessonNumber = getLessonNumberFromId(currentLessonId) || progress.currentLesson || 1;
+        const lessonNum = activeGrammarLessonNumber ?? fallbackLessonNumber;
+        const guide = getGrammarGuideForLesson(lessonNum);
+        const grammarOverviewItems = (currentWorkbook?.lessons ?? [])
+          .map((lesson, index) => {
+            const lessonNumber = getLessonNumberFromId(lesson.id) || index + 1;
+            const lessonGuide = getGrammarGuideForLesson(lessonNumber);
+            if (!lessonGuide) return null;
+
+            const topic = (lessonGuide.lessonTitle ?? '')
+              .replace(/^Lesson\s+\d+\s*:\s*/i, '')
+              .trim();
+
+            return {
+              lessonNumber,
+              grammarTitle: lessonGuide.grammarTitle ?? lessonGuide.label ?? `Lesson ${lessonNumber}`,
+              topic,
+            };
+          })
+          .filter((item): item is { lessonNumber: number; grammarTitle: string; topic: string } => item !== null);
+        const isOverviewMode = activeGrammarLessonNumber === null;
         return (
           <div
-            className="fixed inset-0 z-[1001] bg-black/50 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
+            className="fixed inset-0 z-[1001] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
             onClick={() => setShowGrammarModal(false)}
           >
             <div
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md max-h-[80vh] overflow-y-auto"
+              className="flex h-full w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-3xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="sticky top-0 bg-white border-b border-slate-100 px-6 py-4 flex items-center justify-between rounded-t-3xl">
-                <h2 className="text-lg font-bold text-slate-800">📖 Lesson {lessonNum} Grammar</h2>
-                <button
-                  onClick={() => setShowGrammarModal(false)}
-                  className="text-slate-400 hover:text-slate-600 text-2xl leading-none"
-                  aria-label="Close"
-                >×</button>
-              </div>
-              <div className="px-6 py-4 space-y-5">
-                {entries.length === 0 ? (
-                  <p className="text-slate-500 text-sm">No grammar notes available for this lesson yet.</p>
-                ) : (
-                  entries.map(([key, tips]) => (
-                    <div key={key}>
-                      <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-2">
-                        {key.replace('_', ' › ')}
+              <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-slate-200 bg-white px-5 py-4 sm:px-8 sm:py-5">
+                <div>
+                  {isOverviewMode ? (
+                    <>
+                      <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-500">
+                        Workbook {currentWorkbookId || progress.currentWorkbook}
                       </p>
-                      <ul className="space-y-1.5">
-                        {tips.map((tip, i) => (
-                          <li key={i} className="flex gap-2 text-sm text-slate-700">
-                            <span className="text-blue-400 flex-shrink-0">•</span>
-                            <span>{tip}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      <h2 className="mt-1 text-2xl font-black text-slate-900 sm:text-3xl">
+                        Grammar Focus
+                      </h2>
+                      <p className="mt-1 text-sm text-slate-500 sm:text-base">
+                        Choose the lesson you want to open.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-500">
+                        Lesson {lessonNum}
+                      </p>
+                      <h2 className="mt-1 text-2xl font-black text-slate-900 sm:text-3xl">
+                        Grammar Focus
+                      </h2>
+                      <p className="mt-2 text-lg font-semibold text-slate-700 sm:text-xl">
+                        {guide?.grammarTitle ?? guide?.label ?? 'Grammar Notes'}
+                      </p>
+                    </>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!isOverviewMode && grammarOverviewItems.length > 1 && (
+                    <button
+                      onClick={() => setActiveGrammarLessonNumber(null)}
+                      className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-blue-300 hover:text-blue-600"
+                    >
+                      All grammar points
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowGrammarModal(false)}
+                    className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-2xl leading-none text-slate-400 transition hover:text-slate-700"
+                    aria-label="Close"
+                  >
+                    �
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
+                {isOverviewMode ? (
+                  grammarOverviewItems.length === 0 ? (
+                    <p className="text-sm text-slate-500">No grammar notes available for this workbook yet.</p>
+                  ) : (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {grammarOverviewItems.map((item) => (
+                        <button
+                          key={item.lessonNumber}
+                          onClick={() => setActiveGrammarLessonNumber(item.lessonNumber)}
+                          className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-left transition hover:border-blue-300 hover:bg-blue-50"
+                        >
+                          <p className="text-xs font-black uppercase tracking-[0.26em] text-blue-500">
+                            Lesson {item.lessonNumber}
+                          </p>
+                          <p className="mt-2 text-lg font-bold text-slate-900">
+                            {item.grammarTitle}
+                          </p>
+                          {item.topic && (
+                            <p className="mt-2 text-sm text-slate-500">
+                              {item.topic}
+                            </p>
+                          )}
+                        </button>
+                      ))}
                     </div>
-                  ))
-                )}
+                  )
+                ) : (!guide ? (
+                  <p className="text-sm text-slate-500">No grammar notes available for this lesson yet.</p>
+                ) : (
+                  <div className="space-y-6">
+                    {guide.sections.map((section) => {
+                      const useBullets = shouldRenderGrammarBullets(section);
+
+                      return (
+                        <section
+                          key={section.title}
+                          className="rounded-3xl border border-slate-200 bg-slate-50 px-5 py-5 sm:px-6"
+                        >
+                          <h3 className="text-base font-black text-slate-900 sm:text-lg">
+                            {getGrammarSectionTitle(section.title)}
+                          </h3>
+                          {useBullets ? (
+                            <ul className="ml-5 mt-3 list-disc space-y-2 text-sm leading-7 text-slate-700 sm:text-[15px]">
+                              {section.lines.map((line, index) => (
+                                <li key={`${section.title}-${index}`}>
+                                  {renderGrammarLine(line, section.title)}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <div className="mt-3 space-y-3 text-sm leading-7 text-slate-700 sm:text-[15px]">
+                              {section.lines.map((line, index) => (
+                                <p key={`${section.title}-${index}`}>
+                                  {renderGrammarLine(line, section.title)}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </section>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             </div>
           </div>

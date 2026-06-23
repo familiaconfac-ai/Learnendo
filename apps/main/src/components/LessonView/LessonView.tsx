@@ -142,10 +142,10 @@ export const LessonView: React.FC<LessonViewProps> = ({
         {onGrammar && (
           <button
             onClick={onGrammar}
-            className="w-full flex items-center justify-center gap-2 mb-4 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-blue-500 text-slate-300 hover:text-blue-300 rounded-2xl text-sm font-semibold transition-colors"
+            className="mb-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95"
           >
             <span>📖</span>
-            <span>Lesson {lessonNumber} Grammar</span>
+            <span>Grammar Focus</span>
           </button>
         )}
         {(() => {
@@ -272,4 +272,3 @@ export const LessonView: React.FC<LessonViewProps> = ({
     </div>
   );
 };
-

@@ -467,24 +467,43 @@ export const MODULE_ICONS: Record<string, string> = {
   'L3_I8': 'fa-trophy'
 };
 
-export const GRAMMAR_GUIDES: Record<string, string[]> = {
-  'L1_I1': [
+export interface GrammarGuideSection {
+  title: string;
+  lines: string[];
+}
+
+export interface GrammarGuideEntry {
+  label?: string;
+  sections: GrammarGuideSection[];
+}
+
+const simpleGuide = (...lines: string[]): GrammarGuideEntry => ({
+  sections: [{ title: 'Notes', lines }],
+});
+
+const detailedGuide = (label: string, sections: GrammarGuideSection[]): GrammarGuideEntry => ({
+  label,
+  sections,
+});
+
+export const GRAMMAR_GUIDES: Record<string, GrammarGuideEntry | string[]> = {
+  'L1_I1': simpleGuide(
     'Phonetic Families: Patterns in English sounds help us hear letters correctly.',
     'Group /i:/: B, C, D, E, G, P, T, V.',
-    'Group /ei/: A, H, J, K.'
-  ],
-  'L1_I2': [
+    'Group /ei/: A, H, J, K.',
+  ),
+  'L1_I2': simpleGuide(
     'Cardinal Numbers: Used for counting (0, 1, 2, 3...).',
-    'Careful with Three (3) vs Tree and Eight (8) vs H!'
-  ],
-  'L1_I3': [
+    'Careful with Three (3) vs Tree and Eight (8) vs H!',
+  ),
+  'L1_I3': simpleGuide(
     'Cardinal Numbers 11-20: Focus on the "teen" endings (13-19).',
-    'Review letters alongside numbers to master A1 basics.'
-  ],
-  'L1_I4': ['Colors describe objects.', 'Identify colors without visual aids for better mastery.'],
-  'L1_I5': ['Expand your vocabulary with adjectives and objects.', 'Focus on recalling the name of the color.'],
+    'Review letters alongside numbers to master A1 basics.',
+  ),
+  'L1_I4': simpleGuide('Colors describe objects.', 'Identify colors without visual aids for better mastery.'),
+  'L1_I5': simpleGuide('Expand your vocabulary with adjectives and objects.', 'Focus on recalling the name of the color.'),
   'L2_I1': ['Practice listening: short vs long vowel sounds.', 'Match words like cat /æ/ and cake /eɪ/.'],
-  'L2_I2': ['Answer teacher questions about vowel sounds and letter names.', 'Pairs of questions reinforce both skills.'],
+  'L2_I2': simpleGuide('Answer teacher questions about vowel sounds and letter names.', 'Pairs of questions reinforce both skills.'),
   'L2_I3': ['Recognize vocabulary pictures: sun, toes, rock, tree, apple, kite, orange, water.', 'Spell the words you see.'],
   'L2_I4': ['Name the vowel in a word or say if it is short/long.', 'Focus on words from the lesson.'],
   'L2_I5': ['Choose “a” or “an” in simple sentences.', 'Articles before words beginning with vowel sounds.'],
@@ -522,7 +541,151 @@ export const GRAMMAR_GUIDES: Record<string, string[]> = {
   'L3_I8': [
     'Review all Lesson 3 skills: vocabulary, listening, speaking.',
     'Apply routine language in new contexts.'
-  ]
+  ],
+  'L25_GRAMMAR': detailedGuide('Lesson 25 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 25: School'] },
+    { title: 'Grammar Title', lines: ['Simple Present: School Routines'] },
+    { title: 'Focus', lines: ['We use the **Simple Present** to talk about school routines, repeated actions, and facts that usually happen at school.'] },
+    { title: 'Short Explanation', lines: ['The lesson shows daily actions like explain, study, ring, carry, and check. Use the **base verb** with **I, you, we, and they**. Use **-s, -es, or -ies** with **he, she, it, or one person**.'] },
+    { title: 'Main Notes', lines: ['Use **do** with **I, you, we, and they**.', 'Use **does** with **he, she, it, or one person**.', 'After **does**, **does not**, or **doesnâ€™t**, use the **base verb**.'] },
+    { title: 'Practical Rules', lines: ['Most verbs add **-s**: explain â†’ explains, ring â†’ rings, start â†’ starts.', 'Add **-es** after **-s, -sh, -ch, -x, -z, or -o**: teach â†’ teaches, catch â†’ catches, go â†’ goes.', 'Change **consonant + y** to **-ies**: carry â†’ carries, study â†’ studies.', 'With **vowel + y**, just add **-s**.'] },
+    { title: 'Examples by Person or Structure', lines: ['*I **study** English at school.*', '*They **wash** their hands before lunch.*', '*The teacher **explains** the lesson every morning.*', '*My classmate **carries** her notebook every day.*', '*The principal **greets** the students at the gate.*'] },
+    { title: 'Questions', lines: ['*Do the students **study** in the library after lunch?*', '*Does the principal **greet** the students every morning?*', '*Does your friend **catch** the bus at six fifty?*'] },
+    { title: 'Negative Sentences', lines: ['*The students **do not watch** television in class.*', '*The teacher **does not work** on Saturday.*', '*The janitor **does not clean** the corridor on Sunday.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *Does the teacher **explain** the lesson?*', 'Incorrect: *Does the teacher **explains** the lesson?*', 'Correct: *The students **study** after lunch.*', 'Incorrect: *The students **studies** after lunch.*'] },
+  ]),
+  'L26_GRAMMAR': detailedGuide('Lesson 26 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 26: A Day in Classroom'] },
+    { title: 'Grammar Title', lines: ['There is / There are'] },
+    { title: 'Focus', lines: ['We use **there is** for one thing and **there are** for more than one thing in the classroom.'] },
+    { title: 'Short Explanation', lines: ['This lesson talks about clocks, posters, windows, markers, notebooks, and other classroom objects. The main grammar point is how to say that something exists in one place.'] },
+    { title: 'Main Notes', lines: ['Use **there is** with singular nouns.', 'Use **there are** with plural nouns.', 'Questions begin with **Is there...?** or **Are there...?**'] },
+    { title: 'Practical Rules', lines: ['Singular: one clock, one whiteboard, one ruler â†’ **there is**.', 'Plural: two windows, many notebooks, four dictionaries â†’ **there are**.', 'Negative forms are **there is not** and **there are not**.'] },
+    { title: 'Examples by Person or Structure', lines: ['*There **is** a big clock on the classroom wall.*', '*There **is** a plant in the corner of the room.*', '*There **are** three posters near the bookshelf.*', '*There **are** colored markers under the board.*'] },
+    { title: 'Questions', lines: ['*Is there **a clock** on the wall?*', '*Are there **three posters** near the bookshelf?*', '*Are there **colored markers** under the board?*'] },
+    { title: 'Negative Sentences', lines: ['*There **is not** a television in the classroom.*', '*There **are not** any shoes on the board.*', '*There **are not** two dictionaries on the shelf.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *There **is** a ruler inside the desk drawer.*', 'Incorrect: *There **are** a ruler inside the desk drawer.*', 'Correct: *There **are** many notebooks in the blue box.*', 'Incorrect: *There **is** many notebooks in the blue box.*'] },
+  ]),
+  'L27_GRAMMAR': detailedGuide('Lesson 27 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 27: Meeting Over Coffee'] },
+    { title: 'Grammar Title', lines: ['To be + Simple Present'] },
+    { title: 'Focus', lines: ['We use **am / is / are** for identity, origin, and description, and the **Simple Present** for likes, habits, and common actions.'] },
+    { title: 'Short Explanation', lines: ['The lesson mixes descriptions like where people are from with actions like like, say, give, and talk. Students need to notice when the sentence needs **to be** and when it needs another verb.'] },
+    { title: 'Main Notes', lines: ['Use **am / is / are** with names, countries, feelings, and descriptions.', 'Use the **Simple Present** for actions such as **likes**, **says**, **gives**, and **talks**.', 'Use **Is / Are** for **to be** questions and **Do / Does** for action questions.'] },
+    { title: 'Practical Rules', lines: ['**Anna is** happy. **Anderson is** from Brazil. **They are** polite.', 'For action verbs, add **-s** with **he / she / it / one person**: likes, says, appreciates.', 'After **does**, use the **base verb**: like, say, feel.'] },
+    { title: 'Examples by Person or Structure', lines: ['*Anna **is** happy to see Anderson.*', '*Anderson **is** from Brazil.*', '*They **are** polite during the conversation.*', '*Anna **likes** coffee without sugar too.*', '*Anderson **says** thank you after the greeting.*'] },
+    { title: 'Questions', lines: ['*Is Anna **happy** to see Anderson?*', '*Are they **polite** during the conversation?*', '*Does Anna **like** coffee without sugar?*', '*Does Anderson **say** thank you after the greeting?*'] },
+    { title: 'Negative Sentences', lines: ['*Anna **is not** from Brazil.*', '*Anderson **is not** from the United States.*', '*Anderson **does not like** tea with sugar.*', '*Anna **does not say** goodbye before she stays.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *Does Anna **like** coffee without sugar?*', 'Incorrect: *Does Anna **likes** coffee without sugar?*', 'Correct: *They **are** polite during the conversation.*', 'Incorrect: *They **is** polite during the conversation.*'] },
+  ]),
+  'L28_GRAMMAR': detailedGuide('Lesson 28 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 28: School Bus'] },
+    { title: 'Grammar Title', lines: ['Simple Present: Transportation Routines'] },
+    { title: 'Focus', lines: ['We use the **Simple Present** to describe transportation routines, repeated school bus actions, and usual schedules.'] },
+    { title: 'Short Explanation', lines: ['This lesson talks about daily bus routines: go, sit, follow, stop, turn, pass, and close. The grammar is the same routine pattern from Lesson 25, now with transportation vocabulary.'] },
+    { title: 'Main Notes', lines: ['Use the **base verb** with plural subjects like **the students** and **the children**.', 'Use **-s / -es** with **Bob**, **the driver**, **the bus**, and **the route**.', 'Use **do / does** for questions and **do not / does not** for negatives.'] },
+    { title: 'Practical Rules', lines: ['**Bob goes**, **the bus stops**, **the route starts**.', '**The students carry**, **the children see**, **the students talk**.', 'After **does**, use the **base verb**: go, sit, stop, start.'] },
+    { title: 'Examples by Person or Structure', lines: ['*Bob **goes** to school on the school bus.*', '*The students **carry** backpacks on the bus.*', '*The bus driver **follows** the route every morning.*', '*The school bus **stops** in front of the gate.*'] },
+    { title: 'Questions', lines: ['*Does Bob **sit** near the window?*', '*Do the students **carry** backpacks on the bus?*', '*Does the route **start** near Bobâ€™s house at six forty?*'] },
+    { title: 'Negative Sentences', lines: ['*Bob **does not go** to school on the school bus on Sunday.*', '*The students **do not wait** under the bus.*', '*The bus **does not stop** at the bakery for lunch.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *Does the school bus **stop** in front of the gate?*', 'Incorrect: *Does the school bus **stops** in front of the gate?*', 'Correct: *The students **travel** to school with their friends.*', 'Incorrect: *The students **travels** to school with their friends.*'] },
+  ]),
+  'L29_GRAMMAR': detailedGuide('Lesson 29 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 29: At the Office'] },
+    { title: 'Grammar Title', lines: ['Present Continuous + There is / There are'] },
+    { title: 'Focus', lines: ['We use **am / is / are + verb-ing** for actions happening now and **there is / there are** for objects and features in the office.'] },
+    { title: 'Short Explanation', lines: ['The lesson shows people working right now in an office and also describes what exists there, like cubicles, screens, lights, and an envelope.'] },
+    { title: 'Main Notes', lines: ['Present Continuous = **to be + verb-ing**.', 'Use **there is** for one office object and **there are** for more than one.', 'Some sentences in this lesson also use **is / are** for description: *The office **is** big and bright.*'] },
+    { title: 'Practical Rules', lines: ['Now actions: **is talking, is taking, is doing, is placing, is working**.', 'Singular existence: **There is** a stamp, an address, a clock, a tile.', 'Plural existence: **There are** cubicles, screens, and oval lights.'] },
+    { title: 'Examples by Person or Structure', lines: ['*The lawyer **is talking** on the cellphone now.*', '*Miss Taylor **is taking** notes in the meeting.*', '*There **is** a stamp on the envelope.*', '*There **are** square cubicles in the office.*', '*The team **is working** quietly in the large office.*'] },
+    { title: 'Questions', lines: ['*Is the paralegal **doing** research on the internet?*', '*Is there **a stamp** on the envelope?*', '*Are there **square cubicles** in the office?*', '*Is the team **working** quietly in the large office?*'] },
+    { title: 'Negative Sentences', lines: ['*The lawyer **is not talking** on the cellphone now.*', '*The secretary **is not sending** a message to the lawyer now.*', '*There **are not** two computer screens on the main desk.*', '*The office **is not** small and dark.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *The secretary **is placing** a contract on the desk now.*', 'Incorrect: *The secretary **placing** a contract on the desk now.*', 'Correct: *There **are** square cubicles in the office.*', 'Incorrect: *There **is** square cubicles in the office.*'] },
+  ]),
+  'L30_GRAMMAR': detailedGuide('Lesson 30 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 30: A Focused Secretary'] },
+    { title: 'Grammar Title', lines: ['Present Continuous: Actions in Progress'] },
+    { title: 'Focus', lines: ['We use the **Present Continuous** for actions in progress and for changes happening now.'] },
+    { title: 'Short Explanation', lines: ['The lesson focuses on office actions that are happening at the moment: typing, reading, moving, checking, getting, becoming, and heading home.'] },
+    { title: 'Main Notes', lines: ['Present Continuous = **am / is / are + verb-ing**.', 'Use it for temporary actions now: typing, reading, smiling, saving.', 'Use it for changes in progress too: **is getting** near, **is becoming** complete.'] },
+    { title: 'Practical Rules', lines: ['Singular subjects usually take **is**: *The secretary **is typing***.', 'Plural subjects take **are**: *Her fingers **are moving***.', 'Questions invert **to be**: **Is** the deadline getting near?'] },
+    { title: 'Examples by Person or Structure', lines: ['*The secretary **is typing** a contract on the computer now.*', '*The secretary **is reading** each line carefully.*', '*Her fingers **are moving** quickly across the keyboard.*', '*The deadline **is getting** near this afternoon.*', '*The document **is becoming** complete after a few hours.*'] },
+    { title: 'Questions', lines: ['*Is the secretary **reading** each line carefully?*', '*Is the deadline **getting** near this afternoon?*', '*Are her fingers **moving** quickly across the keyboard?*'] },
+    { title: 'Negative Sentences', lines: ['*The secretary **is not typing** a contract on paper now.*', '*The secretary **is not taking** a nap at the desk.*', '*The printer **is not staying** away from the desk.*', '*The office **is not** noisy while she works.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *She **is typing** a contract now.*', 'Incorrect: *She **typing** a contract now.*', 'Correct: *Her fingers **are moving** quickly across the keyboard.*', 'Incorrect: *Her fingers **is moving** quickly across the keyboard.*'] },
+  ]),
+  'L31_GRAMMAR': detailedGuide('Lesson 31 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 31: Post Office'] },
+    { title: 'Grammar Title', lines: ['Present Continuous + There is / There are + Simple Present'] },
+    { title: 'Focus', lines: ['This lesson mixes actions happening now, things that exist in the post office, and simple facts or routines.'] },
+    { title: 'Short Explanation', lines: ['Students need to choose between three patterns: **Present Continuous** for now actions, **There is / There are** for objects and people in place, and **Simple Present** for facts like *has*, *wears*, *does*, and *stays open*.'] },
+    { title: 'Main Notes', lines: ['**Now** action: *The clerk **is scanning***.', '**Existence**: *There **are** three packages.*', '**Fact / routine**: *The mailman **wears** blue clothes.*'] },
+    { title: 'Practical Rules', lines: ['Use **is / are + verb-ing** when the action is happening right now.', 'Use **there is / there are** with things on the counter, in the box, or near the waiting area.', 'Use the **Simple Present** for regular facts or descriptions: **has**, **wears**, **does**, **stays**.'] },
+    { title: 'Examples by Person or Structure', lines: ['*The clerk **is scanning** envelopes at the counter now.*', '*There **are** three packages on the counter.*', '*The clerk **has** a scanner in her right hand.*', '*The mailman **wears** blue clothes during his route.*', '*The post office **stays** open until five.*'] },
+    { title: 'Questions', lines: ['*Is the clerk **holding** a big envelope in her left hand?*', '*Is there **a long line** near the service desk?*', '*Are there **many stamps** in the small box?*', '*Does the post office **stay** open until five?*'] },
+    { title: 'Negative Sentences', lines: ['*The clerk **is not scanning** postcards right now.*', '*The mailman **is not delivering** a package to the woman.*', '*There **are not** one hundred packages on the counter.*', '*The customer **is not reading** a tracking number in the parking lot.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *Does the post office **stay** open until five?*', 'Incorrect: *Does the post office **stays** open until five?*', 'Correct: *There **is** an address label on the package.*', 'Incorrect: *There **are** an address label on the package.*'] },
+  ]),
+  'L32_GRAMMAR': detailedGuide('Lesson 32 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 32: Comparisons'] },
+    { title: 'Grammar Title', lines: ['Comparisons: Good, Better, Best / Bad, Worse, Worst'] },
+    { title: 'Focus', lines: ['We use **better / the best** and **worse / the worst** to compare people, answers, offices, routes, and workers.'] },
+    { title: 'Short Explanation', lines: ['These forms are **irregular**. We do not build them with normal **-er / -est** or with **more**. The lesson compares two items and also picks the top or bottom item in a group.'] },
+    { title: 'Main Notes', lines: ['**good â†’ better â†’ the best**', '**bad â†’ worse â†’ the worst**', 'Use **than** when you compare two things.'] },
+    { title: 'Practical Rules', lines: ['Two items: *Clara is **better than** Maria.*', 'A group: *Lucas is **the best** of the three students.*', 'For negative quality, use **worse** and **the worst**.'] },
+    { title: 'Examples by Person or Structure', lines: ['*Maria is a good student, but Clara is **better**.*', '*Of the three students, Lucas is **the best**.*', '*The first secretary is bad, but the second one is **worse**.*', '*Of the three mailmen, Charles is **the worst**.*'] },
+    { title: 'Questions', lines: ['*Who is **better than** the first student?*', '*Who is **the best** of the three students?*', '*Who is **the worst** of the three mailmen?*'] },
+    { title: 'Negative Sentences', lines: ['*This worker is **not the best**. He is only **better**.*', '*That delivery is **not better**. It is **worse**.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *Clara is **better** than Maria.*', 'Incorrect: *Clara is **more good** than Maria.*', 'Correct: *Charles is **the worst**.*', 'Incorrect: *Charles is **the badest**.*'] },
+  ]),
+  'L33_GRAMMAR': detailedGuide('Lesson 33 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 33: Good or Better?'] },
+    { title: 'Grammar Title', lines: ['Good or Better? / Bad or Worse?'] },
+    { title: 'Focus', lines: ['This lesson reinforces **better / the best** and **worse / the worst** with people, jobs, and performance.'] },
+    { title: 'Short Explanation', lines: ['The grammar is the same as Lesson 32, but the practice is more direct. Students compare secretaries, students, workers, and mailmen and choose the correct irregular form quickly.'] },
+    { title: 'Main Notes', lines: ['Use **better** to compare two people or things.', 'Use **the best** for the top item in a group.', 'Use **worse** and **the worst** in the same way for negative comparisons.'] },
+    { title: 'Practical Rules', lines: ['Two people: *Miss Wright is **better than** Miss Cook.*', 'Group result: *Miss Taylor is **the best** secretary.*', 'Never use **more good** or **more bad**.'] },
+    { title: 'Examples by Person or Structure', lines: ['*Miss Cook is good, but Miss Wright is **better**.*', '*Miss Taylor is **the best** of the three secretaries.*', '*Tom is bad, but John is **worse**.*', '*George is **the worst** student in the group.*'] },
+    { title: 'Questions', lines: ['*Who is **better than** Miss Cook?*', '*Who is **the best** secretary in the office?*', '*Who is **worse than** Tom?*', '*Who is **the worst** student in the group?*'] },
+    { title: 'Negative Sentences', lines: ['*John is **not better** than Tom. He is **worse**.*', '*George is **not the best** student in the group. He is **the worst**.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *Miss Wright is **better** than Miss Cook.*', 'Incorrect: *Miss Wright is **more good** than Miss Cook.*', 'Correct: *John is **worse** than Tom.*', 'Incorrect: *John is **more bad** than Tom.*'] },
+  ]),
+  'L34_GRAMMAR': detailedGuide('Lesson 34 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 34: Right Answer'] },
+    { title: 'Grammar Title', lines: ['Right Answers with do/does, is/are, there is/there are, and comparisons'] },
+    { title: 'Focus', lines: ['This lesson teaches students to choose the **matching answer form** for the question they hear or read.'] },
+    { title: 'Short Explanation', lines: ['Students review question patterns from the whole workbook. They must notice whether the question is about routine, an action now, existence, location, or comparison, and then answer with the same grammar pattern.'] },
+    { title: 'Main Notes', lines: ['**Do / Does** questions need **Yes / No + do / does** or a Simple Present answer.', '**Is / Are** questions need **is / are** or a Present Continuous answer.', '**Is there / Are there** questions need **there is / there are** answers.', 'Comparison questions often need **than**, **better**, **worse**, or **the best**.'] },
+    { title: 'Practical Rules', lines: ['Match the helper verb from the question in the answer when possible.', 'After **does**, use the **base verb** in the question: *Does the teacher **write**...?*', 'Answer completely when the lesson gives a full sentence model.'] },
+    { title: 'Examples by Person or Structure', lines: ['*Do you **go** to school every day?* â†’ *Yes, I **do**.*', '*What is the secretary **doing** now?* â†’ *She **is typing** a contract now.*', '*Are there books on the desk?* â†’ *Yes, there **are**.*', '*Which place is busier?* â†’ *The post office is **busier**.*'] },
+    { title: 'Questions', lines: ['*Does the school bus **stop** in front of the gate?*', '*Is the clerk **holding** a big envelope?*', '*Is there **a stamp** on the envelope?*', '*Who is **worse than** Tom?*'] },
+    { title: 'Negative Sentences', lines: ['*No, she **does not**. She works from home.*', '*No, there **are not**.*', '*No, she **is not** working now.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *Yes, I **do**.*', 'Incorrect: *Yes, I **am**.*', 'Correct: *There **is** a big clock on the wall.*', 'Incorrect: *There **are** a big clock on the wall.*', 'Correct: *The secretary **is** more organized than the clerk.*', 'Incorrect: *The secretary **are** more organized than the clerk.*'] },
+  ]),
+  'L35_GRAMMAR': detailedGuide('Lesson 35 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 35: Comparing People, Places, and Things'] },
+    { title: 'Grammar Title', lines: ['Regular Comparatives and Superlatives'] },
+    { title: 'Focus', lines: ['We use regular comparative and superlative forms to compare size, age, height, difficulty, interest, and importance.'] },
+    { title: 'Short Explanation', lines: ['This lesson combines short adjectives with **-er / -est** and longer adjectives with **more / the most**. It also reviews changes like **y â†’ ier / iest** and doubled consonants in words like **big â†’ bigger / biggest**.'] },
+    { title: 'Main Notes', lines: ['Short adjectives usually take **-er** and **-est**.', 'Longer adjectives usually take **more** and **the most**.', 'Use **than** in comparative sentences.'] },
+    { title: 'Practical Rules', lines: ['Short adjectives: big â†’ bigger â†’ the biggest; tall â†’ taller â†’ the tallest.', 'Words ending in **y**: easy â†’ easier â†’ the easiest; busy â†’ busier â†’ the busiest; heavy â†’ heavier â†’ the heaviest.', 'Long adjectives: organized â†’ more organized â†’ the most organized; interesting â†’ more interesting â†’ the most interesting.'] },
+    { title: 'Examples by Person or Structure', lines: ['*The office is **bigger than** the classroom.*', '*The post office is **busier than** the school.*', '*Anna is **taller than** Lucas.*', '*This lesson is **easier than** that lesson.*', '*The secretary is **more organized than** the clerk.*', '*The library is **the most interesting** place.*'] },
+    { title: 'Questions', lines: ['*Which place is **bigger**, the office or the classroom?*', '*Who is **more organized**, the secretary or the clerk?*', '*Which place is **the most interesting**?*'] },
+    { title: 'Negative Sentences', lines: ['*The office is **not smaller than** the classroom. It is **bigger**.*', '*This contract is **not less important**. It is **more important**.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *The second office is **busier**.*', 'Incorrect: *The second office is **more busy**.*', 'Correct: *That desk is **bigger**.*', 'Incorrect: *That desk is **more big**.*', 'Correct: *The video is **more interesting**.*', 'Incorrect: *The video is **interestinger**.*'] },
+  ]),
+  'L36_GRAMMAR': detailedGuide('Lesson 36 Grammar', [
+    { title: 'Lesson Title', lines: ['Lesson 36: Review: School, Work, and Daily Activities'] },
+    { title: 'Grammar Title', lines: ['Review: Simple Present, Present Continuous, There is / There are, Comparatives, and Superlatives'] },
+    { title: 'Focus', lines: ['This lesson is a **review** of the main grammar from Workbook 3. It does not introduce a new structure.'] },
+    { title: 'Short Explanation', lines: ['Students move between routine actions, actions happening now, existence, and comparisons. The goal is to recognize the right pattern quickly and answer with the correct form.'] },
+    { title: 'Main Notes', lines: ['**Simple Present**: routines and facts.', '**Present Continuous**: actions happening now.', '**There is / There are**: existence.', '**Comparatives / Superlatives**: compare two items or choose the top item in a group.'] },
+    { title: 'Practical Rules', lines: ['Routine: *The teacher **teaches** every day.*', 'Now: *The secretary **is typing** now.*', 'Existence: *There **are** packages on the counter.*', 'Comparison: *The classroom is **bigger than** the office.* / *This is **the best** answer.*'] },
+    { title: 'Examples by Person or Structure', lines: ['*The teacher **teaches** every day.*', '*The secretary **is typing** now.*', '*There **are** books on the desk.*', '*The post office is **busier than** the school.*', '*The library is **the most interesting** place here.*'] },
+    { title: 'Questions', lines: ['*Does the student **read** every day?*', '*Is the secretary **working** now?*', '*Are there books on the desk?*', '*Which place is **busier**, the school or the post office?*'] },
+    { title: 'Negative Sentences', lines: ['*The teacher **does not work** on Sunday.*', '*The mailman **is not sleeping** now.*', '*There **is not** a bus in the office.*'] },
+    { title: 'Common Mistakes', lines: ['Correct: *Does the student **read** every day?*', 'Incorrect: *Does the student **reads** every day?*', 'Correct: *The post office is **busier than** the school.*', 'Incorrect: *The post office is **more busy** than the school.*', 'Correct: *There **are** packages on the counter.*', 'Incorrect: *There **is** packages on the counter.*'] },
+  ]),
 };
 
 export const LESSON_CONFIGS = [
