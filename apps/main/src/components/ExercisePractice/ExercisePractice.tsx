@@ -102,6 +102,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         lessonId={lessonNumber}
         unitNumber={unitNumber}
         onBack={onBack}
+        onGrammar={onGrammar}
         dayNumber={dayNumber}
         totalDays={totalDays}
         currentLanguage={currentLanguage}

@@ -67,8 +67,96 @@ const TIME_NORMALIZE_MAP: Record<string, string> = {
   '3:00': 'three o clock', '3 o clock': 'three o clock', 'three oclock': 'three o clock', '3 oclock': 'three o clock'
 };
 
+const stripDiacritics = (value: string): string =>
+  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+const expandCommonContractions = (value: string): string => value
+  .replace(/\bdoesn't\b/gi, 'does not')
+  .replace(/\bdon't\b/gi, 'do not')
+  .replace(/\bdidn't\b/gi, 'did not')
+  .replace(/\bisn't\b/gi, 'is not')
+  .replace(/\baren't\b/gi, 'are not')
+  .replace(/\bwasn't\b/gi, 'was not')
+  .replace(/\bweren't\b/gi, 'were not')
+  .replace(/\bcan't\b/gi, 'can not')
+  .replace(/\bcannot\b/gi, 'can not')
+  .replace(/\bwon't\b/gi, 'will not')
+  .replace(/\bit's\b/gi, 'it is');
+
+const PT_DISPLAY_FIXES: Record<string, string> = {
+  almoco: 'almoço',
+  atencao: 'atenção',
+  ciencias: 'ciências',
+  comeca: 'começa',
+  dicionarios: 'dicionários',
+  esta: 'está',
+  estao: 'estão',
+  historia: 'história',
+  ingles: 'inglês',
+  laboratorio: 'laboratório',
+  lapis: 'lápis',
+  licao: 'lição',
+  maos: 'mãos',
+  manha: 'manhã',
+  musica: 'música',
+  nao: 'não',
+  onibus: 'ônibus',
+  portao: 'portão',
+  regua: 'régua',
+  silencio: 'silêncio',
+};
+
+const preserveReplacementCase = (original: string, replacement: string): string => {
+  if (original.toUpperCase() === original) return replacement.toUpperCase();
+  if (original[0] === original[0]?.toUpperCase()) {
+    return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+  }
+  return replacement;
+};
+
+const fixPortugueseSupportText = (value: string): string => {
+  let fixed = value;
+  Object.entries(PT_DISPLAY_FIXES).forEach(([source, target]) => {
+    fixed = fixed.replace(new RegExp(`\\b${source}\\b`, 'gi'), (match) =>
+      preserveReplacementCase(match, target),
+    );
+  });
+  return fixed;
+};
+
+const renderInlineRichText = (text: string): React.ReactNode[] => {
+  let nodeKey = 0;
+
+  const parse = (value: string): React.ReactNode[] => {
+    const nodes: React.ReactNode[] = [];
+    let index = 0;
+
+    while (index < value.length) {
+      if (value.startsWith('**', index)) {
+        const end = value.indexOf('**', index + 2);
+        if (end !== -1) {
+          nodes.push(
+            <strong key={`strong-${nodeKey++}`} className="font-black text-amber-200">
+              {parse(value.slice(index + 2, end))}
+            </strong>,
+          );
+          index = end + 2;
+          continue;
+        }
+      }
+
+      nodes.push(value[index]);
+      index += 1;
+    }
+
+    return nodes;
+  };
+
+  return parse(text);
+};
+
 const normalizeAnswer = (answer: string): string => {
-  let normalized = answer.toLowerCase().trim()
+  let normalized = stripDiacritics(expandCommonContractions(answer).toLowerCase().trim())
     // Normalize smart/curly apostrophes → ASCII apostrophe BEFORE stripping, so
     // "it\u2019s fifteen" (smart quote from editor auto-correct) is treated the same
     // as "it's fifteen" (ASCII). Without this, the prefix-strip regex ("its ") fails
@@ -104,7 +192,7 @@ const normalizeAnswer = (answer: string): string => {
 };
 
 const normalizeStrictWritingAnswer = (answer: string): string => {
-  return answer
+  return stripDiacritics(expandCommonContractions(answer))
     .toLowerCase()
     .trim()
     .replace(/[\u2018\u2019\u02BC\u2032]/g, "'")
@@ -119,9 +207,55 @@ const getAcceptedAnswers = (item: Pick<PracticeItem, 'correctValue' | 'acceptedA
   return [...new Set(all)];
 };
 
+const QUESTION_CONTENT_STOPWORDS = new Set([
+  'a', 'an', 'and', 'are', 'at', 'am', 'be', 'by', 'can', 'could', 'did', 'do', 'does',
+  'for', 'from', 'had', 'has', 'have', 'in', 'is', 'it', 'its', 'my', 'no', 'not', 'of',
+  'on', 'or', 'our', 'she', 'he', 'i', 'the', 'their', 'there', 'they', 'this', 'those',
+  'to', 'was', 'we', 'were', 'what', 'when', 'where', 'which', 'who', 'why', 'will', 'with',
+  'would', 'yes', 'you', 'your',
+]);
+
+const isQuestionPrompt = (value?: string): boolean => /\?$/.test((value ?? '').trim());
+
+const getQuestionContentTokens = (value: string, lang?: string): string[] => {
+  const normalized = normalizeSpeakingAnswer(value.replace(/\?+$/, ''), lang);
+  return normalized
+    .split(/\s+/)
+    .filter((token) => token && !QUESTION_CONTENT_STOPWORDS.has(token));
+};
+
+const isExpandedQuestionResponseMatch = (
+  response: string,
+  acceptedAnswers: string[],
+  question: string,
+  lang?: string,
+): boolean => {
+  if (!isQuestionPrompt(question)) return false;
+
+  const normalizedResponse = normalizeSpeakingAnswer(response, lang);
+  const questionTokens = getQuestionContentTokens(question, lang);
+
+  return acceptedAnswers.some((answer) => {
+    const normalizedAnswer = normalizeSpeakingAnswer(answer, lang);
+    const shortMatch = normalizedAnswer.match(/^(yes|no)\s+(.+)$/);
+    if (!shortMatch) return false;
+
+    const polarity = shortMatch[1];
+    if (!normalizedResponse.startsWith(`${polarity} `)) return false;
+    if (normalizedResponse === normalizedAnswer) return true;
+
+    if (polarity === 'yes' && /\bnot\b/.test(normalizedResponse)) return false;
+    if (polarity === 'no' && !/\bnot\b/.test(normalizedResponse)) return false;
+
+    const responseTokens = new Set(normalizedResponse.split(/\s+/).filter(Boolean));
+    const overlap = questionTokens.filter((token) => responseTokens.has(token));
+    return new Set(overlap).size >= Math.min(2, questionTokens.length);
+  });
+};
+
 // Pre-processes time expressions for speaking/shadowing BEFORE punctuation stripping
 const normalizeSpeakingAnswer = (answer: string, lang?: string): string => {
-  let s = answer.toLowerCase().trim();
+  let s = stripDiacritics(expandCommonContractions(answer).toLowerCase().trim());
   // Normalize smart/curly apostrophes → ASCII so they are stripped correctly
   // downstream. This fixes "it\u2019s twenty" (smart quote) = "It's 20" (STT output).
   s = s.replace(/[\u2018\u2019\u02BC\u2032]/g, "'");
@@ -429,6 +563,7 @@ const PRACTICE_LABELS = {
     badgeSpeaking: 'Speaking',
     badgeListening: 'Listening',
     answerFullSentence: 'Answer in a Full Sentence',
+    answerQuestion: 'Answer the question.',
     chooseCorrect: 'Choose the Correct Response',
     listenAndAnswer: 'Listen and answer',
     whatColor: 'What color is it?',
@@ -457,6 +592,7 @@ const PRACTICE_LABELS = {
     badgeSpeaking: 'Fala',
     badgeListening: 'Escuta',
     answerFullSentence: 'Responda em uma frase completa',
+    answerQuestion: 'Responda a pergunta.',
     chooseCorrect: 'Escolha a resposta correta',
     listenAndAnswer: 'Ouça e responda',
     whatColor: 'Qual é a cor?',
@@ -485,6 +621,7 @@ const PRACTICE_LABELS = {
     badgeSpeaking: 'Habla',
     badgeListening: 'Escucha',
     answerFullSentence: 'Responde con una oración completa',
+    answerQuestion: 'Responde la pregunta.',
     chooseCorrect: 'Elige la respuesta correcta',
     listenAndAnswer: 'Escucha y responde',
     whatColor: '¿De qué color es?',
@@ -502,6 +639,7 @@ export const PracticeSection: React.FC<{
   lessonId: number;
   unitNumber?: number;
   onBack?: () => void;
+  onGrammar?: () => void;
   dayNumber?: number;
   totalDays?: number;
   currentLanguage?: string;
@@ -532,6 +670,7 @@ export const PracticeSection: React.FC<{
     lessonId,
     unitNumber,
     onBack,
+    onGrammar,
     dayNumber,
     totalDays,
     currentLanguage = 'en',
@@ -581,9 +720,17 @@ export const PracticeSection: React.FC<{
        item.instruction.toLowerCase().includes('ouvir') ||
        item.instruction.toLowerCase().includes('oyes'));
 
-    // Shadowing exercises: "speaking" type that is NOT a free-answer exercise
-    const isShadowing = item.type === 'speaking' &&
-      !item.instruction.toLowerCase().includes('listen and answer');
+    const translation = item.translation ? fixPortugueseSupportText(item.translation) : '';
+    const displayCorrectValue = fixPortugueseSupportText(item.correctValue);
+    const isQuestionDrivenSpeaking = item.type === 'speaking' && isQuestionPrompt(promptAudioText || item.audioValue);
+    // Shadowing exercises: repeated spoken response based on previous training.
+    const isShadowing = item.type === 'speaking' && (
+      !item.instruction.toLowerCase().includes('listen and answer')
+      || item.instruction.toLowerCase().includes('short sentence')
+      || isQuestionDrivenSpeaking
+    );
+    const shadowingSupportText = isShadowing && isQuestionDrivenSpeaking ? translation : '';
+    const speakingPlaceholder = (shadowingSupportText ? shadowingSupportText.replace(/\*\*/g, '') : '') || PL.speakPlaceholder;
 
     // Math writing exercises that require a full English sentence answer
     const isSentenceWriting = item.type === 'writing' &&
@@ -891,7 +1038,10 @@ export const PracticeSection: React.FC<{
       const normalizedTargets = acceptedAnswers.map(normalizeAnswer);
 
       const isCorrect = item.type === 'speaking'
-        ? isSpeakingMatchAny(rawInput, acceptedAnswers, currentLanguage)
+        ? (
+            isSpeakingMatchAny(rawInput, acceptedAnswers, currentLanguage)
+            || isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage)
+          )
         : normalizedTargets.some((cleanTarget) =>
             (response === cleanTarget) ||
             (NUMBER_MAP[response] === cleanTarget) ||
@@ -1139,7 +1289,6 @@ export const PracticeSection: React.FC<{
       );
     };
 
-    const translation = item.translation;
     const isMultipleChoice = item.type === 'multiple-choice' || item.type === 'identification';
 
     return (
@@ -1165,6 +1314,14 @@ export const PracticeSection: React.FC<{
               />
             </div>
           </div>
+          {onGrammar && (
+            <button
+              onPointerDown={(e) => { e.preventDefault(); onGrammar(); }}
+              className={`mb-3 flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95 [touch-action:manipulation] ${isShortViewport ? 'py-2.5' : 'py-3'}`}
+            >
+              Grammar Focus
+            </button>
+          )}
         </div>
 
         <div className={`flex-1 min-h-0 w-full max-w-sm px-4 sm:px-6 flex flex-col items-center ${isShortViewport ? 'pt-1 pb-3' : 'pt-2 sm:pt-4 pb-6'} overflow-y-auto no-scrollbar`}>
@@ -1212,17 +1369,25 @@ export const PracticeSection: React.FC<{
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
                   {...selectionGestureProps}
                 >
-                  {renderInteractiveText(item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, ''))}
+                  {isQuestionDrivenSpeaking
+                    ? PL.answerQuestion
+                    : renderInteractiveText(item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, ''))}
                 </h2>
               </div>
             ) : item.type === 'speaking' ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-sm font-black text-orange-300 bg-orange-900/60 border border-orange-700 rounded-full uppercase tracking-widest">{PL.badgeSpeaking}</span>
+                <span className={`inline-block px-3 py-1 text-sm font-black rounded-full uppercase tracking-widest ${
+                  isQuestionDrivenSpeaking
+                    ? 'text-green-300 bg-green-900/60 border border-green-700'
+                    : 'text-orange-300 bg-orange-900/60 border border-orange-700'
+                }`}>
+                  {isQuestionDrivenSpeaking ? PL.badgeShadowing : PL.badgeSpeaking}
+                </span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words"
                   {...selectionGestureProps}
                 >
-                  {PL.listenAndAnswer}
+                  {isQuestionDrivenSpeaking ? PL.answerQuestion : PL.listenAndAnswer}
                 </h2>
               </div>
             ) : (
@@ -1342,7 +1507,7 @@ export const PracticeSection: React.FC<{
             )}
             {translation && showHint && (
               <div className="pointer-events-none absolute -bottom-8 left-1/2 z-10 max-w-[90%] -translate-x-1/2 rounded-lg bg-white px-3 py-1.5 text-center text-[10px] font-bold text-slate-900 shadow animate-in fade-in slide-in-from-top-1 whitespace-normal">
-                {translation}
+                {renderInlineRichText(translation)}
               </div>
             )}
           </div>
@@ -1375,6 +1540,17 @@ export const PracticeSection: React.FC<{
             {item.displayValue && !isShadowing && (
               <div className="w-full" {...selectionGestureProps}>
                 {renderDisplay()}
+              </div>
+            )}
+
+            {shadowingSupportText && (
+              <div className="w-full rounded-3xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center shadow-[0_10px_30px_rgba(16,185,129,0.12)]">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">
+                  Português
+                </p>
+                <p className="mt-2 text-sm font-bold leading-6 text-emerald-50">
+                  {renderInlineRichText(shadowingSupportText)}
+                </p>
               </div>
             )}
 
@@ -1449,7 +1625,7 @@ export const PracticeSection: React.FC<{
                   value={userInput}
                   onChange={handleTextareaChange}
                   onKeyDown={handleKeyDown}
-                  placeholder={PL.speakPlaceholder}
+                  placeholder={speakingPlaceholder}
                   style={{ height: 'auto' }}
                 />
               </div>
@@ -1483,7 +1659,7 @@ export const PracticeSection: React.FC<{
                     </div>
                     {feedback === 'wrong' && (
                       <div className="text-white font-bold text-xs mt-1 animate-in fade-in">
-                        {PL.correctAnswer} <span className="rounded-md bg-amber-400/15 px-1.5 py-0.5 font-black text-sm uppercase text-amber-300 underline decoration-2">{item.correctValue}</span>
+                        {PL.correctAnswer} <span className="rounded-md bg-amber-400/15 px-1.5 py-0.5 font-black text-sm text-amber-300 underline decoration-2">{renderInlineRichText(displayCorrectValue)}</span>
                       </div>
                     )}
                     {feedback === 'wrong' && item.type === 'writing' && !isFillInBlankWriting && promptAudioText && hasWrongAttempt && (
@@ -1500,7 +1676,7 @@ export const PracticeSection: React.FC<{
                         ) : null}
                         {translation ? (
                           <div className="text-xs font-bold italic text-slate-100">
-                            {translation}
+                            {renderInlineRichText(translation)}
                           </div>
                         ) : null}
                       </div>
