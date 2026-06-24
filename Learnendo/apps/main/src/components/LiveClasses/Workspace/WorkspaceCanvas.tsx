@@ -23,7 +23,7 @@ import {
   subscribeWorkspace,
   saveWorkspace,
   saveDocContent,
-  saveScrollRatio,
+  saveScrollPosition,
   savePageSwitch,
   normalizeWorkspacePages,
   WorkspaceItem,
@@ -781,9 +781,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const canvasRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
-  const saveItemsDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const saveDocDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveItemsThrottleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveDocThrottleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollThrottleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollFinalSyncTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastItemsSaveAtRef = useRef(0);
+  const lastDocSaveAtRef = useRef(0);
+  const lastScrollSaveAtRef = useRef(0);
+  const pendingItemsRef = useRef<WorkspaceItem[] | null>(null);
+  const pendingDocRef = useRef<string | null>(null);
+  const pendingScrollRef = useRef<{ topRatio: number; leftRatio: number } | null>(null);
+  const lastSavedDocRef = useRef('');
+  const lastSavedItemsSignatureRef = useRef('[]');
+  const lastSavedScrollRef = useRef<{ topRatio: number; leftRatio: number } | null>(null);
   // Tracks which floating block's contentEditable is currently focused so the
   // toolbar can route formatting commands to the right target.
   const activeFloatingIdRef = useRef<string | null>(null);
@@ -798,6 +808,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // Also checked against dragRef.current so a snapshot never fires mid-drag.
   const lastItemEditRef = useRef<number>(0);
   const ITEM_GUARD_MS = 1500;
+  const DOC_SYNC_INTERVAL_MS = 120;
+  const ITEM_SYNC_INTERVAL_MS = 160;
+  const SCROLL_SYNC_INTERVAL_MS = 80;
+  const SCROLL_FINAL_SYNC_DELAY_MS = 140;
+
+  useEffect(() => () => {
+    if (saveItemsThrottleTimeout.current) clearTimeout(saveItemsThrottleTimeout.current);
+    if (saveDocThrottleTimeout.current) clearTimeout(saveDocThrottleTimeout.current);
+    if (scrollThrottleTimeout.current) clearTimeout(scrollThrottleTimeout.current);
+    if (scrollFinalSyncTimeout.current) clearTimeout(scrollFinalSyncTimeout.current);
+  }, []);
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
@@ -873,37 +894,100 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         }
       }
 
-      if (readOnly && data?.scrollRatio != null && overflowRef.current) {
+      if (readOnly && overflowRef.current) {
         const el = overflowRef.current;
-        const max = el.scrollHeight - el.clientHeight;
-        if (max > 0) el.scrollTop = data.scrollRatio * max;
+        const topRatio = typeof data?.scrollTopRatio === 'number'
+          ? data.scrollTopRatio
+          : (typeof data?.scrollRatio === 'number' ? data.scrollRatio : null);
+        const leftRatio = typeof data?.scrollLeftRatio === 'number'
+          ? data.scrollLeftRatio
+          : 0;
+        const topMax = el.scrollHeight - el.clientHeight;
+        const leftMax = el.scrollWidth - el.clientWidth;
+        if (topRatio != null && topMax > 0) {
+          el.scrollTop = topRatio * topMax;
+        }
+        if (leftMax > 0) {
+          el.scrollLeft = leftRatio * leftMax;
+        }
       }
     });
     return unsub;
   }, [classId, readOnly, userId]);
+
+  const flushItemsSave = useCallback(
+    (nextItems: WorkspaceItem[]) => {
+      if (readOnly) return;
+      const signature = JSON.stringify(nextItems);
+      if (signature === lastSavedItemsSignatureRef.current) return;
+      pendingItemsRef.current = null;
+      lastItemsSaveAtRef.current = Date.now();
+      lastSavedItemsSignatureRef.current = signature;
+      saveWorkspace(classId, nextItems, userId, userName).catch(console.error);
+    },
+    [classId, readOnly, userId, userName],
+  );
 
   const scheduleItemsSave = useCallback(
     (nextItems: WorkspaceItem[]) => {
       if (readOnly) return;
       // Stamp the edit time so the snapshot guard stays active through the debounce.
       lastItemEditRef.current = Date.now();
-      if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
-      saveItemsDebounce.current = setTimeout(() => {
-        saveWorkspace(classId, nextItems, userId, userName).catch(console.error);
-      }, 500);
+      pendingItemsRef.current = nextItems;
+      const elapsed = Date.now() - lastItemsSaveAtRef.current;
+      if (elapsed >= ITEM_SYNC_INTERVAL_MS && !saveItemsThrottleTimeout.current) {
+        flushItemsSave(nextItems);
+        return;
+      }
+      if (saveItemsThrottleTimeout.current) clearTimeout(saveItemsThrottleTimeout.current);
+      saveItemsThrottleTimeout.current = setTimeout(() => {
+        saveItemsThrottleTimeout.current = null;
+        if (pendingItemsRef.current) {
+          flushItemsSave(pendingItemsRef.current);
+        }
+      }, Math.max(0, ITEM_SYNC_INTERVAL_MS - elapsed));
     },
-    [classId, userId, userName, readOnly],
+    [flushItemsSave, readOnly],
+  );
+
+  const flushDocSave = useCallback(
+    (html: string) => {
+      if (readOnly) return;
+      if (html === lastSavedDocRef.current) return;
+      pendingDocRef.current = null;
+      lastDocSaveAtRef.current = Date.now();
+      lastSavedDocRef.current = html;
+      saveDocContent(classId, html, userId, userName).catch(console.error);
+    },
+    [classId, readOnly, userId, userName],
   );
 
   const scheduleDocSave = useCallback(
-    (html: string) => {
+    (html: string, force = false) => {
       if (readOnly) return;
-      if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
-      saveDocDebounce.current = setTimeout(() => {
-        saveDocContent(classId, html, userId, userName).catch(console.error);
-      }, 600);
+      pendingDocRef.current = html;
+      if (force) {
+        if (saveDocThrottleTimeout.current) {
+          clearTimeout(saveDocThrottleTimeout.current);
+          saveDocThrottleTimeout.current = null;
+        }
+        flushDocSave(html);
+        return;
+      }
+      const elapsed = Date.now() - lastDocSaveAtRef.current;
+      if (elapsed >= DOC_SYNC_INTERVAL_MS && !saveDocThrottleTimeout.current) {
+        flushDocSave(html);
+        return;
+      }
+      if (saveDocThrottleTimeout.current) clearTimeout(saveDocThrottleTimeout.current);
+      saveDocThrottleTimeout.current = setTimeout(() => {
+        saveDocThrottleTimeout.current = null;
+        if (pendingDocRef.current != null) {
+          flushDocSave(pendingDocRef.current);
+        }
+      }, Math.max(0, DOC_SYNC_INTERVAL_MS - elapsed));
     },
-    [classId, userId, userName, readOnly],
+    [flushDocSave, readOnly],
   );
 
   const onDocInput = () => {
@@ -918,19 +1002,56 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (!docRef.current) return;
     const html = docRef.current.innerHTML;
     setDocHtml(html);
-    scheduleDocSave(html);
+    scheduleDocSave(html, true);
   };
+
+  const flushScrollSync = useCallback((topRatio: number, leftRatio: number) => {
+    if (readOnly) return;
+    const previous = lastSavedScrollRef.current;
+    if (
+      previous
+      && Math.abs(previous.topRatio - topRatio) < 0.0001
+      && Math.abs(previous.leftRatio - leftRatio) < 0.0001
+    ) {
+      pendingScrollRef.current = null;
+      return;
+    }
+    pendingScrollRef.current = null;
+    lastSavedScrollRef.current = { topRatio, leftRatio };
+    lastScrollSaveAtRef.current = Date.now();
+    saveScrollPosition(classId, topRatio, leftRatio).catch(() => {});
+  }, [classId, readOnly]);
 
   const onScrollSync = () => {
     if (readOnly || !overflowRef.current) return;
     const el = overflowRef.current;
-    const max = el.scrollHeight - el.clientHeight;
-    if (max <= 0) return;
-    const ratio = el.scrollTop / max;
-    if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
-    scrollDebounce.current = setTimeout(() => {
-      saveScrollRatio(classId, ratio).catch(() => {});
-    }, 300);
+    const topMax = el.scrollHeight - el.clientHeight;
+    const leftMax = el.scrollWidth - el.clientWidth;
+    const topRatio = topMax > 0 ? el.scrollTop / topMax : 0;
+    const leftRatio = leftMax > 0 ? el.scrollLeft / leftMax : 0;
+    pendingScrollRef.current = { topRatio, leftRatio };
+
+    const elapsed = Date.now() - lastScrollSaveAtRef.current;
+    if (elapsed >= SCROLL_SYNC_INTERVAL_MS && !scrollThrottleTimeout.current) {
+      flushScrollSync(topRatio, leftRatio);
+    } else {
+      if (scrollThrottleTimeout.current) clearTimeout(scrollThrottleTimeout.current);
+      scrollThrottleTimeout.current = setTimeout(() => {
+        scrollThrottleTimeout.current = null;
+        if (pendingScrollRef.current) {
+          flushScrollSync(pendingScrollRef.current.topRatio, pendingScrollRef.current.leftRatio);
+        }
+      }, Math.max(0, SCROLL_SYNC_INTERVAL_MS - elapsed));
+    }
+
+    if (scrollFinalSyncTimeout.current) clearTimeout(scrollFinalSyncTimeout.current);
+    scrollFinalSyncTimeout.current = setTimeout(() => {
+      if (pendingScrollRef.current) {
+        flushScrollSync(pendingScrollRef.current.topRatio, pendingScrollRef.current.leftRatio);
+      } else {
+        flushScrollSync(topRatio, leftRatio);
+      }
+    }, SCROLL_FINAL_SYNC_DELAY_MS);
   };
 
   const execFmt = useCallback((cmd: string, value?: string) => {
@@ -1204,14 +1325,20 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     return flushed;
   };
 
+  const clearPendingRealtimeSaves = () => {
+    if (saveItemsThrottleTimeout.current) clearTimeout(saveItemsThrottleTimeout.current);
+    if (saveDocThrottleTimeout.current) clearTimeout(saveDocThrottleTimeout.current);
+    pendingItemsRef.current = null;
+    pendingDocRef.current = null;
+  };
+
   const switchPage = (pageId: string) => {
     if (pageId === activePageIdRef.current || readOnly) return;
     const flushed = flushPages();
     const newPage = flushed.find((p) => p.id === pageId);
     if (!newPage) return;
     // Cancel debounced saves to avoid stale writes after the switch.
-    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
-    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    clearPendingRealtimeSaves();
     setDocHtml(newPage.docContent);
     if (docRef.current) docRef.current.innerHTML = newPage.docContent;
     setItems(newPage.items);
@@ -1229,8 +1356,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const updated = [...flushed, newPage];
     pagesRef.current = updated;
     setPages(updated);
-    if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
-    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    clearPendingRealtimeSaves();
     setDocHtml('');
     if (docRef.current) docRef.current.innerHTML = '';
     setItems([]);
@@ -1252,8 +1378,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     setPages(remaining);
     if (isActive) {
       const nextPage = remaining[Math.max(0, idx - 1)];
-      if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
-      if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+      clearPendingRealtimeSaves();
       setDocHtml(nextPage.docContent);
       if (docRef.current) docRef.current.innerHTML = nextPage.docContent;
       setItems(nextPage.items);
@@ -1688,7 +1813,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       {/* ── Scrollable content ─────────────────────────────────────────────── */}
       <div
         ref={overflowRef}
-        className="flex-1 overflow-y-auto overflow-x-hidden bg-slate-100 p-3 sm:p-4"
+        className="flex-1 overflow-auto bg-slate-100 p-3 sm:p-4"
         onScroll={onScrollSync}
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}

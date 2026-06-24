@@ -20,6 +20,45 @@ import { BattleSession } from '../Battle/battleTypes';
 import { subscribeBattleSession } from '../Battle/battleService';
 import { getDefaultMainStageMode, isActiveBattleStatus, sanitizeMainStageMode, type MainStageMode, BATTLE_STALE_THRESHOLD_MS } from '../../../services/liveClassStage';
 
+async function ensureMicrophonePermission() {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    throw new Error('This browser does not support microphone access for live audio.');
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+async function ensureCameraPermission() {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    throw new Error('This browser does not support camera access for live video.');
+  }
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+  stream.getTracks().forEach((track) => track.stop());
+}
+
+function getDeviceToggleErrorMessage(error: unknown, device: 'microphone' | 'camera') {
+  const fallback = error instanceof Error
+    ? error.message
+    : `Unable to change the ${device} state right now.`;
+  const normalized = fallback.toLowerCase();
+
+  if (normalized.includes('notallowed') || normalized.includes('permission denied') || normalized.includes('permission')) {
+    return device === 'microphone'
+      ? 'O navegador bloqueou o microfone. Libere a permissão do microfone nas configurações do site e tente novamente.'
+      : 'O navegador bloqueou a câmera. Libere a permissão da câmera nas configurações do site e tente novamente.';
+  }
+
+  if (normalized.includes('notfound') || normalized.includes('device')) {
+    return device === 'microphone'
+      ? 'Nenhum microfone disponível foi encontrado neste dispositivo.'
+      : 'Nenhuma câmera disponível foi encontrada neste dispositivo.';
+  }
+
+  return fallback;
+}
+
 interface StudentRoomViewProps {
   liveClass: LiveClass;
   user: User;
@@ -44,6 +83,7 @@ const StudentStage: React.FC<{
   const [mainStageMode, setMainStageMode] = useState<MainStageMode>(getDefaultMainStageMode());
   const [chatOpen, setChatOpen] = useState(false);
   const [audioPlaybackOk, setAudioPlaybackOk] = useState(false);
+  const [deviceError, setDeviceError] = useState('');
   const battleWasActivatedRef = useRef(false);
   const mountedAtRef = useRef(Date.now());
   // NOTE: do NOT use a boolean one-shot flag here — Firestore onSnapshot fires
@@ -268,6 +308,34 @@ const StudentStage: React.FC<{
     return count;
   })();
 
+  const handleMicrophoneToggle = useCallback(async () => {
+    try {
+      setDeviceError('');
+      const nextEnabled = !isMicrophoneEnabled;
+      if (nextEnabled) {
+        await ensureMicrophonePermission();
+      }
+      await localParticipant.setMicrophoneEnabled(nextEnabled);
+    } catch (error) {
+      console.warn('[StudentRoomView] mic toggle failed:', error);
+      setDeviceError(getDeviceToggleErrorMessage(error, 'microphone'));
+    }
+  }, [isMicrophoneEnabled, localParticipant]);
+
+  const handleCameraToggle = useCallback(async () => {
+    try {
+      setDeviceError('');
+      const nextEnabled = !isCameraEnabled;
+      if (nextEnabled) {
+        await ensureCameraPermission();
+      }
+      await localParticipant.setCameraEnabled(nextEnabled);
+    } catch (error) {
+      console.warn('[StudentRoomView] camera toggle failed:', error);
+      setDeviceError(getDeviceToggleErrorMessage(error, 'camera'));
+    }
+  }, [isCameraEnabled, localParticipant]);
+
   return (
     <>
     {/* ── Mobile landscape: board fills most of screen ───────────────────── */}
@@ -316,6 +384,12 @@ const StudentStage: React.FC<{
             🔇 Toque aqui para ativar o áudio
           </button>
         )}
+
+        {deviceError ? (
+          <p className="mb-2 w-full rounded-xl border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-xs font-semibold text-rose-200">
+            {deviceError}
+          </p>
+        ) : null}
 
         <div className={`student-main-stage relative w-full rounded-2xl shadow-xl border border-slate-800 bg-slate-900/80 mb-3 overflow-hidden transition-all ${
           mainStageMode === 'workspace' ? 'min-h-[72vw] sm:aspect-[16/9] sm:min-h-0' : 'min-h-[55vw] sm:aspect-[16/9] sm:min-h-0'
@@ -369,7 +443,7 @@ const StudentStage: React.FC<{
               classId={liveClass.id}
               userId={user.uid}
               userName={user.displayName || user.email || 'Aluno'}
-              readOnly={false}
+              readOnly={true}
               toolbarLeading={
                 <button
                   onClick={onExit}
@@ -427,11 +501,7 @@ const StudentStage: React.FC<{
       <div className="fixed bottom-0 left-0 w-full flex justify-center gap-3 bg-slate-950/90 py-2 sm:py-3 border-t border-slate-800 z-50 backdrop-blur-sm">
         {/* Microfone */}
         <button
-          onClick={() => {
-            localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled).catch((err) => {
-              console.warn('[StudentRoomView] mic toggle failed:', err);
-            });
-          }}
+          onClick={() => void handleMicrophoneToggle()}
           className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow transition ${
             isMicrophoneEnabled
               ? 'bg-emerald-500 hover:bg-emerald-400 text-white'
@@ -487,11 +557,7 @@ const StudentStage: React.FC<{
 
         {/* Câmera */}
         <button
-          onClick={() => {
-            localParticipant.setCameraEnabled(!isCameraEnabled).catch((err) => {
-              console.warn('[StudentRoomView] camera toggle failed:', err);
-            });
-          }}
+          onClick={() => void handleCameraToggle()}
           className={`w-12 h-12 rounded-full flex items-center justify-center text-lg shadow transition ${
             isCameraEnabled
               ? 'bg-sky-500 hover:bg-sky-400 text-white'

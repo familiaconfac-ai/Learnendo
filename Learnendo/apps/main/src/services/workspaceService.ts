@@ -54,8 +54,12 @@ export interface WorkspaceDoc {
   docContent?: string;
   /** Author of the last docContent write (used for self-echo suppression per section) */
   docUpdatedBy?: string;
-  /** Scroll position (0-1) for scroll-sync */
+  /** Legacy vertical scroll position (0-1) kept for backward compatibility. */
   scrollRatio?: number;
+  /** Canonical vertical scroll position (0-1) for follow-teacher mode. */
+  scrollTopRatio?: number;
+  /** Horizontal scroll position (0-1) for wide boards/materials. */
+  scrollLeftRatio?: number;
   /** All pages (Fase 2). Active page content is always mirrored in docContent/items for real-time sync. */
   pages?: WorkspacePage[];
   /** ID of the currently active page (Fase 2). */
@@ -110,14 +114,19 @@ export async function saveDocContent(
   }
 }
 
-/** Persist scroll ratio so students can follow (0-1). */
-export async function saveScrollRatio(
+/** Persist scroll position so students can follow the teacher in both axes. */
+export async function saveScrollPosition(
   classId: string,
-  scrollRatio: number,
+  scrollTopRatio: number,
+  scrollLeftRatio: number,
 ): Promise<void> {
   if (!db) return;
   const { updateDoc } = await import('firebase/firestore');
-  await updateDoc(workspaceRef(classId), { scrollRatio }).catch(() => {
+  await updateDoc(workspaceRef(classId), {
+    scrollRatio: scrollTopRatio,
+    scrollTopRatio,
+    scrollLeftRatio,
+  }).catch(() => {
     // ignore if doc doesn't exist yet
   });
 }
