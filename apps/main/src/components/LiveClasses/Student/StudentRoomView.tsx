@@ -120,6 +120,10 @@ const StudentStage: React.FC<{
   const hasActiveTrailSession = hasActiveLiveTrailSession(session);
   const shouldRenderBattleOverlay = !USE_SIMPLE_LIVE_BATTLE && Boolean(battleSession) && isBattleStage;
   const shouldRenderSimpleBattleOverlay = USE_SIMPLE_LIVE_BATTLE && isBattleStage;
+  const showStageMicrophoneControl = isTrailStage || isBattleStage;
+  const showStageChatQuickControl = isTrailStage;
+  const showStageQuickControls = showStageMicrophoneControl && !chatOpen;
+  const stageQuickControlsZClass = isBattleStage ? 'z-[10050]' : 'z-[160]';
 
 
   useEffect(() => {
@@ -852,8 +856,49 @@ const StudentStage: React.FC<{
       }
       overlay={
         <>
+          {showStageQuickControls ? (
+            <div className={`pointer-events-none fixed bottom-24 right-3 sm:bottom-28 sm:right-4 ${stageQuickControlsZClass}`}>
+              <div className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-slate-700 bg-slate-950/92 p-2 shadow-2xl backdrop-blur-sm">
+                <button
+                  type="button"
+                  onClick={() => {
+                    void toggleMicrophoneWithRecovery(!isMicrophoneEnabled);
+                  }}
+                  disabled={microphoneBusy}
+                  className={`flex h-11 w-11 items-center justify-center rounded-full text-lg shadow transition ${
+                    isMicrophoneEnabled
+                      ? 'bg-emerald-500 text-white hover:bg-emerald-400'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  } disabled:opacity-60`}
+                  title={isMicrophoneEnabled ? 'Desligar microfone' : 'Ligar microfone'}
+                  aria-label={isMicrophoneEnabled ? 'Desligar microfone' : 'Ligar microfone'}
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 10v2a7 7 0 01-14 0v-2" />
+                    <line x1="12" y1="19" x2="12" y2="23" />
+                    <line x1="8" y1="23" x2="16" y2="23" />
+                    {!isMicrophoneEnabled ? <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" /> : null}
+                  </svg>
+                </button>
+                {showStageChatQuickControl ? (
+                  <button
+                    type="button"
+                    onClick={() => setChatOpen(true)}
+                    className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-500 text-white shadow transition hover:bg-violet-400"
+                    title="Abrir chat"
+                    aria-label="Abrir chat"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
+                    </svg>
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {chatOpen ? (
-            <div className="fixed inset-x-0 bottom-16 top-0 z-40 flex flex-col bg-slate-950/95">
+            <div className="fixed inset-x-0 bottom-16 top-0 z-[170] flex flex-col bg-slate-950/95">
               <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
                 <span className="text-sm font-bold text-white">Chat</span>
                 <button
@@ -869,6 +914,7 @@ const StudentStage: React.FC<{
                   user={user}
                   role="student"
                   allowAudioNotes={session.audioNotesEnabled !== false}
+                  onAfterSend={() => setChatOpen(false)}
                 />
               </div>
             </div>

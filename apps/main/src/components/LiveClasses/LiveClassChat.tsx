@@ -17,6 +17,7 @@ interface LiveClassChatProps {
   user: User;
   role?: LiveClassRole;
   allowAudioNotes?: boolean;
+  onAfterSend?: () => void;
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
@@ -46,6 +47,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
   user,
   role = 'student' as LiveClassRole,
   allowAudioNotes = false,
+  onAfterSend,
 }) => {
   const chatRole = role;
   const [messages, setMessages] = useState<LiveClassMessage[]>([]);
@@ -134,6 +136,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
     try {
       await sendLiveClassMessage(classId, user.uid, senderName, text, chatRole);
       setText('');
+      onAfterSend?.();
     } catch (error) {
       console.warn('[LiveClassChat] send message failed:', error);
     } finally {
@@ -222,6 +225,7 @@ export const LiveClassChat: React.FC<LiveClassChatProps> = ({
         chatRole,
       );
       handleDiscardAudioNote();
+      onAfterSend?.();
     } catch (error) {
       console.warn('[LiveClassChat] send audio note failed:', error);
       setAudioError('Could not send audio note. Please try again.');
