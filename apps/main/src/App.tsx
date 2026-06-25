@@ -1488,6 +1488,19 @@ const App: React.FC = () => {
     return unsubscribe;
   }, [activeOnlineClass?.id]);
 
+  const clearLiveRoomContext = useCallback(() => {
+    setActiveOnlineClass(null);
+    setActiveOnlineSession(null);
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/live-class/')) {
+      window.history.pushState({}, '', '/');
+    }
+  }, []);
+
+  const goToWorkbookList = useCallback(() => {
+    clearLiveRoomContext();
+    setCurrentSection(SectionType.WORKBOOK_LIST);
+  }, [clearLiveRoomContext]);
+
   const handleNavigate = (section: SectionType, params?: any) => {
     setCourseMenuOpen(false);
     setActiveWeeklyTest(null);
@@ -2528,12 +2541,12 @@ const App: React.FC = () => {
             currentCourseId={currentCourseId}
             currentLanguage={uiLanguage}
             onLanguageChange={handleLanguageSelect}
-            onLogoClick={() => setCurrentSection(SectionType.WORKBOOK_LIST)}
+            onLogoClick={goToWorkbookList}
             onSelectCourse={(id) => {
               handleCourseChange(id);
               setCurrentLessonId(null);
               setCurrentDay(null);
-              setCurrentSection(SectionType.WORKBOOK_LIST);
+              goToWorkbookList();
             }}
           />
         );
@@ -2739,7 +2752,7 @@ const App: React.FC = () => {
             courseFlag={activeCourse?.flag}
             onBack={() => handleNavigate(SectionType.COURSES)}
             onOpenTracks={() => handleNavigate(SectionType.WORKBOOK, { workbookId: currentWorkbookId || progress.currentWorkbook || 1 })}
-            onOpenWorkbookList={() => setCurrentSection(SectionType.WORKBOOK_LIST)}
+            onOpenWorkbookList={goToWorkbookList}
             onSelectWorkbook={(workbookId) => handleSelectWorkbook(workbookId, SectionType.WORKBOOK_PDF)}
           />
         );
@@ -3107,7 +3120,7 @@ const App: React.FC = () => {
           <button
             type="button"
             className="flex h-10 items-center rounded-lg sm:rounded-xl bg-slate-800 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-slate-200 shadow-sm active:scale-95 flex-shrink-0"
-            onClick={() => setCurrentSection(SectionType.WORKBOOK_LIST)}
+            onClick={goToWorkbookList}
             aria-label="Go to lesson list"
           >
             <span className="text-base leading-none">🏠</span>
@@ -3164,7 +3177,7 @@ const App: React.FC = () => {
               </div>
             ) : null}
             <div className="space-y-2">
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.WORKBOOK_LIST); setMenuOpen(false); }}>Workbooks</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { goToWorkbookList(); setMenuOpen(false); }}>Workbooks</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
               {canAccessTeacherDashboard && (

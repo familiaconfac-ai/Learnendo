@@ -15,6 +15,24 @@ export interface WorkspaceTextStyles {
 export type WorkspaceItemType = 'text' | 'image';
 export type WorkspaceSurfaceMode = 'document' | 'slides';
 
+export interface WorkspaceSelectionRect {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
+export interface WorkspaceSelectionSnapshot {
+  surfaceMode: WorkspaceSurfaceMode;
+  target: 'document' | 'item';
+  itemId?: string;
+  rects: WorkspaceSelectionRect[];
+  text?: string;
+  updatedAt: number;
+  updatedBy: string;
+  updatedByName: string;
+}
+
 /** A single page within a workspace material or live session. */
 export interface WorkspacePage {
   id: string;
@@ -77,6 +95,8 @@ export interface WorkspaceDoc {
   docUpdatedBy?: string;
   /** Scroll position (0-1) for scroll-sync */
   scrollRatio?: number;
+  /** Teacher-only viewport selection that students mirror visually. */
+  teacherSelection?: WorkspaceSelectionSnapshot | null;
   /** All pages (Fase 2). Active page content is always mirrored in docContent/items for real-time sync. */
   pages?: WorkspacePage[];
   /** ID of the currently active page (Fase 2). */
@@ -222,6 +242,20 @@ export async function saveScrollRatio(
   await updateDoc(workspaceRef(classId), { scrollRatio }).catch(() => {
     // ignore if doc doesn't exist yet
   });
+}
+
+/** Persist the teacher's current selection so students can follow the explanation. */
+export async function saveTeacherSelection(
+  classId: string,
+  teacherSelection: WorkspaceSelectionSnapshot | null,
+): Promise<void> {
+  if (!db) return;
+  const { updateDoc, setDoc } = await import('firebase/firestore');
+  try {
+    await updateDoc(workspaceRef(classId), { teacherSelection });
+  } catch {
+    await setDoc(workspaceRef(classId), { teacherSelection }, { merge: true });
+  }
 }
 
 /** Persist only the current workspace surface mode (document/slides). */

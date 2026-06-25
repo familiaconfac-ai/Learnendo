@@ -29,6 +29,7 @@ import {
   saveWorkspaceItem,
   saveDocContent,
   saveScrollRatio,
+  saveTeacherSelection,
   savePageSwitch,
   saveWorkspaceSurfaceMode,
   saveWorkspacePresentationMode,
@@ -36,6 +37,7 @@ import {
   WorkspaceItem,
   WorkspaceItemType,
   WorkspacePage,
+  type WorkspaceSelectionSnapshot,
   type WorkspaceSurfaceState,
   type WorkspaceSurfaceMode,
 } from '../../../services/workspaceService';
@@ -68,6 +70,22 @@ function uid(): string {
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, v));
+}
+
+function buildSelectionSignature(selection: WorkspaceSelectionSnapshot | null): string {
+  if (!selection) return 'none';
+  return JSON.stringify({
+    surfaceMode: selection.surfaceMode,
+    target: selection.target,
+    itemId: selection.itemId ?? null,
+    text: selection.text ?? '',
+    rects: selection.rects.map((rect) => ({
+      top: Math.round(rect.top),
+      left: Math.round(rect.left),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    })),
+  });
 }
 
 function stripFileExtension(filename: string): string {
@@ -1594,6 +1612,43 @@ const StableResizeHandle: React.FC<StableResizeHandleProps> = ({ onPointerDown }
   </div>
 );
 
+const TeacherSelectionOverlay: React.FC<{
+  selection: WorkspaceSelectionSnapshot;
+}> = ({ selection }) => {
+  if (selection.rects.length === 0) return null;
+  const anchor = selection.rects[0];
+  const label = selection.text?.trim();
+
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+      {selection.rects.map((rect, index) => (
+        <div
+          key={`${rect.left}:${rect.top}:${rect.width}:${rect.height}:${index}`}
+          className="absolute rounded-[4px] border border-blue-500/70 bg-blue-500/30 shadow-[0_0_0_1px_rgba(59,130,246,0.12)]"
+          style={{
+            left: `${rect.left}px`,
+            top: `${rect.top}px`,
+            width: `${rect.width}px`,
+            height: `${rect.height}px`,
+          }}
+        />
+      ))}
+      {label ? (
+        <div
+          className="absolute max-w-[min(18rem,calc(100%-1rem))] truncate rounded-full bg-blue-600/95 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white shadow-lg"
+          style={{
+            left: `${Math.max(anchor.left, 8)}px`,
+            top: `${Math.max(anchor.top - 28, 8)}px`,
+          }}
+          title={label}
+        >
+          {label}
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
 interface StableFloatingBlockProps {
   item: WorkspaceItem;
   isSelected: boolean;
@@ -1618,6 +1673,7 @@ interface StableFloatingBlockProps {
   onEditorTyping?: () => void;
   onEditorFocus: (id: string, el: HTMLElement) => void;
   onEditorBlur: () => void;
+  remoteTeacherSelection?: WorkspaceSelectionSnapshot | null;
 }
 
 const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
@@ -1644,6 +1700,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   onEditorTyping,
   onEditorFocus,
   onEditorBlur,
+  remoteTeacherSelection,
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const lastTypedAtRef = useRef<number>(0);
@@ -2152,6 +2209,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           opacity: isOwnedByOther ? 0.65 : isBlockedByLock ? 0.85 : 1,
         }}
       />
+      {remoteTeacherSelection ? <TeacherSelectionOverlay selection={remoteTeacherSelection} /> : null}
       {isSelected && canResizeThisBox ? <StableResizeHandle onPointerDown={onPointerDownResize} /> : null}
     </div>
   );
@@ -2756,6 +2814,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const saveSingleItemDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveDocDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const teacherSelectionDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const applyingRemoteScrollRef = useRef(false);
+  const lastRemoteScrollRatioRef = useRef<number | null>(null);
+  const lastPublishedTeacherSelectionRef = useRef<string>('none');
   const pendingItemsSaveRef = useRef<{
     items: WorkspaceItem[];
     pages: WorkspacePage[];
@@ -2793,6 +2855,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const dirtyItemTimestampsRef = useRef<Record<string, number>>({});
   const deletedItemTimestampsRef = useRef<Record<string, number>>({});
   const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
+  const [remoteTeacherSelection, setRemoteTeacherSelection] = useState<WorkspaceSelectionSnapshot | null>(null);
 
   useEffect(() => {
     if (assignedRoster.length === 0) {
@@ -2847,6 +2910,81 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       height: Math.max(canvas.scrollHeight, canvas.offsetHeight, 1),
     };
   }, []);
+
+  const publishTeacherSelection = useCallback((selection: WorkspaceSelectionSnapshot | null) => {
+    if (!viewerCanManageWorkspace) return;
+    const nextSignature = buildSelectionSignature(selection);
+    if (lastPublishedTeacherSelectionRef.current === nextSignature) return;
+    lastPublishedTeacherSelectionRef.current = nextSignature;
+    if (teacherSelectionDebounce.current) {
+      clearTimeout(teacherSelectionDebounce.current);
+    }
+    teacherSelectionDebounce.current = setTimeout(() => {
+      saveTeacherSelection(classId, selection).catch(() => {});
+    }, selection ? 80 : 0);
+  }, [classId, viewerCanManageWorkspace]);
+
+  const clearTeacherSelection = useCallback(() => {
+    publishTeacherSelection(null);
+  }, [publishTeacherSelection]);
+
+  const captureTeacherSelection = useCallback(() => {
+    if (!viewerCanManageWorkspace) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+      clearTeacherSelection();
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const container = range.commonAncestorContainer;
+    const floatingRoot = activeFloatingElRef.current;
+    const documentRoot = docRef.current;
+    const itemId = activeFloatingIdRef.current ?? undefined;
+
+    let root: HTMLElement | null = null;
+    let target: WorkspaceSelectionSnapshot['target'] = 'document';
+
+    if (floatingRoot && floatingRoot.contains(container)) {
+      root = floatingRoot;
+      target = 'item';
+    } else if (documentRoot && documentRoot.contains(container)) {
+      root = documentRoot;
+    }
+
+    if (!root) {
+      clearTeacherSelection();
+      return;
+    }
+
+    const rootRect = root.getBoundingClientRect();
+    const rects = Array.from(range.getClientRects())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .slice(0, 24)
+      .map((rect) => ({
+        top: rect.top - rootRect.top + root.scrollTop,
+        left: rect.left - rootRect.left + root.scrollLeft,
+        width: rect.width,
+        height: rect.height,
+      }));
+
+    if (rects.length === 0) {
+      clearTeacherSelection();
+      return;
+    }
+
+    publishTeacherSelection({
+      surfaceMode,
+      target,
+      itemId: target === 'item' ? itemId : undefined,
+      rects,
+      text: selection.toString().replace(/\s+/g, ' ').trim().slice(0, 160) || undefined,
+      updatedAt: Date.now(),
+      updatedBy: userId,
+      updatedByName: userName,
+    });
+  }, [clearTeacherSelection, publishTeacherSelection, surfaceMode, userId, userName, viewerCanManageWorkspace]);
 
   const pruneItemSyncGuards = useCallback((now = Date.now()) => {
     const maxAgeMs = ITEM_GUARD_MS * 4;
@@ -3116,10 +3254,27 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         syncActivePageDocRef(nextDocContent);
       }
 
-      if (readOnly && data?.scrollRatio != null && overflowRef.current) {
+      if (viewerIsStudent) {
+        const nextTeacherSelection =
+          data?.teacherSelection && data.teacherSelection.surfaceMode === remoteSurfaceMode
+            ? data.teacherSelection
+            : null;
+        setRemoteTeacherSelection(nextTeacherSelection);
+      } else {
+        setRemoteTeacherSelection(null);
+      }
+
+      if ((readOnly || viewerIsStudent) && data?.scrollRatio != null && overflowRef.current) {
         const el = overflowRef.current;
         const max = el.scrollHeight - el.clientHeight;
-        if (max > 0) el.scrollTop = data.scrollRatio * max;
+        lastRemoteScrollRatioRef.current = data.scrollRatio;
+        if (max > 0) {
+          applyingRemoteScrollRef.current = true;
+          el.scrollTop = data.scrollRatio * max;
+          window.requestAnimationFrame(() => {
+            applyingRemoteScrollRef.current = false;
+          });
+        }
       }
     });
     return unsub;
@@ -3138,11 +3293,28 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     presentationMode,
   ]);
 
+  useEffect(() => {
+    if (!viewerCanManageWorkspace) return undefined;
+
+    const handleSelectionChange = () => {
+      window.setTimeout(() => {
+        captureTeacherSelection();
+      }, 0);
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      clearTeacherSelection();
+    };
+  }, [captureTeacherSelection, clearTeacherSelection, viewerCanManageWorkspace]);
+
   useEffect(() => () => {
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveSingleItemDebounce.current) clearTimeout(saveSingleItemDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
+    if (teacherSelectionDebounce.current) clearTimeout(teacherSelectionDebounce.current);
     pendingItemsSaveRef.current = null;
     pendingSingleItemSaveRef.current = {};
     pendingDocSaveRef.current = null;
@@ -3327,7 +3499,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   };
 
   const onScrollSync = () => {
-    if (effectiveReadOnly || !overflowRef.current) return;
+    if (!overflowRef.current) return;
+    if (viewerIsStudent) {
+      if (applyingRemoteScrollRef.current) return;
+      const ratio = lastRemoteScrollRatioRef.current;
+      if (ratio == null) return;
+      const el = overflowRef.current;
+      const max = el.scrollHeight - el.clientHeight;
+      if (max <= 0) return;
+      applyingRemoteScrollRef.current = true;
+      el.scrollTop = ratio * max;
+      window.requestAnimationFrame(() => {
+        applyingRemoteScrollRef.current = false;
+      });
+      return;
+    }
+    if (effectiveReadOnly) return;
     const el = overflowRef.current;
     const max = el.scrollHeight - el.clientHeight;
     if (max <= 0) return;
@@ -3347,14 +3534,24 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const captureCurrentSelection = useCallback(() => {
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
+    if (!selection || selection.rangeCount === 0) {
+      clearTeacherSelection();
+      return;
+    }
     const range = selection.getRangeAt(0);
     const root = activeFloatingElRef.current ?? docRef.current;
-    if (!root) return;
+    if (!root) {
+      clearTeacherSelection();
+      return;
+    }
     const container = range.commonAncestorContainer;
-    if (!root.contains(container)) return;
+    if (!root.contains(container)) {
+      clearTeacherSelection();
+      return;
+    }
     savedSelectionRangeRef.current = range.cloneRange();
-  }, []);
+    captureTeacherSelection();
+  }, [captureTeacherSelection, clearTeacherSelection]);
 
   const restoreSavedSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -4522,6 +4719,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (t === canvasRef.current || t === overflowRef.current || t === docRef.current) {
       if (selectedId) releaseItemLock(selectedId);
       setSelectedId(null);
+      if (viewerCanManageWorkspace) {
+        clearTeacherSelection();
+      }
     }
   };
 
@@ -6197,8 +6397,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         ref={overflowRef}
         className={`flex-1 overflow-x-hidden ${presentationMode ? 'relative overflow-hidden p-0' : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
         onScroll={onScrollSync}
+        onWheel={viewerIsStudent ? (event) => event.preventDefault() : undefined}
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}
+        style={viewerIsStudent ? { overscrollBehavior: 'contain' } : undefined}
       >
         <div
           className={`${presentationMode ? 'h-full w-full' : 'mx-auto max-w-none'}`}
@@ -6295,32 +6497,37 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 {viewerCanEditSharedDocument ? wsl.placeholder : wsl.readonlyPh}
               </div>
             )}
-            <div
-              ref={docRef}
-              contentEditable={viewerCanEditSharedDocument}
-              suppressContentEditableWarning
-              spellCheck
-              onFocus={captureCurrentSelection}
-              onMouseUp={captureCurrentSelection}
-              onKeyUp={captureCurrentSelection}
-              onBlur={onDocBlur}
-              onInput={onDocInput}
-              onPaste={handleDocPaste}
-              className={`w-full focus:outline-none leading-relaxed ${
-                isSlidesMode
-                  ? `h-full max-h-full flex-1 overflow-y-auto overflow-x-hidden px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12`
-                  : 'min-h-[60vh] p-6'
-              }`}
-              style={{
-                fontFamily,
-                fontSize: `${fontSize}px`,
-                color: '#000000',
-                wordBreak: 'break-word',
-                backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
-                scrollbarWidth: isSlidesMode ? 'thin' : undefined,
-                scrollbarColor: isSlidesMode ? 'rgba(148,163,184,0.45) transparent' : undefined,
-              }}
-            />
+            <div className="relative h-full w-full">
+              <div
+                ref={docRef}
+                contentEditable={viewerCanEditSharedDocument}
+                suppressContentEditableWarning
+                spellCheck
+                onFocus={captureCurrentSelection}
+                onMouseUp={captureCurrentSelection}
+                onKeyUp={captureCurrentSelection}
+                onBlur={onDocBlur}
+                onInput={onDocInput}
+                onPaste={handleDocPaste}
+                className={`w-full focus:outline-none leading-relaxed ${
+                  isSlidesMode
+                    ? `h-full max-h-full flex-1 overflow-y-auto overflow-x-hidden px-8 py-8 sm:px-12 sm:py-10 md:px-16 md:py-12`
+                    : 'min-h-[60vh] p-6'
+                }`}
+                style={{
+                  fontFamily,
+                  fontSize: `${fontSize}px`,
+                  color: '#000000',
+                  wordBreak: 'break-word',
+                  backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
+                  scrollbarWidth: isSlidesMode ? 'thin' : undefined,
+                  scrollbarColor: isSlidesMode ? 'rgba(148,163,184,0.45) transparent' : undefined,
+                }}
+              />
+              {viewerIsStudent && remoteTeacherSelection?.target === 'document' ? (
+                <TeacherSelectionOverlay selection={remoteTeacherSelection} />
+              ) : null}
+            </div>
           </div>
 
           {/* Floating blocks overlay */}
@@ -6361,6 +6568,13 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   activeFloatingElRef.current = null;
                   handleFloatingBlur(item.id);
                 }}
+                remoteTeacherSelection={
+                  viewerIsStudent &&
+                  remoteTeacherSelection?.target === 'item' &&
+                  remoteTeacherSelection.itemId === item.id
+                    ? remoteTeacherSelection
+                    : null
+                }
               />
             ))}
           </div>

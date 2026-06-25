@@ -71,6 +71,12 @@ function pickTranslation(data: Record<string, any>): string {
   return '';
 }
 
+function normalizeTranslationLocale(language: string): string {
+  const normalized = language.trim().toLowerCase();
+  if (normalized === 'pt' || normalized === 'pt-br') return 'pt-BR';
+  return language;
+}
+
 // ── Translation ────────────────────────────────────────────────────────────────
 
 /**
@@ -84,9 +90,11 @@ export async function translateText(
   sourceLang: string,
   targetLang: string,
 ): Promise<string> {
-  if (!text.trim() || sourceLang === targetLang) return text;
+  const normalizedSourceLang = normalizeTranslationLocale(sourceLang);
+  const normalizedTargetLang = normalizeTranslationLocale(targetLang);
+  if (!text.trim() || normalizedSourceLang === normalizedTargetLang) return text;
   try {
-    const langpair = `${sourceLang}|${targetLang}`;
+    const langpair = `${normalizedSourceLang}|${normalizedTargetLang}`;
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langpair)}`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

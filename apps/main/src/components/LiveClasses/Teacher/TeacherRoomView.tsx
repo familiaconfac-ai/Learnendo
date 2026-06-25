@@ -759,7 +759,7 @@ const TeacherStage: React.FC<{
       }
       overlay={
         <>
-          {hasActiveTrailSession && isTrailStage ? (
+          {hasActiveTrailSession && isTrailStage && !showExerciseSession ? (
             <LiveTrailExerciseOverlay
               classId={liveClass.id}
               user={user}
@@ -768,13 +768,16 @@ const TeacherStage: React.FC<{
               assignedRoster={assignedRoster}
               defaultCourseId={liveClass.courseId ?? 'english'}
               uiLanguage={uiLang}
-              onReturnToWorkspace={() => handleUpdateSession({ mainStageMode: 'workspace' as LiveClassSession['mainStageMode'] })}
+              onReturnToWorkspace={() => {
+                setShowExerciseSession(false);
+                void handleUpdateSession({ mainStageMode: 'workspace' as LiveClassSession['mainStageMode'] });
+              }}
               onOpenSessionPanel={() => setShowExerciseSession(true)}
               onOpenBattleTemplate={onOpenBattleTemplate}
             />
           ) : null}
           {showExerciseSession ? (
-            <div className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-sm">
+            <div className="fixed inset-0 z-[150] bg-slate-950/70 backdrop-blur-sm">
               <div className="absolute inset-y-0 right-0 w-full max-w-3xl overflow-y-auto border-l border-slate-800 bg-slate-950 p-4 shadow-2xl">
                 <div className="mb-3 flex items-center justify-between">
                   <h2 className="text-lg font-black text-white">Trail Session Panel</h2>

@@ -91,7 +91,7 @@ const TRAIL_COPY = {
     grammarTitle: (lessonNumber: number) => `Lesson ${lessonNumber} Grammar`,
     noGrammar: 'No grammar notes available for this lesson yet.',
     dictionary: 'Dictionary',
-    portuguese: 'Portuguese',
+    portuguese: 'Brazilian Portuguese',
     spanish: 'Spanish',
     loading: 'Loading...',
     audio: 'Audio',
@@ -138,7 +138,7 @@ const TRAIL_COPY = {
     grammarTitle: (lessonNumber: number) => `Gramática da Lição ${lessonNumber}`,
     noGrammar: 'Ainda não há notas de gramática para esta lição.',
     dictionary: 'Dicionário',
-    portuguese: 'Português',
+    portuguese: 'Português (Brasil)',
     spanish: 'Espanhol',
     loading: 'Carregando...',
     audio: 'Áudio',
@@ -185,7 +185,7 @@ const TRAIL_COPY = {
     grammarTitle: (lessonNumber: number) => `Gramática de la Lección ${lessonNumber}`,
     noGrammar: 'Todavía no hay notas de gramática para esta lección.',
     dictionary: 'Diccionario',
-    portuguese: 'Portugués',
+    portuguese: 'Portugués (Brasil)',
     spanish: 'Español',
     loading: 'Cargando...',
     audio: 'Audio',
@@ -221,6 +221,128 @@ function getLessonNumberFromId(lessonId: string | null | undefined) {
   const match = lessonId.match(/(\d+)/);
   return match ? Number(match[1]) : 1;
 }
+
+type NormalizedGrammarSection = {
+  title: string;
+  lines: string[];
+};
+
+type NormalizedGrammarGuide = {
+  label?: string;
+  lessonTitle?: string;
+  grammarTitle?: string;
+  sections: NormalizedGrammarSection[];
+};
+
+const normalizeGrammarGuide = (guide: (typeof GRAMMAR_GUIDES)[string]): NormalizedGrammarGuide => {
+  if (Array.isArray(guide)) {
+    return {
+      sections: [{ title: 'Notes', lines: guide }],
+    };
+  }
+
+  const lessonTitle = guide.sections.find((section) => section.title === 'Lesson Title')?.lines[0];
+  const grammarTitle = guide.sections.find((section) => section.title === 'Grammar Title')?.lines[0];
+  const sections = guide.sections.filter(
+    (section) => section.title !== 'Lesson Title' && section.title !== 'Grammar Title',
+  );
+
+  return {
+    label: guide.label,
+    lessonTitle,
+    grammarTitle,
+    sections,
+  };
+};
+
+const renderInlineFormatting = (text: string): React.ReactNode[] => {
+  let nodeKey = 0;
+
+  const parse = (value: string): React.ReactNode[] => {
+    const nodes: React.ReactNode[] = [];
+    let index = 0;
+
+    while (index < value.length) {
+      if (value.startsWith('**', index)) {
+        const end = value.indexOf('**', index + 2);
+        if (end !== -1) {
+          nodes.push(
+            <strong key={`strong-${nodeKey++}`}>
+              {parse(value.slice(index + 2, end))}
+            </strong>,
+          );
+          index = end + 2;
+          continue;
+        }
+      }
+
+      if (value[index] === '*') {
+        const end = value.indexOf('*', index + 1);
+        if (end !== -1) {
+          nodes.push(
+            <em key={`em-${nodeKey++}`}>
+              {parse(value.slice(index + 1, end))}
+            </em>,
+          );
+          index = end + 1;
+          continue;
+        }
+      }
+
+      const nextStrong = value.indexOf('**', index);
+      const nextEm = value.indexOf('*', index);
+      const nextIndex = [nextStrong, nextEm]
+        .filter((candidate) => candidate !== -1)
+        .reduce((smallest, candidate) => Math.min(smallest, candidate), value.length);
+
+      nodes.push(value.slice(index, nextIndex));
+      index = nextIndex;
+    }
+
+    return nodes;
+  };
+
+  return parse(text);
+};
+
+const getGrammarGuideForLesson = (lessonNumber: number): NormalizedGrammarGuide | null => {
+  const grammarKey = `L${lessonNumber}_GRAMMAR`;
+  if (!Object.prototype.hasOwnProperty.call(GRAMMAR_GUIDES, grammarKey)) return null;
+  return normalizeGrammarGuide(GRAMMAR_GUIDES[grammarKey]);
+};
+
+const getGrammarSectionTitle = (title: string): string => {
+  if (title === 'Examples by Person or Structure') return 'Examples';
+  return title;
+};
+
+const shouldRenderGrammarBullets = (section: NormalizedGrammarSection): boolean => {
+  if (section.lines.length > 1) return true;
+  return ['Main Notes', 'Examples by Person or Structure', 'Questions', 'Negative Sentences', 'Common Mistakes'].includes(section.title);
+};
+
+const renderGrammarLine = (line: string, sectionTitle: string): React.ReactNode => {
+  if (sectionTitle !== 'Common Mistakes') {
+    return renderInlineFormatting(line);
+  }
+
+  const match = line.match(/^(Correct|Incorrect):\s*(.*)$/i);
+  if (!match) return renderInlineFormatting(line);
+
+  const status = match[1].toLowerCase();
+  const content = match[2];
+  const statusClass = status === 'correct' ? 'text-blue-600' : 'text-red-600';
+
+  return (
+    <>
+      <strong className={statusClass}>
+        {match[1]}
+        :
+      </strong>{' '}
+      {renderInlineFormatting(content)}
+    </>
+  );
+};
 
 function getCourseLanguageCode(
   courseId: string | null | undefined,
@@ -607,7 +729,7 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
     setSaved(false);
 
     Promise.all([
-      translateText(selection.text, courseLanguage, 'pt'),
+      translateText(selection.text, courseLanguage, 'pt-BR'),
       translateText(selection.text, courseLanguage, 'es'),
       fetchPhoneticForPhrase(selection.text),
     ])
@@ -1071,8 +1193,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       .map((student) => student.uid);
   }, [currentBlock, trackedStudents]);
 
-  const grammarEntries = useMemo(
-    () => Object.entries(GRAMMAR_GUIDES).filter(([key]) => key.startsWith(`L${lessonNumber}_`)),
+  const grammarGuide = useMemo(
+    () => getGrammarGuideForLesson(lessonNumber),
     [lessonNumber],
   );
   const canGenerateBattleFromTrail = isTeacher && currentBlockIndex >= blocks.length - 1 && blocks.length > 0;
@@ -1446,6 +1568,106 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   }
 
   const practiceItem = currentBlock ? getPracticeItem(currentBlock, lessonNumber) : null;
+  const chromeTopStyle = {
+    top: `calc(env(safe-area-inset-top, 0px) + ${LIVE_TRAIL_CHROME_TOP_OFFSET}px)`,
+  };
+  const liveControls = (
+    <>
+      <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+        {isTeacher && onReturnToWorkspace ? (
+          <button
+            type="button"
+            onClick={() => {
+              void onReturnToWorkspace();
+            }}
+            className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+          >
+            {copy.board}
+          </button>
+        ) : null}
+        {isTeacher && onOpenSessionPanel ? (
+          <button
+            type="button"
+            onClick={onOpenSessionPanel}
+            className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+          >
+            {copy.panel}
+          </button>
+        ) : null}
+        {canGenerateBattleFromTrail && onOpenBattleTemplate ? (
+          <button
+            type="button"
+            onClick={handleGenerateBattle}
+            className="rounded-2xl border border-orange-400/50 bg-orange-500/20 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-orange-100 shadow-2xl backdrop-blur-sm"
+          >
+            {copy.generateBattle}
+          </button>
+        ) : null}
+        {isTeacher ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                const previousBlock = blocks[currentBlockIndex - 1] ?? null;
+                if (previousBlock) {
+                  void setSharedCurrentBlock(previousBlock.id);
+                }
+              }}
+              disabled={currentBlockIndex <= 0}
+              title={copy.previous}
+              aria-label={copy.previous}
+              className="flex h-[38px] w-[38px] items-center justify-center rounded-2xl border border-slate-700 bg-slate-950/92 text-sm font-black text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
+            >
+              â†
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const nextBlock = blocks[currentBlockIndex + 1] ?? null;
+                if (nextBlock) {
+                  void setSharedCurrentBlock(nextBlock.id);
+                }
+              }}
+              disabled={currentBlockIndex < 0 || currentBlockIndex >= blocks.length - 1}
+              title={copy.next}
+              aria-label={copy.next}
+              className="flex h-[38px] w-[38px] items-center justify-center rounded-2xl border border-slate-700 bg-slate-950/92 text-sm font-black text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
+            >
+              â†’
+            </button>
+          </>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => setShowGrammarModal(true)}
+          className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+        >
+          {copy.grammar}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedVocab(null);
+            setVocabMode((current) => !current);
+          }}
+          title={copy.clickTranslator}
+          aria-label={copy.clickTranslator}
+          className={`flex h-[38px] w-[38px] items-center justify-center rounded-2xl border bg-slate-950/92 shadow-2xl backdrop-blur-sm transition ${
+            vocabMode
+              ? 'border-emerald-300 shadow-[0_0_0_1px_rgba(16,185,129,0.18)]'
+              : 'border-slate-700'
+          }`}
+        >
+          <img src="/apple-touch-icon.png" alt="" className="h-6 w-6 object-contain" />
+        </button>
+      </div>
+      {vocabMode ? (
+        <div className="pointer-events-none max-w-xs rounded-2xl border border-cyan-400/30 bg-slate-950/92 px-3 py-2 text-center text-[11px] font-bold text-cyan-100 shadow-2xl backdrop-blur-sm sm:text-right">
+          {copy.openTranslatorHint}
+        </div>
+      ) : null}
+    </>
+  );
 
   return (
     <>
@@ -1454,22 +1676,22 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           <div
             ref={chromeRef}
             className="fixed left-3 right-3 z-[135] flex flex-col gap-2 sm:left-4 sm:right-4 sm:flex-row sm:items-start sm:justify-between"
-            style={{ top: `calc(env(safe-area-inset-top, 0px) + ${LIVE_TRAIL_CHROME_TOP_OFFSET}px)` }}
+            style={chromeTopStyle}
           >
             {isTeacher ? (
-              <div className="max-w-[520px] rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2.5 shadow-2xl backdrop-blur-sm">
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-300">
+              <div className="max-w-[240px] rounded-2xl border border-slate-700 bg-slate-950/92 px-2.5 py-2 shadow-2xl backdrop-blur-sm md:absolute md:left-0 md:top-0 md:w-full md:max-w-[220px]">
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-cyan-300">
                   {lesson?.title || session.activeTrailLabel || copy.liveTrail}
                 </p>
-                <p className="mt-1 text-xs text-slate-300">
+                <p className="mt-1 text-[11px] text-slate-300">
                   {copy.question} {Math.max(currentBlockIndex + 1, 1)}/{Math.max(blocks.length, 1)}
                 </p>
-                <p className="mt-1 text-xs text-slate-200">
+                <p className="mt-1 text-[11px] text-slate-200">
                   {copy.answered}: {teacherSummary.respondedCount}/{trackedStudents.length || 0} | {copy.waiting}: {teacherSummary.pendingCount} | {copy.accuracy}: {teacherSummary.accuracyRate}%
                 </p>
-                <div className="mt-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-2.5">
+                <div className="mt-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-2">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-300">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">
                       {copy.answerGroups}
                     </p>
                     {releasableWrongStudentIds.length > 0 ? (
@@ -1486,7 +1708,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                     ) : null}
                   </div>
                   {teacherAnswerGroups.length > 0 ? (
-                    <div className="mt-2 space-y-1.5">
+                    <div className="mt-2 max-h-20 space-y-1 overflow-y-auto pr-1">
                       {teacherAnswerGroups.map((group) => {
                         const verdictLabel = getVerdictCopy(group.verdict, effectiveUiLanguage);
                         const verdictClasses =
@@ -1498,12 +1720,12 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                         return (
                           <div
                             key={`${group.verdict ?? 'answered'}:${group.answer}:${group.labels.join('|')}`}
-                            className={`rounded-xl border px-2.5 py-2 text-xs ${verdictClasses}`}
+                            className={`rounded-xl border px-2 py-1.5 text-[11px] ${verdictClasses}`}
                           >
                             <p className="font-black">
                               "{group.answer}" - {verdictLabel}
                             </p>
-                            <p className="mt-1 text-[11px] text-slate-200">
+                            <p className="mt-1 text-[10px] text-slate-200">
                               {group.labels.join(', ')}
                             </p>
                           </div>
@@ -1511,12 +1733,12 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                       })}
                     </div>
                   ) : (
-                    <p className="mt-2 text-xs text-slate-400">
+                    <p className="mt-2 text-[11px] text-slate-400">
                       {teacherSummary.respondedCount > 0 ? copy.noWrongAnswers : copy.noGroupedAnswers}
                     </p>
                   )}
                 </div>
-                {saveError ? <p className="mt-1 text-xs text-rose-200">{saveError}</p> : null}
+                {saveError ? <p className="mt-1 text-[11px] text-rose-200">{saveError}</p> : null}
               </div>
             ) : (
               teacherGuidedMode && !canEdit ? (
@@ -1533,7 +1755,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               )
             )}
 
-            <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
+            <div className="ml-auto flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
               {isTeacher && onReturnToWorkspace ? (
                 <button
                   type="button"
@@ -1677,26 +1899,52 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               </button>
             </div>
             <div className="space-y-5 px-6 py-4">
-              {grammarEntries.length === 0 ? (
+              {!grammarGuide ? (
                 <p className="text-sm text-slate-500">
                   {copy.noGrammar}
                 </p>
               ) : (
-                grammarEntries.map(([key, tips]) => (
-                  <div key={key}>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-500">
-                      {key.replace('_', ' > ')}
-                    </p>
-                    <ul className="space-y-1.5">
-                      {tips.map((tip, index) => (
-                        <li key={`${key}_${index}`} className="flex gap-2 text-sm text-slate-700">
-                          <span className="flex-shrink-0 text-blue-400">-</span>
-                          <span>{tip}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))
+                <>
+                  {grammarGuide.grammarTitle ? (
+                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-500">
+                        {grammarGuide.lessonTitle || copy.grammar}
+                      </p>
+                      <p className="mt-1 text-base font-bold text-slate-900">
+                        {grammarGuide.grammarTitle}
+                      </p>
+                    </div>
+                  ) : null}
+                  {grammarGuide.sections.map((section) => {
+                    const useBullets = shouldRenderGrammarBullets(section);
+
+                    return (
+                      <div key={section.title}>
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-500">
+                          {getGrammarSectionTitle(section.title)}
+                        </p>
+                        {useBullets ? (
+                          <ul className="space-y-1.5">
+                            {section.lines.map((line, index) => (
+                              <li key={`${section.title}_${index}`} className="flex gap-2 text-sm text-slate-700">
+                                <span className="flex-shrink-0 text-blue-400">-</span>
+                                <span>{renderGrammarLine(line, section.title)}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="space-y-2">
+                            {section.lines.map((line, index) => (
+                              <p key={`${section.title}_${index}`} className="text-sm text-slate-700">
+                                {renderGrammarLine(line, section.title)}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </>
               )}
             </div>
           </div>
