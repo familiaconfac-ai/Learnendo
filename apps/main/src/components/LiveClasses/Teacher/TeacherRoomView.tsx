@@ -151,7 +151,11 @@ const TeacherStage: React.FC<{
     localCameraPublication?.isMuted !== true;
   const cameraActive = isCameraEnabled && hasLiveLocalCamera;
 
-  const showStageQuickControls = (isTrailStage || showExerciseSession) && !chatOpen;
+  const isBattleStage = sanitizeMainStageMode(session.mainStageMode) === 'battle';
+  const showStageMicrophoneControl = isTrailStage || showExerciseSession || isBattleStage;
+  const showStageChatQuickControl = isTrailStage || showExerciseSession;
+  const showStageQuickControls = showStageMicrophoneControl && !chatOpen;
+  const stageQuickControlsZClass = isBattleStage ? 'z-[10050]' : 'z-[160]';
 
   const uiLang: 'en' | 'pt' | 'es' = (() => {
     try {
@@ -788,7 +792,7 @@ const TeacherStage: React.FC<{
             </div>
           ) : null}
           {showStageQuickControls ? (
-            <div className="pointer-events-none fixed bottom-24 right-3 z-[160] sm:bottom-28 sm:right-4">
+            <div className={`pointer-events-none fixed bottom-24 right-3 sm:bottom-28 sm:right-4 ${stageQuickControlsZClass}`}>
               <div className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-slate-700 bg-slate-950/92 p-2 shadow-2xl backdrop-blur-sm">
                 <button
                   type="button"
@@ -812,17 +816,19 @@ const TeacherStage: React.FC<{
                     {!isMicrophoneEnabled ? <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" /> : null}
                   </svg>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setChatOpen(true)}
-                  className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-500 text-white shadow transition hover:bg-violet-400"
-                  title="Abrir chat"
-                  aria-label="Abrir chat"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-                  </svg>
-                </button>
+                {showStageChatQuickControl ? (
+                  <button
+                    type="button"
+                    onClick={() => setChatOpen(true)}
+                    className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-500 text-white shadow transition hover:bg-violet-400"
+                    title="Abrir chat"
+                    aria-label="Abrir chat"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
+                    </svg>
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}

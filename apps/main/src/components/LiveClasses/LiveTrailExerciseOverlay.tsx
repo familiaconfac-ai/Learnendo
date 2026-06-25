@@ -3,7 +3,7 @@ import { User } from 'firebase/auth';
 import { GRAMMAR_GUIDES } from '../../constants';
 import { PracticeSection } from '../UI';
 import type { BattleConfig, BattleQuestion, SavedBattleTemplate } from './Battle/battleTypes';
-import { buildSavedBattleTemplate, sanitizeBattleQuestion } from './Battle/battleUtils';
+import { buildBattleGeneratedHint, buildSavedBattleTemplate, sanitizeBattleQuestion } from './Battle/battleUtils';
 import {
   LiveClassResponse,
   LiveClassSession,
@@ -646,7 +646,7 @@ function mapLiveBlockToBattleQuestion(
         correctIndex: correctIndex >= 0 ? correctIndex : 0,
         promptAudioText: shouldUseAudio ? promptAudioText : undefined,
         playAudioOnce: shouldUseAudio,
-        hint: prompt.translation,
+        hint: buildBattleGeneratedHint(text || promptAudioText, expectedAnswer),
         bookId: context.workbookId,
         trailId,
         trailNumber,
@@ -663,7 +663,7 @@ function mapLiveBlockToBattleQuestion(
         acceptedAnswers: [expectedAnswer],
         promptAudioText,
         playAudioOnce: Boolean(promptAudioText),
-        hint: prompt.translation,
+        hint: buildBattleGeneratedHint(text || promptAudioText, expectedAnswer),
         bookId: context.workbookId,
         trailId,
         trailNumber,
@@ -679,7 +679,7 @@ function mapLiveBlockToBattleQuestion(
         acceptedAnswers: [expectedAnswer],
         promptAudioText,
         playAudioOnce: true,
-        hint: prompt.translation,
+        hint: buildBattleGeneratedHint(text || promptAudioText, expectedAnswer),
         bookId: context.workbookId,
         trailId,
         trailNumber,

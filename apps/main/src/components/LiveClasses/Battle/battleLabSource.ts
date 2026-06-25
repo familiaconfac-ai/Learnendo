@@ -4,7 +4,7 @@ import type { Exercise, Lesson, Workbook } from '../../../types';
 import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from '../../../services/liveWhiteboardActivities';
 import type { BattleConfig, BattleDifficulty, BattleQuestion } from './battleTypes';
 import { readLocalBattleQuestionIds } from './battleQuestionHistoryService';
-import { getBattleLanguage, sanitizeBattleQuestion } from './battleUtils';
+import { buildBattleGeneratedHint, getBattleLanguage, sanitizeBattleQuestion } from './battleUtils';
 
 interface BattleWorkbookContext {
   workbook: Workbook;
@@ -175,7 +175,7 @@ function mapExerciseToBattleQuestion(
   const displayIsIcon = displayValue.startsWith('fa-');
   const promptAudioText = exercise.audioValue?.trim() || undefined;
   const text = buildExercisePromptText(exercise);
-  const hint = exercise.translation?.trim() || undefined;
+  const hint = buildBattleGeneratedHint(text || promptAudioText, exercise.correctValue);
 
   switch (exercise.type) {
     case 'multiple-choice':

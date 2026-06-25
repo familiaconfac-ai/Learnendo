@@ -88,7 +88,7 @@ const lesson25 = buildStandardLesson({
   title: 'Lesson 25: School',
   day1Instruction: CHOOSE_FORM,
   day1: [
-    choice('The teacher ___ the lesson every morning.', 'The teacher explains the lesson every morning.', ['explain', 'explains', 'explaining', 'explained'], 'explains', 'A professora explica a licao toda manha.'),
+    choice('The teacher ___ the lesson every morning.', 'The teacher explains the lesson every morning.', ['explain', 'explains', 'explaining', 'explained'], 'explains', 'A professora explica a lição toda manhã.'),
     choice('The students ___ in the library after lunch.', 'The students study in the library after lunch.', ['study', 'studies', 'is studying', 'studied'], 'study', 'Os alunos estudam na biblioteca depois do almoco.'),
     choice('The bell ___ at seven thirty.', 'The bell rings at seven thirty.', ['ring', 'rings', 'ringing', 'ringed'], 'rings', 'O sinal toca as sete e meia.'),
     choice('A student ___ the date on the board.', 'A student writes the date on the board.', ['write', 'writes', 'writing', 'wrote'], 'writes', 'Um aluno escreve a data no quadro.'),
@@ -141,14 +141,14 @@ const lesson25 = buildStandardLesson({
     choice('Does the library open at six in the morning?', 'Does the library open at six in the morning?', ['No, it does not.', 'No, it is not.', 'Yes, they do.', 'Yes, it open.'], 'No, it does not.', 'Não, ela **não abre** às seis da manhã.'),
   ],
   day6Exact: [
-    exact('The teacher explains the lesson every morning.', 'A professora explica a licao toda manha.'),
+    exact('The teacher explains the lesson every morning.', 'A professora explica a lição toda manhã.'),
     exact('The bell rings at seven thirty.', 'O sinal toca as sete e meia.'),
     exact('Our school has a music room and a gym.', 'Nossa escola tem uma sala de musica e uma academia.'),
     exact('The students wash their hands before lunch.', 'Os alunos lavam as maos antes do almoco.'),
     exact('The history teacher talks about famous leaders.', 'A professora de historia fala sobre lideres famosos.'),
   ],
   day6Short: [
-    short('The teacher ___ the lesson every morning.', 'The teacher explains the lesson every morning.', 'explains', 'A professora explica a licao toda manha.'),
+    short('The teacher ___ the lesson every morning.', 'The teacher explains the lesson every morning.', 'explains', 'A professora explica a lição toda manhã.'),
     short('The bell ___ at seven thirty.', 'The bell rings at seven thirty.', 'rings', 'O sinal toca as sete e meia.'),
     short('The principal ___ the students at the gate.', 'The principal greets the students at the gate.', 'greets', 'A diretora cumprimenta os alunos no portao.'),
     short('Our school ___ a music room and a gym.', 'Our school has a music room and a gym.', 'has', 'Nossa escola tem uma sala de musica e uma academia.'),

@@ -167,6 +167,84 @@ export function getBattleCorrectAnswerLabel(question: BattleQuestion): string {
     || '';
 }
 
+function extractPromptSentenceWithBlank(value?: string): string | undefined {
+  const normalized = repairBattleTextEncoding(value);
+  if (!normalized) return undefined;
+  return normalized
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.includes('___'));
+}
+
+function inferBlankSubject(sentenceWithBlank: string): string | undefined {
+  const [beforeBlank] = sentenceWithBlank.split('___');
+  const subject = beforeBlank
+    .replace(/[^\p{L}\p{N}\s'’-]+$/u, '')
+    .trim();
+  return subject || undefined;
+}
+
+function isLikelyPluralSubject(subject: string): boolean {
+  const normalized = subject.trim().toLowerCase();
+  if (!normalized) return false;
+  if (/^(i|you|we|they)\b/.test(normalized)) return true;
+  if (/\band\b/.test(normalized)) return true;
+  const words = normalized.split(/\s+/);
+  const lastWord = words[words.length - 1] ?? '';
+  if (/(ss|us|is)$/.test(lastWord)) return false;
+  return /s$/.test(lastWord);
+}
+
+export function buildBattleGeneratedHint(promptText?: string, correctAnswer?: string): string | undefined {
+  const sentenceWithBlank = extractPromptSentenceWithBlank(promptText);
+  const answer = repairBattleTextEncoding(correctAnswer)?.trim();
+  if (!sentenceWithBlank || !answer) return undefined;
+
+  const subject = inferBlankSubject(sentenceWithBlank);
+  if (!subject) return undefined;
+
+  const pluralSubject = isLikelyPluralSubject(subject);
+  const normalizedAnswer = answer.toLowerCase();
+
+  if (normalizedAnswer === 'is') {
+    return pluralSubject
+      ? `Use "${answer}" only with a singular subject here.`
+      : `Use "${answer}" because "${subject}" is singular.`;
+  }
+
+  if (normalizedAnswer === 'are') {
+    return pluralSubject
+      ? `Use "${answer}" because "${subject}" is plural.`
+      : `Use "${answer}" with plural subjects, not singular ones.`;
+  }
+
+  if (normalizedAnswer === 'has') {
+    return pluralSubject
+      ? `Use "${answer}" only with third-person singular subjects.`
+      : `Use "${answer}" because "${subject}" is third-person singular.`;
+  }
+
+  if (normalizedAnswer === 'have') {
+    return pluralSubject
+      ? `Use "${answer}" because "${subject}" is not third-person singular.`
+      : undefined;
+  }
+
+  if (/(ies|es|s)$/.test(normalizedAnswer) && !/(ss)$/.test(normalizedAnswer)) {
+    return pluralSubject
+      ? `Use "${answer}" only with third-person singular subjects in the simple present.`
+      : `Use "${answer}" because "${subject}" is third-person singular, so the verb takes -s.`;
+  }
+
+  if (/^[a-z]+$/i.test(answer)) {
+    return pluralSubject
+      ? `Use "${answer}" because "${subject}" uses the base verb in the simple present.`
+      : `Use "${answer}" for the base form here.`;
+  }
+
+  return undefined;
+}
+
 export function getBattleQuestionDuration(
   question: BattleQuestion | null | undefined,
   configOrFallback?: BattleConfig | number | null,
