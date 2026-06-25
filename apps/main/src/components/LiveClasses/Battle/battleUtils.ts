@@ -308,6 +308,15 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
       correctIndexes.push(0);
     }
 
+    const promptAudioText = normalizeOptionalText(question.promptAudioText);
+    const resolvedCorrectLabel =
+      fallbackCorrectOption
+      ?? options[correctIndexes[0]]
+      ?? undefined;
+    const resolvedHint =
+      normalizeOptionalText(question.hint)
+      ?? buildBattleGeneratedHint(text || promptAudioText || undefined, resolvedCorrectLabel);
+
     return {
       id,
       kind,
@@ -316,9 +325,9 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
       correctIndex: correctIndexes[0],
       correctIndexes,
       ...(normalizedDuration ? { durationSeconds: normalizedDuration } : {}),
-      ...(normalizeOptionalText(question.hint) ? { hint: normalizeOptionalText(question.hint) } : {}),
+      ...(resolvedHint ? { hint: resolvedHint } : {}),
       ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
-      ...(normalizeOptionalText(question.promptAudioText) ? { promptAudioText: normalizeOptionalText(question.promptAudioText) } : {}),
+      ...(promptAudioText ? { promptAudioText } : {}),
       ...(question.playAudioOnce ? { playAudioOnce: true } : {}),
     };
   }
@@ -332,6 +341,10 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
   if (acceptedAnswers.length === 0) return null;
 
   const correctText = acceptedAnswers[0];
+  const promptAudioText = normalizeOptionalText(question.promptAudioText);
+  const resolvedHint =
+    normalizeOptionalText(question.hint)
+    ?? buildBattleGeneratedHint(text || promptAudioText || undefined, correctText);
 
   return {
     id,
@@ -341,9 +354,9 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
     acceptedAnswers,
     playAudioOnce: question.playAudioOnce !== false,
     ...(normalizedDuration ? { durationSeconds: normalizedDuration } : {}),
-    ...(normalizeOptionalText(question.hint) ? { hint: normalizeOptionalText(question.hint) } : {}),
+    ...(resolvedHint ? { hint: resolvedHint } : {}),
     ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
-    ...(normalizeOptionalText(question.promptAudioText) ? { promptAudioText: normalizeOptionalText(question.promptAudioText) } : {}),
+    ...(promptAudioText ? { promptAudioText } : {}),
   };
 }
 

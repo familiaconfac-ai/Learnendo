@@ -761,6 +761,12 @@ export const PracticeSection: React.FC<{
     const isListeningExercise = item.type === 'multiple-choice' || item.type === 'identification';
     const isShortViewport = viewportHeight <= 760;
     const useCompactChoiceGrid = isShortViewport && shuffledOptions.length >= 4 && shuffledOptions.every((opt) => opt.length <= 14);
+    const practiceWidthClass = fullScreen
+      ? 'max-w-sm sm:max-w-md md:max-w-lg'
+      : 'max-w-md sm:max-w-xl';
+    const footerWidthClass = fullScreen
+      ? 'max-sm:max-w-xs max-w-sm sm:max-w-md md:max-w-lg'
+      : 'max-w-md sm:max-w-xl';
 
     // Refs for STT lifecycle — prevents stale callbacks from bleeding across exercises
     const recRef = useRef<any>(null);
@@ -1296,7 +1302,7 @@ export const PracticeSection: React.FC<{
         className={`${fullScreen ? 'fixed inset-x-0 bottom-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-hidden outline-none`}
         style={fullScreen ? { top: viewportTopOffset } : undefined}
       >
-        <div className={`w-full max-sm:px-4 max-w-sm px-6 ${isShortViewport ? 'pt-3' : 'pt-5'}`}>
+        <div className={`w-full ${practiceWidthClass} max-sm:px-4 px-6 ${isShortViewport ? 'pt-3' : 'pt-5'}`}>
           <div className={`flex items-center gap-3 ${isShortViewport ? 'mb-3' : 'mb-4'}`}>
             {onBack && (
               <button
@@ -1317,14 +1323,14 @@ export const PracticeSection: React.FC<{
           {onGrammar && (
             <button
               onPointerDown={(e) => { e.preventDefault(); onGrammar(); }}
-              className={`mb-3 flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95 [touch-action:manipulation] ${isShortViewport ? 'py-2.5' : 'py-3'}`}
+              className={`mb-3 mx-auto flex w-full max-w-[210px] items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95 [touch-action:manipulation] sm:max-w-[240px] ${isShortViewport ? 'py-2.5' : 'py-3'}`}
             >
               Grammar Focus
             </button>
           )}
         </div>
 
-        <div className={`flex-1 min-h-0 w-full max-w-sm px-4 sm:px-6 flex flex-col items-center ${isShortViewport ? 'pt-1 pb-3' : 'pt-2 sm:pt-4 pb-6'} overflow-y-auto no-scrollbar`}>
+        <div className={`flex-1 min-h-0 w-full ${practiceWidthClass} px-4 sm:px-6 flex flex-col items-center ${isShortViewport ? 'pt-1 pb-3' : 'pt-2 sm:pt-4 pb-6'} overflow-y-auto no-scrollbar`}>
           <div
             className={`relative group cursor-help w-full ${isShortViewport ? 'mb-3' : 'mb-4'}`}
             onClick={() => {
@@ -1649,7 +1655,7 @@ export const PracticeSection: React.FC<{
         </div>
 
         <div className={`w-full shrink-0 ${isShortViewport ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
-          <div className="w-full max-sm:max-w-xs max-w-sm">
+          <div className={`w-full ${footerWidthClass}`}>
             {showFooter ? (
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between gap-4">
