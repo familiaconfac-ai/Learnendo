@@ -2957,7 +2957,25 @@ const App: React.FC = () => {
           </div>
         );
       case SectionType.PRACTICE: {
-        if (!currentDay) return <div className="px-4 py-6 text-white">Exercicio indisponivel.</div>;
+        if (!currentDay) {
+          return (
+            <div className="flex min-h-[60vh] items-center justify-center px-6 text-center">
+              <div className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-800/90 px-6 py-8 shadow-2xl">
+                <div className="text-4xl">📘</div>
+                <p className="mt-4 text-sm font-black uppercase tracking-[0.24em] text-cyan-300">
+                  {uiLanguage === 'pt' ? 'Transicao' : uiLanguage === 'es' ? 'Transicion' : 'Transition'}
+                </p>
+                <p className="mt-3 text-base font-semibold text-white">
+                  {uiLanguage === 'pt'
+                    ? 'Finalizando a lição...'
+                    : uiLanguage === 'es'
+                      ? 'Terminando la lección...'
+                      : 'Finishing the lesson...'}
+                </p>
+              </div>
+            </div>
+          );
+        }
         const currentPracticeLesson = findLessonByNumber(
           currentWorkbook?.lessons,
           getLessonNumberFromId(currentLessonId || `lesson${progress.currentLesson}`),

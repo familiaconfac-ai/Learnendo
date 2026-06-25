@@ -1542,8 +1542,8 @@ export const PracticeSection: React.FC<{
               )}
             </div>
 
-            {/* Shadowing: never show the target visually — the whole point is to listen */}
-            {item.displayValue && !isShadowing && (
+            {/* Listening dictation and shadowing should not reveal the target text visually. */}
+            {item.displayValue && !isShadowing && !isDictationWriting && (
               <div className="w-full" {...selectionGestureProps}>
                 {renderDisplay()}
               </div>

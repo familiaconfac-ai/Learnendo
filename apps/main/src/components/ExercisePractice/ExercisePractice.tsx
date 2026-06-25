@@ -11,7 +11,7 @@ interface ExercisePracticeProps {
   lessonId: string;
   currentLanguage?: LessonLanguageCode;
   progress: UserProgress;
-  onComplete: (dayId: string, score: number) => void;
+  onComplete: (dayId: string, score: number) => void | Promise<void>;
   onBack: () => void;
   /** Total number of days in this lesson — used for the visible exercise header. */
   totalDays?: number;
@@ -29,12 +29,14 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
+  const [isFinishing, setIsFinishing] = useState(false);
   // Guard against onComplete being called multiple times on the last exercise
   const isCompletedRef = React.useRef(false);
 
   useEffect(() => {
     setCurrentIdx(0);
     setCorrectCount(0);
+    setIsFinishing(false);
     isCompletedRef.current = false;
   }, [day.id, lessonId]);
 
@@ -66,6 +68,26 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     return null;
   }
 
+  if (isFinishing) {
+    return (
+      <div className="fixed inset-x-0 top-[68px] bottom-[56px] z-30 flex min-h-0 flex-col items-center justify-center bg-slate-900 px-6 text-center">
+        <div className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-800/90 px-6 py-8 shadow-2xl">
+          <div className="text-4xl">📘</div>
+          <p className="mt-4 text-sm font-black uppercase tracking-[0.24em] text-cyan-300">
+            Finalizing
+          </p>
+          <p className="mt-3 text-base font-semibold text-white">
+            {currentLanguage === 'pt'
+              ? 'Concluindo a lição...'
+              : currentLanguage === 'es'
+                ? 'Terminando la lección...'
+                : 'Finishing the lesson...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const currentExercise = exercises[currentIdx];
   console.log(`[ExercisePractice] Day "${day.id}", exercise ${currentIdx + 1}/${exercises.length}:`, currentExercise.id);
 
@@ -85,7 +107,12 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       isCompletedRef.current = true;
       const score = Math.round((newCorrect / exercises.length) * 100);
       console.log(`[ExercisePractice] Day "${day.id}" complete. Score: ${score}%`);
-      onComplete(day.id, score);
+      setIsFinishing(true);
+      void Promise.resolve(onComplete(day.id, score)).catch((error) => {
+        console.error('[ExercisePractice] onComplete failed:', error);
+        isCompletedRef.current = false;
+        setIsFinishing(false);
+      });
     } else {
       setCorrectCount(newCorrect);
       setCurrentIdx(nextIdx);
