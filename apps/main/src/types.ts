@@ -244,6 +244,9 @@ export interface LiveClassSession {
   activeExerciseId?: string | null;
   activeTrailIds?: string[];
   activeTrailLabel?: string | null;
+  sharedGrammarOpen?: boolean;
+  sharedGrammarLessonNumber?: number | null;
+  sharedGrammarScrollRatio?: number | null;
   liveAudioTransport?: 'not-configured' | 'connecting' | 'connected';
   teacherLiveMicEnabled?: boolean;
   teacherCameraEnabled?: boolean;

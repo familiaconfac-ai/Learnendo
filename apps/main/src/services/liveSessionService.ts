@@ -112,6 +112,11 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   activeExerciseId: data?.activeExerciseId ?? null,
   activeTrailIds: Array.isArray(data?.activeTrailIds) ? data.activeTrailIds.filter((value: unknown): value is string => typeof value === 'string') : [],
   activeTrailLabel: data?.activeTrailLabel ?? null,
+  sharedGrammarOpen: Boolean(data?.sharedGrammarOpen),
+  sharedGrammarLessonNumber:
+    Number.isFinite(data?.sharedGrammarLessonNumber) ? Number(data.sharedGrammarLessonNumber) : null,
+  sharedGrammarScrollRatio:
+    Number.isFinite(data?.sharedGrammarScrollRatio) ? Number(data.sharedGrammarScrollRatio) : null,
   liveAudioTransport: (data?.liveAudioTransport ?? 'not-configured') as LiveClassSession['liveAudioTransport'],
   teacherLiveMicEnabled: Boolean(data?.teacherLiveMicEnabled),
   teacherCameraEnabled: Boolean(data?.teacherCameraEnabled),
@@ -404,6 +409,9 @@ export async function updateLiveSession(
   if ('activeExerciseId' in patch) payload.activeExerciseId = patch.activeExerciseId ?? null;
   if ('activeTrailIds' in patch) payload.activeTrailIds = Array.isArray(patch.activeTrailIds) ? patch.activeTrailIds : [];
   if ('activeTrailLabel' in patch) payload.activeTrailLabel = patch.activeTrailLabel ?? null;
+  if ('sharedGrammarOpen' in patch) payload.sharedGrammarOpen = Boolean(patch.sharedGrammarOpen);
+  if ('sharedGrammarLessonNumber' in patch) payload.sharedGrammarLessonNumber = patch.sharedGrammarLessonNumber ?? null;
+  if ('sharedGrammarScrollRatio' in patch) payload.sharedGrammarScrollRatio = patch.sharedGrammarScrollRatio ?? null;
   if ('liveAudioTransport' in patch) payload.liveAudioTransport = patch.liveAudioTransport ?? 'not-configured';
   if ('teacherLiveMicEnabled' in patch) payload.teacherLiveMicEnabled = Boolean(patch.teacherLiveMicEnabled);
   if ('teacherCameraEnabled' in patch) payload.teacherCameraEnabled = Boolean(patch.teacherCameraEnabled);

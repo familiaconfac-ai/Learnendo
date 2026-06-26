@@ -526,6 +526,9 @@ const App: React.FC = () => {
   const [conversionSuccess, setConversionSuccess] = useState(false);
   const [showGrammarModal, setShowGrammarModal] = useState(false);
   const [activeGrammarLessonNumber, setActiveGrammarLessonNumber] = useState<number | null>(null);
+  const grammarModalScrollRef = useRef<HTMLDivElement | null>(null);
+  const applyingRemoteGrammarScrollRef = useRef(false);
+  const grammarScrollSyncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userRole = userAccountProfile?.role ?? 'student';
   const isGuestAccount = Boolean(user?.isAnonymous);
   const isAdmin = userRole === 'admin';
@@ -1652,6 +1655,15 @@ const App: React.FC = () => {
     }
   }, [activeOnlineClass?.id, canManageLiveClasses, user?.uid]);
 
+  const pushSharedGrammarSessionState = useCallback(async (patch: Partial<LiveClassSession>) => {
+    if (!activeOnlineClass?.id || !user?.uid) return;
+    try {
+      await updateLiveSession(activeOnlineClass.id, patch, user.uid);
+    } catch (error) {
+      console.warn('[App] shared grammar sync failed:', error);
+    }
+  }, [activeOnlineClass?.id, user?.uid]);
+
   const openLesson = (
     lessonId: string,
     options?: {
@@ -1747,12 +1759,64 @@ const App: React.FC = () => {
   const openGrammarForLesson = useCallback((lessonNumber: number) => {
     setActiveGrammarLessonNumber(lessonNumber);
     setShowGrammarModal(true);
-  }, []);
+    if (grammarModalScrollRef.current) {
+      grammarModalScrollRef.current.scrollTop = 0;
+    }
+    void pushSharedGrammarSessionState({
+      sharedGrammarOpen: true,
+      sharedGrammarLessonNumber: lessonNumber,
+      sharedGrammarScrollRatio: 0,
+    });
+  }, [pushSharedGrammarSessionState]);
 
   const openGrammarOverview = useCallback(() => {
     setActiveGrammarLessonNumber(null);
     setShowGrammarModal(true);
-  }, []);
+    if (grammarModalScrollRef.current) {
+      grammarModalScrollRef.current.scrollTop = 0;
+    }
+    void pushSharedGrammarSessionState({
+      sharedGrammarOpen: true,
+      sharedGrammarLessonNumber: null,
+      sharedGrammarScrollRatio: 0,
+    });
+  }, [pushSharedGrammarSessionState]);
+
+  const closeGrammarModal = useCallback(() => {
+    setShowGrammarModal(false);
+    void pushSharedGrammarSessionState({
+      sharedGrammarOpen: false,
+      sharedGrammarLessonNumber: activeGrammarLessonNumber ?? null,
+      sharedGrammarScrollRatio: null,
+    });
+  }, [activeGrammarLessonNumber, pushSharedGrammarSessionState]);
+
+  const handleGrammarModalScroll = useCallback(() => {
+    const element = grammarModalScrollRef.current;
+    if (!element || applyingRemoteGrammarScrollRef.current) return;
+    if (!activeOnlineClass?.id || !user?.uid || !showGrammarModal) return;
+
+    const maxScroll = element.scrollHeight - element.clientHeight;
+    const scrollRatio = maxScroll > 0 ? element.scrollTop / maxScroll : 0;
+
+    if (grammarScrollSyncDebounceRef.current) {
+      clearTimeout(grammarScrollSyncDebounceRef.current);
+    }
+
+    grammarScrollSyncDebounceRef.current = setTimeout(() => {
+      void pushSharedGrammarSessionState({
+        sharedGrammarOpen: true,
+        sharedGrammarLessonNumber: activeGrammarLessonNumber ?? null,
+        sharedGrammarScrollRatio: Number.isFinite(scrollRatio) ? Math.max(0, Math.min(1, scrollRatio)) : 0,
+      });
+    }, 120);
+  }, [
+    activeGrammarLessonNumber,
+    activeOnlineClass?.id,
+    pushSharedGrammarSessionState,
+    showGrammarModal,
+    user?.uid,
+  ]);
 
   const openLiveClassContent = useCallback((liveClass: LiveClass) => {
     console.log('[ONLINE_DEBUG] openLiveClassContent called', {
@@ -1939,6 +2003,50 @@ const App: React.FC = () => {
     openLesson,
     setLanguage,
   ]);
+
+  useEffect(() => {
+    if (!activeOnlineClass || !activeOnlineSession) return;
+    const remoteOpen = Boolean(activeOnlineSession.sharedGrammarOpen);
+    const remoteLessonNumber =
+      typeof activeOnlineSession.sharedGrammarLessonNumber === 'number'
+        ? activeOnlineSession.sharedGrammarLessonNumber
+        : null;
+
+    setShowGrammarModal((current) => (current === remoteOpen ? current : remoteOpen));
+    setActiveGrammarLessonNumber((current) => (current === remoteLessonNumber ? current : remoteLessonNumber));
+  }, [
+    activeOnlineClass,
+    activeOnlineSession,
+    activeOnlineSession?.sharedGrammarLessonNumber,
+    activeOnlineSession?.sharedGrammarOpen,
+  ]);
+
+  useEffect(() => {
+    if (!showGrammarModal || !activeOnlineClass || !activeOnlineSession) return;
+    if (typeof activeOnlineSession.sharedGrammarScrollRatio !== 'number') return;
+
+    const element = grammarModalScrollRef.current;
+    if (!element) return;
+
+    const maxScroll = element.scrollHeight - element.clientHeight;
+    applyingRemoteGrammarScrollRef.current = true;
+    element.scrollTop = maxScroll > 0 ? activeOnlineSession.sharedGrammarScrollRatio * maxScroll : 0;
+    window.requestAnimationFrame(() => {
+      applyingRemoteGrammarScrollRef.current = false;
+    });
+  }, [
+    activeOnlineClass,
+    activeOnlineSession,
+    activeOnlineSession?.sharedGrammarLessonNumber,
+    activeOnlineSession?.sharedGrammarScrollRatio,
+    showGrammarModal,
+  ]);
+
+  useEffect(() => () => {
+    if (grammarScrollSyncDebounceRef.current) {
+      clearTimeout(grammarScrollSyncDebounceRef.current);
+    }
+  }, []);
 
   const handlePlacementComplete = (result: PlacementTestCompletionPayload) => {
     const workbook = result.recommendedBook ?? 9;
@@ -3323,7 +3431,7 @@ const App: React.FC = () => {
         return (
           <div
             className="fixed inset-0 z-[1001] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-            onClick={() => setShowGrammarModal(false)}
+            onClick={closeGrammarModal}
           >
             <div
               className="flex h-full w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-3xl"
@@ -3360,22 +3468,29 @@ const App: React.FC = () => {
                 <div className="flex items-center gap-2">
                   {!isOverviewMode && grammarOverviewItems.length > 1 && (
                     <button
-                      onClick={() => setActiveGrammarLessonNumber(null)}
+                      onClick={openGrammarOverview}
                       className="rounded-full border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-blue-300 hover:text-blue-600"
                     >
                       All grammar points
                     </button>
                   )}
                   <button
-                    onClick={() => setShowGrammarModal(false)}
+                    onClick={closeGrammarModal}
                     className="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 text-2xl leading-none text-slate-400 transition hover:text-slate-700"
                     aria-label="Close"
                   >
-                    �
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                      <path d="M6 6L18 18" />
+                      <path d="M18 6L6 18" />
+                    </svg>
                   </button>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
+              <div
+                ref={grammarModalScrollRef}
+                onScroll={handleGrammarModalScroll}
+                className="flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7"
+              >
                 {isOverviewMode ? (
                   grammarOverviewItems.length === 0 ? (
                     <p className="text-sm text-slate-500">No grammar notes available for this workbook yet.</p>
@@ -3384,7 +3499,7 @@ const App: React.FC = () => {
                       {grammarOverviewItems.map((item) => (
                         <button
                           key={item.lessonNumber}
-                          onClick={() => setActiveGrammarLessonNumber(item.lessonNumber)}
+                          onClick={() => openGrammarForLesson(item.lessonNumber)}
                           className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-left transition hover:border-blue-300 hover:bg-blue-50"
                         >
                           <p className="text-xs font-black uppercase tracking-[0.26em] text-blue-500">
