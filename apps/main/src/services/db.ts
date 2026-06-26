@@ -61,11 +61,17 @@ export async function createOrUpdateUserProfile(user: User, emailOverride?: stri
     const existingSnapshot = await getDoc(userDoc);
     const existingData = existingSnapshot.data() || {};
     const emailToUse = existingData.email || emailOverride || user.email || null;
+    const fallbackName = emailToUse ? String(emailToUse).split('@')[0] : 'User';
+    const existingName = String(existingData.name || existingData.displayName || '').trim();
+    const looksLikeGuestAlias = /^Player_[A-Za-z0-9]{4,}$/.test(existingName);
     const nameToUse =
       user.displayName?.trim() ||
-      existingData.name ||
-      existingData.displayName ||
-      (emailToUse ? String(emailToUse).split('@')[0] : 'User');
+      (!looksLikeGuestAlias ? existingName : '') ||
+      fallbackName;
+    const wasAnonymous =
+      Boolean(existingData.wasAnonymous) ||
+      Boolean(existingData.isAnonymous) ||
+      looksLikeGuestAlias;
     
     await setDoc(userDoc, {
       uid: user.uid,
@@ -73,9 +79,15 @@ export async function createOrUpdateUserProfile(user: User, emailOverride?: stri
       displayName: nameToUse,
       email: emailToUse,
       isAnonymous: user.isAnonymous,
-      wasAnonymous: user.isAnonymous === false && user.email ? true : false, // Track if converted from anonymous
+      wasAnonymous,
       createdAt: serverTimestamp(),
       lastLoginAt: serverTimestamp(),
+    }, { merge: true });
+
+    await setDoc(doc(db, 'progress', user.uid), {
+      displayName: nameToUse,
+      email: emailToUse,
+      lastUpdated: new Date().toISOString(),
     }, { merge: true });
 
     console.log('[DB] User profile created/updated:', user.uid, { email: emailToUse });
@@ -528,10 +540,11 @@ export async function createStudentProfile(uid: string, email: string, displayNa
     const existingSnapshot = await getDoc(userDocRef);
     const existingData = existingSnapshot.data() || {};
     const resolvedEmail = existingData.email || email || null;
+    const existingName = String(existingData.name || existingData.displayName || '').trim();
+    const looksLikeGuestAlias = /^Player_[A-Za-z0-9]{4,}$/.test(existingName);
     const resolvedName =
       displayName?.trim() ||
-      existingData.name ||
-      existingData.displayName ||
+      (!looksLikeGuestAlias ? existingName : '') ||
       (resolvedEmail ? resolvedEmail.split("@")[0] : 'User');
     await setDoc(userDocRef, {
       uid,

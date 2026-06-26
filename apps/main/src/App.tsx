@@ -24,7 +24,7 @@ import { ProgressEngine } from './engine/progressEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { GRAMMAR_GUIDES } from './constants';
-import { auth, db, loginWithEmail, registerWithEmail } from './services/firebase';
+import { auth, db, loginWithEmail, registerWithEmail, convertAnonymousToUser } from './services/firebase';
 import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress, promoteAdminIfNeeded } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
@@ -527,6 +527,7 @@ const App: React.FC = () => {
   const [showGrammarModal, setShowGrammarModal] = useState(false);
   const [activeGrammarLessonNumber, setActiveGrammarLessonNumber] = useState<number | null>(null);
   const userRole = userAccountProfile?.role ?? 'student';
+  const isGuestAccount = Boolean(user?.isAnonymous);
   const isAdmin = userRole === 'admin';
   const isTeacherAccount = userRole === 'teacher' || userRole === 'admin';
   const canAccessTeacherDashboard = isTeacherAccount && userViewMode !== 'student';
@@ -587,6 +588,12 @@ const App: React.FC = () => {
   const freeze = Number((progress as any).iceCount ?? 0);
   const diamonds = Number((progress as any).diamonds ?? completedLessonCount * 10);
   const stars = Number((progress as any).totalStars ?? (progress.completedActivities || []).length);
+  const accountDisplayName =
+    userAccountProfile?.name ||
+    user?.displayName ||
+    user?.email?.split('@')[0] ||
+    (user ? `Player_${user.uid.slice(0, 6)}` : 'User');
+  const accountDisplayEmail = userAccountProfile?.email || user?.email || null;
   const [sessionCount, setSessionCount] = useState<number>(0);
   const [score, setScore] = useState<ScoreResult | null>(null);
   /** Per-lesson score accumulator — updated locally on every exercise completion.
@@ -819,6 +826,11 @@ const App: React.FC = () => {
   const triggerConversion = (reason?: string) => {
     setConversionReason(reason);
     setShowConversionModal(true);
+  };
+
+  const openGuestConversion = () => {
+    setMenuOpen(false);
+    triggerConversion('Create an account to save your name, email, and progress across devices.');
   };
 
   const countCompletedDays = (days: unknown): number => {
@@ -1999,8 +2011,16 @@ const App: React.FC = () => {
   const handleRegister = async (email: string, password: string, nextMode: 'student' | 'teacher') => {
     rememberPendingViewMode(nextMode);
     const fullName = email.split('@')[0];
-    const user = await registerWithEmail(email, password, fullName);
-    await createStudentProfile(user.uid, user.email || email, user.displayName || fullName);
+    if (auth.currentUser?.isAnonymous) {
+      const convertedUser = await convertAnonymousToUser(email, password);
+      await createOrUpdateUserProfile(convertedUser, email);
+      await createStudentProfile(convertedUser.uid, convertedUser.email || email, convertedUser.displayName || fullName);
+      setConversionSuccess(true);
+      setTimeout(() => setConversionSuccess(false), 3000);
+    } else {
+      const user = await registerWithEmail(email, password, fullName);
+      await createStudentProfile(user.uid, user.email || email, user.displayName || fullName);
+    }
     setMenuOpen(false);
   };
 
@@ -3149,6 +3169,11 @@ const App: React.FC = () => {
             <div className="flex-shrink-0">
               <LanguageSelector current={language} onChange={handleLanguageSelect} />
             </div>
+            {isGuestAccount && (
+              <span className="rounded-lg border border-amber-400/50 bg-amber-400/15 px-1.5 py-1 text-amber-200">
+                Guest
+              </span>
+            )}
             <span className="rounded-lg bg-slate-800 px-1.5 py-1">🔥 {currentLessonId ? Math.min(1, lessonScore.completed) : (score?.streak ?? 0)}</span>
             <span className="rounded-lg bg-slate-800 px-1.5 py-1">❄️ {currentLessonId ? lessonScore.missed : (score?.freeze ?? 0)}</span>
             <span className="rounded-lg bg-slate-800 px-1.5 py-1">💎 {currentLessonId ? lessonScore.total : (score?.diamonds ?? 0)}</span>
@@ -3194,6 +3219,28 @@ const App: React.FC = () => {
                 <p className="text-sm font-bold text-slate-800">Teacher</p>
               </div>
             ) : null}
+            {isGuestAccount ? (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-700">Guest mode</p>
+                <p className="mt-2 text-sm text-amber-900">
+                  You are using Learnendo without a saved account. Create one to keep your name, email, and progress.
+                </p>
+                <button
+                  type="button"
+                  onClick={openGuestConversion}
+                  className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-amber-600"
+                >
+                  Create account
+                </button>
+              </div>
+            ) : (
+              <div className="mb-4 rounded-2xl bg-slate-50 px-4 py-3">
+                <p className="text-sm font-bold text-slate-800">{accountDisplayName}</p>
+                {accountDisplayEmail ? (
+                  <p className="text-xs text-slate-500">{accountDisplayEmail}</p>
+                ) : null}
+              </div>
+            )}
             <div className="space-y-2">
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { goToWorkbookList(); setMenuOpen(false); }}>Workbooks</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>

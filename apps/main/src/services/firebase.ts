@@ -171,6 +171,7 @@ export async function ensureAnonAuth(): Promise<{ uid: string; isAnonymous: bool
  * @returns The updated user with new email
  */
 export async function convertAnonymousToUser(email: string, password: string) {
+  await ensureAuthPersistenceReady();
   const currentUser = auth.currentUser;
 
   if (!currentUser) {
@@ -197,12 +198,7 @@ export async function convertAnonymousToUser(email: string, password: string) {
 
     console.log('[Firebase] ✅ Conversion successful. Email:', email, 'UID:', result.user.uid);
 
-    return {
-      uid: result.user.uid,
-      email: result.user.email,
-      isAnonymous: result.user.isAnonymous,
-      displayName: result.user.displayName,
-    };
+    return result.user;
   } catch (error: any) {
     // Handle common conversion errors
     if (error.code === 'auth/email-already-in-use') {

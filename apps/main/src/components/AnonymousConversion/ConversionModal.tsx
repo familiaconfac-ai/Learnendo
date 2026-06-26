@@ -58,7 +58,7 @@ export const ConversionModal: React.FC<ConversionModalProps> = ({
       const convertedUser = await convertAnonymousToUser(email, password);
       console.log('[ConversionModal] Auth conversion complete');
 
-      await createOrUpdateUserProfile(user, email);
+      await createOrUpdateUserProfile(convertedUser, email);
       console.log('[ConversionModal] Firestore profile updated');
 
       console.log('[ConversionModal] Conversion complete. Email:', convertedUser.email);
