@@ -104,8 +104,9 @@ const TeacherStage: React.FC<{
   ensureLiveRoomConnected,
   liveKitError,
 }) => {
+  const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const hasActiveTrailSession = hasActiveLiveTrailSession(session);
-  const isTrailStage = sanitizeMainStageMode(session.mainStageMode) === 'trail';
+  const isTrailStage = stageMode === 'trail';
   const meetLink = getLiveClassMeetLink(liveClass);
   const whatsappLink = (liveClass.whatsappLink ?? '').trim();
   const participants = useParticipants();
@@ -128,6 +129,9 @@ const TeacherStage: React.FC<{
   const [micError, setMicError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
+  const previousNonCameraStageModeRef = useRef<Exclude<LiveClassSession['mainStageMode'], 'camera'> | null>(
+    stageMode === 'camera' ? null : stageMode,
+  );
 
   useEffect(() => {
     setStudentEditingEnabled(getStudentWorkspaceEditingEnabled(session));
@@ -137,6 +141,12 @@ const TeacherStage: React.FC<{
     const sharing = Boolean(localParticipant.getTrackPublication(Track.Source.ScreenShare));
     setIsScreenSharing(sharing);
   }, [localParticipant, localScreenTrack]);
+
+  useEffect(() => {
+    if (stageMode !== 'camera') {
+      previousNonCameraStageModeRef.current = stageMode;
+    }
+  }, [stageMode]);
 
   const localCameraTrack =
     cameraTrackRefs.find((track) => track.participant?.isLocal) ?? null;
@@ -151,7 +161,7 @@ const TeacherStage: React.FC<{
     localCameraPublication?.isMuted !== true;
   const cameraActive = isCameraEnabled && hasLiveLocalCamera;
 
-  const isBattleStage = sanitizeMainStageMode(session.mainStageMode) === 'battle';
+  const isBattleStage = stageMode === 'battle';
   const showStageMicrophoneControl = isTrailStage || showExerciseSession || isBattleStage;
   const showStageChatQuickControl = isTrailStage || showExerciseSession;
   const showStageQuickControls = showStageMicrophoneControl && !chatOpen;
@@ -426,15 +436,27 @@ const TeacherStage: React.FC<{
       if (isScreenSharing) {
         await localParticipant.setScreenShareEnabled(false);
         setIsScreenSharing(false);
+        if (stageMode === 'camera') {
+          const restoreStageMode =
+            previousNonCameraStageModeRef.current
+            ?? (hasActiveTrailSession ? 'trail' : 'workspace');
+          await handleUpdateSession({ mainStageMode: restoreStageMode });
+        }
         return;
       }
 
       await ensureLiveRoomConnected();
+      if (stageMode !== 'camera') {
+        previousNonCameraStageModeRef.current = stageMode;
+      }
       await localParticipant.setScreenShareEnabled(true, {
         audio: true,
         selfBrowserSurface: 'include',
       });
       setIsScreenSharing(true);
+      if (stageMode !== 'camera') {
+        await handleUpdateSession({ mainStageMode: 'camera' });
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (
@@ -447,6 +469,20 @@ const TeacherStage: React.FC<{
       setIsScreenSharing(Boolean(localParticipant.getTrackPublication(Track.Source.ScreenShare)));
     }
   };
+
+  useEffect(() => {
+    if (isScreenSharing && stageMode !== 'camera') {
+      void handleUpdateSession({ mainStageMode: 'camera' });
+      return;
+    }
+
+    if (!isScreenSharing && stageMode === 'camera') {
+      const restoreStageMode =
+        previousNonCameraStageModeRef.current
+        ?? (hasActiveTrailSession ? 'trail' : 'workspace');
+      void handleUpdateSession({ mainStageMode: restoreStageMode });
+    }
+  }, [handleUpdateSession, hasActiveTrailSession, isScreenSharing, stageMode]);
 
   return (
     <LiveClassRoomShell
