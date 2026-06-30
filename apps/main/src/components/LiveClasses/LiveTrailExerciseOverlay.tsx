@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { GRAMMAR_GUIDES } from '../../constants';
 import { PracticeSection } from '../UI';
@@ -37,6 +37,7 @@ import {
   translateText,
 } from '../../services/vocabularyService';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../utils/tabScopedStorage';
+import { expandAcceptedAnswerVariants } from '../../utils/answerVariants';
 
 interface LiveTrailExerciseOverlayProps {
   classId: string;
@@ -109,6 +110,8 @@ const TRAIL_COPY = {
     releaseRetry: 'Release retry for wrong answers',
     releasingRetry: 'Releasing...',
     waitingTeacher: 'Waiting for teacher',
+    onlineNow: 'Online now',
+    noStudentsOnline: 'No students online right now.',
   },
   pt: {
     liveTrail: 'Trilha Ao Vivo',
@@ -156,6 +159,8 @@ const TRAIL_COPY = {
     releaseRetry: 'Liberar nova tentativa para quem errou',
     releasingRetry: 'Liberando...',
     waitingTeacher: 'Aguardando o professor',
+    onlineNow: 'Online agora',
+    noStudentsOnline: 'Nenhum aluno online agora.',
   },
   es: {
     liveTrail: 'Ruta En Vivo',
@@ -203,6 +208,8 @@ const TRAIL_COPY = {
     releaseRetry: 'Liberar nuevo intento para quienes fallaron',
     releasingRetry: 'Liberando...',
     waitingTeacher: 'Esperando al profesor',
+    onlineNow: 'En linea ahora',
+    noStudentsOnline: 'No hay alumnos en linea ahora.',
   },
 } as const;
 
@@ -387,10 +394,10 @@ function normalizeComparableAnswer(value: string) {
 function isStudentAnswerCorrect(block: LiveExerciseBlock, answer: string) {
   const normalizedAnswer = normalizeComparableAnswer(answer);
   if (!normalizedAnswer) return false;
-  const acceptedAnswers = [
+  const acceptedAnswers = expandAcceptedAnswerVariants([
     block.expectedAnswer ?? '',
     ...(block.acceptedAnswers ?? []),
-  ]
+  ])
     .map((item) => normalizeComparableAnswer(item))
     .filter(Boolean);
   return acceptedAnswers.includes(normalizedAnswer);
@@ -959,6 +966,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     response: string;
   } | null>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
+  const grammarModalScrollRef = useRef<HTMLDivElement>(null);
+  const applyingRemoteGrammarScrollRef = useRef(false);
+  const grammarScrollSyncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const actorName = getActorName(user);
   const courseId = defaultCourseId ?? 'english';
@@ -1192,6 +1202,10 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       })
       .map((student) => student.uid);
   }, [currentBlock, trackedStudents]);
+  const onlineTrackedStudents = useMemo(
+    () => trackedStudents.filter((student) => student.isOnline),
+    [trackedStudents],
+  );
 
   const grammarGuide = useMemo(
     () => getGrammarGuideForLesson(lessonNumber),
@@ -1306,6 +1320,97 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   useEffect(() => {
     setSaveError(null);
   }, [currentBlock?.id]);
+
+  const pushSharedGrammarState = useCallback(async (patch: Pick<LiveClassSession, 'sharedGrammarOpen' | 'sharedGrammarLessonNumber' | 'sharedGrammarScrollRatio'>) => {
+    try {
+      await updateLiveSession(
+        classId,
+        patch,
+        user.uid,
+      );
+    } catch (error) {
+      console.warn('[LiveTrailExerciseOverlay] grammar sync failed:', error);
+    }
+  }, [classId, user.uid]);
+
+  const openSharedGrammarModal = useCallback(() => {
+    setShowGrammarModal(true);
+    const element = grammarModalScrollRef.current;
+    if (element) {
+      applyingRemoteGrammarScrollRef.current = true;
+      element.scrollTop = 0;
+      window.requestAnimationFrame(() => {
+        applyingRemoteGrammarScrollRef.current = false;
+      });
+    }
+    void pushSharedGrammarState({
+      sharedGrammarOpen: true,
+      sharedGrammarLessonNumber: lessonNumber,
+      sharedGrammarScrollRatio: 0,
+    });
+  }, [lessonNumber, pushSharedGrammarState]);
+
+  const closeSharedGrammarModal = useCallback(() => {
+    setShowGrammarModal(false);
+    void pushSharedGrammarState({
+      sharedGrammarOpen: false,
+      sharedGrammarLessonNumber: lessonNumber,
+      sharedGrammarScrollRatio: null,
+    });
+  }, [lessonNumber, pushSharedGrammarState]);
+
+  const handleGrammarModalScroll = useCallback(() => {
+    const element = grammarModalScrollRef.current;
+    if (!element || applyingRemoteGrammarScrollRef.current || !showGrammarModal) return;
+
+    const maxScroll = element.scrollHeight - element.clientHeight;
+    const scrollRatio = maxScroll > 0 ? element.scrollTop / maxScroll : 0;
+
+    if (grammarScrollSyncDebounceRef.current) {
+      clearTimeout(grammarScrollSyncDebounceRef.current);
+    }
+
+    grammarScrollSyncDebounceRef.current = setTimeout(() => {
+      void pushSharedGrammarState({
+        sharedGrammarOpen: true,
+        sharedGrammarLessonNumber: lessonNumber,
+        sharedGrammarScrollRatio: Number.isFinite(scrollRatio) ? Math.max(0, Math.min(1, scrollRatio)) : 0,
+      });
+    }, 120);
+  }, [lessonNumber, pushSharedGrammarState, showGrammarModal]);
+
+  useEffect(() => {
+    const remoteOpen = Boolean(session.sharedGrammarOpen);
+    const remoteLessonNumber =
+      typeof session.sharedGrammarLessonNumber === 'number'
+        ? session.sharedGrammarLessonNumber
+        : null;
+    const matchesLesson = remoteLessonNumber === null || remoteLessonNumber === lessonNumber;
+    const shouldOpen = remoteOpen && matchesLesson;
+
+    setShowGrammarModal((current) => (current === shouldOpen ? current : shouldOpen));
+  }, [lessonNumber, session.sharedGrammarLessonNumber, session.sharedGrammarOpen]);
+
+  useEffect(() => {
+    if (!showGrammarModal) return;
+    if (typeof session.sharedGrammarScrollRatio !== 'number') return;
+
+    const element = grammarModalScrollRef.current;
+    if (!element) return;
+
+    const maxScroll = element.scrollHeight - element.clientHeight;
+    applyingRemoteGrammarScrollRef.current = true;
+    element.scrollTop = maxScroll > 0 ? session.sharedGrammarScrollRatio * maxScroll : 0;
+    window.requestAnimationFrame(() => {
+      applyingRemoteGrammarScrollRef.current = false;
+    });
+  }, [session.sharedGrammarLessonNumber, session.sharedGrammarScrollRatio, showGrammarModal]);
+
+  useEffect(() => () => {
+    if (grammarScrollSyncDebounceRef.current) {
+      clearTimeout(grammarScrollSyncDebounceRef.current);
+    }
+  }, []);
 
   const setSharedCurrentBlock = async (blockId: string) => {
     await saveExerciseSession(
@@ -1639,7 +1744,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         ) : null}
         <button
           type="button"
-          onClick={() => setShowGrammarModal(true)}
+          onClick={openSharedGrammarModal}
           className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
         >
           {copy.grammar}
@@ -1689,6 +1794,32 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                 <p className="mt-1 text-[11px] text-slate-200">
                   {copy.answered}: {teacherSummary.respondedCount}/{trackedStudents.length || 0} | {copy.waiting}: {teacherSummary.pendingCount} | {copy.accuracy}: {teacherSummary.accuracyRate}%
                 </p>
+                <div className="mt-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200">
+                      {copy.onlineNow}
+                    </p>
+                    <p className="text-[11px] font-black text-emerald-100">
+                      {onlineTrackedStudents.length}/{trackedStudents.length || 0}
+                    </p>
+                  </div>
+                  {onlineTrackedStudents.length > 0 ? (
+                    <div className="mt-2 flex max-h-20 flex-wrap gap-1.5 overflow-y-auto pr-1">
+                      {onlineTrackedStudents.map((student) => (
+                        <span
+                          key={`online:${student.uid}`}
+                          className="rounded-full border border-emerald-400/30 bg-slate-900/70 px-2 py-1 text-[10px] font-bold text-emerald-50"
+                        >
+                          {student.label}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-emerald-100/70">
+                      {copy.noStudentsOnline}
+                    </p>
+                  )}
+                </div>
                 <div className="mt-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-2">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-300">
@@ -1821,7 +1952,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               ) : null}
               <button
                 type="button"
-                onClick={() => setShowGrammarModal(true)}
+                onClick={openSharedGrammarModal}
                 className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
               >
                 {copy.grammar}
@@ -1882,9 +2013,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       {showGrammarModal ? (
         <div
           className="fixed inset-0 z-[140] flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center"
-          onClick={() => setShowGrammarModal(false)}
+          onClick={closeSharedGrammarModal}
         >
           <div
+            ref={grammarModalScrollRef}
+            onScroll={handleGrammarModalScroll}
             className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
@@ -1892,10 +2025,14 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               <h2 className="text-lg font-bold text-slate-800">{copy.grammarTitle(lessonNumber)}</h2>
               <button
                 type="button"
-                onClick={() => setShowGrammarModal(false)}
-                className="text-2xl leading-none text-slate-400 hover:text-slate-600"
+                onClick={closeSharedGrammarModal}
+                className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                aria-label={copy.close}
               >
-                x
+                <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                  <path d="M6 6L18 18" />
+                  <path d="M18 6L6 18" />
+                </svg>
               </button>
             </div>
             <div className="space-y-5 px-6 py-4">

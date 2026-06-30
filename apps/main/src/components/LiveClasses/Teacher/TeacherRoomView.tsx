@@ -946,7 +946,54 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
     },
   );
   const connectPromiseRef = useRef<Promise<void> | null>(null);
+  const pendingRoomConnectionRef = useRef<Promise<void> | null>(null);
   const lastConnectKeyRef = useRef<string | null>(null);
+
+  const waitForPendingRoomConnection = useCallback(async () => {
+    if (roomInstance.state === ConnectionState.Connected) {
+      setLiveKitError(null);
+      return;
+    }
+
+    if (pendingRoomConnectionRef.current) {
+      return pendingRoomConnectionRef.current;
+    }
+
+    const pendingConnection = new Promise<void>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        cleanup();
+        reject(new Error('livekit-connection-timeout'));
+      }, 8_000);
+
+      const handleRoomSettled = () => {
+        if (roomInstance.state === ConnectionState.Connected) {
+          cleanup();
+          setLiveKitError(null);
+          resolve();
+          return;
+        }
+
+        if (roomInstance.state === ConnectionState.Disconnected) {
+          cleanup();
+          reject(new Error('livekit-disconnected-before-connect'));
+        }
+      };
+
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        roomInstance.off(RoomEvent.Connected, handleRoomSettled);
+        roomInstance.off(RoomEvent.Disconnected, handleRoomSettled);
+        pendingRoomConnectionRef.current = null;
+      };
+
+      roomInstance.on(RoomEvent.Connected, handleRoomSettled);
+      roomInstance.on(RoomEvent.Disconnected, handleRoomSettled);
+      handleRoomSettled();
+    });
+
+    pendingRoomConnectionRef.current = pendingConnection;
+    return pendingConnection;
+  }, [roomInstance]);
 
   const ensureLiveRoomConnected = useCallback(async () => {
     if (!token || !wsUrl) {
@@ -994,7 +1041,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
         classId: liveClass.id,
         roomState: roomInstance.state,
       });
-      return;
+      return waitForPendingRoomConnection();
     }
 
     const connectPromise = (async () => {
@@ -1062,7 +1109,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
 
     connectPromiseRef.current = connectPromise;
     return connectPromise;
-  }, [liveClass.id, roomInstance, token, wsUrl]);
+  }, [liveClass.id, roomInstance, token, waitForPendingRoomConnection, wsUrl]);
 
   useEffect(() => {
     const handleConnected = () => {

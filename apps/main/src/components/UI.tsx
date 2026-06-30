@@ -4,6 +4,7 @@ import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
 import { isFillInBlankExercise, resolveFullSentenceAfterAnswer, resolvePromptAudioText } from '../utils/fillInBlankAudio';
+import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import speakerIcon from '../assets/icons/speaker.svg';
 import turtleIcon from '../assets/icons/turtle.svg';
 import backIcon from '../assets/icons/back.svg';
@@ -201,10 +202,7 @@ const normalizeStrictWritingAnswer = (answer: string): string => {
 };
 
 const getAcceptedAnswers = (item: Pick<PracticeItem, 'correctValue' | 'acceptedAnswers'>): string[] => {
-  const all = [item.correctValue, ...(item.acceptedAnswers ?? [])]
-    .map((value) => value?.trim())
-    .filter((value): value is string => Boolean(value));
-  return [...new Set(all)];
+  return expandAcceptedAnswerVariants([item.correctValue, ...(item.acceptedAnswers ?? [])]);
 };
 
 const QUESTION_CONTENT_STOPWORDS = new Set([

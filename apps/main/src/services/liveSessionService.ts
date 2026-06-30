@@ -26,6 +26,7 @@ import {
 } from '../types';
 import type { Day, Exercise, Lesson } from '../types';
 import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from './liveWhiteboardActivities';
+import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_SESSION_COLLECTION = 'session';
@@ -78,7 +79,7 @@ function buildAcceptedAnswers(exercise: Exercise): string[] {
     const directMatch = exercise.options.find((option) => normalizeExerciseAnswer(option) === normalizeExerciseAnswer(correctValue));
     if (directMatch) pool.add(directMatch);
   }
-  return Array.from(pool);
+  return expandAcceptedAnswerVariants(Array.from(pool));
 }
 
 function getTrailNumber(dayId: string | null | undefined): number | null {
