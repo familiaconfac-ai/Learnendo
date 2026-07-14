@@ -5,6 +5,13 @@ import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '..
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
 import { isFillInBlankExercise, resolveFullSentenceAfterAnswer, resolvePromptAudioText } from '../utils/fillInBlankAudio';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
+import {
+  isAnswerMatch,
+  normalizeAnswer,
+  normalizeSpeakingAnswer,
+  normalizeStrictWritingAnswer,
+  isSpeakingMatchAny,
+} from '../utils/answerNormalization';
 import speakerIcon from '../assets/icons/speaker.svg';
 import turtleIcon from '../assets/icons/turtle.svg';
 import backIcon from '../assets/icons/back.svg';
@@ -32,57 +39,6 @@ const OPTION_COLOR_HEX: Record<string, string> = {
   orange: '#f97316', black: '#1e1e2e', white: '#e2e8f0', purple: '#a855f7',
   pink: '#ec4899', brown: '#92400e', gray: '#6b7280', grey: '#6b7280',
 };
-
-const NUMBER_MAP: Record<string, string> = {
-  'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
-  'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17', 'eighteen': '18', 'nineteen': '19', 'twenty': '20',
-  'one hundred': '100', 'one thousand': '1000'
-};
-
-// Portuguese and Spanish number-word → digit maps used in speaking/shadowing
-// normalization so that STT digit output ("é 15") matches stored word form ("é quinze").
-const PT_NUMBER_MAP: Record<string, string> = {
-  'zero': '0', 'um': '1', 'uma': '1', 'dois': '2', 'duas': '2',
-  'tres': '3', 'tr\u00eas': '3', 'quatro': '4', 'cinco': '5', 'seis': '6',
-  'sete': '7', 'oito': '8', 'nove': '9', 'dez': '10', 'onze': '11',
-  'doze': '12', 'treze': '13', 'quatorze': '14', 'quinze': '15',
-  'dezesseis': '16', 'dezessete': '17', 'dezoito': '18', 'dezenove': '19',
-  'vinte': '20',
-};
-const ES_NUMBER_MAP: Record<string, string> = {
-  'cero': '0', 'uno': '1', 'una': '1', 'dos': '2', 'tres': '3',
-  'cuatro': '4', 'cinco': '5', 'seis': '6', 'siete': '7', 'ocho': '8',
-  'nueve': '9', 'diez': '10', 'once': '11', 'doce': '12', 'trece': '13',
-  'catorce': '14', 'quince': '15', 'diecis\u00e9is': '16', 'dieciseis': '16',
-  'diecisiete': '17', 'dieciocho': '18', 'diecinueve': '19', 'veinte': '20',
-};
-
-const TIME_NORMALIZE_MAP: Record<string, string> = {
-  '7:00': 'seven o clock', '7 o clock': 'seven o clock', 'seven oclock': 'seven o clock', '7 oclock': 'seven o clock',
-  '7:30': 'seven thirty', '7 thirty': 'seven thirty', 'seven 30': 'seven thirty',
-  '8:00': 'eight o clock', '8 o clock': 'eight o clock', 'eight oclock': 'eight o clock', '8 oclock': 'eight o clock',
-  '9:00': 'nine o clock', '9 o clock': 'nine o clock', 'nine oclock': 'nine o clock', '9 oclock': 'nine o clock',
-  '12:00': 'twelve o clock', '12 o clock': 'twelve o clock', 'twelve oclock': 'twelve o clock', '12 oclock': 'twelve o clock',
-  '6:30': 'six thirty', '6 thirty': 'six thirty', 'six 30': 'six thirty',
-  '5:00': 'five o clock', '5 o clock': 'five o clock', 'five oclock': 'five o clock', '5 oclock': 'five o clock',
-  '3:00': 'three o clock', '3 o clock': 'three o clock', 'three oclock': 'three o clock', '3 oclock': 'three o clock'
-};
-
-const stripDiacritics = (value: string): string =>
-  value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-const expandCommonContractions = (value: string): string => value
-  .replace(/\bdoesn't\b/gi, 'does not')
-  .replace(/\bdon't\b/gi, 'do not')
-  .replace(/\bdidn't\b/gi, 'did not')
-  .replace(/\bisn't\b/gi, 'is not')
-  .replace(/\baren't\b/gi, 'are not')
-  .replace(/\bwasn't\b/gi, 'was not')
-  .replace(/\bweren't\b/gi, 'were not')
-  .replace(/\bcan't\b/gi, 'can not')
-  .replace(/\bcannot\b/gi, 'can not')
-  .replace(/\bwon't\b/gi, 'will not')
-  .replace(/\bit's\b/gi, 'it is');
 
 const PT_DISPLAY_FIXES: Record<string, string> = {
   almoco: 'almoço',
@@ -156,51 +112,6 @@ const renderInlineRichText = (text: string): React.ReactNode[] => {
   return parse(text);
 };
 
-const normalizeAnswer = (answer: string): string => {
-  let normalized = stripDiacritics(expandCommonContractions(answer).toLowerCase().trim())
-    // Normalize smart/curly apostrophes → ASCII apostrophe BEFORE stripping, so
-    // "it\u2019s fifteen" (smart quote from editor auto-correct) is treated the same
-    // as "it's fifteen" (ASCII). Without this, the prefix-strip regex ("its ") fails
-    // and the speaking match returns false even when the answer is semantically correct.
-    .replace(/[\u2018\u2019\u02BC\u2032]/g, "'")
-    .replace(/[.,!?;:'\u00bf\u00a1]/g, "");  // \u00bf = \u00bf, \u00a1 = \u00a1
-
-  // Strip sentence prefixes so "It is five." / "It's five." are accepted as "five"
-  normalized = normalized.replace(/^(it is |its |the answer is |the result is |the number is )/, '');
-
-  // Convert written numbers to digits
-  Object.entries(NUMBER_MAP).forEach(([word, digit]) => {
-    normalized = normalized.replace(new RegExp(`\\b${word}\\b`, 'g'), digit);
-  });
-
-  // Normalize time expressions
-  Object.entries(TIME_NORMALIZE_MAP).forEach(([time, normalizedTime]) => {
-    normalized = normalized.replace(new RegExp(time.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), normalizedTime);
-  });
-
-  // Handle common time variations
-  normalized = normalized
-    .replace(/\b(\d+):(\d+)\b/g, (match, hour, minute) => {
-      if (minute === '00') return `${NUMBER_MAP[hour] || hour} o clock`;
-      return `${NUMBER_MAP[hour] || hour} ${NUMBER_MAP[minute] || minute}`;
-    })
-    .replace(/\b(\d+)\s*o'?clock\b/g, (match, hour) => `${NUMBER_MAP[hour] || hour} o clock`)
-    .replace(/\b(\d+)\s*thirty\b/g, (match, hour) => `${NUMBER_MAP[hour] || hour} thirty`)
-    .replace(/\bseven\s*thirty\b/g, 'seven thirty')
-    .replace(/\bsix\s*thirty\b/g, 'six thirty');
-
-  return normalized;
-};
-
-const normalizeStrictWritingAnswer = (answer: string): string => {
-  return stripDiacritics(expandCommonContractions(answer))
-    .toLowerCase()
-    .trim()
-    .replace(/[\u2018\u2019\u02BC\u2032]/g, "'")
-    .replace(/[.,!?;:\u00bf\u00a1]+$/g, '')
-    .replace(/\s+/g, ' ');
-};
-
 const getAcceptedAnswers = (item: Pick<PracticeItem, 'correctValue' | 'acceptedAnswers'>): string[] => {
   return expandAcceptedAnswerVariants([item.correctValue, ...(item.acceptedAnswers ?? [])]);
 };
@@ -251,104 +162,6 @@ const isExpandedQuestionResponseMatch = (
   });
 };
 
-// Pre-processes time expressions for speaking/shadowing BEFORE punctuation stripping
-const normalizeSpeakingAnswer = (answer: string, lang?: string): string => {
-  let s = stripDiacritics(expandCommonContractions(answer).toLowerCase().trim());
-  // Normalize smart/curly apostrophes → ASCII so they are stripped correctly
-  // downstream. This fixes "it\u2019s twenty" (smart quote) = "It's 20" (STT output).
-  s = s.replace(/[\u2018\u2019\u02BC\u2032]/g, "'");
-  // Normalize a.m./p.m. dots → am/pm before punctuation is stripped
-  s = s.replace(/\ba\.m\.\b/gi, 'am').replace(/\bp\.m\.\b/gi, 'pm');
-  // No-space am/pm: "7am" / "8PM" → "7 am" / "8 pm"
-  s = s.replace(/\b(\d+)(am|pm)\b/gi, '$1 $2');
-  // Convert word-form numbers → digits first, so "eight o'clock" → "8 o'clock" below
-  Object.entries(NUMBER_MAP).forEach(([word, digit]) => {
-    s = s.replace(new RegExp(`\\b${word}\\b`, 'g'), digit);
-  });
-  // Apply language-specific number-word maps.  This converts PT/ES spoken forms
-  // ("quinze", "quince") to digits so they match STT digit output ("15").
-  // Both the stored correctValue and the STT transcript go through this so the
-  // comparison is symmetric: "é quinze" → "15", "é 15" → "15" → equal. ✓
-  const langNumMap = lang === 'pt' ? PT_NUMBER_MAP : lang === 'es' ? ES_NUMBER_MAP : null;
-  if (langNumMap) {
-    Object.entries(langNumMap).forEach(([word, digit]) => {
-      s = s.replace(new RegExp(`\\b${word}\\b`, 'gi'), digit);
-    });
-  }
-  // Strip common PT/ES sentence-result prefixes (é/es) so "é 15" and "15" are equal
-  if (lang === 'pt') s = s.replace(/^\u00e9\s+/, '');
-  if (lang === 'es') {
-    s = s.replace(/^es\s+/, '');
-    // Defensive: if PT prefix "é " leaked into ES data, strip it too so normalization
-    // still produces the right digit and the comparison doesn't silently fail.
-    s = s.replace(/^\u00e9\s+/, '');
-  }
-  // Lang-specific math-operator symbols → word forms used in correctValue strings
-  if (lang === 'pt') {
-    s = s.replace(/\s*\+\s*/g, ' mais ');
-    s = s.replace(/\s*[*\u00d7]\s*/g, ' vezes ');
-    s = s.replace(/\s*\u00f7\s*/g, ' dividido por ');
-  } else if (lang === 'es') {
-    s = s.replace(/\s*\+\s*/g, ' m\u00e1s ');
-    s = s.replace(/\s*[*\u00d7]\s*/g, ' por ');
-    s = s.replace(/\s*\u00f7\s*/g, ' entre ');
-  }
-  // H:00 am/pm → H am/pm  ("7:00 am" → "7 am")
-  s = s.replace(/\b(\d+):00\s*(am|pm)\b/gi, '$1 $2');
-  // H:30 am/pm → H thirty am/pm  (before generic H:MM so "7:30 am" → "7 thirty am")
-  s = s.replace(/\b(\d+):30\s*(am|pm)\b/gi, '$1 thirty $2');
-  // H:MM am/pm → H MM am/pm (generic fallback)
-  s = s.replace(/\b(\d+):(\d+)\s*(am|pm)\b/gi, '$1 $2 $3');
-  // H:30 (no am/pm) → H thirty  ("7:30" → "7 thirty")
-  s = s.replace(/\b(\d+):30\b/g, '$1 thirty');
-  // H:00 (no am/pm) → H  ("7:00" → "7")
-  s = s.replace(/\b(\d+):00\b/g, '$1');
-  // H:MM (no am/pm) → H MM (generic fallback)
-  s = s.replace(/\b(\d+):(\d+)\b/g, '$1 $2');
-  // Bare "H 30" → "H thirty"  (STT often returns "7 30" for "seven thirty")
-  s = s.replace(/\b(\d+)\s+30\b/g, '$1 thirty');
-  // H o'clock / H o clock / H oclock → bare digit (flexible AM/PM matching)
-  s = s.replace(/\b(\d+)\s*o'clock\b/gi, '$1');
-  s = s.replace(/\b(\d+)\s*o\s+clock\b/gi, '$1');
-  s = s.replace(/\b(\d+)\s*oclock\b/gi, '$1');
-  // Math operator symbols → word equivalents.
-  // STT on mobile often transcribes "+", "×", "*", "x" etc. instead of spoken words.
-  // For PT/ES the operator mappings differ (mais/más, vezes/por, etc.) and are
-  // already handled by the lang-specific block above — skip English ones for those.
-  if (!lang || (lang !== 'pt' && lang !== 'es')) {
-    s = s.replace(/\s*\+\s*/g, ' plus ');
-    s = s.replace(/\s*[*×]\s*/g, ' times ');
-    s = s.replace(/\s*÷\s*/g, ' divided by ');
-  }
-  // "/" only when flanked by digits (avoids breaking contractions like "it's")
-  s = s.replace(/(\d)\s*\/\s*(\d)/g, '$1 divided by $2');
-  // standalone "x" or "X" between operands used as multiplication sign
-  s = s.replace(/\b([a-z0-9]+)\s+[xX]\s+([a-z0-9]+)\b/g, '$1 times $2');
-  // collapse any double spaces introduced above
-  s = s.replace(/\s{2,}/g, ' ').trim();
-  return normalizeAnswer(s);
-};
-
-// Returns true when a speaking/shadowing response is semantically equivalent to the target.
-// Accepts AM/PM variants and o'clock as interchangeable; rejects explicit AM↔PM swaps.
-// lang: pass the active course language ('pt'/'es'/'en') for number-word equivalence.
-const isSpeakingMatch = (response: string, target: string, lang?: string): boolean => {
-  const normResp = normalizeSpeakingAnswer(response, lang);
-  const normTarget = normalizeSpeakingAnswer(target, lang);
-  if (normResp === normTarget) return true;
-  // Explicit AM vs PM conflict → fail
-  const hasAm = (s: string) => /\b\d+\s+am\b/.test(s);
-  const hasPm = (s: string) => /\b\d+\s+pm\b/.test(s);
-  if (hasAm(normTarget) && hasPm(normResp)) return false;
-  if (hasPm(normTarget) && hasAm(normResp)) return false;
-  // Strip am/pm from both sides and compare (handles o'clock ↔ am/pm equivalence)
-  const stripAmPm = (s: string) => s.replace(/\s+(?:am|pm)\b/g, '').replace(/\s{2,}/g, ' ').trim();
-  return stripAmPm(normResp) === stripAmPm(normTarget);
-};
-
-const isSpeakingMatchAny = (response: string, targets: string[], lang?: string): boolean => {
-  return targets.some((target) => isSpeakingMatch(response, target, lang));
-};
 
 const shuffle = <T,>(array: T[]): T[] => {
   const result = [...array];
@@ -1038,19 +851,12 @@ export const PracticeSection: React.FC<{
         return;
       }
 
-      const response = normalizeAnswer(rawInput);
-      const normalizedTargets = acceptedAnswers.map(normalizeAnswer);
-
       const isCorrect = item.type === 'speaking'
         ? (
             isSpeakingMatchAny(rawInput, acceptedAnswers, currentLanguage)
             || isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage)
           )
-        : normalizedTargets.some((cleanTarget) =>
-            (response === cleanTarget) ||
-            (NUMBER_MAP[response] === cleanTarget) ||
-            (NUMBER_MAP[cleanTarget] === response),
-          );
+        : acceptedAnswers.some((answer) => isAnswerMatch(rawInput, answer, currentLanguage));
 
       reportAttempt(rawInput, isCorrect);
       setFeedback(isCorrect ? 'correct' : 'wrong');
@@ -1301,23 +1107,15 @@ export const PracticeSection: React.FC<{
         style={fullScreen ? { top: viewportTopOffset } : undefined}
       >
         <div className={`w-full ${practiceWidthClass} max-sm:px-4 px-6 ${isShortViewport ? 'pt-3' : 'pt-5'}`}>
-          <div className={`flex items-center gap-3 ${isShortViewport ? 'mb-3' : 'mb-4'}`}>
-            {onBack && (
-              <button
-                onPointerDown={(e) => { e.preventDefault(); onBack(); }}
-                className="w-9 h-9 flex items-center justify-center text-white rounded-xl active:opacity-60 shrink-0 [touch-action:manipulation]"
-                aria-label="Back"
-              >
-                <img src={backIcon} className="w-5 h-5 brightness-0 invert" alt="Back" />
-              </button>
-            )}
-            <div className="flex-1 h-3 bg-slate-700 rounded-full overflow-hidden shadow-inner">
-              <div
-                className="h-full bg-green-500 transition-all duration-300"
-                style={{ width: `${totalItems > 0 ? (Math.min(currentIdx + 1, totalItems) / totalItems) * 100 : 0}%` }}
-              />
-            </div>
-          </div>
+          {onBack && (
+            <button
+              onPointerDown={(e) => { e.preventDefault(); onBack(); }}
+              className="mb-3 w-9 h-9 flex items-center justify-center text-white rounded-xl active:opacity-60 shrink-0 [touch-action:manipulation]"
+              aria-label="Back"
+            >
+              <img src={backIcon} className="w-5 h-5 brightness-0 invert" alt="Back" />
+            </button>
+          )}
           {onGrammar && (
             <button
               onPointerDown={(e) => { e.preventDefault(); onGrammar(); }}
