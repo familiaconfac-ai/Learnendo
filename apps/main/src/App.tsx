@@ -3116,6 +3116,15 @@ const App: React.FC = () => {
           currentLessonId,
         );
         const practiceTotalDays = currentPracticeLesson?.days?.length ?? 7;
+        const currentPracticeDayIndex = currentPracticeLesson?.days.findIndex((day) => day.id === currentDay.id) ?? -1;
+        const nextPracticeDay = currentPracticeDayIndex >= 0
+          ? currentPracticeLesson?.days[currentPracticeDayIndex + 1]
+          : undefined;
+        const isCurrentPracticeDayCompleted = Boolean(
+          progress.completedActivities.includes(currentDay.id)
+          || progress.days?.[currentDay.id]
+          || (currentPracticeDayIndex >= 0 && lessonProgress?.days?.[currentPracticeDayIndex]?.completed)
+        );
         return (
           <ExercisePractice
             day={currentDay}
@@ -3125,7 +3134,14 @@ const App: React.FC = () => {
             userId={user?.uid ?? 'anonymous'}
             workbookId={progress.currentWorkbook}
             workbook={currentWorkbook ?? undefined}
+            isDayCompleted={isCurrentPracticeDayCompleted}
             onComplete={handleDayComplete}
+            onContinueToNextDay={nextPracticeDay ? () => {
+              dayStartTimeRef.current = Date.now();
+              setCurrentDay(nextPracticeDay);
+              setActiveWeeklyTest(null);
+              setCurrentSection(SectionType.PRACTICE);
+            } : undefined}
             totalDays={practiceTotalDays}
             onGrammar={() => {
               const lessonNumber = getLessonNumberFromId(currentLessonId || `lesson${progress.currentLesson}`);

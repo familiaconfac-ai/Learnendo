@@ -39,10 +39,12 @@ export function isFillInBlankExercise(source: FillInBlankSource): boolean {
 }
 
 export function resolvePromptAudioText(source: FillInBlankSource): string {
-  if (source.audioValueBeforeAnswer?.trim()) return normalizeSpacing(source.audioValueBeforeAnswer);
-  if (hasBlankPlaceholder(source.displayValue)) return buildBlankAudioText(source.displayValue!);
-  if (hasBlankPlaceholder(source.audioValue)) return buildBlankAudioText(source.audioValue!);
-  return normalizeSpacing(source.audioValue ?? source.displayValue ?? '');
+  let prompt = '';
+  if (source.audioValueBeforeAnswer?.trim()) prompt = normalizeSpacing(source.audioValueBeforeAnswer);
+  else if (hasBlankPlaceholder(source.displayValue)) prompt = buildBlankAudioText(source.displayValue!);
+  else if (hasBlankPlaceholder(source.audioValue)) prompt = buildBlankAudioText(source.audioValue!);
+  else prompt = normalizeSpacing(source.audioValue ?? source.displayValue ?? '');
+  return /^h$/i.test(prompt) ? 'the letter H' : prompt;
 }
 
 export function resolveFullSentenceAfterAnswer(source: FillInBlankSource): string {

@@ -11,6 +11,9 @@ import {
   pointsForCompletion,
   saveExerciseProgress,
   lessonCompletionSummary,
+  mergeLegacyCompletedDays,
+  practiceRunSummary,
+  resolvePracticeStart,
   workbookCompletionSummary,
 } from './exerciseCompletionEngine.ts';
 
@@ -19,6 +22,7 @@ const exercise = (id: string, type: Exercise['type'] = 'multiple-choice', isNewV
 });
 const input = (item = exercise('e1'), attempts = 1) => ({
   workbookId: 1, lessonId: 'lesson1', dayId: 'w1l1d1', exercise: item, attempts,
+  runId: 'run-1',
   completedAt: '2026-07-14T12:00:00.000Z',
 });
 
@@ -33,12 +37,26 @@ test('2. wrong answer followed by retry awards the retry value', () => {
   assert.equal(completeExercise(emptyExerciseProgress(), input(exercise('e1'), 3)).record.attempts, 3);
 });
 
-test('3. the same completion is idempotent and cannot farm points', () => {
+test('3. the same run completion is idempotent and cannot farm points', () => {
   const first = completeExercise(emptyExerciseProgress(), input());
   const repeated = completeExercise(first.state, input());
   assert.equal(repeated.pointsAwarded, 0);
   assert.equal(repeated.duplicate, true);
   assert.equal(repeated.state, first.state);
+});
+
+test('3b. replay points scale by completion count while unique progress stays fixed', () => {
+  let state = emptyExerciseProgress();
+  const points: number[] = [];
+  for (let run = 1; run <= 4; run++) {
+    const result = completeExercise(state, { ...input(), runId: `run-${run}` });
+    state = result.state;
+    points.push(result.pointsAwarded);
+  }
+  assert.deepEqual(points, [10, 20, 30, 40]);
+  assert.equal(Object.keys(state.records).length, 1);
+  assert.equal(state.records['w1/lesson1/w1l1d1/e1'].completionCount, 4);
+  assert.equal(state.records['w1/lesson1/w1l1d1/e1'].replayCount, 3);
 });
 
 test('4. all supported exercise types share the completion contract', () => {
@@ -92,6 +110,15 @@ test('11. only explicitly flagged vocabulary becomes a mastery target', () => {
   assert.deepEqual(getExplicitVocabularyTargets(exercise('e2', 'writing', false)), []);
 });
 
+test('11b. replay reviews vocabulary instead of counting it as new again', () => {
+  const vocab = exercise('e1', 'writing', true);
+  const first = completeExercise(emptyExerciseProgress(), input(vocab));
+  const replay = completeExercise(first.state, { ...input(vocab), runId: 'run-2' });
+  assert.equal(practiceRunSummary(first.state, 'run-1').newVocabulary, 1);
+  assert.equal(practiceRunSummary(replay.state, 'run-2').newVocabulary, 0);
+  assert.equal(practiceRunSummary(replay.state, 'run-2').vocabularyReviewed, 1);
+});
+
 test('12. hierarchical workbook progress is derived from stable exercise keys', () => {
   const item1 = exercise('e1');
   const item2 = exercise('e2');
@@ -100,4 +127,18 @@ test('12. hierarchical workbook progress is derived from stable exercise keys', 
   assert.deepEqual(workbookCompletionSummary(workbook, state), { completed: 1, total: 2, percentage: 50 });
   assert.deepEqual(lessonCompletionSummary(workbook, 'lesson1', state), { completed: 1, total: 2, percentage: 50 });
   assert.deepEqual(courseCompletionSummary([workbook], state), { completed: 1, publishedTotal: 2, plannedTotal: 10800, publishedPercentage: 50, plannedPercentage: 0 });
+});
+
+test('13. legacy completed days seed non-zero lesson and workbook unique progress', () => {
+  const item1 = exercise('e1');
+  const item2 = exercise('e2');
+  const workbook: Workbook = { id: 1, title: 'Workbook 1', lessons: [{ id: 'lesson1', title: 'Lesson 1', days: [{ id: 'w1l1d1', type: 'practice', exercises: [item1, item2] }] }] };
+  const state = mergeLegacyCompletedDays(emptyExerciseProgress(), workbook, ['w1l1d1']);
+  assert.deepEqual(lessonCompletionSummary(workbook, 'lesson1', state), { completed: 2, total: 2, percentage: 100 });
+  assert.deepEqual(workbookCompletionSummary(workbook, state), { completed: 2, total: 2, percentage: 100 });
+});
+
+test('14. completed days and direct exercise 2 start in exercise mode, never at summary', () => {
+  assert.deepEqual(resolvePracticeStart(15, -1), { index: 0, isReplay: true });
+  assert.deepEqual(resolvePracticeStart(15, -1, 1), { index: 1, isReplay: true });
 });

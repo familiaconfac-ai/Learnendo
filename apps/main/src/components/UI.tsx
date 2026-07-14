@@ -4,6 +4,7 @@ import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
 import { isFillInBlankExercise, resolveFullSentenceAfterAnswer, resolvePromptAudioText } from '../utils/fillInBlankAudio';
+import { classifySpeakingExercise, speakingTargets } from '../utils/speakingExercise';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import {
   isAnswerMatch,
@@ -377,6 +378,7 @@ const PRACTICE_LABELS = {
     answerQuestion: 'Answer the question.',
     chooseCorrect: 'Choose the Correct Response',
     listenAndAnswer: 'Listen and answer',
+    listenAndRepeat: 'Listen and repeat what you hear.',
     whatColor: 'What color is it?',
   },
   pt: {
@@ -406,6 +408,7 @@ const PRACTICE_LABELS = {
     answerQuestion: 'Responda a pergunta.',
     chooseCorrect: 'Escolha a resposta correta',
     listenAndAnswer: 'Ouça e responda',
+    listenAndRepeat: 'Ouça e repita o que você ouviu.',
     whatColor: 'Qual é a cor?',
   },
   es: {
@@ -435,6 +438,7 @@ const PRACTICE_LABELS = {
     answerQuestion: 'Responde la pregunta.',
     chooseCorrect: 'Elige la respuesta correcta',
     listenAndAnswer: 'Escucha y responde',
+    listenAndRepeat: 'Escucha y repite lo que oyes.',
     whatColor: '¿De qué color es?',
   },
 } as const;
@@ -534,13 +538,9 @@ export const PracticeSection: React.FC<{
     const translation = item.translation ? fixPortugueseSupportText(item.translation) : '';
     const displayCorrectValue = fixPortugueseSupportText(item.correctValue);
     const promptAudioText = resolvePromptAudioText(item);
+    const speakingMode = item.type === 'speaking' ? classifySpeakingExercise(item) : null;
+    const isShadowing = speakingMode === 'shadowing';
     const isQuestionDrivenSpeaking = item.type === 'speaking' && isQuestionPrompt(promptAudioText || item.audioValue);
-    // Shadowing exercises: repeated spoken response based on previous training.
-    const isShadowing = item.type === 'speaking' && (
-      !item.instruction.toLowerCase().includes('listen and answer')
-      || item.instruction.toLowerCase().includes('short sentence')
-      || isQuestionDrivenSpeaking
-    );
     const shadowingSupportText = isShadowing && isQuestionDrivenSpeaking ? translation : '';
     const speakingPlaceholder = (shadowingSupportText ? shadowingSupportText.replace(/\*\*/g, '') : '') || PL.speakPlaceholder;
 
@@ -763,6 +763,7 @@ export const PracticeSection: React.FC<{
         return;
       }
       const acceptedAnswers = getAcceptedAnswers(item);
+      const acceptedSpeakingTargets = isShadowing ? speakingTargets(item) : acceptedAnswers;
       const nextAttemptNumber = (lastAttemptMetaRef.current?.attemptNumber ?? 0) + 1;
       const reportAttempt = (answer: string, isCorrect: boolean) => {
         const payload = { answer, isCorrect, attemptNumber: nextAttemptNumber };
@@ -853,8 +854,8 @@ export const PracticeSection: React.FC<{
 
       const isCorrect = item.type === 'speaking'
         ? (
-            isSpeakingMatchAny(rawInput, acceptedAnswers, currentLanguage)
-            || isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage)
+            isSpeakingMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage)
+            || (!isShadowing && isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage))
           )
         : acceptedAnswers.some((answer) => isAnswerMatch(rawInput, answer, currentLanguage));
 
@@ -1164,26 +1165,22 @@ export const PracticeSection: React.FC<{
                   {renderInteractiveText(item.instruction)}
                 </h2>
               </div>
-            ) : item.type === 'speaking' && !item.instruction.toLowerCase().includes('listen and answer') ? (
+            ) : item.type === 'speaking' && isShadowing ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">{PL.badgeShadowing}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
                   {...selectionGestureProps}
                 >
-                  {isQuestionDrivenSpeaking
-                    ? PL.answerQuestion
-                    : renderInteractiveText(item.instruction.replace(/^(Read and repeat:|Repeat:|Say:|Pronounce correctly:|Say the result:|Say the number:)\s*/i, ''))}
+                  {renderInteractiveText(PL.listenAndRepeat)}
                 </h2>
               </div>
             ) : item.type === 'speaking' ? (
               <div className="flex flex-col items-center gap-2">
                 <span className={`inline-block px-3 py-1 text-sm font-black rounded-full uppercase tracking-widest ${
-                  isQuestionDrivenSpeaking
-                    ? 'text-green-300 bg-green-900/60 border border-green-700'
-                    : 'text-orange-300 bg-orange-900/60 border border-orange-700'
+                  'text-orange-300 bg-orange-900/60 border border-orange-700'
                 }`}>
-                  {isQuestionDrivenSpeaking ? PL.badgeShadowing : PL.badgeSpeaking}
+                  {PL.badgeSpeaking}
                 </span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words"
