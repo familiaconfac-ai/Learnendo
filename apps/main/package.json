@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
+    "test:exercise-flow": "node scripts/exercise-flow-regression.test.mjs && node --experimental-strip-types src/engine/exerciseCompletionEngine.test.ts",
     "deploy": "npm run build && vercel --prod"
   },
   "dependencies": {

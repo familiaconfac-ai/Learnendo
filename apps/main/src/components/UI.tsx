@@ -720,6 +720,7 @@ export const PracticeSection: React.FC<{
 
     const translation = item.translation ? fixPortugueseSupportText(item.translation) : '';
     const displayCorrectValue = fixPortugueseSupportText(item.correctValue);
+    const promptAudioText = resolvePromptAudioText(item);
     const isQuestionDrivenSpeaking = item.type === 'speaking' && isQuestionPrompt(promptAudioText || item.audioValue);
     // Shadowing exercises: repeated spoken response based on previous training.
     const isShadowing = item.type === 'speaking' && (
@@ -735,7 +736,6 @@ export const PracticeSection: React.FC<{
       item.instruction.toLowerCase().includes('full sentence');
     const isFillInBlank = isFillInBlankExercise(item);
     const isFillInBlankWriting = item.type === 'writing' && isFillInBlank;
-    const promptAudioText = resolvePromptAudioText(item);
     const fullSentenceAfterAnswer = item.fullSentenceAfterAnswer?.trim()
       || (isFillInBlank ? resolveFullSentenceAfterAnswer(item) : '');
     const activeAudioText =

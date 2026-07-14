@@ -2138,7 +2138,11 @@ const App: React.FC = () => {
     setMenuOpen(false);
   };
 
-  const handleDayComplete = async (dayId: string, score: number) => {
+  const handleDayComplete = async (
+    dayId: string,
+    score: number,
+    exerciseAnalytics?: { attempts: number; errors: number; accuracy: number; points: number },
+  ) => {
     console.log(`[App] Day "${dayId}" completed. Score: ${score}%`);
 
     // Compute time spent since the day was opened
@@ -2475,7 +2479,7 @@ const App: React.FC = () => {
     // Firebase: Track day completion and check for week completion
     if (user?.uid && currentLessonId) {
       // ── Atomic progress write (independent of completeCourseDay) ──
-      if (user?.uid) {
+      if (user?.uid && !alreadyDone) {
         const questionCount = Math.max(1, currentDay?.exercises?.length ?? 0);
         const estimatedCorrect = Math.round((score / 100) * questionCount);
         trackLessonCompletion({
@@ -2522,7 +2526,9 @@ const App: React.FC = () => {
           const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
           const analytics: DayAnalytics = {
             timeSpent,
-            accuracy: score,
+            attempts: exerciseAnalytics?.attempts,
+            errors: exerciseAnalytics?.errors,
+            accuracy: exerciseAnalytics?.accuracy ?? score,
           };
           completeCourseDay(user.uid, courseId, progress.currentWorkbook, lessonNumber, dayNumber, score, analytics)
             .then(async ({ success, stats }) => {
@@ -3116,6 +3122,9 @@ const App: React.FC = () => {
             lessonId={currentLessonId || ''}
             currentLanguage={language}
             progress={progress}
+            userId={user?.uid ?? 'anonymous'}
+            workbookId={progress.currentWorkbook}
+            workbook={currentWorkbook ?? undefined}
             onComplete={handleDayComplete}
             totalDays={practiceTotalDays}
             onGrammar={() => {
