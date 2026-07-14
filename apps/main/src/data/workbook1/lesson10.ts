@@ -1,94 +1,75 @@
-import { Lesson } from '../../types';
+import { buildLesson, choice, choiceDrill, DrillRow, speak, speakingDrill, write, writingDrill } from './lessonBuilder';
 
-export const lesson10: Lesson = {
-  id: 'wb1_l10',
-  title: 'Lesson 10: Months and Seasons',
-  days: [
-    {
-      id: 'wb1_l10_d1',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l10_d1_e1', type: 'identification', instruction: 'Choose the month.', audioValue: 'January', options: ['January', 'Monday'], correctValue: 'January', translation: 'janeiro', isNewVocab: true },
-        { id: 'wb1_l10_d1_e2', type: 'identification', instruction: 'Choose the month.', audioValue: 'July', options: ['July', 'Friday'], correctValue: 'July', translation: 'julho', isNewVocab: true },
-        { id: 'wb1_l10_d1_e3', type: 'identification', instruction: 'Choose the season.', audioValue: 'summer', options: ['summer', 'Sunday'], correctValue: 'summer', translation: 'verão', isNewVocab: true },
-        { id: 'wb1_l10_d1_e4', type: 'identification', instruction: 'Choose the season.', audioValue: 'winter', options: ['winter', 'Wednesday'], correctValue: 'winter', translation: 'inverno', isNewVocab: true },
-        { id: 'wb1_l10_d1_e5', type: 'identification', instruction: 'Choose the preposition.', audioValue: 'in January', options: ['in', 'on'], correctValue: 'in', translation: 'em', isNewVocab: true },
-        { id: 'wb1_l10_d1_e6', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'In January. In summer. On Monday. At seven o clock.', correctValue: 'In January. In summer. On Monday. At seven o clock.' },
-      ],
-    },
-    {
-      id: 'wb1_l10_d2',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l10_d2_e1', type: 'multiple-choice', instruction: 'Complete with in, on, or at.', audioValue: 'My birthday is in May.', options: ['in', 'on'], correctValue: 'in' },
-        { id: 'wb1_l10_d2_e2', type: 'multiple-choice', instruction: 'Complete with in, on, or at.', audioValue: 'English class is on Monday.', options: ['on', 'at'], correctValue: 'on' },
-        { id: 'wb1_l10_d2_e3', type: 'multiple-choice', instruction: 'Complete with in, on, or at.', audioValue: 'Class starts at seven o clock.', options: ['at', 'in'], correctValue: 'at' },
-        { id: 'wb1_l10_d2_e4', type: 'multiple-choice', instruction: 'Complete with in, on, or at.', audioValue: 'It is hot in summer.', options: ['in', 'on'], correctValue: 'in' },
-        { id: 'wb1_l10_d2_e5', type: 'writing', instruction: 'Write the missing word.', audioValue: 'I am at school.', correctValue: 'at', displayValue: 'I am ______ school.' },
-        { id: 'wb1_l10_d2_e6', type: 'writing', instruction: 'Write the missing word.', audioValue: 'My birthday is on July tenth.', correctValue: 'on', displayValue: 'My birthday is ______ July tenth.' },
-        { id: 'wb1_l10_d2_e7', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'In May. On Monday. At school.', correctValue: 'In May. On Monday. At school.' },
-      ],
-    },
-    {
-      id: 'wb1_l10_d3',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l10_d3_e1', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'What month is it?', options: ['It is April.', 'It is summer.'], correctValue: 'It is April.' },
-        { id: 'wb1_l10_d3_e2', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'What season is it?', options: ['It is summer.', 'It is Monday.'], correctValue: 'It is summer.' },
-        { id: 'wb1_l10_d3_e3', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'When is your birthday?', options: ['My birthday is in May.', 'It is at school.'], correctValue: 'My birthday is in May.' },
-        { id: 'wb1_l10_d3_e4', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'When is English class?', options: ['It is on Monday.', 'It is in winter.'], correctValue: 'It is on Monday.' },
-        { id: 'wb1_l10_d3_e5', type: 'writing', instruction: 'Answer the question.', audioValue: 'What time is class?', correctValue: 'It is at seven o clock.', displayValue: 'What time is class? ______' },
-        { id: 'wb1_l10_d3_e6', type: 'speaking', instruction: 'Ask and answer.', audioValue: 'What month is it? It is April.', correctValue: 'What month is it? It is April.' },
-      ],
-    },
-    {
-      id: 'wb1_l10_d4',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l10_d4_e1', type: 'speaking', instruction: 'Listen and repeat the dialogue.', audioValue: 'Teacher: What month is it? Ben: It is April. Teacher: When is your birthday? Ben: My birthday is in June.', correctValue: 'What month is it? It is April. My birthday is in June.', displayValue: 'Teacher: What month is it?\nBen: It is April.\nTeacher: When is your birthday?\nBen: My birthday is in June.' },
-        { id: 'wb1_l10_d4_e2', type: 'multiple-choice', instruction: 'Choose the correct answer from the dialogue.', audioValue: 'What month is it?', options: ['It is April.', 'It is Monday.'], correctValue: 'It is April.' },
-        { id: 'wb1_l10_d4_e3', type: 'multiple-choice', instruction: 'Choose the correct answer from the dialogue.', audioValue: 'When is your birthday?', options: ['My birthday is in June.', 'My birthday is on Monday.'], correctValue: 'My birthday is in June.' },
-        { id: 'wb1_l10_d4_e4', type: 'writing', instruction: 'Complete the sentence.', audioValue: 'It is hot in summer.', correctValue: 'summer', displayValue: 'It is hot in ______.' },
-        { id: 'wb1_l10_d4_e5', type: 'writing', instruction: 'Complete the sentence.', audioValue: 'It is cold in winter.', correctValue: 'winter', displayValue: 'It is cold in ______.' },
-        { id: 'wb1_l10_d4_e6', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'It is hot in summer. It is cold in winter.', correctValue: 'It is hot in summer. It is cold in winter.' },
-      ],
-    },
-    {
-      id: 'wb1_l10_d5',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l10_d5_e1', type: 'speaking', instruction: 'Say the month.', audioValue: 'It is April.', correctValue: 'It is April.' },
-        { id: 'wb1_l10_d5_e2', type: 'speaking', instruction: 'Say the season.', audioValue: 'It is summer.', correctValue: 'It is summer.' },
-        { id: 'wb1_l10_d5_e3', type: 'speaking', instruction: 'Say the birthday sentence.', audioValue: 'My birthday is in May.', correctValue: 'My birthday is in May.' },
-        { id: 'wb1_l10_d5_e4', type: 'speaking', instruction: 'Say the class sentence.', audioValue: 'English class is on Monday.', correctValue: 'English class is on Monday.' },
-        { id: 'wb1_l10_d5_e5', type: 'writing', instruction: 'Write the answer.', audioValue: 'What season is it?', correctValue: 'It is winter.', displayValue: 'What season is it? ______' },
-        { id: 'wb1_l10_d5_e6', type: 'writing', instruction: 'Write the answer.', audioValue: 'Where are you?', correctValue: 'I am at school.', displayValue: 'Where are you? ______' },
-      ],
-    },
-    {
-      id: 'wb1_l10_d6',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l10_d6_e1', type: 'speaking', instruction: 'Listen to the text.', audioValue: 'My name is Anna. My birthday is in May. May is a beautiful month. I like spring because the flowers are pretty. Ben likes summer. It is hot in summer. He plays with his friends in July. Lucas likes winter. It is cold in winter. We have English class on Monday. Our class starts at seven o clock. We are at school, and we are ready to learn.', correctValue: 'My name is Anna. My birthday is in May. I like spring.', displayValue: 'Reading: My Favorite Season' },
-        { id: 'wb1_l10_d6_e2', type: 'multiple-choice', instruction: 'Answer the question.', audioValue: "When is Anna's birthday?", options: ['In May.', 'In July.'], correctValue: 'In May.' },
-        { id: 'wb1_l10_d6_e3', type: 'multiple-choice', instruction: 'Answer the question.', audioValue: 'What season does Anna like?', options: ['Spring.', 'Winter.'], correctValue: 'Spring.' },
-        { id: 'wb1_l10_d6_e4', type: 'multiple-choice', instruction: 'Answer the question.', audioValue: 'Is it hot in summer?', options: ['Yes, it is.', 'No, it is not.'], correctValue: 'Yes, it is.' },
-        { id: 'wb1_l10_d6_e5', type: 'multiple-choice', instruction: 'Answer the question.', audioValue: 'What time does class start?', options: ['At seven o clock.', 'At eight o clock.'], correctValue: 'At seven o clock.' },
-        { id: 'wb1_l10_d6_e6', type: 'writing', instruction: 'Complete the sentence.', audioValue: 'We are at school.', correctValue: 'school', displayValue: 'We are at ______.' },
-      ],
-    },
-    {
-      id: 'wb1_l10_d7',
-      type: 'review',
-      exercises: [
-        { id: 'wb1_l10_d7_e1', type: 'multiple-choice', instruction: 'Choose the correct preposition.', audioValue: 'in January', options: ['in', 'on'], correctValue: 'in' },
-        { id: 'wb1_l10_d7_e2', type: 'multiple-choice', instruction: 'Choose the correct preposition.', audioValue: 'on Monday', options: ['on', 'at'], correctValue: 'on' },
-        { id: 'wb1_l10_d7_e3', type: 'multiple-choice', instruction: 'Choose the correct preposition.', audioValue: 'at seven o clock', options: ['at', 'in'], correctValue: 'at' },
-        { id: 'wb1_l10_d7_e4', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'What season is it?', options: ['It is summer.', 'It is July.'], correctValue: 'It is summer.' },
-        { id: 'wb1_l10_d7_e5', type: 'writing', instruction: 'Complete the sentence.', audioValue: 'My birthday is in May.', correctValue: 'May', displayValue: 'My birthday is in ______.' },
-        { id: 'wb1_l10_d7_e6', type: 'writing', instruction: 'Complete the sentence.', audioValue: 'English class is on Monday.', correctValue: 'Monday', displayValue: 'English class is on ______.' },
-        { id: 'wb1_l10_d7_e7', type: 'speaking', instruction: 'Final speaking review.', audioValue: 'It is April. It is summer. My birthday is in May. English class is on Monday. Class starts at seven o clock.', correctValue: 'It is April. It is summer. My birthday is in May. English class is on Monday. Class starts at seven o clock.' },
-      ],
-    },
-  ],
-};
+const timeExamples: DrillRow[] = [
+  { prompt: 'January', answer: 'in January' }, { prompt: 'March', answer: 'in March' }, { prompt: 'summer', answer: 'in summer' },
+  { prompt: 'winter', answer: 'in winter' }, { prompt: 'the year 2026', answer: 'in 2026' }, { prompt: 'Monday', answer: 'on Monday' },
+  { prompt: 'April eighth', answer: 'on April eighth' }, { prompt: 'my birthday', answer: 'on my birthday' },
+  { prompt: "seven o'clock", answer: "at seven o'clock" }, { prompt: 'noon', answer: 'at noon' }, { prompt: 'night', answer: 'at night' },
+  { prompt: 'Friday morning', answer: 'on Friday morning' }, { prompt: 'September third', answer: 'on September third' },
+  { prompt: 'the afternoon', answer: 'in the afternoon' }, { prompt: 'midnight', answer: 'at midnight' },
+];
+
+const grammar: DrillRow[] = timeExamples.map((row) => ({ prompt: row.answer, display: row.answer.replace(/^(in|on|at)/, '____'), answer: row.answer.split(' ')[0] }));
+
+const questions: DrillRow[] = [
+  { prompt: 'When is the English class?', answer: "It's on Monday at nine o'clock." }, { prompt: 'When is your birthday?', answer: 'It is in July.' },
+  { prompt: 'What is your favorite season?', answer: 'My favorite season is summer.' }, { prompt: 'When is the school trip?', answer: 'It is on April eighth.' },
+  { prompt: 'When is lunch?', answer: 'It is at noon.' }, { prompt: 'When do you read?', answer: 'I read at night.' },
+  { prompt: 'What season follows spring?', answer: 'Summer follows spring.' }, { prompt: 'What season follows fall?', answer: 'Winter follows fall.' },
+  { prompt: 'What months are in Northern Hemisphere spring?', answer: 'March, April, and May.' }, { prompt: 'What months are in Northern Hemisphere winter?', answer: 'December, January, and February.' },
+  { prompt: 'Is your class in Monday?', answer: 'No. It is on Monday.' }, { prompt: 'Is the party at July?', answer: 'No. It is in July.' },
+  { prompt: 'Is dinner on seven o’clock?', answer: "No. It is at seven o'clock." }, { prompt: 'What is the date?', answer: 'It is October second.' },
+  { prompt: 'When is the meeting?', answer: 'It is on Friday morning.' },
+];
+
+const speakingRows: DrillRow[] = [
+  { prompt: 'January', answer: 'My birthday is in January.' }, { prompt: 'summer', answer: 'I like summer.' },
+  { prompt: 'winter', answer: 'Winter is cold in this Northern Hemisphere example.' }, { prompt: 'Monday', answer: 'My English class is on Monday.' },
+  { prompt: 'April eighth', answer: 'The trip is on April eighth.' }, { prompt: "seven o'clock", answer: "Class starts at seven o'clock." },
+  { prompt: 'noon', answer: 'We have lunch at noon.' }, { prompt: 'night', answer: 'I read at night.' },
+  { prompt: 'birthday question', answer: 'When is your birthday?' }, { prompt: 'season question', answer: 'What is your favorite season?' },
+  { prompt: 'date question', answer: 'What is the date?' }, { prompt: 'class question', answer: 'When is the English class?' },
+  { prompt: 'negative correction', answer: "The trip isn't in May. It's in June." }, { prompt: 'contracted time', answer: "It's on Tuesday at nine." },
+  { prompt: 'personal schedule', answer: "My birthday is in July, and my class is on Monday at nine o'clock." },
+];
+
+const reading = `The Learnendo class makes a calendar for 2026. The examples use seasons in the Northern Hemisphere. Spring is in March, April, and May. The class picnic is on April eighth at noon. Summer is in June, July, and August, and Maya’s birthday is on July twelfth. Fall, or autumn, is in September, October, and November. A school festival is on October second at seven o’clock. Winter is in December, January, and February. Ben likes to read at night in winter. The students know that seasons occur in different months in the Southern Hemisphere, so these month groups are not universal. Their calendar shows months, dates, seasons, and exact times clearly.`;
+
+const rq: DrillRow[] = [
+  { prompt: 'What year is on the calendar?', answer: '2026.' }, { prompt: 'Which hemisphere is used for the examples?', answer: 'The Northern Hemisphere.' },
+  { prompt: 'Which months are in spring?', answer: 'March, April, and May.' }, { prompt: 'When is the class picnic?', answer: 'On April eighth at noon.' },
+  { prompt: 'Which months are in summer?', answer: 'June, July, and August.' }, { prompt: 'When is Maya’s birthday?', answer: 'On July twelfth.' },
+  { prompt: 'What is another word for fall?', answer: 'Autumn.' }, { prompt: 'Which months are in fall?', answer: 'September, October, and November.' },
+  { prompt: 'When is the school festival?', answer: "On October second at seven o'clock." }, { prompt: 'Which months are in winter?', answer: 'December, January, and February.' },
+  { prompt: 'When does Ben read?', answer: 'At night in winter.' }, { prompt: 'Are the season months universal?', answer: 'No, they are not.' },
+  { prompt: 'Where can seasons use different months?', answer: 'In the Southern Hemisphere.' }, { prompt: 'What does the calendar show?', answer: 'Months, dates, seasons, and exact times.' },
+];
+
+export const lesson10 = buildLesson(10, 'Lesson 10: Months & Seasons', [
+  { exercises: choiceDrill(timeExamples, 'Choose the correct time expression.', 'identification') },
+  { exercises: writingDrill(grammar, 'Complete with in, on, or at.') },
+  { exercises: choiceDrill(questions, 'Choose the answer that matches the question.') },
+  { exercises: [
+    speak("Maya: When is your birthday? Ben: It's on January fifteenth. Maya: Is it in winter? Ben: In this Northern Hemisphere example, yes, it is.", [], { instruction: 'Listen to Dialogue 1 and repeat.', displayValue: "Dialogue 1 — A birthday\nMaya: When is your birthday?\nBen: It's on January fifteenth.\nMaya: Is it in winter?\nBen: In this Northern Hemisphere example, yes, it is." }),
+    speak("Teacher: When is our trip? Leo: It's on April eighth. Teacher: What time? Leo: At seven o'clock. Maya: That's in spring in our Northern Hemisphere calendar.", [], { instruction: 'Listen to Dialogue 2 and repeat.', displayValue: "Dialogue 2 — A class trip\nTeacher: When is our trip?\nLeo: It's on April eighth.\nTeacher: What time?\nLeo: At seven o'clock.\nMaya: That's in spring in our Northern Hemisphere calendar." }),
+    choice('When is Ben’s birthday?', 'On January fifteenth.', ['In January fifteen.', 'At January fifteenth.', 'On winter.'], 0),
+    choice('What season is used for January in Dialogue 1?', 'Winter.', ['Spring.', 'Summer.', 'Fall.'], 1),
+    choice('When is the class trip?', 'On April eighth.', ['In April eighth.', 'At April eighth.', 'On April eight.'], 2),
+    choice('What time is the trip?', "At seven o'clock.", ["On seven o'clock.", "In seven o'clock.", 'At seven date.'], 3),
+    write("It's on April eighth.", 'on', "Complete: It's ____ April eighth."),
+    write("It's at seven o'clock.", 'at', "Complete: It's ____ seven o'clock."),
+    speak("It's in spring in this Northern Hemisphere example.", [], { instruction: 'Say the climate statement carefully.' }),
+    choice('Why does Maya say “our Northern Hemisphere calendar”?', 'Season months depend on the hemisphere.', ['Every country has the same weather.', 'April is always cold.', 'There are no seasons elsewhere.'], 0),
+  ] },
+  { exercises: speakingDrill(speakingRows, 'Say the complete time expression or answer.') },
+  { exercises: [speak(reading, [], { instruction: 'Listen to and read the complete text.', displayValue: `Reading — Our 2026 Calendar\n\n${reading}` }), ...choiceDrill(rq, 'Answer from the reading.')] },
+  { type: 'review', exercises: [
+    ...choiceDrill(timeExamples.slice(0, 8), 'Choose the correct time expression.'),
+    write('The class is on Monday.', 'on', 'The class is ____ Monday.'), write('My birthday is in July.', 'in', 'My birthday is ____ July.'),
+    write("Lunch is at noon.", 'at', 'Lunch is ____ noon.'),
+    speak('When is your birthday? My birthday is in July.', [], { instruction: 'Ask and answer.' }),
+    speak("When is class? It's on Monday at nine o'clock.", [], { instruction: 'Ask and answer.' }),
+    speak("Spring is in March, April, and May in this Northern Hemisphere example.", [], { instruction: 'State the hemisphere clearly.' }),
+    choice('Which sentence is correct?', 'The festival is on October second at seven.', ['The festival is in October second.', 'The festival is at October second.', 'The festival is on October at seven.'], 3),
+  ] },
+]);

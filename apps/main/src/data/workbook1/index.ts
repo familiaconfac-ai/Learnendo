@@ -16,7 +16,8 @@ import { normalizeLessonsToOfficialTrails } from '../shared/normalizeOfficialWor
 export const workbook1 = {
   id: 'wb1',
   title: 'Workbook 1',
-  lessons: normalizeLessonsToOfficialTrails([
+  lessons: [
+    ...normalizeLessonsToOfficialTrails([
     lesson1,
     lesson2,
     lesson3,
@@ -24,10 +25,11 @@ export const workbook1 = {
     lesson5,
     lesson6,
     lesson7,
+    ]),
     lesson8,
     lesson9,
     lesson10,
     lesson11,
     lesson12,
-  ]),
+  ],
 };

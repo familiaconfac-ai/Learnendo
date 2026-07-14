@@ -1,93 +1,75 @@
-import { Lesson } from '../../types';
+import { buildLesson, choice, choiceDrill, DrillRow, speak, speakingDrill, write, writingDrill } from './lessonBuilder';
 
-export const lesson11: Lesson = {
-  id: 'wb1_l11',
-  title: 'Lesson 11: Asking Questions',
-  days: [
-    {
-      id: 'wb1_l11_d1',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l11_d1_e1', type: 'identification', instruction: 'Choose the question word.', audioValue: 'What is your name?', options: ['what', 'who'], correctValue: 'what', translation: 'o que / qual', isNewVocab: true },
-        { id: 'wb1_l11_d1_e2', type: 'identification', instruction: 'Choose the question word.', audioValue: 'Who is he?', options: ['who', 'where'], correctValue: 'who', translation: 'quem', isNewVocab: true },
-        { id: 'wb1_l11_d1_e3', type: 'identification', instruction: 'Choose the question word.', audioValue: 'Where are you from?', options: ['where', 'when'], correctValue: 'where', translation: 'onde', isNewVocab: true },
-        { id: 'wb1_l11_d1_e4', type: 'identification', instruction: 'Choose the question word.', audioValue: 'When is your birthday?', options: ['when', 'how'], correctValue: 'when', translation: 'quando', isNewVocab: true },
-        { id: 'wb1_l11_d1_e5', type: 'identification', instruction: 'Choose the question word.', audioValue: 'How are you?', options: ['how', 'what'], correctValue: 'how', translation: 'como', isNewVocab: true },
-        { id: 'wb1_l11_d1_e6', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'What, who, where, when, how.', correctValue: 'What, who, where, when, how.' },
-      ],
-    },
-    {
-      id: 'wb1_l11_d2',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l11_d2_e1', type: 'writing', instruction: 'Complete the question.', audioValue: 'What is your name?', correctValue: 'What', displayValue: '______ is your name?' },
-        { id: 'wb1_l11_d2_e2', type: 'writing', instruction: 'Complete the question.', audioValue: 'Who is he?', correctValue: 'Who', displayValue: '______ is he?' },
-        { id: 'wb1_l11_d2_e3', type: 'writing', instruction: 'Complete the question.', audioValue: 'Where are you from?', correctValue: 'Where', displayValue: '______ are you from?' },
-        { id: 'wb1_l11_d2_e4', type: 'writing', instruction: 'Complete the question.', audioValue: 'When is your birthday?', correctValue: 'When', displayValue: '______ is your birthday?' },
-        { id: 'wb1_l11_d2_e5', type: 'writing', instruction: 'Complete the question.', audioValue: 'How are you?', correctValue: 'How', displayValue: '______ are you?' },
-        { id: 'wb1_l11_d2_e6', type: 'writing', instruction: 'Complete the question.', audioValue: 'How old are you?', correctValue: 'How', displayValue: '______ old are you?' },
-      ],
-    },
-    {
-      id: 'wb1_l11_d3',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l11_d3_e1', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'What is your name?', options: ['My name is Anna.', 'I am from Brazil.'], correctValue: 'My name is Anna.' },
-        { id: 'wb1_l11_d3_e2', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'Who is he?', options: ['He is my friend.', 'It is Monday.'], correctValue: 'He is my friend.' },
-        { id: 'wb1_l11_d3_e3', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'Where is Ben?', options: ['Ben is in the classroom.', 'Ben is ten years old.'], correctValue: 'Ben is in the classroom.' },
-        { id: 'wb1_l11_d3_e4', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'When is your birthday?', options: ['My birthday is in May.', 'I am happy.'], correctValue: 'My birthday is in May.' },
-        { id: 'wb1_l11_d3_e5', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'How are you?', options: ['I am fine.', 'My name is Ben.'], correctValue: 'I am fine.' },
-        { id: 'wb1_l11_d3_e6', type: 'speaking', instruction: 'Ask and answer.', audioValue: 'How old are you? I am ten years old.', correctValue: 'How old are you? I am ten years old.' },
-      ],
-    },
-    {
-      id: 'wb1_l11_d4',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l11_d4_e1', type: 'speaking', instruction: 'Listen and repeat the dialogue.', audioValue: 'Teacher: What is your name? Anna: My name is Anna. Teacher: Who is he? Anna: He is Ben. Teacher: Who is she? Anna: She is my friend, Emily.', correctValue: 'What is your name? My name is Anna. Who is he? He is Ben. Who is she? She is my friend Emily.', displayValue: 'Teacher: What is your name?\nAnna: My name is Anna.\nTeacher: Who is he?\nAnna: He is Ben.\nTeacher: Who is she?\nAnna: She is my friend, Emily.' },
-        { id: 'wb1_l11_d4_e2', type: 'multiple-choice', instruction: 'Choose the correct answer from the dialogue.', audioValue: 'What is your name?', options: ['My name is Anna.', 'He is Ben.'], correctValue: 'My name is Anna.' },
-        { id: 'wb1_l11_d4_e3', type: 'multiple-choice', instruction: 'Choose the correct answer from the dialogue.', audioValue: 'Who is he?', options: ['He is Ben.', 'She is Emily.'], correctValue: 'He is Ben.' },
-        { id: 'wb1_l11_d4_e4', type: 'writing', instruction: 'Complete the answer.', audioValue: 'She is my teacher.', correctValue: 'teacher', displayValue: 'She is my ______.' },
-        { id: 'wb1_l11_d4_e5', type: 'writing', instruction: 'Complete the answer.', audioValue: 'I am from Brazil.', correctValue: 'Brazil', displayValue: 'I am from ______.' },
-        { id: 'wb1_l11_d4_e6', type: 'speaking', instruction: 'Listen and repeat exactly as you hear.', audioValue: 'Where are you from? I am from Brazil.', correctValue: 'Where are you from? I am from Brazil.' },
-      ],
-    },
-    {
-      id: 'wb1_l11_d5',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l11_d5_e1', type: 'speaking', instruction: 'Say the question.', audioValue: 'What is your name?', correctValue: 'What is your name?' },
-        { id: 'wb1_l11_d5_e2', type: 'speaking', instruction: 'Say the question.', audioValue: 'Where are you from?', correctValue: 'Where are you from?' },
-        { id: 'wb1_l11_d5_e3', type: 'speaking', instruction: 'Say the question.', audioValue: 'When is your birthday?', correctValue: 'When is your birthday?' },
-        { id: 'wb1_l11_d5_e4', type: 'speaking', instruction: 'Say the answer.', audioValue: 'I am fine, thank you.', correctValue: 'I am fine, thank you.' },
-        { id: 'wb1_l11_d5_e5', type: 'writing', instruction: 'Write the answer.', audioValue: 'How old are you?', correctValue: 'I am ten years old.', displayValue: 'How old are you? ______' },
-        { id: 'wb1_l11_d5_e6', type: 'writing', instruction: 'Write the answer.', audioValue: 'What month is it?', correctValue: 'It is January.', displayValue: 'What month is it? ______' },
-      ],
-    },
-    {
-      id: 'wb1_l11_d6',
-      type: 'practice',
-      exercises: [
-        { id: 'wb1_l11_d6_e1', type: 'speaking', instruction: 'Listen to the text.', audioValue: 'Today, the teacher asks many questions in English. She asks Anna, What is your name? Anna says, My name is Anna. Then the teacher points to Ben and asks, Who is he? Anna says, He is Ben. He is my classmate. The teacher asks Ben, Where are you from? Ben says, I am from Brazil. Lucas is in the classroom too. The teacher asks, When is your birthday? Lucas says, My birthday is in July. Everyone is happy because they can ask and answer questions in English.', correctValue: 'Today, the teacher asks many questions in English.', displayValue: 'Reading: Questions in Class' },
-        { id: 'wb1_l11_d6_e2', type: 'multiple-choice', instruction: 'Answer the question.', audioValue: 'Who asks many questions?', options: ['The teacher.', 'Ben.'], correctValue: 'The teacher.' },
-        { id: 'wb1_l11_d6_e3', type: 'multiple-choice', instruction: 'Answer the question.', audioValue: "What is the girl's name?", options: ['Anna.', 'Emily.'], correctValue: 'Anna.' },
-        { id: 'wb1_l11_d6_e4', type: 'multiple-choice', instruction: 'Answer the question.', audioValue: 'Where is Ben from?', options: ['Brazil.', 'Canada.'], correctValue: 'Brazil.' },
-        { id: 'wb1_l11_d6_e5', type: 'multiple-choice', instruction: 'Answer the question.', audioValue: "When is Lucas's birthday?", options: ['In July.', 'In May.'], correctValue: 'In July.' },
-        { id: 'wb1_l11_d6_e6', type: 'writing', instruction: 'Complete the sentence.', audioValue: 'The students are happy.', correctValue: 'happy', displayValue: 'The students are ______.' },
-      ],
-    },
-    {
-      id: 'wb1_l11_d7',
-      type: 'review',
-      exercises: [
-        { id: 'wb1_l11_d7_e1', type: 'multiple-choice', instruction: 'Choose the question word.', audioValue: 'What is your name?', options: ['what', 'who'], correctValue: 'what' },
-        { id: 'wb1_l11_d7_e2', type: 'multiple-choice', instruction: 'Choose the question word.', audioValue: 'Where are you from?', options: ['where', 'when'], correctValue: 'where' },
-        { id: 'wb1_l11_d7_e3', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'How are you?', options: ['I am fine.', 'My name is Anna.'], correctValue: 'I am fine.' },
-        { id: 'wb1_l11_d7_e4', type: 'identification', instruction: 'Choose the correct answer.', audioValue: 'Who is she?', options: ['She is my teacher.', 'It is Monday.'], correctValue: 'She is my teacher.' },
-        { id: 'wb1_l11_d7_e5', type: 'writing', instruction: 'Complete the question.', audioValue: 'What day is it today?', correctValue: 'What', displayValue: '______ day is it today?' },
-        { id: 'wb1_l11_d7_e6', type: 'writing', instruction: 'Complete the question.', audioValue: 'How old are you?', correctValue: 'How', displayValue: '______ old are you?' },
-        { id: 'wb1_l11_d7_e7', type: 'speaking', instruction: 'Final speaking review.', audioValue: 'What is your name? My name is Anna. Where are you from? I am from Brazil. How are you? I am fine.', correctValue: 'What is your name? My name is Anna. Where are you from? I am from Brazil. How are you? I am fine.' },
-      ],
-    },
-  ],
-};
+const questionWords: DrillRow[] = [
+  { prompt: '___ is your name?', answer: 'What' }, { prompt: '___ is he?', answer: 'Who' }, { prompt: '___ is she?', answer: 'Who' },
+  { prompt: '___ are you from?', answer: 'Where' }, { prompt: '___ is the teacher?', answer: 'Where' }, { prompt: '___ is your birthday?', answer: 'When' },
+  { prompt: '___ day is it today?', answer: 'What' }, { prompt: '___ month is it?', answer: 'What' }, { prompt: '___ is the date?', answer: 'What' },
+  { prompt: '___ old are you?', answer: 'How' }, { prompt: '___ old is she?', answer: 'How' }, { prompt: '___ is your class?', answer: 'When' },
+  { prompt: '___ is from Mexico?', answer: 'Who' }, { prompt: '___ are the students?', answer: 'Where' }, { prompt: '___ season is it?', answer: 'What' },
+];
+
+const ordered: DrillRow[] = [
+  { prompt: 'name / your / what / is', answer: 'What is your name?' }, { prompt: 'he / who / is', answer: 'Who is he?' },
+  { prompt: 'she / who / is', answer: 'Who is she?' }, { prompt: 'from / where / you / are', answer: 'Where are you from?' },
+  { prompt: 'teacher / where / the / is', answer: 'Where is the teacher?' }, { prompt: 'birthday / when / your / is', answer: 'When is your birthday?' },
+  { prompt: 'today / day / what / it / is', answer: 'What day is it today?' }, { prompt: 'month / what / it / is', answer: 'What month is it?' },
+  { prompt: 'date / the / what / is', answer: 'What is the date?' }, { prompt: 'you / how old / are', answer: 'How old are you?' },
+  { prompt: 'she / how old / is', answer: 'How old is she?' }, { prompt: 'class / when / the / is', answer: 'When is the class?' },
+  { prompt: 'Mexico / who / from / is', answer: 'Who is from Mexico?' }, { prompt: 'students / where / the / are', answer: 'Where are the students?' },
+  { prompt: 'season / what / it / is', answer: 'What season is it?' },
+];
+
+const qa: DrillRow[] = [
+  { prompt: 'What is your name?', answer: 'My name is Maya.' }, { prompt: 'Who is he?', answer: 'He is Leo.' },
+  { prompt: 'Who is she?', answer: 'She is my teacher.' }, { prompt: 'Where are you from?', answer: 'I am from Brazil.' },
+  { prompt: 'Where is the teacher?', answer: 'She is in the classroom.' }, { prompt: 'When is your birthday?', answer: 'It is in July.' },
+  { prompt: 'What day is it today?', answer: 'It is Monday.' }, { prompt: 'What month is it?', answer: 'It is September.' },
+  { prompt: 'What is the date?', answer: 'It is September third.' }, { prompt: 'How old are you?', answer: 'I am eleven.' },
+  { prompt: 'How old is she?', answer: 'She is twelve.' }, { prompt: 'When is the class?', answer: "It is at nine o'clock." },
+  { prompt: 'Who is from Mexico?', answer: 'Maya is from Mexico.' }, { prompt: 'Where are the students?', answer: 'They are at school.' },
+  { prompt: 'What season is it?', answer: 'It is spring in this example.' },
+];
+
+const speakingRows: DrillRow[] = qa.map((row) => ({ prompt: row.prompt, answer: `${row.prompt} ${row.answer}`, accepted: [row.answer] }));
+
+const reading = `Ms. Green welcomes a new student to the Monday class. His name is Amir, and he is eleven. Maya asks, “Where are you from?” Amir says he is from Egypt. Leo asks, “When is your birthday?” Amir’s birthday is on December second. The students look at the class calendar. It is September third, and their next school event is on October tenth at noon. Amir points to Ms. Green and asks, “Who is she?” Maya answers, “She’s our English teacher.” Then Amir asks where his book is. It is on his desk. At the end, Ms. Green asks, “What questions can you ask now?” The students use what, who, where, when, and how old to learn about their new classmate.`;
+
+const rq: DrillRow[] = [
+  { prompt: 'Who welcomes the new student?', answer: 'Ms. Green.' }, { prompt: 'What is the new student’s name?', answer: 'His name is Amir.' },
+  { prompt: 'How old is Amir?', answer: 'He is eleven.' }, { prompt: 'Where is Amir from?', answer: 'He is from Egypt.' },
+  { prompt: 'When is Amir’s birthday?', answer: 'It is on December second.' }, { prompt: 'What day is the class?', answer: 'Monday.' },
+  { prompt: 'What is the date?', answer: 'It is September third.' }, { prompt: 'When is the next school event?', answer: 'It is on October tenth at noon.' },
+  { prompt: 'Who is Ms. Green?', answer: 'She is their English teacher.' }, { prompt: 'Where is Amir’s book?', answer: 'It is on his desk.' },
+  { prompt: 'Who asks where the book is?', answer: 'Amir.' }, { prompt: 'What does Ms. Green ask at the end?', answer: 'What questions can you ask now?' },
+  { prompt: 'Which question word asks about a person?', answer: 'Who.' }, { prompt: 'Which expression asks about age?', answer: 'How old.' },
+];
+
+export const lesson11 = buildLesson(11, 'Lesson 11: Asking Questions', [
+  { exercises: questionWords.map((row, index) => choice(row.prompt, row.answer, ['What', 'Who', 'Where', 'When', 'How'].filter((word) => word !== row.answer).slice(index % 2, index % 2 + 3), index % 4, { type: 'identification', instruction: 'Choose the question word.' })) },
+  { exercises: writingDrill(ordered, 'Put the words in order and write the complete question.') },
+  { exercises: choiceDrill(qa, 'Choose the answer that matches the WH-question.') },
+  { exercises: [
+    speak("Maya: What's your name? Amir: My name is Amir. Maya: Where are you from? Amir: I'm from Egypt. Maya: How old are you? Amir: I'm eleven.", [], { instruction: 'Listen to Dialogue 1 and repeat.', displayValue: "Dialogue 1 — A new student\nMaya: What's your name?\nAmir: My name is Amir.\nMaya: Where are you from?\nAmir: I'm from Egypt.\nMaya: How old are you?\nAmir: I'm eleven." }),
+    speak("Amir: Who is she? Leo: She's Ms. Green. Amir: Where is she? Leo: She's in the classroom. Amir: When is English class? Leo: It's on Monday at nine.", [], { instruction: 'Listen to Dialogue 2 and repeat.', displayValue: "Dialogue 2 — People, place, and time\nAmir: Who is she?\nLeo: She's Ms. Green.\nAmir: Where is she?\nLeo: She's in the classroom.\nAmir: When is English class?\nLeo: It's on Monday at nine." }),
+    choice('What is the new student’s name?', 'His name is Amir.', ['He is eleven.', 'He is from Egypt.', 'He is in class.'], 0),
+    choice('Where is Amir from?', 'He is from Egypt.', ['He is from Brazil.', 'He is eleven.', 'He is a teacher.'], 1),
+    choice('How old is Amir?', 'He is eleven.', ['He is Amir.', 'He is from Egypt.', 'He is in class.'], 2),
+    choice('Who is Ms. Green?', 'She is the teacher.', ['She is Amir.', 'She is eleven.', 'She is Monday.'], 3),
+    choice('Where is Ms. Green?', 'She is in the classroom.', ['She is on Monday.', 'She is eleven.', 'She is from Egypt.'], 0),
+    choice('When is English class?', 'It is on Monday at nine.', ['It is Ms. Green.', 'It is in the classroom.', 'It is eleven.'], 1),
+    write('Where are you from?', 'Where are you from?', 'Correct the order: Where / from / are / you'),
+    speak('Who is she? She is Ms. Green.', ["Who is she? She's Ms. Green."], { instruction: 'Ask and answer naturally.' }),
+  ] },
+  { exercises: speakingDrill(speakingRows, 'Ask the WH-question and give the complete answer.') },
+  { exercises: [speak(reading, [], { instruction: 'Listen to and read the complete text.', displayValue: `Reading — Questions for Amir\n\n${reading}` }), ...choiceDrill(rq, 'Answer from the reading.')] },
+  { type: 'review', exercises: [
+    ...choiceDrill(qa.slice(0, 8), 'Choose the answer that matches the question.'),
+    write('What is your name?', 'What is your name?', 'Correct: your / what / name / is'),
+    write('Where are you from?', 'Where are you from?', 'Correct: are / from / where / you'),
+    write('When is your birthday?', 'When is your birthday?', 'Correct: birthday / when / your / is'),
+    speak('Who is she? She is my teacher.', ["Who is she? She's my teacher."], { instruction: 'Ask and answer.' }),
+    speak('What is the date? It is September third.', ["What's the date? It's September third."], { instruction: 'Ask and answer.' }),
+    speak('How old are you? I am eleven.', ["How old are you? I'm eleven."], { instruction: 'Ask and answer.' }),
+    speak('Where is the class? It is at Learnendo School.', ["Where's the class? It's at Learnendo School."], { instruction: 'Complete the cumulative review.' }),
+  ] },
+]);
