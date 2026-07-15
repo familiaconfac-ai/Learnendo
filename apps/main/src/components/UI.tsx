@@ -4,6 +4,7 @@ import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
 import { isFillInBlankExercise, resolveFullSentenceAfterAnswer, resolvePromptAudioText } from '../utils/fillInBlankAudio';
+import { isWritingPromptResponseCorrect } from '../utils/writingPrompt';
 import { classifySpeakingExercise, speakingTargets } from '../utils/speakingExercise';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import {
@@ -857,7 +858,9 @@ export const PracticeSection: React.FC<{
             isSpeakingMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage)
             || (!isShadowing && isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage))
           )
-        : acceptedAnswers.some((answer) => isAnswerMatch(rawInput, answer, currentLanguage));
+        : item.type === 'writing' && item.promptMode
+          ? isWritingPromptResponseCorrect(item, rawInput, currentLanguage)
+          : acceptedAnswers.some((answer) => isAnswerMatch(rawInput, answer, currentLanguage));
 
       reportAttempt(rawInput, isCorrect);
       setFeedback(isCorrect ? 'correct' : 'wrong');
@@ -1127,7 +1130,7 @@ export const PracticeSection: React.FC<{
           )}
         </div>
 
-        <div className={`flex-1 min-h-0 w-full ${practiceWidthClass} px-4 sm:px-6 flex flex-col items-center ${isShortViewport ? 'pt-1 pb-3' : 'pt-2 sm:pt-4 pb-6'} overflow-y-auto no-scrollbar`}>
+        <div data-practice-scroll-region="true" className={`flex-1 min-h-0 w-full ${practiceWidthClass} px-4 sm:px-6 flex flex-col items-center ${isShortViewport ? 'pt-1 pb-3' : 'pt-2 sm:pt-4 pb-6'} overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable] scroll-pb-6`}>
           <div
             className={`relative group cursor-help w-full ${isShortViewport ? 'mb-3' : 'mb-4'}`}
             onClick={() => {
@@ -1388,7 +1391,7 @@ export const PracticeSection: React.FC<{
                   })}
                 </div>
               ) : (
-              <div className={`grid ${useCompactChoiceGrid ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2'} gap-2 w-full`}>
+              <div data-practice-options="true" className={`grid ${useCompactChoiceGrid ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2'} gap-2 w-full`}>
                 {shuffledOptions.map((opt) => (
                   <button
                     key={opt}
@@ -1440,14 +1443,14 @@ export const PracticeSection: React.FC<{
                     if (feedback === 'wrong') { setFeedback('none'); setShowFooter(false); }
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="..."
+                  placeholder={item.promptMode === 'write-question' ? 'Type the question...' : '...'}
                 />
               </div>
             )}
           </div>
         </div>
 
-        <div className={`w-full shrink-0 ${isShortViewport ? 'p-3 sm:p-4' : 'p-4 sm:p-6'} flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
+        <div data-practice-footer="true" className={`w-full shrink-0 ${isShortViewport ? 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4' : 'px-4 sm:px-6 pt-4 sm:pt-6 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-6'} flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
           <div className={`w-full ${footerWidthClass}`}>
             {showFooter ? (
               <div className="flex flex-col gap-3">

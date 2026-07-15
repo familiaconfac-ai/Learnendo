@@ -22,6 +22,7 @@ export interface Exercise {
   translation?: string;
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
+  promptMode?: 'answer-question' | 'write-question';
 }
 
 export interface Day {
@@ -441,6 +442,7 @@ export interface PracticeItem {
   translation?: string;
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
+  promptMode?: 'answer-question' | 'write-question';
 }
 
 export interface OldUserProgress {

@@ -27,3 +27,13 @@ test('an out-of-range exercise index renders a recovery state instead of a blank
     'the exercise flow still returns a blank screen when its index is out of range',
   );
 });
+
+test('practice content scrolls when needed and the confirmation footer remains outside the scroll region', () => {
+  const scrollRegion = uiSource.indexOf('data-practice-scroll-region="true"');
+  const options = uiSource.indexOf('data-practice-options="true"');
+  const footer = uiSource.indexOf('data-practice-footer="true"');
+  assert.ok(scrollRegion >= 0 && options > scrollRegion && footer > options);
+  assert.match(uiSource, /data-practice-scroll-region="true"[^>]+overflow-y-auto/);
+  assert.match(uiSource, /data-practice-footer="true"[^>]+safe-area-inset-bottom/);
+  assert.doesNotMatch(uiSource, /data-practice-scroll-region="true"[^>]+no-scrollbar/);
+});

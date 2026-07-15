@@ -9,8 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "test:answer-normalization": "node --experimental-strip-types src/utils/answerNormalization.test.ts",
-    "test:exercise-flow": "node scripts/exercise-flow-regression.test.mjs && node --experimental-strip-types src/engine/exerciseCompletionEngine.test.ts && node --experimental-strip-types src/utils/speakingExercise.test.ts",
+    "test:answer-normalization": "node --experimental-strip-types src/utils/answerNormalization.test.ts && node --experimental-strip-types src/utils/writingPrompt.test.ts",
+    "test:exercise-flow": "node scripts/exercise-flow-regression.test.mjs && node --experimental-strip-types src/engine/exerciseCompletionEngine.test.ts && node --experimental-strip-types src/utils/speakingExercise.test.ts && node --experimental-strip-types src/data/shared/normalizeOfficialWorkbookLessons.test.ts",
     "deploy": "npm run build && vercel --prod"
   },
   "dependencies": {

@@ -1,4 +1,5 @@
-import { Day, Exercise, Lesson } from '../../types';
+import type { Day, Exercise, Lesson } from '../../types.ts';
+import { questionProductionFields } from '../../utils/writingPrompt.ts';
 
 const TARGET_TRAIL_COUNTS = [15, 15, 15, 10, 15, 15, 15] as const;
 
@@ -16,7 +17,19 @@ function cloneExercise(exercise: Exercise, id: string, overrides: Partial<Exerci
   };
 }
 
-function toWritingExercise(exercise: Exercise, id: string): Exercise {
+function toWritingExercise(exercise: Exercise, id: string, enableQuestionProduction = false): Exercise {
+  const questionFields = enableQuestionProduction ? questionProductionFields(exercise) : null;
+  if (questionFields) {
+    return cloneExercise(exercise, id, {
+      ...questionFields,
+      type: 'writing',
+      options: undefined,
+    });
+  }
+  // Workbook 1 only promotes an item to writing when its authored objective is
+  // already writing or when a clear question/answer pair exists. A bare response
+  // must never become "Answer: <response>" with that same response as the target.
+  if (enableQuestionProduction && exercise.type !== 'writing') return cloneExercise(exercise, id);
   const displayValue =
     exercise.displayValue
     ?? (exercise.options?.length ? `Answer: ${exercise.correctValue}` : exercise.audioValue);
@@ -100,11 +113,12 @@ function materializeTrailExercises(
   trailNumber: number,
   refs: ExerciseRef[],
   transform: 'keep' | 'speaking' | 'writing',
+  enableQuestionProduction = false,
 ): Exercise[] {
   return refs.map((ref, index) => {
     const id = `${lesson.id}_d${trailNumber}_e${index + 1}`;
     if (transform === 'speaking') return toSpeakingExercise(ref.exercise, id);
-    if (transform === 'writing') return toWritingExercise(ref.exercise, id);
+    if (transform === 'writing') return toWritingExercise(ref.exercise, id, enableQuestionProduction);
     return cloneExercise(ref.exercise, id);
   });
 }
@@ -140,13 +154,16 @@ export function normalizeLessonsToOfficialTrails(lessons: Lesson[]): Lesson[] {
       TARGET_TRAIL_COUNTS[3],
     );
 
+    const isWorkbook1 = lesson.id.startsWith('wb1_');
+    const isWorkbook1Lesson1 = lesson.id === 'wb1_l1';
+    const trail5Priorities = isWorkbook1Lesson1 ? [5, 4, 1, 6, 2, 3, 0] : [4, 5, 1, 6, 2, 3, 0];
     const trail5Refs = padRefs(
-      selectRefsByPriority(groupedRefs, [4, 5, 1, 6, 2, 3, 0], TARGET_TRAIL_COUNTS[4]),
+      selectRefsByPriority(groupedRefs, trail5Priorities, TARGET_TRAIL_COUNTS[4]),
       allRefs,
       TARGET_TRAIL_COUNTS[4],
     );
 
-    const trail6Refs = padRefs(
+    const trail6Refs = isWorkbook1 ? trail5Refs : padRefs(
       selectRefsByPriority(groupedRefs, [5, 3, 6, 4, 2, 1, 0], TARGET_TRAIL_COUNTS[5]),
       allRefs,
       TARGET_TRAIL_COUNTS[5],
@@ -184,12 +201,12 @@ export function normalizeLessonsToOfficialTrails(lessons: Lesson[]): Lesson[] {
         {
           id: `${lesson.id}_d5`,
           type: 'practice',
-          exercises: materializeTrailExercises(lesson, 5, trail5Refs, 'writing'),
+          exercises: materializeTrailExercises(lesson, 5, trail5Refs, isWorkbook1 ? 'keep' : 'writing', isWorkbook1),
         },
         {
           id: `${lesson.id}_d6`,
           type: 'practice',
-          exercises: materializeTrailExercises(lesson, 6, trail6Refs, 'keep'),
+          exercises: materializeTrailExercises(lesson, 6, trail6Refs, isWorkbook1 ? 'writing' : 'keep', isWorkbook1),
         },
         {
           id: `${lesson.id}_d7`,
