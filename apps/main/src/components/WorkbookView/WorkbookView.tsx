@@ -1,5 +1,6 @@
 import React from 'react';
 import { Lesson, UserProgress } from '../../types';
+import { getPedagogicalLessonStatus } from '../../engine/lessonProgressionEngine';
 
 interface WorkbookViewProps {
   workbookId: number;
@@ -65,11 +66,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
   const getLessonStatus = (index: number): 'completed' | 'in-progress' | 'locked' => {
     const lesson = islandSlots[index];
     const lessonNumber = lesson ? getVisibleLessonNumber(lesson, index) : index + 1;
-    if (completedLessonSet.has(lessonNumber)) return 'completed';
-    if (isAdmin) return 'in-progress';
-    if (lessonNumber <= 1) return 'in-progress';
-    if (completedLessonSet.has(lessonNumber - 1)) return 'in-progress';
-    return 'locked';
+    return getPedagogicalLessonStatus(lessonNumber, completedLessonSet, isAdmin);
   };
 
   const firstUnlockedIndex = islandSlots.findIndex((_, index) => getLessonStatus(index) === 'in-progress');

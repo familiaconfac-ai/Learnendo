@@ -23,6 +23,7 @@ import { MyVocabularyPage } from './components/MyVocabularyPage';
 import { ProgressEngine } from './engine/progressEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
+import { appendUniqueCompletionActivities } from './engine/lessonProgressionEngine';
 import { GRAMMAR_GUIDES } from './constants';
 import { auth, db, loginWithEmail, registerWithEmail, convertAnonymousToUser } from './services/firebase';
 import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress, promoteAdminIfNeeded } from './services/db';
@@ -2141,7 +2142,17 @@ const App: React.FC = () => {
   const handleDayComplete = async (
     dayId: string,
     score: number,
-    exerciseAnalytics?: { attempts: number; errors: number; accuracy: number; points: number },
+    exerciseAnalytics?: {
+      attempts: number;
+      errors: number;
+      accuracy: number;
+      points: number;
+      initialAccuracy?: number;
+      reviewedExercises?: number;
+      reviewAttempts?: number;
+      finalMastery?: number;
+      isLessonFinalReview?: boolean;
+    },
   ) => {
     console.log(`[App] Day "${dayId}" completed. Score: ${score}%`);
 
@@ -2347,6 +2358,14 @@ const App: React.FC = () => {
     const dayMatch = dayId.match(/d(\d+)/);
     const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
     const lessonNumber = getLessonNumberFromId(currentLessonId);
+    const lessonCompletionMarker = exerciseAnalytics?.isLessonFinalReview && Number.isFinite(lessonNumber)
+      ? `${fullLessonTestPrefix}${lessonNumber}`
+      : null;
+    const completedActivities = appendUniqueCompletionActivities(
+      progress.completedActivities,
+      dayId,
+      lessonCompletionMarker,
+    );
 
     // Compute the NEXT position the student should work on after this day
     const nextPath = (!isNaN(dayNumber) && !isNaN(lessonNumber))
@@ -2359,9 +2378,7 @@ const App: React.FC = () => {
 
     const updated: UserProgress = {
       ...progress,
-      completedActivities: alreadyDone
-        ? progress.completedActivities
-        : [...progress.completedActivities, dayId],
+      completedActivities,
       // Accumulate the days map — keys are preserved individually in Firestore.
       days: {
         ...(progress.days ?? {}),
@@ -2395,9 +2412,7 @@ const App: React.FC = () => {
     // the next exercise before the Firestore onSnapshot arrives.
     setProgress(prev => ({
       ...prev,
-      completedActivities: prev.completedActivities.includes(dayId)
-        ? prev.completedActivities
-        : [...prev.completedActivities, dayId],
+      completedActivities: appendUniqueCompletionActivities(prev.completedActivities, dayId, lessonCompletionMarker),
       days: { ...(prev.days ?? {}), [dayId]: true },
     }));
 
@@ -3120,6 +3135,19 @@ const App: React.FC = () => {
         const nextPracticeDay = currentPracticeDayIndex >= 0
           ? currentPracticeLesson?.days[currentPracticeDayIndex + 1]
           : undefined;
+        const currentPracticeLessonIndex = currentWorkbook?.lessons?.findIndex(
+          (lesson: { id: string }) => lesson.id === currentPracticeLesson?.id,
+        ) ?? -1;
+        const nextPracticeLesson = currentPracticeLessonIndex >= 0
+          ? currentWorkbook?.lessons?.[currentPracticeLessonIndex + 1]
+          : undefined;
+        const isLastPracticeDay = currentPracticeDayIndex >= 0
+          && currentPracticeDayIndex === practiceTotalDays - 1;
+        const isLastPracticeLesson = currentPracticeLessonIndex >= 0
+          && currentPracticeLessonIndex === (currentWorkbook?.lessons?.length ?? 0) - 1;
+        const activePracticeWorkbookId = currentWorkbookId || progress.currentWorkbook || 1;
+        const workbookRegistry = COURSE_WORKBOOKS[currentCourseId ?? DEFAULT_COURSE_ID] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
+        const hasNextPracticeWorkbook = Boolean(workbookRegistry[activePracticeWorkbookId + 1]);
         const isCurrentPracticeDayCompleted = Boolean(
           progress.completedActivities.includes(currentDay.id)
           || progress.days?.[currentDay.id]
@@ -3139,6 +3167,29 @@ const App: React.FC = () => {
             onContinueToNextDay={nextPracticeDay ? () => {
               dayStartTimeRef.current = Date.now();
               setCurrentDay(nextPracticeDay);
+              setActiveWeeklyTest(null);
+              setCurrentSection(SectionType.PRACTICE);
+            } : undefined}
+            isLastDayOfLesson={isLastPracticeDay}
+            isLastLessonOfWorkbook={isLastPracticeLesson}
+            hasNextWorkbook={hasNextPracticeWorkbook}
+            onContinueToNextLesson={nextPracticeLesson ? () => {
+              dayStartTimeRef.current = null;
+              setCurrentDay(null);
+              setActiveWeeklyTest(null);
+              openLesson(nextPracticeLesson.id);
+            } : undefined}
+            onContinueToNextWorkbook={isLastPracticeLesson ? () => {
+              setCurrentDay(null);
+              setActiveWeeklyTest(null);
+              handleNavigate(
+                hasNextPracticeWorkbook ? SectionType.WORKBOOK : SectionType.WORKBOOK_LIST,
+                hasNextPracticeWorkbook ? { workbookId: activePracticeWorkbookId + 1 } : undefined,
+              );
+            } : undefined}
+            onRepeatLesson={currentPracticeLesson?.days?.[0] ? () => {
+              dayStartTimeRef.current = Date.now();
+              setCurrentDay(currentPracticeLesson.days[0]);
               setActiveWeeklyTest(null);
               setCurrentSection(SectionType.PRACTICE);
             } : undefined}

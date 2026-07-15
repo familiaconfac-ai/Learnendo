@@ -1085,7 +1085,7 @@ export const PracticeSection: React.FC<{
         return (
           <div className="flex flex-col items-center animate-in fade-in duration-700">
             <div
-              className="w-16 h-16 rounded-full border-4 border-slate-600 shadow-lg"
+              className={`${isShortViewport ? 'h-11 w-11' : 'h-12 w-12 sm:h-14 sm:w-14'} rounded-full border-[3px] border-slate-600 shadow-lg`}
               style={{ backgroundColor: swatchHex }}
             />
           </div>
@@ -1107,14 +1107,15 @@ export const PracticeSection: React.FC<{
 
     return (
       <div
-        className={`${fullScreen ? 'fixed inset-x-0 bottom-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-hidden outline-none`}
+        data-practice-shell="true"
+        className={`${fullScreen ? 'fixed inset-x-0 bottom-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} no-scrollbar bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-y-auto overscroll-y-contain outline-none`}
         style={fullScreen ? { top: viewportTopOffset } : undefined}
       >
-        <div className={`w-full ${practiceWidthClass} max-sm:px-4 px-6 ${isShortViewport ? 'pt-3' : 'pt-5'}`}>
+        <div className={`sticky top-0 z-20 w-full ${practiceWidthClass} max-sm:px-4 px-6 ${isShortViewport ? 'pt-1' : 'pt-2'} bg-slate-900/95 backdrop-blur-sm`}>
           {onBack && (
             <button
               onPointerDown={(e) => { e.preventDefault(); onBack(); }}
-              className="mb-3 w-9 h-9 flex items-center justify-center text-white rounded-xl active:opacity-60 shrink-0 [touch-action:manipulation]"
+              className="mb-1 h-8 w-8 flex items-center justify-center text-white rounded-xl active:opacity-60 shrink-0 [touch-action:manipulation]"
               aria-label="Back"
             >
               <img src={backIcon} className="w-5 h-5 brightness-0 invert" alt="Back" />
@@ -1123,16 +1124,16 @@ export const PracticeSection: React.FC<{
           {onGrammar && (
             <button
               onPointerDown={(e) => { e.preventDefault(); onGrammar(); }}
-              className={`mb-3 mx-auto flex w-full max-w-[210px] items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95 [touch-action:manipulation] sm:max-w-[240px] ${isShortViewport ? 'py-2.5' : 'py-3'}`}
+              className={`mb-2 mx-auto flex w-full max-w-[210px] items-center justify-center rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 text-[clamp(0.7rem,1.8vw,0.875rem)] font-black uppercase tracking-[0.16em] text-slate-950 shadow-[0_6px_18px_rgba(56,189,248,0.3)] transition-transform active:scale-95 [touch-action:manipulation] sm:max-w-[240px] ${isShortViewport ? 'py-1.5' : 'py-2'}`}
             >
               Grammar Focus
             </button>
           )}
         </div>
 
-        <div data-practice-scroll-region="true" className={`flex-1 min-h-0 w-full ${practiceWidthClass} px-4 sm:px-6 flex flex-col items-center ${isShortViewport ? 'pt-1 pb-3' : 'pt-2 sm:pt-4 pb-6'} overflow-y-auto overscroll-y-contain [scrollbar-gutter:stable] scroll-pb-6`}>
+        <div data-practice-scroll-region="true" className={`flex-1 min-h-fit w-full ${practiceWidthClass} px-4 sm:px-6 flex flex-col items-center ${isShortViewport ? 'pt-0.5 pb-2' : 'pt-1 pb-3'} overflow-visible`}>
           <div
-            className={`relative group cursor-help w-full ${isShortViewport ? 'mb-3' : 'mb-4'}`}
+            className={`relative group cursor-help w-full ${isShortViewport ? 'mb-1.5' : 'mb-2.5'}`}
             onClick={() => {
               if (!clickTranslatorMode) setShowHint(!showHint);
             }}
@@ -1313,7 +1314,7 @@ export const PracticeSection: React.FC<{
               </div>
             )}
           </div>
-          <div className={`flex flex-col items-center w-full ${isShortViewport ? 'gap-3' : 'gap-4 sm:gap-6'}`}>
+          <div className={`flex flex-col items-center w-full ${isShortViewport ? 'gap-1.5' : 'gap-2.5 sm:gap-3'}`}>
             {/* ✅ Audio control buttons in correct order */}
             <div className={`flex ${isShortViewport ? 'gap-3' : 'gap-4'}`}>
               {promptAudioText && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || isFillInBlankWriting || hasWrongAttempt) && (
@@ -1391,7 +1392,7 @@ export const PracticeSection: React.FC<{
                   })}
                 </div>
               ) : (
-              <div data-practice-options="true" className={`grid ${useCompactChoiceGrid ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2'} gap-2 w-full`}>
+              <div data-practice-options="true" className={`grid ${useCompactChoiceGrid ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2'} gap-1.5 sm:gap-2 w-full`}>
                 {shuffledOptions.map((opt) => (
                   <button
                     key={opt}
@@ -1408,8 +1409,8 @@ export const PracticeSection: React.FC<{
                       }
                       handleOptionClick(opt);
                     }}
-                    className={`${isShortViewport ? 'p-2.5 min-h-[50px]' : 'p-3 min-h-[56px]'} border-2 rounded-3xl font-bold transition-all flex items-center justify-center text-center leading-snug break-words [touch-action:manipulation] ${
-                      opt.length > 14 ? 'text-xs sm:text-sm normal-case' : isShortViewport ? 'text-sm font-black uppercase' : 'text-base sm:text-xl font-black uppercase'
+                    className={`${isShortViewport ? 'px-2 py-1.5 min-h-[42px]' : 'px-2.5 py-2 min-h-[46px]'} border-2 rounded-2xl font-bold transition-all flex items-center justify-center text-center leading-snug break-words [touch-action:manipulation] ${
+                      opt.length > 14 ? 'text-[clamp(0.75rem,1.7vw,0.9rem)] normal-case' : 'text-[clamp(0.8rem,2vw,1.05rem)] font-black uppercase'
                     } ${selectedOption === opt ? 'bg-blue-600 text-white border-blue-500 shadow-lg' : 'bg-slate-800 border-slate-600 text-white hover:border-blue-500'}`}
                   >
                     <span className="whitespace-pre-wrap">{renderInteractiveText(opt)}</span>
@@ -1436,7 +1437,7 @@ export const PracticeSection: React.FC<{
                 <input
                   ref={inputRef}
                   disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
-                  className={`w-full p-4 border-2 rounded-3xl text-center text-2xl font-black focus:border-blue-500 outline-none transition-all ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
+                  className={`w-full px-3 py-2.5 border-2 rounded-2xl text-center text-[clamp(1rem,3vw,1.35rem)] font-black focus:border-blue-500 outline-none transition-all ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
                   onChange={(e) => {
                     setUserInput(e.target.value);
@@ -1450,7 +1451,7 @@ export const PracticeSection: React.FC<{
           </div>
         </div>
 
-        <div data-practice-footer="true" className={`w-full shrink-0 ${isShortViewport ? 'px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:p-4' : 'px-4 sm:px-6 pt-4 sm:pt-6 pb-[max(1rem,env(safe-area-inset-bottom))] sm:pb-6'} flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
+        <div data-practice-footer="true" className={`sticky bottom-0 z-20 w-full shrink-0 ${isShortViewport ? 'px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))]' : 'px-4 sm:px-6 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]'} flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
           <div className={`w-full ${footerWidthClass}`}>
             {showFooter ? (
               <div className="flex flex-col gap-3">
@@ -1500,7 +1501,7 @@ export const PracticeSection: React.FC<{
                         setShowFooter(false);
                       }
                     }}
-                    className={`px-8 py-4 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0 [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
+                    className={`px-7 py-3 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_3px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0 [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
                   >
                     {feedback === 'correct' ? PL.continueBtn : PL.gotItBtn}
                   </button>
@@ -1514,7 +1515,7 @@ export const PracticeSection: React.FC<{
                     || (!allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim()))
                   }
                   onClick={() => handleCheck()}
-                  className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-40 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center [touch-action:manipulation]"
+                  className="w-full py-3 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_3px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-40 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center [touch-action:manipulation]"
                 >
                   {allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim()) ? (
                     <span>{PL.continueBtn}</span>

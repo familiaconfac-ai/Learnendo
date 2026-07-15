@@ -28,12 +28,16 @@ test('an out-of-range exercise index renders a recovery state instead of a blank
   );
 });
 
-test('practice content scrolls when needed and the confirmation footer remains outside the scroll region', () => {
+test('practice uses one external scroll container with a compact sticky confirmation footer', () => {
+  const shell = uiSource.indexOf('data-practice-shell="true"');
   const scrollRegion = uiSource.indexOf('data-practice-scroll-region="true"');
   const options = uiSource.indexOf('data-practice-options="true"');
   const footer = uiSource.indexOf('data-practice-footer="true"');
-  assert.ok(scrollRegion >= 0 && options > scrollRegion && footer > options);
-  assert.match(uiSource, /data-practice-scroll-region="true"[^>]+overflow-y-auto/);
-  assert.match(uiSource, /data-practice-footer="true"[^>]+safe-area-inset-bottom/);
-  assert.doesNotMatch(uiSource, /data-practice-scroll-region="true"[^>]+no-scrollbar/);
+  assert.ok(shell >= 0 && scrollRegion > shell && options > scrollRegion && footer > options);
+  assert.match(uiSource, /data-practice-shell="true"[\s\S]{0,300}no-scrollbar[\s\S]{0,100}overflow-y-auto/);
+  assert.match(uiSource, /data-practice-scroll-region="true"[^>]+overflow-visible/);
+  assert.doesNotMatch(uiSource, /data-practice-scroll-region="true"[^>]+overflow-y-auto/);
+  assert.doesNotMatch(uiSource, /scrollbar-gutter:stable/);
+  assert.match(uiSource, /data-practice-footer="true"[^>]+sticky bottom-0[^>]+safe-area-inset-bottom/);
+  assert.match(uiSource, /min-h-\[42px\]/);
 });
