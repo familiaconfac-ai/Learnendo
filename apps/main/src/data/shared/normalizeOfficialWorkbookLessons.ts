@@ -163,7 +163,7 @@ export function normalizeLessonsToOfficialTrails(lessons: Lesson[]): Lesson[] {
       TARGET_TRAIL_COUNTS[4],
     );
 
-    const trail6Refs = isWorkbook1 ? trail5Refs : padRefs(
+    const trail6Refs = padRefs(
       selectRefsByPriority(groupedRefs, [5, 3, 6, 4, 2, 1, 0], TARGET_TRAIL_COUNTS[5]),
       allRefs,
       TARGET_TRAIL_COUNTS[5],

@@ -23,6 +23,8 @@ export interface Exercise {
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
   promptMode?: 'answer-question' | 'write-question';
+  assessmentMode?: 'listening-writing' | 'shadowing' | 'speaking';
+  coverageObjective?: string;
 }
 
 export interface Day {
@@ -443,6 +445,8 @@ export interface PracticeItem {
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
   promptMode?: 'answer-question' | 'write-question';
+  assessmentMode?: 'listening-writing' | 'shadowing' | 'speaking';
+  coverageObjective?: string;
 }
 
 export interface OldUserProgress {

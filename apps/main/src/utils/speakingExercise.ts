@@ -7,9 +7,12 @@ type SpeakingSource = {
   audioValue?: string;
   correctValue: string;
   acceptedAnswers?: string[];
+  assessmentMode?: 'listening-writing' | 'shadowing' | 'speaking';
 };
 
 export function classifySpeakingExercise(source: SpeakingSource): SpeakingMode {
+  if (source.assessmentMode === 'shadowing') return 'shadowing';
+  if (source.assessmentMode === 'speaking') return 'question-and-answer';
   const instruction = source.instruction.toLowerCase();
   if (/\b(answer|respond|reply)\b/.test(instruction) && !/\brepeat\b/.test(instruction)) return 'question-and-answer';
   if (/\b(repeat|shadow|say exactly|read aloud)\b/.test(instruction)) return 'shadowing';

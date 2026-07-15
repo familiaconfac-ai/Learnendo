@@ -8,6 +8,7 @@ import {
   loadExerciseProgress,
   lessonCompletionSummary,
   mergeLegacyCompletedDays,
+  migrateMovedExerciseProgress,
   practiceRunSummary,
   resolvePracticeStart,
   saveExerciseProgress,
@@ -25,6 +26,7 @@ import {
   skipTechnicalExercise,
   type MasterySessionState,
 } from '../../engine/masteryQueueEngine';
+import { buildFinalTestReport } from '../../engine/finalTestReportEngine';
 
 interface ExercisePracticeProps {
   day: Day;
@@ -86,20 +88,18 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   onRepeatLesson,
 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [phase, setPhase] = useState<'exercise' | 'transition' | 'summary'>('exercise');
-  const [attemptCount, setAttemptCount] = useState(0);
-  const [lastPoints, setLastPoints] = useState(0);
+  const [phase, setPhase] = useState<'exercise' | 'summary'>('exercise');
   const [storageWarning, setStorageWarning] = useState(false);
   const [exerciseProgress, setExerciseProgress] = useState<ExerciseProgressState>(emptyExerciseProgress);
+  const exerciseProgressRef = useRef<ExerciseProgressState>(emptyExerciseProgress());
   const [runId, setRunId] = useState('');
   const [runEndExclusive, setRunEndExclusive] = useState(day.exercises.length);
   const [isReplay, setIsReplay] = useState(false);
   const [technicalHelpOpen, setTechnicalHelpOpen] = useState(false);
   const [mastery, setMastery] = useState<MasterySessionState>(() => createMasterySession([]));
   const masteryRef = useRef(mastery);
-  const lastAttemptPhaseRef = useRef<'first-pass' | 'review'>('first-pass');
-  const transitionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCompletedRef = useRef(false);
+  const completionPromiseRef = useRef<Promise<void> | null>(null);
   const exercises = day.exercises;
 
   const createRunId = () => typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -108,9 +108,15 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
 
   const activeRunStorageKey = `learnendo_active_practice_run_v1:${userId}:w${workbookId}:${lessonId}:${day.id}`;
   const masteryStorageKey = (targetRunId: string) => `${activeRunStorageKey}:${targetRunId}:mastery`;
+  const clearActiveRunStorage = (targetRunId: string) => {
+    try { window.localStorage.removeItem(activeRunStorageKey); } catch { /* non-blocking */ }
+    try { window.localStorage.removeItem(masteryStorageKey(targetRunId)); } catch { /* non-blocking */ }
+    try { window.sessionStorage.removeItem(activeRunStorageKey); } catch { /* legacy cleanup */ }
+    try { window.sessionStorage.removeItem(masteryStorageKey(targetRunId)); } catch { /* legacy cleanup */ }
+  };
   const storeMastery = (next: MasterySessionState, targetRunId = runId) => {
     if (!targetRunId) return;
-    try { window.sessionStorage.setItem(masteryStorageKey(targetRunId), JSON.stringify(next)); } catch { /* non-blocking */ }
+    try { window.localStorage.setItem(masteryStorageKey(targetRunId), JSON.stringify(next)); } catch { /* non-blocking */ }
   };
 
   useEffect(() => {
@@ -121,7 +127,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     ]);
     if (isDayCompleted) completedDayIds.add(day.id);
     const loaded = loadExerciseProgress(storage, userId);
-    const restored = workbook ? mergeLegacyCompletedDays(loaded, workbook, completedDayIds) : loaded;
+    const legacyMerged = workbook ? mergeLegacyCompletedDays(loaded, workbook, completedDayIds) : loaded;
+    const restored = workbook ? migrateMovedExerciseProgress(legacyMerged, workbook) : legacyMerged;
     if (restored !== loaded) saveExerciseProgress(storage, userId, restored);
     const firstIncomplete = day.exercises.findIndex((exercise) =>
       !restored.records[exerciseCompletionKey(workbookId, lessonId, day.id, exercise.id)]
@@ -129,10 +136,18 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     const start = resolvePracticeStart(day.exercises.length, firstIncomplete, initialExerciseIndex);
     const historicallyComplete = start.isReplay;
     let nextRunId = '';
-    try { nextRunId = window.sessionStorage.getItem(activeRunStorageKey) ?? ''; } catch { /* non-blocking */ }
+    try {
+      nextRunId = window.localStorage.getItem(activeRunStorageKey)
+        ?? window.sessionStorage.getItem(activeRunStorageKey)
+        ?? '';
+      if (nextRunId) {
+        window.localStorage.setItem(activeRunStorageKey, nextRunId);
+        window.sessionStorage.removeItem(activeRunStorageKey);
+      }
+    } catch { /* non-blocking */ }
     if (!nextRunId) {
       nextRunId = createRunId();
-      try { window.sessionStorage.setItem(activeRunStorageKey, nextRunId); } catch { /* non-blocking */ }
+      try { window.localStorage.setItem(activeRunStorageKey, nextRunId); } catch { /* non-blocking */ }
     }
     const firstUnfinishedInActiveRun = day.exercises.findIndex((exercise) =>
       !restored.runs[`${nextRunId}::${exerciseCompletionKey(workbookId, lessonId, day.id, exercise.id)}`]
@@ -141,6 +156,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       Boolean(restored.runs[`${nextRunId}::${exerciseCompletionKey(workbookId, lessonId, day.id, exercise.id)}`])
     );
     setExerciseProgress(restored);
+    exerciseProgressRef.current = restored;
     setRunId(nextRunId);
     setIsReplay(historicallyComplete || completedDayIds.has(day.id));
     setCurrentIdx(hasActiveRunProgress
@@ -154,10 +170,14 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       .map((exercise) => exercise.id);
     let nextMastery = createMasterySession(targetExerciseIds);
     try {
-      const cached = JSON.parse(window.sessionStorage.getItem(masteryStorageKey(nextRunId)) ?? 'null') as MasterySessionState | null;
+      const cachedRaw = window.localStorage.getItem(masteryStorageKey(nextRunId))
+        ?? window.sessionStorage.getItem(masteryStorageKey(nextRunId));
+      const cached = JSON.parse(cachedRaw ?? 'null') as MasterySessionState | null;
       const currentDayIds = new Set(day.exercises.map((exercise) => exercise.id));
       if (cached && cached.exerciseIds?.length && cached.exerciseIds.every((id) => currentDayIds.has(id)) && cached.items) {
         nextMastery = cached;
+        window.localStorage.setItem(masteryStorageKey(nextRunId), JSON.stringify(cached));
+        window.sessionStorage.removeItem(masteryStorageKey(nextRunId));
       }
     } catch { /* a corrupt session cache safely starts a new mastery run */ }
     masteryRef.current = nextMastery;
@@ -169,14 +189,10 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     } else if (nextMastery.phase === 'complete' || nextMastery.phase === 'blocked') {
       setPhase('summary');
     }
-    setAttemptCount(0);
-    setLastPoints(0);
     setStorageWarning(false);
     setTechnicalHelpOpen(false);
     isCompletedRef.current = false;
-    return () => {
-      if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
-    };
+    completionPromiseRef.current = null;
   }, [day.id, day.exercises, lessonId, userId, workbookId, initialExerciseIndex, workbook, isDayCompleted]);
 
   const dayNumber = (() => {
@@ -203,6 +219,48 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     () => workbook ? workbookCompletionSummary(workbook, exerciseProgress) : null,
     [exerciseProgress, workbook],
   );
+  const finalTestReport = useMemo(
+    () => buildFinalTestReport(exercises, mastery.items),
+    [exercises, mastery.items],
+  );
+  const vocabularyPracticed = useMemo(
+    () => new Set(exercises.filter((exercise) => exercise.isNewVocab).map((exercise) => exercise.correctValue.trim().toLowerCase())).size,
+    [exercises],
+  );
+  const coverageObjectives = useMemo(
+    () => [...new Set(exercises.map((exercise) => exercise.coverageObjective).filter((value): value is string => Boolean(value)))],
+    [exercises],
+  );
+
+  const persistDayCompletion = () => {
+    if (isReplay) return Promise.resolve();
+    if (completionPromiseRef.current) return completionPromiseRef.current;
+    isCompletedRef.current = true;
+    const request = Promise.resolve(onComplete(day.id, masterySummary.finalMastery, {
+      attempts: runSummary.attempts,
+      errors: runSummary.errors,
+      accuracy: masterySummary.initialAccuracy,
+      points: totalEarned,
+      initialAccuracy: masterySummary.initialAccuracy,
+      reviewedExercises: masterySummary.exercisesReviewed,
+      reviewAttempts: masterySummary.reviewAttempts,
+      finalMastery: masterySummary.finalMastery,
+      isLessonFinalReview: isLastDayOfLesson,
+    })).catch((error) => {
+      console.error('[ExercisePractice] onComplete failed:', error);
+      isCompletedRef.current = false;
+      completionPromiseRef.current = null;
+      throw error;
+    });
+    completionPromiseRef.current = request;
+    return request;
+  };
+
+  useEffect(() => {
+    if (phase === 'summary' && mastery.phase === 'complete' && !isReplay) {
+      void persistDayCompletion().catch(() => { /* the summary keeps a retry path */ });
+    }
+  }, [phase, mastery.phase, isReplay]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!exercises.length) {
     return (
@@ -230,9 +288,6 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const practiceItem = { ...currentExercise, moduleType: `${lessonId}_${day.id}`, lessonId: lessonNumber };
 
   const finishTransition = () => {
-    if (transitionTimerRef.current) clearTimeout(transitionTimerRef.current);
-    transitionTimerRef.current = null;
-    setAttemptCount(0);
     const nextExerciseId = masteryRef.current.currentExerciseId;
     if (masteryRef.current.phase === 'complete' || masteryRef.current.phase === 'blocked' || !nextExerciseId) setPhase('summary');
     else {
@@ -244,71 +299,44 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
 
   const handleResult = (correct: boolean) => {
     if (!correct || phase !== 'exercise') return;
-    let pointsAwarded = 0;
-    if (lastAttemptPhaseRef.current === 'first-pass') {
-      const result = completeExercise(exerciseProgress, {
-        workbookId, lessonId, dayId: day.id, exercise: currentExercise,
-        attempts: Math.max(1, attemptCount), runId,
-      });
-      setExerciseProgress(result.state);
-      pointsAwarded = result.pointsAwarded;
-      const storage = typeof window === 'undefined' ? null : window.localStorage;
-      setStorageWarning(!saveExerciseProgress(storage, userId, result.state));
-    } else if (masteryRef.current.items[currentExercise.id]?.status === 'mastered') {
-      pointsAwarded = 3;
-    }
-    setLastPoints(pointsAwarded);
-    setPhase('transition');
-    const reduceMotion = typeof window !== 'undefined'
-      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-    transitionTimerRef.current = setTimeout(() => finishTransition(), reduceMotion ? 0 : 900);
+    finishTransition();
   };
 
   const handleAttempt = ({ attemptNumber, isCorrect }: { attemptNumber: number; isCorrect: boolean }) => {
-    setAttemptCount(attemptNumber);
     const before = masteryRef.current;
     if (before.phase !== 'first-pass' && before.phase !== 'review') return;
-    lastAttemptPhaseRef.current = before.phase;
     const next = recordMasteryAttempt(before, currentExercise.id, isCorrect);
     masteryRef.current = next;
     setMastery(next);
     storeMastery(next);
+    if (isCorrect) {
+      const result = completeExercise(exerciseProgressRef.current, {
+        workbookId, lessonId, dayId: day.id, exercise: currentExercise,
+        attempts: Math.max(1, attemptNumber), runId,
+      });
+      exerciseProgressRef.current = result.state;
+      setExerciseProgress(result.state);
+      const storage = typeof window === 'undefined' ? null : window.localStorage;
+      setStorageWarning(!saveExerciseProgress(storage, userId, result.state));
+    }
     if (!isCorrect && attemptNumber >= MAX_TECHNICAL_FAILURES) setTechnicalHelpOpen(true);
   };
 
   const handleDayContinue = (destination?: () => void) => {
     if (isReplay) {
-      try { window.sessionStorage.removeItem(activeRunStorageKey); } catch { /* non-blocking */ }
-      try { window.sessionStorage.removeItem(masteryStorageKey(runId)); } catch { /* non-blocking */ }
+      clearActiveRunStorage(runId);
       (destination ?? onBack)();
       return;
     }
-    if (isCompletedRef.current) return;
-    isCompletedRef.current = true;
-    const completionScore = masterySummary.finalMastery;
-    void Promise.resolve(onComplete(day.id, completionScore, {
-      attempts: runSummary.attempts,
-      errors: runSummary.errors,
-      accuracy: masterySummary.initialAccuracy,
-      points: totalEarned,
-      initialAccuracy: masterySummary.initialAccuracy,
-      reviewedExercises: masterySummary.exercisesReviewed,
-      reviewAttempts: masterySummary.reviewAttempts,
-      finalMastery: masterySummary.finalMastery,
-      isLessonFinalReview: isLastDayOfLesson,
-    })).then(() => {
-      try { window.sessionStorage.removeItem(activeRunStorageKey); } catch { /* non-blocking */ }
-      try { window.sessionStorage.removeItem(masteryStorageKey(runId)); } catch { /* non-blocking */ }
+    void persistDayCompletion().then(() => {
+      clearActiveRunStorage(runId);
       (destination ?? onBack)();
-    }).catch((error) => {
-      console.error('[ExercisePractice] onComplete failed:', error);
-      isCompletedRef.current = false;
-    });
+    }).catch(() => { /* the summary remains visible so the student can retry */ });
   };
 
   const startNewRun = (startIndex = 0, endExclusive = exercises.length) => {
     const nextRunId = createRunId();
-    try { window.sessionStorage.setItem(activeRunStorageKey, nextRunId); } catch { /* non-blocking */ }
+    try { window.localStorage.setItem(activeRunStorageKey, nextRunId); } catch { /* non-blocking */ }
     setRunId(nextRunId);
     setIsReplay(true);
     setCurrentIdx(startIndex);
@@ -317,8 +345,6 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     masteryRef.current = nextMastery;
     setMastery(nextMastery);
     storeMastery(nextMastery, nextRunId);
-    setAttemptCount(0);
-    setLastPoints(0);
     setTechnicalHelpOpen(false);
     setPhase('exercise');
   };
@@ -340,8 +366,6 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   };
 
   const backToTrail = () => {
-    try { window.sessionStorage.removeItem(activeRunStorageKey); } catch { /* non-blocking */ }
-    try { window.sessionStorage.removeItem(masteryStorageKey(runId)); } catch { /* non-blocking */ }
     onBack();
   };
 
@@ -370,17 +394,6 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         currentLanguage={currentLanguage}
         onAttempt={handleAttempt}
       />
-      {phase === 'transition' && (
-        <div className="fixed inset-x-0 top-[68px] bottom-[56px] z-50 flex items-center justify-center bg-slate-950/95 px-6 text-center" role="status">
-          <div className="w-full max-w-sm rounded-3xl border border-emerald-400/40 bg-slate-900 p-8 shadow-2xl">
-            <div className="text-5xl text-emerald-300">✓</div>
-            <p className="mt-3 text-2xl font-black text-emerald-300">{lastAttemptPhaseRef.current === 'review' ? 'Review complete' : 'Exercise complete'}</p>
-            <p className="mt-2 text-lg font-bold text-white">+{lastPoints} points</p>
-            <p className="mt-2 text-sm text-slate-300">{masterySummary.mastered} of {masterySummary.uniqueExercises} mastered</p>
-            <button onClick={finishTransition} className="mt-6 rounded-2xl bg-blue-600 px-6 py-3 font-black text-white">Continue</button>
-          </div>
-        </div>
-      )}
       {phase === 'summary' && (
         <div className="fixed inset-x-0 top-[68px] bottom-[56px] z-50 flex items-center justify-center overflow-y-auto bg-slate-950 px-6 py-8 text-center">
           <div className="w-full max-w-md rounded-3xl border border-cyan-400/30 bg-slate-900 p-7 shadow-2xl">
@@ -390,18 +403,27 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
             </p>
             {isLastDayOfLesson && mastery.phase === 'complete' && <p className="mt-2 text-sm font-bold text-cyan-300">{isLastLessonOfWorkbook ? 'Final review passed · Workbook completed' : 'Final review passed · Next lesson unlocked'}</p>}
             <div className="mt-5 grid grid-cols-2 gap-3 text-left">
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Exercises mastered</span><p className="font-black text-white">{masterySummary.mastered}/{masterySummary.uniqueExercises}</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Initial accuracy</span><p className="font-black text-white">{masterySummary.initialAccuracy}%</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Exercises reviewed</span><p className="font-black text-white">{masterySummary.exercisesReviewed}</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Final mastery</span><p className="font-black text-white">{masterySummary.finalMastery}%</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Total earned</span><p className="font-black text-white">{totalEarned}</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Review attempts</span><p className="font-black text-white">{masterySummary.reviewAttempts}</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Replay bonus</span><p className="font-black text-white">+{runSummary.replayBonus}</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Day mastery bonus</span><p className="font-black text-white">+{masterySummary.completionBonus}</p></div>
-              {isLastDayOfLesson && <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Lesson bonus</span><p className="font-black text-white">+{lessonCompletionBonus}</p></div>}
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">New vocabulary</span><p className="font-black text-white">{runSummary.newVocabulary}</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Vocabulary reviewed</span><p className="font-black text-white">{runSummary.vocabularyReviewed}</p></div>
+              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Exercises completed</span><p className="font-black text-white">{masterySummary.mastered}/{masterySummary.uniqueExercises}</p></div>
+              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">First-try accuracy</span><p className="font-black text-white">{masterySummary.initialAccuracy}%</p></div>
+              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Errors corrected</span><p className="font-black text-white">{masterySummary.exercisesReviewed}</p></div>
+              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Points earned</span><p className="font-black text-white">{totalEarned}</p></div>
             </div>
+            {isLastDayOfLesson && (
+              <div className="mt-4 rounded-2xl border border-cyan-700/50 bg-slate-800 p-4 text-left">
+                <p className="text-xs font-black uppercase tracking-widest text-cyan-300">Final Test performance</p>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {(['listening', 'writing', 'shadowing', 'speaking'] as const).map((skill) => (
+                    <div key={skill} className="rounded-xl bg-slate-900 p-3">
+                      <span className="text-xs capitalize text-slate-400">{skill}</span>
+                      <p className="font-black text-white">{finalTestReport[skill].firstTryAccuracy}%</p>
+                      <p className="text-[11px] text-slate-400">{finalTestReport[skill].correctedAfterError} corrected</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs text-slate-300">Vocabulary explicitly practiced: <strong>{vocabularyPracticed}</strong></p>
+                {coverageObjectives.length > 0 && <p className="mt-1 text-xs text-slate-300">Objectives covered: {coverageObjectives.join(', ')}</p>}
+              </div>
+            )}
             {(lessonSummary || workbookSummary) && (
               <div className="mt-4 space-y-3 rounded-2xl bg-slate-800 p-4 text-left">
                 {lessonSummary && <div><div className="flex justify-between text-xs text-slate-300"><span>Lesson progress</span><span>{lessonSummary.completed}/{lessonSummary.total}</span></div><div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-700"><div className="h-full bg-cyan-400" style={{ width: `${lessonSummary.percentage}%` }} /></div></div>}

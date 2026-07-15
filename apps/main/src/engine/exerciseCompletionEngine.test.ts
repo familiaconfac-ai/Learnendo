@@ -12,6 +12,7 @@ import {
   saveExerciseProgress,
   lessonCompletionSummary,
   mergeLegacyCompletedDays,
+  migrateMovedExerciseProgress,
   practiceRunSummary,
   resolvePracticeStart,
   workbookCompletionSummary,
@@ -141,4 +142,18 @@ test('13. legacy completed days seed non-zero lesson and workbook unique progres
 test('14. completed days and direct exercise 2 start in exercise mode, never at summary', () => {
   assert.deepEqual(resolvePracticeStart(15, -1), { index: 0, isReplay: true });
   assert.deepEqual(resolvePracticeStart(15, -1, 1), { index: 1, isReplay: true });
+});
+
+test('15. moving a stable exercise ID mirrors completion without deleting the old record', () => {
+  const item1 = exercise('e1');
+  const original = completeExercise(emptyExerciseProgress(), {
+    workbookId: 1, lessonId: 'lesson1', dayId: 'day6', exercise: item1, attempts: 1, runId: 'before-move', completedAt: '2026-07-15T12:00:00.000Z',
+  }).state;
+  const workbook: Workbook = { id: 1, title: 'Workbook 1', lessons: [{ id: 'lesson1', title: 'Lesson 1', days: [
+    { id: 'day6', type: 'practice', exercises: [] },
+    { id: 'day7', type: 'review', exercises: [item1] },
+  ] }] };
+  const migrated = migrateMovedExerciseProgress(original, workbook);
+  assert.ok(migrated.records['w1/lesson1/day6/e1']);
+  assert.equal(migrated.records['w1/lesson1/day7/e1']?.source, 'migrated-day');
 });

@@ -36,6 +36,17 @@ export const stripDiacritics = (value: string): string =>
   value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 export const expandCommonContractions = (value: string): string => value
+  .replace(/\bwhat'?s\b/gi, 'what is')
+  .replace(/\bwho's\b/gi, 'who is')
+  .replace(/\bwhere's\b/gi, 'where is')
+  .replace(/\bwhen's\b/gi, 'when is')
+  .replace(/\bhow's\b/gi, 'how is')
+  .replace(/\bi'm\b/gi, 'i am')
+  .replace(/\byou're\b/gi, 'you are')
+  .replace(/\bwe're\b/gi, 'we are')
+  .replace(/\bthey're\b/gi, 'they are')
+  .replace(/\bhe's\b/gi, 'he is')
+  .replace(/\bshe's\b/gi, 'she is')
   .replace(/\bdoesn't\b/gi, 'does not')
   .replace(/\bdon't\b/gi, 'do not')
   .replace(/\bdidn't\b/gi, 'did not')
@@ -82,7 +93,8 @@ function normalizeMathOperators(value: string, language?: AnswerLanguage): strin
 
 export function normalizeAnswer(answer: string, options: NormalizeAnswerOptions = {}): string {
   const { stripPrefixes = true, language = 'en' } = options;
-  let normalized = stripDiacritics(expandCommonContractions(answer))
+  const apostropheNormalized = stripDiacritics(answer).replace(/[\u2018\u2019\u02bc\u2032]/g, "'");
+  let normalized = expandCommonContractions(apostropheNormalized)
     .toLowerCase()
     .trim()
     .replace(/[\u2018\u2019\u02bc\u2032]/g, "'")
@@ -120,7 +132,8 @@ export const normalizeSentenceAnswer = (answer: string, language: AnswerLanguage
   normalizeAnswer(answer, { stripPrefixes: false, language });
 
 export function normalizeStrictWritingAnswer(answer: string): string {
-  return stripDiacritics(expandCommonContractions(answer))
+  const apostropheNormalized = stripDiacritics(answer).replace(/[\u2018\u2019\u02bc\u2032]/g, "'");
+  return expandCommonContractions(apostropheNormalized)
     .toLowerCase()
     .trim()
     .replace(/[\u2018\u2019\u02bc\u2032]/g, "'")
@@ -137,7 +150,8 @@ export function isAnswerMatch(
 }
 
 export function normalizeSpeakingAnswer(answer: string, language: AnswerLanguage = 'en'): string {
-  let normalized = stripDiacritics(expandCommonContractions(answer))
+  const apostropheNormalized = stripDiacritics(answer).replace(/[\u2018\u2019\u02bc\u2032]/g, "'");
+  let normalized = expandCommonContractions(apostropheNormalized)
     .toLowerCase()
     .trim()
     .replace(/[\u2018\u2019\u02bc\u2032]/g, "'")
@@ -178,7 +192,46 @@ export function isSpeakingMatch(
 
   const stripAmPm = (value: string): string =>
     value.replace(/\s+(?:am|pm)\b/g, '').replace(/\s+/g, ' ').trim();
-  return stripAmPm(normalizedResponse) === stripAmPm(normalizedTarget);
+  const responseWithoutTimeSuffix = stripAmPm(normalizedResponse);
+  const targetWithoutTimeSuffix = stripAmPm(normalizedTarget);
+  if (responseWithoutTimeSuffix === targetWithoutTimeSuffix) return true;
+
+  return isControlledSpeechVariation(responseWithoutTimeSuffix, targetWithoutTimeSuffix);
+}
+
+function editDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let row = 1; row <= left.length; row += 1) {
+    let diagonal = previous[0];
+    previous[0] = row;
+    for (let column = 1; column <= right.length; column += 1) {
+      const above = previous[column];
+      previous[column] = Math.min(
+        previous[column] + 1,
+        previous[column - 1] + 1,
+        diagonal + (left[row - 1] === right[column - 1] ? 0 : 1),
+      );
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
+}
+
+function isControlledSpeechVariation(response: string, target: string): boolean {
+  if (response.length < 12 || target.length < 12) return false;
+  const responseTokens = response.split(' ');
+  const targetTokens = target.split(' ');
+  if (responseTokens.length !== targetTokens.length) return false;
+  let fuzzyTokens = 0;
+  for (let index = 0; index < targetTokens.length; index += 1) {
+    const actual = responseTokens[index];
+    const expected = targetTokens[index];
+    if (actual === expected) continue;
+    if (actual.length < 4 || expected.length < 4 || editDistance(actual, expected) !== 1) return false;
+    fuzzyTokens += 1;
+    if (fuzzyTokens > 1) return false;
+  }
+  return fuzzyTokens === 1;
 }
 
 export const isSpeakingMatchAny = (

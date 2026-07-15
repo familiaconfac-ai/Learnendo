@@ -1,6 +1,6 @@
 import type { Day, Exercise, Workbook } from '../types';
 
-export const EXERCISE_PROGRESS_VERSION = 2;
+export const EXERCISE_PROGRESS_VERSION = 3;
 export const FIRST_TRY_POINTS = 10;
 export const RETRY_POINTS = 6;
 
@@ -32,7 +32,7 @@ export interface ExerciseCompletionRecord {
   lastPracticedAt: string;
   bestAccuracy: number;
   totalPracticePoints: number;
-  source?: 'exercise' | 'legacy-day';
+  source?: 'exercise' | 'legacy-day' | 'migrated-day';
 }
 
 export interface ExerciseRunRecord {
@@ -204,8 +204,9 @@ export function loadExerciseProgress(storage: Pick<Storage, 'getItem'> | null, u
   if (!storage) return emptyExerciseProgress();
   try {
     const currentRaw = storage.getItem(`learnendo_exercise_progress_v${EXERCISE_PROGRESS_VERSION}:${userId}`);
+    const version2Raw = storage.getItem(`learnendo_exercise_progress_v2:${userId}`);
     const legacyRaw = storage.getItem(`learnendo_exercise_progress_v1:${userId}`);
-    const parsed = JSON.parse(currentRaw ?? legacyRaw ?? 'null') as Partial<ExerciseProgressState> | null;
+    const parsed = JSON.parse(currentRaw ?? version2Raw ?? legacyRaw ?? 'null') as Partial<ExerciseProgressState> | null;
     if (!parsed?.records || typeof parsed.records !== 'object') return emptyExerciseProgress();
     return { version: EXERCISE_PROGRESS_VERSION,
       records: Object.fromEntries(Object.entries(parsed.records).map(([key, record]) => [key, migrateRecord(record as LegacyRecord)])),
@@ -237,6 +238,34 @@ export function mergeLegacyCompletedDays(state: ExerciseProgressState, workbook:
     }
   }
   return records === state.records ? state : { ...state, records };
+}
+
+/**
+ * Keeps completion valid when editorial work moves a stable exercise ID to a
+ * different day. The old record remains untouched and a new canonical record
+ * is mirrored into the exercise's current location.
+ */
+export function migrateMovedExerciseProgress(state: ExerciseProgressState, workbook: Workbook): ExerciseProgressState {
+  let records = state.records;
+  for (const lesson of workbook.lessons) for (const day of lesson.days) for (const exercise of day.exercises) {
+    const currentKey = exerciseCompletionKey(workbook.id, lesson.id, day.id, exercise.id);
+    if (records[currentKey]) continue;
+    const previous = Object.values(records).find((record) =>
+      record.workbookId === workbook.id
+      && record.lessonId === lesson.id
+      && record.exerciseId === exercise.id
+      && record.isCompleted
+    );
+    if (!previous) continue;
+    records = { ...records, [currentKey]: {
+      ...previous,
+      key: currentKey,
+      dayId: day.id,
+      exerciseType: exercise.type,
+      source: 'migrated-day',
+    } };
+  }
+  return records === state.records ? state : { ...state, version: EXERCISE_PROGRESS_VERSION, records };
 }
 
 export function dayCompletionSummary(state: ExerciseProgressState, workbookId: number, lessonId: string, day: Day) {

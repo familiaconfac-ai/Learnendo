@@ -35,6 +35,19 @@ test('speaking accepts punctuation, capitalization and digit or word variants', 
   accepted.forEach((answer) => assert.equal(isSpeakingMatchAny(answer, ['18'], 'en'), true, answer));
 });
 
+test("speaking and shadowing accept what's/what is and digit/word equivalence", () => {
+  const targets = ['what is ten plus five'];
+  for (const answer of ["What's 10 plus 5?", "What's ten plus five?", 'What is 10 plus 5?', 'whats ten plus five']) {
+    assert.equal(isSpeakingMatchAny(answer, targets, 'en'), true, answer);
+  }
+});
+
+test('controlled speech tolerance accepts one small transcription error but rejects semantic changes', () => {
+  assert.equal(isSpeakingMatchAny('the color is ornge', ['the color is orange']), true);
+  assert.equal(isSpeakingMatchAny('the color is purple', ['the color is orange']), false);
+  assert.equal(isSpeakingMatchAny('what is eleven minus five', ['what is eleven plus five']), false);
+});
+
 test('strict writing preserves the digit-versus-word distinction', () => {
   assert.notEqual(normalizeStrictWritingAnswer('18'), normalizeStrictWritingAnswer('eighteen'));
   assert.equal(normalizeStrictWritingAnswer('Eighteen.'), normalizeStrictWritingAnswer('eighteen'));

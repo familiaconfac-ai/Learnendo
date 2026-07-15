@@ -41,3 +41,32 @@ test('practice uses one external scroll container with a compact sticky confirma
   assert.match(uiSource, /data-practice-footer="true"[^>]+sticky bottom-0[^>]+safe-area-inset-bottom/);
   assert.match(uiSource, /min-h-\[42px\]/);
 });
+
+test('Enter uses one contextual action with duplicate-dispatch protection', () => {
+  assert.match(uiSource, /primaryActionInFlightRef/);
+  assert.match(uiSource, /window\.addEventListener\('keydown', handleWindowKeyDown\)/);
+  assert.match(uiSource, /event\.repeat \|\| event\.isComposing/);
+  assert.match(uiSource, /if \(showFooter\) \{\s*performFooterAction\(\)/);
+  assert.match(uiSource, /onClick=\{performFooterAction\}/, 'mouse activation must remain available');
+  assert.match(uiSource, /pendingOnResultRef\.current = null/, 'Continue must consume its pending action once');
+});
+
+test('correct answers persist before Continue and active retry state survives returning to the trail', () => {
+  const attemptHandler = exercisePracticeSource.indexOf('const handleAttempt');
+  const completionWrite = exercisePracticeSource.indexOf('completeExercise(exerciseProgressRef.current', attemptHandler);
+  const continueHandler = exercisePracticeSource.indexOf('const handleResult', 0);
+  assert.ok(attemptHandler >= 0 && completionWrite > attemptHandler);
+  assert.ok(completionWrite > continueHandler, 'completion is expected in the attempt path, not only in Continue');
+  assert.match(exercisePracticeSource, /window\.localStorage\.setItem\(masteryStorageKey/);
+  assert.match(exercisePracticeSource, /window\.sessionStorage\.removeItem\(activeRunStorageKey\)/, 'legacy run state must be removed after migration or completion');
+  assert.match(exercisePracticeSource, /window\.sessionStorage\.removeItem\(masteryStorageKey\(targetRunId\)\)/, 'legacy mastery state must not restore a finished run');
+  const backHandler = exercisePracticeSource.match(/const backToTrail = \(\) => \{([\s\S]*?)\n  \};/);
+  assert.ok(backHandler);
+  assert.doesNotMatch(backHandler[1], /removeItem/, 'Back must not discard an unresolved retry queue');
+});
+
+test('individual exercises do not render a second completion report', () => {
+  assert.doesNotMatch(exercisePracticeSource, /phase === 'transition'/);
+  assert.match(exercisePracticeSource, /isLastDayOfLesson && \(/);
+  assert.match(exercisePracticeSource, /Final Test performance/);
+});

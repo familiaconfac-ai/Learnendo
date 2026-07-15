@@ -10,6 +10,7 @@ import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import {
   isAnswerMatch,
   normalizeAnswer,
+  normalizeSentenceAnswer,
   normalizeSpeakingAnswer,
   normalizeStrictWritingAnswer,
   isSpeakingMatchAny,
@@ -535,6 +536,7 @@ export const PracticeSection: React.FC<{
       (item.instruction.toLowerCase().includes('you hear') ||
        item.instruction.toLowerCase().includes('ouvir') ||
        item.instruction.toLowerCase().includes('oyes'));
+    const isFinalTestListeningWriting = item.assessmentMode === 'listening-writing';
 
     const translation = item.translation ? fixPortugueseSupportText(item.translation) : '';
     const displayCorrectValue = fixPortugueseSupportText(item.correctValue);
@@ -585,6 +587,7 @@ export const PracticeSection: React.FC<{
     const currentItemIdRef = useRef<string>(item.id);
     // Stores the onResult action prepared at CHECK time so Continue never reads stale state
     const pendingOnResultRef = useRef<(() => void) | null>(null);
+    const primaryActionInFlightRef = useRef(false);
     const lastAttemptMetaRef = useRef<{ answer: string; isCorrect: boolean; attemptNumber: number } | null>(null);
     const previousFeedbackActionLockedRef = useRef(feedbackActionLocked);
     const previousRetryReleaseVersionRef = useRef(retryReleaseVersion);
@@ -773,7 +776,7 @@ export const PracticeSection: React.FC<{
       };
 
       // Dictation writing: reject pure numeric input — student must type words
-      if (isDictationWriting && /^\s*\d[\d\s]*$/.test(rawInput)) {
+      if (isDictationWriting && !isFinalTestListeningWriting && /^\s*\d[\d\s]*$/.test(rawInput)) {
         reportAttempt(rawInput, false);
         setFeedback('wrong');
         setShowFooter(true);
@@ -787,8 +790,10 @@ export const PracticeSection: React.FC<{
 
       if (isDictationWriting) {
         const normalizedInput = normalizeStrictWritingAnswer(rawInput);
-        const isStrictWritingCorrect = acceptedAnswers.some(
-          (answer) => normalizeStrictWritingAnswer(answer) === normalizedInput,
+        const isStrictWritingCorrect = acceptedAnswers.some((answer) =>
+          isFinalTestListeningWriting
+            ? isAnswerMatch(rawInput, answer, currentLanguage)
+            : normalizeStrictWritingAnswer(answer) === normalizedInput
         );
         reportAttempt(rawInput, isStrictWritingCorrect);
         setFeedback(isStrictWritingCorrect ? 'correct' : 'wrong');
@@ -825,10 +830,8 @@ export const PracticeSection: React.FC<{
           setHasWrongAttempt(true);
           return;
         }
-        const normSentence = (s: string) =>
-          s.trim().toLowerCase().replace(/it'?s\s/g, 'it is ').replace(/[.,!?']/g, '').trim();
         const isSentenceCorrect = acceptedAnswers.some(
-          (answer) => normSentence(rawInput) === normSentence(answer),
+          (answer) => normalizeSentenceAnswer(rawInput, currentLanguage) === normalizeSentenceAnswer(answer, currentLanguage),
         );
         reportAttempt(rawInput, isSentenceCorrect);
         setFeedback(isSentenceCorrect ? 'correct' : 'wrong');
@@ -886,31 +889,51 @@ export const PracticeSection: React.FC<{
     };
 
     // ✅ Handle ENTER key
-      const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (actionLocked) return;
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          if (showFooter) {
-            if (footerActionLocked) return;
-            // If feedback is showing, trigger CONTINUE/GOT IT
-            if (feedback === 'correct') {
-              const cb = pendingOnResultRef.current;
-              if (!persistCorrectFooterAction) {
-                pendingOnResultRef.current = null;
-              }
-              cb?.();
-          } else {
-            setFeedback('none');
-            setShowFooter(false);
-          }
-        } else {
-          // If no feedback, trigger CHECK
-          if (allowContinueWithoutAnswer || (isMultipleChoice ? selectedOption : userInput.trim())) {
-            handleCheck();
-          }
-        }
+    const performFooterAction = () => {
+      if (footerActionLocked || primaryActionInFlightRef.current) return;
+      primaryActionInFlightRef.current = true;
+      if (feedback === 'correct') {
+        const cb = pendingOnResultRef.current;
+        if (!persistCorrectFooterAction) pendingOnResultRef.current = null;
+        cb?.();
+      } else {
+        setFeedback('none');
+        setShowFooter(false);
+      }
+      window.setTimeout(() => { primaryActionInFlightRef.current = false; }, 0);
+    };
+
+    const performPrimaryAction = () => {
+      if (actionLocked || primaryActionInFlightRef.current) return;
+      if (showFooter) {
+        performFooterAction();
+        return;
+      }
+      if (allowContinueWithoutAnswer || (isMultipleChoice ? selectedOption : userInput.trim())) {
+        primaryActionInFlightRef.current = true;
+        handleCheck();
+        window.setTimeout(() => { primaryActionInFlightRef.current = false; }, 0);
       }
     };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      e.stopPropagation();
+      performPrimaryAction();
+    };
+
+    useEffect(() => {
+      const handleWindowKeyDown = (event: KeyboardEvent) => {
+        if (event.key !== 'Enter' || event.defaultPrevented || event.repeat || event.isComposing) return;
+        const target = event.target as HTMLElement | null;
+        if (target?.closest('button, a, select, [role="button"], [contenteditable="true"]')) return;
+        event.preventDefault();
+        performPrimaryAction();
+      };
+      window.addEventListener('keydown', handleWindowKeyDown);
+      return () => window.removeEventListener('keydown', handleWindowKeyDown);
+    });
 
       const handleOptionClick = (opt: string) => {
         if (actionLocked) return;
@@ -1487,19 +1510,11 @@ export const PracticeSection: React.FC<{
                   </div>
                   <button
                     disabled={footerActionLocked}
+                      onClick={performFooterAction}
                       onPointerDown={(e) => {
                         if (footerActionLocked) return;
                         e.preventDefault();
-                        if (feedback === 'correct') {
-                          const cb = pendingOnResultRef.current;
-                          if (!persistCorrectFooterAction) {
-                            pendingOnResultRef.current = null;
-                          }
-                          cb?.();
-                      } else {
-                        setFeedback('none');
-                        setShowFooter(false);
-                      }
+                        performFooterAction();
                     }}
                     className={`px-7 py-3 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_3px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0 [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
                   >

@@ -80,11 +80,16 @@ export function recordMasteryAttempt(state: MasterySessionState, exerciseId: str
         items: { ...state.items, [exerciseId]: { ...item, status: 'incorrect', firstPassAttempts: item.firstPassAttempts + 1, firstPassHadError: true } } };
     }
     const clean = !item.firstPassHadError;
+    const reviewQueue = state.reviewQueue.filter((queuedId) => queuedId !== exerciseId);
     const nextIndex = state.firstPassIndex + 1;
-    const next: MasterySessionState = { ...state, firstPassIndex: nextIndex,
-      firstTryCorrect: state.firstTryCorrect + (clean ? 1 : 0), masteredCount: state.masteredCount + (clean ? 1 : 0),
-      items: { ...state.items, [exerciseId]: { ...item, status: clean ? 'mastered' : 'queued-for-review',
-        firstPassAttempts: item.firstPassAttempts + 1 } },
+    const reviewedExerciseIds = item.firstPassHadError && !state.reviewedExerciseIds.includes(exerciseId)
+      ? [...state.reviewedExerciseIds, exerciseId]
+      : state.reviewedExerciseIds;
+    const next: MasterySessionState = { ...state, firstPassIndex: nextIndex, reviewQueue, reviewedExerciseIds,
+      firstTryCorrect: state.firstTryCorrect + (clean ? 1 : 0), masteredCount: state.masteredCount + 1,
+      reviewPoints: state.reviewPoints + (clean ? 0 : MASTERY_REVIEW_POINTS),
+      items: { ...state.items, [exerciseId]: { ...item, status: 'mastered',
+        firstPassAttempts: item.firstPassAttempts + 1, currentReviewHadError: false } },
       currentExerciseId: state.exerciseIds[nextIndex] ?? null };
     return next.currentExerciseId ? next : finishFirstPass(next);
   }
@@ -94,14 +99,12 @@ export function recordMasteryAttempt(state: MasterySessionState, exerciseId: str
     return { ...state, reviewAttempts, items: { ...state.items, [exerciseId]: { ...item, status: 'incorrect',
       reviewAttempts: item.reviewAttempts + 1, currentReviewHadError: true } } };
   }
-  const queueWithoutCurrent = state.reviewQueue.slice(1);
-  const clean = !item.currentReviewHadError;
-  const reviewQueue = clean ? queueWithoutCurrent : [...queueWithoutCurrent, exerciseId];
+  const reviewQueue = state.reviewQueue.filter((queuedId) => queuedId !== exerciseId);
   const reviewedExerciseIds = state.reviewedExerciseIds.includes(exerciseId)
     ? state.reviewedExerciseIds : [...state.reviewedExerciseIds, exerciseId];
   const next: MasterySessionState = { ...state, reviewAttempts, reviewQueue, reviewedExerciseIds,
-    masteredCount: state.masteredCount + (clean ? 1 : 0), reviewPoints: state.reviewPoints + (clean ? MASTERY_REVIEW_POINTS : 0),
-    items: { ...state.items, [exerciseId]: { ...item, status: clean ? 'mastered' : 'queued-for-review',
+    masteredCount: state.masteredCount + (item.status === 'mastered' ? 0 : 1), reviewPoints: state.reviewPoints + MASTERY_REVIEW_POINTS,
+    items: { ...state.items, [exerciseId]: { ...item, status: 'mastered',
       reviewAttempts: item.reviewAttempts + 1, currentReviewHadError: false } },
     currentExerciseId: reviewQueue[0] ?? null };
   return next.currentExerciseId ? next : { ...next, phase: 'complete', completionBonus: MASTERY_COMPLETION_BONUS };
