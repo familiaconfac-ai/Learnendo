@@ -20,17 +20,23 @@ const NUMBER_CONTRASTS: Record<number, string[]> = {
   0: ['0', '10', '1', '20'], 1: ['1', '7', '11', '10'], 2: ['2', '12', '20', '10'], 3: ['3', '13', '8', '18'],
   4: ['4', '14', '40', '44'], 5: ['5', '15', '50', '55'], 6: ['6', '16', '60', '66'], 7: ['7', '17', '70', '77'],
   8: ['8', '18', '80', '88'], 9: ['9', '19', '90', '99'], 10: ['10', '0', '11', '20'], 11: ['11', '1', '12', '20'],
-  12: ['12', '2', '20', '11'], 13: ['13', '3', '30', '18'], 14: ['14', '4', '40', '44'], 15: ['15', '5', '50', '55'],
+  12: ['12', '2', '20', '11'], 13: ['13', '3', '30', '33'], 14: ['14', '4', '40', '44'], 15: ['15', '5', '50', '55'],
   16: ['16', '6', '60', '66'], 17: ['17', '7', '70', '77'], 18: ['18', '8', '80', '88'], 19: ['19', '9', '90', '99'],
   20: ['20', '2', '12', '10'],
 };
 
 const NUMBER_WORD_CONTRASTS: Record<number, string[]> = {
-  11: ['eleven', 'one', 'twelve', 'twenty'], 12: ['twelve', 'two', 'twenty', 'eleven'],
-  13: ['thirteen', 'three', 'thirty', 'eighteen'], 14: ['fourteen', 'four', 'forty', 'forty-four'],
-  15: ['fifteen', 'five', 'fifty', 'fourteen'], 16: ['sixteen', 'six', 'sixty', 'seventeen'],
-  17: ['seventeen', 'seven', 'seventy', 'sixteen'], 18: ['eighteen', 'eight', 'eighty', 'thirteen'],
-  19: ['nineteen', 'nine', 'ninety', 'eighteen'], 20: ['twenty', 'two', 'twelve', 'ten'],
+  0: ['zero', 'one', 'ten', 'twenty'], 1: ['one', 'seven', 'eleven', 'ten'],
+  2: ['two', 'twelve', 'twenty', 'ten'], 3: ['three', 'thirteen', 'eight', 'eighteen'],
+  4: ['four', 'fourteen', 'forty', 'forty-four'], 5: ['five', 'fifteen', 'fifty', 'fifty-five'],
+  6: ['six', 'sixteen', 'sixty', 'sixty-six'], 7: ['seven', 'seventeen', 'seventy', 'seventy-seven'],
+  8: ['eight', 'eighteen', 'eighty', 'eighty-eight'], 9: ['nine', 'nineteen', 'ninety', 'ninety-nine'],
+  10: ['ten', 'zero', 'eleven', 'twenty'], 11: ['one', 'eleven', 'twelve', 'twenty'],
+  12: ['two', 'twelve', 'twenty', 'eleven'], 13: ['three', 'thirteen', 'thirty', 'thirty-three'],
+  14: ['four', 'fourteen', 'forty', 'forty-four'], 15: ['five', 'fifteen', 'fifty', 'fifty-five'],
+  16: ['six', 'sixteen', 'sixty', 'sixty-six'], 17: ['seven', 'seventeen', 'seventy', 'seventy-seven'],
+  18: ['eight', 'eighteen', 'eighty', 'eighty-eight'], 19: ['nine', 'nineteen', 'ninety', 'ninety-nine'],
+  20: ['two', 'twenty', 'twelve', 'ten'],
 };
 
 function authored(id: string, exercise: Omit<Exercise, 'id'>): Exercise {
@@ -62,16 +68,16 @@ function letterRecognition(letter: string): Exercise {
 
 function numberRecognition(value: number): Exercise {
   const word = NUMBER_WORDS[value];
-  // Fourteen keeps the PDF/requested diagnostic digit contrast (4/14/40/44).
-  // The remaining teen numbers introduce audio-to-word recognition.
-  const choosesWord = value >= 11 && value !== 14;
+  // Recognition always crosses representations. 11 and 14 intentionally keep
+  // the digit prompt from the approved examples; odd values exercise the inverse.
+  const numericDisplay = value % 2 === 0 || value === 11;
   return authored(`number_recognition_${value}`, {
     type: 'identification',
     instruction: 'Choose the correct number.',
     audioValue: `${word}. This is the number ${word}.`,
-    displayValue: String(value),
-    options: choosesWord ? NUMBER_WORD_CONTRASTS[value] : NUMBER_CONTRASTS[value],
-    correctValue: choosesWord ? word : String(value),
+    displayValue: numericDisplay ? String(value) : word.toUpperCase(),
+    options: numericDisplay ? NUMBER_WORD_CONTRASTS[value] : NUMBER_CONTRASTS[value],
+    correctValue: numericDisplay ? word : String(value),
     fullSentenceAfterAnswer: `This is the number ${word}.`,
     pedagogicalTopic: 'numbers',
     prerequisite: 'none',

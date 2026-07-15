@@ -11,6 +11,7 @@ import { lesson9 } from '../src/data/workbook1/lesson9.ts';
 import { lesson10 } from '../src/data/workbook1/lesson10.ts';
 import { lesson11 } from '../src/data/workbook1/lesson11.ts';
 import { lesson12 } from '../src/data/workbook1/lesson12.ts';
+import { detectNumberFormat, parseNumberValue, validateNumberRecognitionExercise } from '../src/data/workbook1/numberRecognitionValidation.ts';
 
-export { workbook1 };
+export { workbook1, detectNumberFormat, parseNumberValue, validateNumberRecognitionExercise };
 export const rawLessons = [lesson1, lesson2, lesson3, lesson4, lesson5, lesson6, lesson7, lesson8, lesson9, lesson10, lesson11, lesson12];

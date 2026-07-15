@@ -23,6 +23,7 @@ import {
   MASTERY_LESSON_COMPLETION_BONUS,
   recordMasteryAttempt,
   recordTechnicalFailure,
+  restoreMasterySession,
   skipTechnicalExercise,
   type MasterySessionState,
 } from '../../engine/masteryQueueEngine';
@@ -175,8 +176,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       const cached = JSON.parse(cachedRaw ?? 'null') as MasterySessionState | null;
       const currentDayIds = new Set(day.exercises.map((exercise) => exercise.id));
       if (cached && cached.exerciseIds?.length && cached.exerciseIds.every((id) => currentDayIds.has(id)) && cached.items) {
-        nextMastery = cached;
-        window.localStorage.setItem(masteryStorageKey(nextRunId), JSON.stringify(cached));
+        nextMastery = restoreMasterySession(cached);
+        window.localStorage.setItem(masteryStorageKey(nextRunId), JSON.stringify(nextMastery));
         window.sessionStorage.removeItem(masteryStorageKey(nextRunId));
       }
     } catch { /* a corrupt session cache safely starts a new mastery run */ }
@@ -304,15 +305,18 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
 
   const handleAttempt = ({ attemptNumber, isCorrect }: { attemptNumber: number; isCorrect: boolean }) => {
     const before = masteryRef.current;
-    if (before.phase !== 'first-pass' && before.phase !== 'review') return;
+    if (before.phase !== 'initial' && before.phase !== 'review') return;
     const next = recordMasteryAttempt(before, currentExercise.id, isCorrect);
     masteryRef.current = next;
     setMastery(next);
     storeMastery(next);
-    if (isCorrect) {
+    const wasMastered = before.items[currentExercise.id]?.status === 'mastered';
+    const isNowMastered = next.items[currentExercise.id]?.status === 'mastered';
+    if (isCorrect && !wasMastered && isNowMastered) {
+      const item = next.items[currentExercise.id];
       const result = completeExercise(exerciseProgressRef.current, {
         workbookId, lessonId, dayId: day.id, exercise: currentExercise,
-        attempts: Math.max(1, attemptNumber), runId,
+        attempts: Math.max(1, item.firstPassAttempts + item.reviewAttempts), runId,
       });
       exerciseProgressRef.current = result.state;
       setExerciseProgress(result.state);

@@ -81,14 +81,20 @@ test('Lesson 1 covers 0-20 before number writing, shadowing and speaking', () =>
   for (let value = 0; value <= 20; value += 1) {
     const recognition = practice.find((exercise) => exercise.id === `wb1_l1_number_recognition_${value}`);
     assert.ok(recognition, `${value}: recognition missing`);
-    assert.equal(recognition.displayValue, String(value));
-    assert.equal(recognition.correctValue, value <= 10 || value === 14 ? String(value) : numberWords[value]);
     assert.equal(recognition.options.length, 4);
+    assert.equal(new Set(recognition.options).size, 4);
     assert.ok(recognition.options.includes(recognition.correctValue));
+    const numericDisplay = /^\d+$/.test(recognition.displayValue);
+    const numericOptions = recognition.options.every((option) => /^\d+$/.test(option));
+    const wordOptions = recognition.options.every((option) => /^[a-z-]+$/i.test(option));
+    assert.notEqual(recognition.displayValue.toLowerCase(), recognition.correctValue.toLowerCase(), `${value}: answer revealed`);
+    assert.equal(numericDisplay ? wordOptions : numericOptions, true, `${value}: display/options must use inverse formats`);
+    assert.equal(numericDisplay ? recognition.correctValue : numberWords[Number(recognition.correctValue)], numberWords[value]);
   }
-  assert.ok(practice.filter((exercise) => exercise.id.startsWith('wb1_l1_number_recognition_')).slice(0, 11).every((exercise) => /^\d+$/.test(exercise.correctValue)));
-  assert.deepEqual(practice.find((exercise) => exercise.id === 'wb1_l1_number_recognition_14').options, ['14', '4', '40', '44']);
-  assert.ok(practice.filter((exercise) => exercise.id.startsWith('wb1_l1_number_recognition_') && Number(exercise.displayValue) >= 11 && exercise.displayValue !== '14').every((exercise) => /^[a-z-]+$/.test(exercise.correctValue)));
+  const fourteen = practice.find((exercise) => exercise.id === 'wb1_l1_number_recognition_14');
+  assert.equal(fourteen.displayValue, '14');
+  assert.deepEqual(fourteen.options, ['four', 'fourteen', 'forty', 'forty-four']);
+  assert.equal(fourteen.correctValue, 'fourteen');
   const productionStart = practice.findIndex((exercise) => ['writing', 'speaking'].includes(exercise.type));
   const lastRecognition = Math.max(...practice.map((exercise, index) => exercise.id.startsWith('wb1_l1_number_recognition_') ? index : -1));
   assert.ok(productionStart > lastRecognition);

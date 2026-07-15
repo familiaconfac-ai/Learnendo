@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { rawLessons, workbook1 } from '../node_modules/.cache/workbook1-rendered-audit-bundle.mjs';
+import { detectNumberFormat, parseNumberValue, rawLessons, validateNumberRecognitionExercise, workbook1 } from '../node_modules/.cache/workbook1-rendered-audit-bundle.mjs';
 
 const normalize = (value = '') => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const signature = (exercise) => normalize([exercise.type, exercise.instruction, exercise.audioValue, exercise.displayValue, exercise.correctValue].join('|'));
@@ -29,6 +29,9 @@ for (const lesson of workbook1.lessons) {
     for (const exercise of day.exercises) {
       position += 1;
       const topic = topicOf(exercise);
+      const isNumberRecognition = exercise.id.startsWith('wb1_l1_number_recognition_');
+      const numberValidation = isNumberRecognition ? validateNumberRecognitionExercise(exercise) : null;
+      const optionFormats = new Set((exercise.options ?? []).map((option) => detectNumberFormat(option)));
       const row = {
         lessonId: lesson.id,
         position,
@@ -39,7 +42,12 @@ for (const lesson of workbook1.lessons) {
         instruction: exercise.instruction,
         audio: exercise.audioValue,
         display: exercise.displayValue ?? '',
+        displayFormat: detectNumberFormat(exercise.displayValue ?? ''),
+        options: (exercise.options ?? []).join(' | '),
+        optionsFormat: exercise.options?.length ? (optionFormats.size === 1 ? [...optionFormats][0] : 'mixed') : 'none',
         correct: exercise.correctValue,
+        targetNumber: numberValidation?.targetNumber ?? parseNumberValue(exercise.displayValue ?? '') ?? parseNumberValue(exercise.correctValue) ?? '',
+        validationResult: numberValidation ? (numberValidation.valid ? 'PASS' : `FAIL: ${numberValidation.issues.join(', ')}`) : `not-applicable:${exercise.type}`,
         origin: exercise.contentOrigin ?? exercise.sourceExerciseId ?? exercise.id,
         sourceExerciseId: exercise.sourceExerciseId ?? '',
         topic,
@@ -48,6 +56,9 @@ for (const lesson of workbook1.lessons) {
         assessesContent: Boolean(exercise.assessesContent ?? !exercise.isNewVocab),
       };
       rows.push(row);
+      if (numberValidation && !numberValidation.valid) {
+        numberValidation.issues.forEach((kind) => issues.push({ lessonId: lesson.id, exerciseId: exercise.id, kind }));
+      }
 
       if (ids.has(exercise.id)) issues.push({ lessonId: lesson.id, exerciseId: exercise.id, kind: 'duplicate-id' });
       ids.add(exercise.id);
@@ -85,6 +96,7 @@ const toTsv = (selectedRows) => [columns.join('\t'), ...selectedRows.map((row) =
 const tsv = toTsv(rows);
 const outputDir = new URL('../../../docs/audits/', import.meta.url);
 const lesson1Rows = rows.filter((row) => row.lessonId === 'wb1_l1');
+const lesson1NumberRows = lesson1Rows.filter((row) => row.topic === 'numbers');
 const lesson1Coverage = {
   renderedExercises: lesson1Rows.length,
   lettersRecognized: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter((letter) => lesson1Rows.some((row) => row.exerciseId === `wb1_l1_letter_recognition_${letter.toLowerCase()}`)),
@@ -96,6 +108,7 @@ const lesson1Coverage = {
 await mkdir(outputDir, { recursive: true });
 await writeFile(new URL('WORKBOOK1_RENDERED_SEQUENCE.tsv', outputDir), `${tsv}\n`, 'utf8');
 await writeFile(new URL('WORKBOOK1_L1_RENDERED_SEQUENCE.tsv', outputDir), `${toTsv(lesson1Rows)}\n`, 'utf8');
+await writeFile(new URL('WORKBOOK1_L1_NUMBER_EXERCISES.tsv', outputDir), `${toTsv(lesson1NumberRows)}\n`, 'utf8');
 await writeFile(new URL('WORKBOOK1_L1_COVERAGE.json', outputDir), `${JSON.stringify(lesson1Coverage, null, 2)}\n`, 'utf8');
 await writeFile(new URL('WORKBOOK1_COLOR_SEQUENCE.tsv', outputDir), `${toTsv(rows.filter((row) => row.topic === 'colors'))}\n`, 'utf8');
 await writeFile(new URL('WORKBOOK1_RENDERED_SEQUENCE.json', outputDir), `${JSON.stringify(rows, null, 2)}\n`, 'utf8');

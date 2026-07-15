@@ -31,6 +31,7 @@ export interface Exercise {
   prerequisite?: string;
   introducesNewContent?: boolean;
   assessesContent?: boolean;
+  formatJustification?: string;
 }
 
 export interface Day {

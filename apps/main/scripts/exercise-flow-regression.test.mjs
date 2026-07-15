@@ -63,6 +63,9 @@ test('correct answers persist before Continue and active retry state survives re
   const backHandler = exercisePracticeSource.match(/const backToTrail = \(\) => \{([\s\S]*?)\n  \};/);
   assert.ok(backHandler);
   assert.doesNotMatch(backHandler[1], /removeItem/, 'Back must not discard an unresolved retry queue');
+  assert.match(exercisePracticeSource, /restoreMasterySession\(cached\)/, 'cached review state must be migrated and restored');
+  assert.match(exercisePracticeSource, /before\.phase !== 'initial'/, 'the rendered attempt flow must use the explicit initial phase');
+  assert.match(exercisePracticeSource, /isNowMastered/, 'initial correction must not persist exercise mastery before review');
 });
 
 test('individual exercises do not render a second completion report', () => {
