@@ -373,10 +373,13 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     <div className="relative min-h-full">
       <div className="fixed left-1/2 top-[76px] z-40 flex max-w-[90vw] -translate-x-1/2 gap-1 rounded-full bg-slate-900/85 px-3 py-2 shadow-lg" aria-label="Exercise progress">
         {exercises.map((exercise, index) => {
-          const completed = mastery.items[exercise.id]?.status === 'mastered';
+          const itemState = mastery.items[exercise.id];
+          const completed = itemState?.status === 'mastered';
+          const incorrectAttempts = itemState?.incorrectAttempts ?? 0;
           const active = phase === 'exercise' && index === currentIdx;
-          const statusClass = completed ? 'bg-emerald-400' : active ? 'bg-blue-400 ring-2 ring-white' : index > currentIdx ? 'bg-slate-600' : 'bg-amber-400';
-          return <button type="button" key={exercise.id} title={`Practice exercise ${index + 1}`} aria-label={`Practice exercise ${index + 1}`}
+          const statusClass = incorrectAttempts > 0 ? 'bg-amber-400' : completed ? 'bg-emerald-400' : active ? 'bg-blue-400 ring-2 ring-white' : 'bg-slate-600';
+          const attemptLabel = incorrectAttempts > 0 ? `, ${incorrectAttempts} incorrect attempt${incorrectAttempts === 1 ? '' : 's'}, eventually corrected` : completed ? ', correct on first attempt' : '';
+          return <button type="button" key={exercise.id} title={`Practice exercise ${index + 1}${attemptLabel}`} aria-label={`Practice exercise ${index + 1}${attemptLabel}`}
             onClick={() => startNewRun(index, index + 1)} className={`h-3 w-3 rounded-full ${statusClass}`} />;
         })}
       </div>
@@ -405,7 +408,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
             <div className="mt-5 grid grid-cols-2 gap-3 text-left">
               <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Exercises completed</span><p className="font-black text-white">{masterySummary.mastered}/{masterySummary.uniqueExercises}</p></div>
               <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">First-try accuracy</span><p className="font-black text-white">{masterySummary.initialAccuracy}%</p></div>
-              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Errors corrected</span><p className="font-black text-white">{masterySummary.exercisesReviewed}</p></div>
+              <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Incorrect attempts</span><p className="font-black text-white">{masterySummary.totalIncorrectAttempts}</p><p className="text-[11px] text-slate-400">{masterySummary.exercisesReviewed} exercises corrected</p></div>
               <div className="rounded-2xl bg-slate-800 p-4"><span className="text-xs text-slate-400">Points earned</span><p className="font-black text-white">{totalEarned}</p></div>
             </div>
             {isLastDayOfLesson && (
@@ -416,7 +419,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
                     <div key={skill} className="rounded-xl bg-slate-900 p-3">
                       <span className="text-xs capitalize text-slate-400">{skill}</span>
                       <p className="font-black text-white">{finalTestReport[skill].firstTryAccuracy}%</p>
-                      <p className="text-[11px] text-slate-400">{finalTestReport[skill].correctedAfterError} corrected</p>
+                      <p className="text-[11px] text-slate-400">{finalTestReport[skill].correctedAfterError} corrected · {finalTestReport[skill].incorrectAttempts} errors</p>
                     </div>
                   ))}
                 </div>

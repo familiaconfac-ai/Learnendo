@@ -23,7 +23,7 @@ test('the final report uses real attempts and corrected errors', () => {
   mastery = recordMasteryAttempt(mastery, 'sh', true);
   mastery = recordMasteryAttempt(mastery, 'sp', true);
   const report = buildFinalTestReport(exercises, mastery.items);
-  assert.deepEqual(report.listening, { total: 1, firstTryCorrect: 1, correctedAfterError: 0, firstTryAccuracy: 100 });
-  assert.deepEqual(report.shadowing, { total: 1, firstTryCorrect: 0, correctedAfterError: 1, firstTryAccuracy: 0 });
-  assert.deepEqual(report.speaking, { total: 1, firstTryCorrect: 1, correctedAfterError: 0, firstTryAccuracy: 100 });
+  assert.deepEqual(report.listening, { total: 1, firstTryCorrect: 1, correctedAfterError: 0, incorrectAttempts: 0, firstTryAccuracy: 100 });
+  assert.deepEqual(report.shadowing, { total: 1, firstTryCorrect: 0, correctedAfterError: 1, incorrectAttempts: 1, firstTryAccuracy: 0 });
+  assert.deepEqual(report.speaking, { total: 1, firstTryCorrect: 1, correctedAfterError: 0, incorrectAttempts: 0, firstTryAccuracy: 100 });
 });

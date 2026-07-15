@@ -11,6 +11,7 @@
     "lint": "tsc --noEmit",
     "test:answer-normalization": "node --experimental-strip-types src/utils/answerNormalization.test.ts && node --experimental-strip-types src/utils/writingPrompt.test.ts",
     "test:exercise-flow": "node scripts/exercise-flow-regression.test.mjs && esbuild src/data/workbook1/index.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/workbook1-test-bundle.mjs && node scripts/workbook1-curriculum.test.mjs && node --experimental-strip-types src/engine/exerciseCompletionEngine.test.ts && node --experimental-strip-types src/engine/masteryQueueEngine.test.ts && node --experimental-strip-types src/engine/finalTestReportEngine.test.ts && node --experimental-strip-types src/engine/lessonProgressionEngine.test.ts && node --experimental-strip-types src/utils/speakingExercise.test.ts && node --experimental-strip-types src/data/shared/normalizeOfficialWorkbookLessons.test.ts",
+    "audit:workbook1-rendered": "esbuild scripts/workbook1-rendered-audit-entry.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/workbook1-rendered-audit-bundle.mjs && node scripts/workbook1-rendered-audit.mjs",
     "deploy": "npm run build && vercel --prod"
   },
   "dependencies": {

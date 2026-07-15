@@ -1,4 +1,4 @@
-import { lesson1 } from './lesson1.ts';
+import { lesson1Authored } from './lesson1Authored.ts';
 import { lesson2 } from './lesson2.ts';
 import { lesson3 } from './lesson3.ts';
 import { lesson4 } from './lesson4.ts';
@@ -18,8 +18,8 @@ export const workbook1 = {
   id: 'wb1',
   title: 'Workbook 1',
   lessons: [
+    lesson1Authored,
     ...normalizeLessonsToOfficialTrails([
-    lesson1,
     lesson2,
     lesson3,
     lesson4,

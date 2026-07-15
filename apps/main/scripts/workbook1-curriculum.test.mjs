@@ -2,18 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { workbook1 } from '../node_modules/.cache/workbook1-test-bundle.mjs';
 
-function rank(exercise) {
-  const visual = Boolean(exercise.displayValue?.trim());
-  const instruction = exercise.instruction.toLowerCase();
-  if (visual && ['identification', 'multiple-choice'].includes(exercise.type)) return 1;
-  if (['identification', 'multiple-choice'].includes(exercise.type)) return /listen|hear/.test(instruction) ? 6 : 3;
-  if (exercise.type === 'writing') {
-    if (/complete|missing|blank/.test(instruction) && visual) return 4;
-    return /listen|hear|you hear/.test(instruction) || !visual ? 7 : 5;
-  }
-  if (exercise.type === 'speaking') return exercise.assessmentMode === 'speaking' ? 9 : 8;
-  return 3;
-}
+const normalized = (value = '') => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
 test('all Workbook 1 lessons have the approved 100-exercise distribution and unique IDs', () => {
   for (const lesson of workbook1.lessons) {
@@ -34,24 +23,57 @@ test('each Final Test has 8 listening-writing, 6 shadowing and 6 speaking exerci
     assert.ok(finalTest.every((exercise) => exercise.coverageObjective), lesson.id);
     const assessmentKeys = finalTest.map((exercise) => `${exercise.assessmentMode}|${exercise.audioValue}|${exercise.correctValue}`.toLowerCase());
     assert.equal(new Set(assessmentKeys).size, 20, `${lesson.id}: repeated Final Test item`);
-  }
-});
-
-test('five stable Dia 6 IDs move to the Final Test and progress can be migrated', () => {
-  for (const lesson of workbook1.lessons) {
-    const day6Ids = new Set(lesson.days[5].exercises.map((exercise) => exercise.id));
-    const finalIds = new Set(lesson.days[6].exercises.map((exercise) => exercise.id));
-    for (let exerciseNumber = 11; exerciseNumber <= 15; exerciseNumber += 1) {
-      const id = `${lesson.id}_d6_e${exerciseNumber}`;
-      assert.equal(day6Ids.has(id), false, id);
-      assert.equal(finalIds.has(id), true, id);
+    const practice = lesson.days.slice(0, 6).flatMap((day) => day.exercises);
+    const taughtValues = new Set(practice.flatMap((exercise) => [exercise.audioValue, exercise.correctValue, exercise.displayValue].map(normalized)).filter(Boolean));
+    for (const exercise of finalTest) {
+      const taught = exercise.assessmentMode === 'speaking'
+        ? taughtValues.has(normalized(exercise.correctValue))
+        : taughtValues.has(normalized(exercise.audioValue));
+      assert.equal(taught, true, `${lesson.id}: Final Test uses untaught content: ${exercise.id}`);
     }
   }
 });
 
-test('practice activities progress from supported recognition to production', () => {
+test('generated Final Tests use versioned IDs instead of reassigning practice IDs', () => {
   for (const lesson of workbook1.lessons) {
-    const ranks = lesson.days.slice(0, 6).flatMap((day) => day.exercises.map(rank));
-    assert.deepEqual(ranks, [...ranks].sort((left, right) => left - right), lesson.id);
+    if (lesson.id === 'wb1_l1') continue;
+    const practiceIds = new Set(lesson.days.slice(0, 6).flatMap((day) => day.exercises.map((exercise) => exercise.id)));
+    const finalIds = lesson.days[6].exercises.map((exercise) => exercise.id);
+    assert.ok(finalIds.every((id) => id.startsWith(`${lesson.id}_final_v2_`)), lesson.id);
+    assert.ok(finalIds.every((id) => !practiceIds.has(id)), lesson.id);
   }
+});
+
+test('Lesson 1 starts deterministically with alphabet and numbers and contains no greetings', () => {
+  const lesson = workbook1.lessons[0];
+  assert.deepEqual(lesson.days[0].exercises.slice(0, 5).map((exercise) => exercise.id), [
+    'wb1_l1_intro_letter_a', 'wb1_l1_intro_letter_b', 'wb1_l1_intro_letter_c',
+    'wb1_l1_intro_letter_d', 'wb1_l1_intro_letter_e',
+  ]);
+  assert.ok(lesson.days[0].exercises.every((exercise) => ['alphabet', 'numbers'].includes(exercise.pedagogicalTopic)));
+  const renderedText = lesson.days.flatMap((day) => day.exercises)
+    .map((exercise) => `${exercise.instruction} ${exercise.audioValue} ${exercise.correctValue}`)
+    .join(' ');
+  assert.doesNotMatch(renderedText, /hello|good morning|how are you|nice to meet you|good night|good evening|goodbye/i);
+});
+
+test('colors are introduced visually before writing, listening-only and speaking', () => {
+  const lesson = workbook1.lessons[0];
+  const colors = ['red', 'blue', 'green', 'yellow', 'orange', 'black', 'white', 'purple', 'pink', 'brown'];
+  const practice = lesson.days.slice(0, 6).flatMap((day, dayIndex) => day.exercises.map((exercise) => ({ exercise, dayIndex })));
+  for (const color of colors) {
+    const occurrences = practice.filter(({ exercise }) => normalized(`${exercise.displayValue} ${exercise.audioValue} ${exercise.correctValue}`).includes(color));
+    assert.ok(occurrences.length > 0, color);
+    const first = occurrences[0];
+    assert.equal(first.dayIndex, 3, `${color}: first appearance must be visual introduction on Day 4`);
+    assert.equal(first.exercise.introducesNewContent, true, color);
+    assert.ok(first.exercise.displayValue, `${color}: visual stimulus is required`);
+    for (const occurrence of occurrences.filter(({ exercise }) => exercise.assessesContent)) {
+      assert.ok(occurrence.dayIndex > first.dayIndex, `${color}: assessed before introduction`);
+    }
+  }
+  assert.ok(lesson.days[4].exercises.every((exercise) => exercise.type === 'writing'));
+  assert.ok(lesson.days[5].exercises.slice(0, 4).every((exercise) => /listen/i.test(exercise.instruction)));
+  assert.ok(lesson.days[5].exercises.slice(-3).every((exercise) => exercise.assessmentMode === 'shadowing'));
+  assert.doesNotMatch(practice.map(({ exercise }) => `${exercise.audioValue} ${exercise.correctValue}`).join(' '), /watercolor|\bzip\b/i);
 });

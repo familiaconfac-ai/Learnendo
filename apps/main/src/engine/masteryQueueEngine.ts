@@ -14,6 +14,7 @@ export interface MasteryItemState {
   reviewAttempts: number;
   firstPassHadError: boolean;
   currentReviewHadError: boolean;
+  incorrectAttempts: number;
   technicalFailures: number;
 }
 
@@ -46,6 +47,7 @@ export function createMasterySession(exerciseIds: string[]): MasterySessionState
     items: Object.fromEntries(uniqueIds.map((exerciseId) => [exerciseId, {
       exerciseId, status: 'unseen', firstPassAttempts: 0, reviewAttempts: 0,
       firstPassHadError: false, currentReviewHadError: false, technicalFailures: 0,
+      incorrectAttempts: 0,
     }])),
     phase: uniqueIds.length ? 'first-pass' : 'complete',
     currentExerciseId: uniqueIds[0] ?? null,
@@ -77,7 +79,8 @@ export function recordMasteryAttempt(state: MasterySessionState, exerciseId: str
       const firstError = !item.firstPassHadError;
       const reviewQueue = state.reviewQueue.includes(exerciseId) ? state.reviewQueue : [...state.reviewQueue, exerciseId];
       return { ...state, reviewQueue, firstPassErrors: state.firstPassErrors + (firstError ? 1 : 0),
-        items: { ...state.items, [exerciseId]: { ...item, status: 'incorrect', firstPassAttempts: item.firstPassAttempts + 1, firstPassHadError: true } } };
+        items: { ...state.items, [exerciseId]: { ...item, status: 'incorrect', firstPassAttempts: item.firstPassAttempts + 1,
+          firstPassHadError: true, incorrectAttempts: (item.incorrectAttempts ?? 0) + 1 } } };
     }
     const clean = !item.firstPassHadError;
     const reviewQueue = state.reviewQueue.filter((queuedId) => queuedId !== exerciseId);
@@ -97,7 +100,8 @@ export function recordMasteryAttempt(state: MasterySessionState, exerciseId: str
   const reviewAttempts = state.reviewAttempts + 1;
   if (!correct) {
     return { ...state, reviewAttempts, items: { ...state.items, [exerciseId]: { ...item, status: 'incorrect',
-      reviewAttempts: item.reviewAttempts + 1, currentReviewHadError: true } } };
+      reviewAttempts: item.reviewAttempts + 1, currentReviewHadError: true,
+      incorrectAttempts: (item.incorrectAttempts ?? 0) + 1 } } };
   }
   const reviewQueue = state.reviewQueue.filter((queuedId) => queuedId !== exerciseId);
   const reviewedExerciseIds = state.reviewedExerciseIds.includes(exerciseId)
@@ -135,6 +139,8 @@ export function skipTechnicalExercise(state: MasterySessionState, exerciseId: st
 
 export function masteryMetrics(state: MasterySessionState) {
   const total = state.exerciseIds.length;
+  const totalIncorrectAttempts = Object.values(state.items)
+    .reduce((sum, item) => sum + (item.incorrectAttempts ?? 0), 0);
   return {
     uniqueExercises: total,
     firstTryCorrect: state.firstTryCorrect,
@@ -147,5 +153,6 @@ export function masteryMetrics(state: MasterySessionState) {
     reviewPoints: state.reviewPoints,
     completionBonus: state.completionBonus,
     technicalSkips: state.technicalSkips,
+    totalIncorrectAttempts,
   };
 }

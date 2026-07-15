@@ -8,6 +8,7 @@ export interface FinalTestSkillMetric {
   total: number;
   firstTryCorrect: number;
   correctedAfterError: number;
+  incorrectAttempts: number;
   firstTryAccuracy: number;
 }
 
@@ -25,10 +26,10 @@ export function buildFinalTestReport(
   items: Record<string, MasteryItemState>,
 ): Record<FinalTestSkill, FinalTestSkillMetric> {
   const counts: Record<FinalTestSkill, Omit<FinalTestSkillMetric, 'firstTryAccuracy'>> = {
-    listening: { total: 0, firstTryCorrect: 0, correctedAfterError: 0 },
-    writing: { total: 0, firstTryCorrect: 0, correctedAfterError: 0 },
-    shadowing: { total: 0, firstTryCorrect: 0, correctedAfterError: 0 },
-    speaking: { total: 0, firstTryCorrect: 0, correctedAfterError: 0 },
+    listening: { total: 0, firstTryCorrect: 0, correctedAfterError: 0, incorrectAttempts: 0 },
+    writing: { total: 0, firstTryCorrect: 0, correctedAfterError: 0, incorrectAttempts: 0 },
+    shadowing: { total: 0, firstTryCorrect: 0, correctedAfterError: 0, incorrectAttempts: 0 },
+    speaking: { total: 0, firstTryCorrect: 0, correctedAfterError: 0, incorrectAttempts: 0 },
   };
   for (const exercise of exercises) {
     const item = items[exercise.id];
@@ -36,6 +37,7 @@ export function buildFinalTestReport(
       counts[skill].total += 1;
       if (item && !item.firstPassHadError && item.status === 'mastered') counts[skill].firstTryCorrect += 1;
       if (item?.firstPassHadError && item.status === 'mastered') counts[skill].correctedAfterError += 1;
+      counts[skill].incorrectAttempts += item?.incorrectAttempts ?? 0;
     }
   }
   return Object.fromEntries(Object.entries(counts).map(([skill, metric]) => [skill, {

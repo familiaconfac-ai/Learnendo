@@ -1,25 +1,7 @@
 import type { Day, Exercise, Lesson } from '../../types.ts';
-import { classifySpeakingExercise } from '../../utils/speakingExercise.ts';
 
 const PRACTICE_COUNTS = [15, 15, 15, 10, 15, 10] as const;
 const FINAL_TEST_COUNTS = { listeningWriting: 8, shadowing: 6, speaking: 6 } as const;
-
-function pedagogicalRank(exercise: Exercise): number {
-  const hasVisualSupport = Boolean(exercise.displayValue?.trim());
-  const instruction = exercise.instruction.toLowerCase();
-  if (hasVisualSupport && (exercise.type === 'identification' || exercise.type === 'multiple-choice')) return 1;
-  if (exercise.type === 'identification' || exercise.type === 'multiple-choice') {
-    return /listen|hear/.test(instruction) ? 6 : 3;
-  }
-  if (exercise.type === 'writing') {
-    if (/complete|missing|blank/.test(instruction) && hasVisualSupport) return 4;
-    return /listen|hear|you hear/.test(instruction) || !hasVisualSupport ? 7 : 5;
-  }
-  if (exercise.type === 'speaking') {
-    return classifySpeakingExercise(exercise) === 'shadowing' ? 8 : 9;
-  }
-  return 3;
-}
 
 function semanticKey(exercise: Exercise): string {
   return `${sourceAudio(exercise)}|${exercise.correctValue}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -57,6 +39,12 @@ function isUsableSpeakingSource(exercise: Exercise): boolean {
     && !/___/.test(sourceAudio(exercise))
     && !/\bi am years old\b/i.test(answer)
     && !/\b(?:my|her|his) name is$/i.test(answer);
+}
+
+function isFallbackSpeakingSource(exercise: Exercise): boolean {
+  return Boolean(exercise.correctValue.trim())
+    && !/repeat|shadow|dialogue|read aloud/i.test(exercise.instruction)
+    && !/___/.test(sourceAudio(exercise));
 }
 
 function asListeningWriting(source: Exercise, targetId: string, objective: string): Exercise {
@@ -110,6 +98,13 @@ function speakingPrompt(source: Exercise): string {
   }
   const instructionQuestion = source.instruction.match(/^[^?]+\?/);
   if (instructionQuestion) return instructionQuestion[0].trim();
+  const translationParts = source.translation?.split('=').map((value) => value.trim()).filter(Boolean);
+  if (translationParts?.length === 2) {
+    const [english, support] = translationParts;
+    if (english.toLowerCase() === source.correctValue.trim().toLowerCase()) {
+      return `What is "${support}" in English?`;
+    }
+  }
   const context = source.displayValue?.trim() || source.instruction.replace(/[.?]+$/, '').trim();
   return `How do you answer this prompt aloud: "${context}"?`;
 }
@@ -131,38 +126,42 @@ function asSpeaking(source: Exercise, targetId: string, objective: string): Exer
   };
 }
 
-function buildFinalTest(lesson: Lesson, targetItems: Exercise[], sourcePool: Exercise[]): Exercise[] {
-  const used = new Set<string>();
+function buildFinalTest(lesson: Lesson, sourcePool: Exercise[]): Exercise[] {
+  const speakingUsed = new Set<string>();
+  const listeningUsed = new Set<string>();
+  const shadowingUsed = new Set<string>();
   const questionCandidates = sourcePool.filter((exercise) =>
     (/\?/.test(sourceAudio(exercise)) || /\?/.test(exercise.instruction))
     && isUsableSpeakingSource(exercise)
   );
-  const speakingSources = takeDiverse(questionCandidates, FINAL_TEST_COUNTS.speaking, used);
+  const speakingSources = takeDiverse(questionCandidates, FINAL_TEST_COUNTS.speaking, speakingUsed);
   if (speakingSources.length < FINAL_TEST_COUNTS.speaking) {
-    speakingSources.push(...takeDiverse(sourcePool.filter(isUsableSpeakingSource), FINAL_TEST_COUNTS.speaking - speakingSources.length, used));
+    speakingSources.push(...takeDiverse(sourcePool.filter(isUsableSpeakingSource), FINAL_TEST_COUNTS.speaking - speakingSources.length, speakingUsed));
+  }
+  if (speakingSources.length < FINAL_TEST_COUNTS.speaking) {
+    speakingSources.push(...takeDiverse(sourcePool.filter(isFallbackSpeakingSource), FINAL_TEST_COUNTS.speaking - speakingSources.length, speakingUsed));
   }
   const listeningSources = takeDiverse(uniqueByAudio(sourcePool.filter((exercise) =>
     Boolean(sourceAudio(exercise))
     && !/^(complete|choose|answer from|identify|listen to dialogue|read)/i.test(sourceAudio(exercise))
     && !/___/.test(sourceAudio(exercise))
-  )), FINAL_TEST_COUNTS.listeningWriting, used);
+  )), FINAL_TEST_COUNTS.listeningWriting, listeningUsed);
   const shadowingSources = takeDiverse(
     uniqueByAudio(sourcePool.filter((exercise) => sourceAudio(exercise).split(/\s+/).length >= 2
       && !/^(complete|choose|answer from|identify)/i.test(sourceAudio(exercise))
       && !/___/.test(sourceAudio(exercise)))),
     FINAL_TEST_COUNTS.shadowing,
-    used,
+    shadowingUsed,
   );
   if (shadowingSources.length < FINAL_TEST_COUNTS.shadowing) {
-    shadowingSources.push(...takeDiverse(sourcePool, FINAL_TEST_COUNTS.shadowing - shadowingSources.length, used));
+    shadowingSources.push(...takeDiverse(sourcePool, FINAL_TEST_COUNTS.shadowing - shadowingSources.length, shadowingUsed));
   }
 
   const objective = lesson.title.replace(/^Lesson\s+\d+\s*:\s*/i, '');
-  const ids = targetItems.map((exercise) => exercise.id);
   return [
-    ...listeningSources.map((source, index) => asListeningWriting(source, ids[index], objective)),
-    ...shadowingSources.map((source, index) => asShadowing(source, ids[FINAL_TEST_COUNTS.listeningWriting + index], objective)),
-    ...speakingSources.map((source, index) => asSpeaking(source, ids[FINAL_TEST_COUNTS.listeningWriting + FINAL_TEST_COUNTS.shadowing + index], objective)),
+    ...listeningSources.map((source, index) => asListeningWriting(source, `${lesson.id}_final_v2_listen_write_${index + 1}`, objective)),
+    ...shadowingSources.map((source, index) => asShadowing(source, `${lesson.id}_final_v2_shadow_${index + 1}`, objective)),
+    ...speakingSources.map((source, index) => asSpeaking(source, `${lesson.id}_final_v2_speak_${index + 1}`, objective)),
   ];
 }
 
@@ -173,13 +172,11 @@ export function finalizeWorkbook1Lesson(lesson: Lesson): Lesson {
   const day7 = originalDays[6];
   const movedFromDay6 = day6.exercises.slice(-5);
   const targetFinalItems = [...day7.exercises.slice(0, 15), ...movedFromDay6];
+  // Preserve the authored practice order. Quantitative distribution must never
+  // move a greeting, color, or production task ahead of its prerequisite.
   const practicePool = originalDays.slice(0, 6)
-    .flatMap((day, dayIndex) => day.exercises.map((exercise, exerciseIndex) => ({ exercise, dayIndex, exerciseIndex })))
-    .filter(({ exercise }) => !movedFromDay6.some((moved) => moved.id === exercise.id))
-    .sort((left, right) => pedagogicalRank(left.exercise) - pedagogicalRank(right.exercise)
-      || left.dayIndex - right.dayIndex
-      || left.exerciseIndex - right.exerciseIndex)
-    .map(({ exercise }) => exercise);
+    .flatMap((day) => day.exercises)
+    .filter((exercise) => !movedFromDay6.some((moved) => moved.id === exercise.id));
 
   const expectedPracticeTotal = PRACTICE_COUNTS.reduce((sum, count) => sum + count, 0);
   if (practicePool.length !== expectedPracticeTotal || targetFinalItems.length !== 20) return lesson;
@@ -190,15 +187,12 @@ export function finalizeWorkbook1Lesson(lesson: Lesson): Lesson {
     cursor += count;
     return { ...originalDays[index], type: 'practice', exercises };
   });
-  const sourcePool = originalDays.flatMap((day) => day.exercises);
+  // Final Test material may only be derived from the 80 items already taught.
+  const sourcePool = practicePool;
   days.push({
     ...day7,
     type: 'review',
-    exercises: buildFinalTest(lesson, targetFinalItems, sourcePool),
+    exercises: buildFinalTest(lesson, sourcePool),
   });
   return { ...lesson, days };
-}
-
-export function workbook1PedagogicalRank(exercise: Exercise): number {
-  return pedagogicalRank(exercise);
 }

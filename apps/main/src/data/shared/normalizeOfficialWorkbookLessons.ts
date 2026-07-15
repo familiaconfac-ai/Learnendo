@@ -14,6 +14,8 @@ function cloneExercise(exercise: Exercise, id: string, overrides: Partial<Exerci
     ...exercise,
     ...overrides,
     id,
+    sourceExerciseId: exercise.sourceExerciseId ?? exercise.id,
+    contentOrigin: exercise.contentOrigin ?? `normalized from ${exercise.id}`,
   };
 }
 

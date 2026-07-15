@@ -25,6 +25,12 @@ export interface Exercise {
   promptMode?: 'answer-question' | 'write-question';
   assessmentMode?: 'listening-writing' | 'shadowing' | 'speaking';
   coverageObjective?: string;
+  sourceExerciseId?: string;
+  contentOrigin?: string;
+  pedagogicalTopic?: string;
+  prerequisite?: string;
+  introducesNewContent?: boolean;
+  assessesContent?: boolean;
 }
 
 export interface Day {
@@ -447,6 +453,12 @@ export interface PracticeItem {
   promptMode?: 'answer-question' | 'write-question';
   assessmentMode?: 'listening-writing' | 'shadowing' | 'speaking';
   coverageObjective?: string;
+  sourceExerciseId?: string;
+  contentOrigin?: string;
+  pedagogicalTopic?: string;
+  prerequisite?: string;
+  introducesNewContent?: boolean;
+  assessesContent?: boolean;
 }
 
 export interface OldUserProgress {

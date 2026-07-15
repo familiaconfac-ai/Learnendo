@@ -14,7 +14,7 @@ test('an exercise is removed from every error queue as soon as it is answered co
   assert.deepEqual(masteryMetrics(state), {
     uniqueExercises: 10, firstTryCorrect: 8, firstPassErrors: 2, exercisesReviewed: 2,
     reviewAttempts: 0, mastered: 10, initialAccuracy: 80, finalMastery: 100,
-    reviewPoints: 6, completionBonus: 5, technicalSkips: 0,
+    reviewPoints: 6, completionBonus: 5, technicalSkips: 0, totalIncorrectAttempts: 2,
   });
 });
 
@@ -28,6 +28,8 @@ test('ten wrong attempts followed by one correct attempt complete the only exerc
   assert.equal(metrics.uniqueExercises, 1);
   assert.equal(metrics.mastered, 1);
   assert.equal(metrics.finalMastery, 100);
+  assert.equal(metrics.totalIncorrectAttempts, 10);
+  assert.equal(state.items.one.incorrectAttempts, 10);
 });
 
 test('a restored review item is mastered after any number of errors and one correct answer', () => {
@@ -38,5 +40,18 @@ test('a restored review item is mastered after any number of errors and one corr
   state = recordMasteryAttempt(state, 'hello', true);
   assert.equal(state.phase, 'complete');
   assert.equal(state.items.hello.status, 'mastered');
+  assert.deepEqual(state.reviewQueue, []);
+  assert.equal(state.items.hello.incorrectAttempts, 5);
+});
+
+test('serialized attempt history survives reload and a later correct answer', () => {
+  let state = createMasterySession(['reload']);
+  state = recordMasteryAttempt(state, 'reload', false);
+  state = recordMasteryAttempt(state, 'reload', false);
+  state = JSON.parse(JSON.stringify(state));
+  state = recordMasteryAttempt(state, 'reload', true);
+  assert.equal(state.items.reload.status, 'mastered');
+  assert.equal(state.items.reload.incorrectAttempts, 2);
+  assert.equal(masteryMetrics(state).totalIncorrectAttempts, 2);
   assert.deepEqual(state.reviewQueue, []);
 });

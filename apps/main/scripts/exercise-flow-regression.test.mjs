@@ -70,3 +70,9 @@ test('individual exercises do not render a second completion report', () => {
   assert.match(exercisePracticeSource, /isLastDayOfLesson && \(/);
   assert.match(exercisePracticeSource, /Final Test performance/);
 });
+
+test('attempt dots preserve an orange error history after eventual mastery', () => {
+  assert.match(exercisePracticeSource, /incorrectAttempts > 0 \? 'bg-amber-400'/);
+  assert.match(exercisePracticeSource, /incorrect attempt\$\{incorrectAttempts === 1/);
+  assert.match(exercisePracticeSource, /masterySummary\.totalIncorrectAttempts/);
+});
