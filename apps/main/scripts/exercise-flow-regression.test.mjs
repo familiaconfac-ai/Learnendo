@@ -76,3 +76,8 @@ test('attempt dots preserve an orange error history after eventual mastery', () 
   assert.match(exercisePracticeSource, /incorrect attempt\$\{incorrectAttempts === 1/);
   assert.match(exercisePracticeSource, /masterySummary\.totalIncorrectAttempts/);
 });
+
+test('every exercise instruction has its own audio control', () => {
+  assert.match(uiSource, /aria-label="Play instruction"/);
+  assert.match(uiSource, /speak\(instructionAudioText, 1, promptVoice\)/);
+});

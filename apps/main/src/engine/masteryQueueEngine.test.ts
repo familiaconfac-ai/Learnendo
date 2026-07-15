@@ -55,3 +55,19 @@ test('serialized attempt history survives reload and a later correct answer', ()
   assert.equal(masteryMetrics(state).totalIncorrectAttempts, 2);
   assert.deepEqual(state.reviewQueue, []);
 });
+
+for (const wrongAttempts of [1, 2, 4]) {
+  test(`${wrongAttempts} wrong attempt(s) stay visible until one correct answer removes the queue item`, () => {
+    let state = createMasterySession(['history']);
+    for (let attempt = 0; attempt < wrongAttempts; attempt += 1) {
+      state = recordMasteryAttempt(state, 'history', false);
+      assert.deepEqual(state.reviewQueue, ['history']);
+      assert.equal(state.items.history.incorrectAttempts, attempt + 1);
+    }
+    state = recordMasteryAttempt(state, 'history', true);
+    assert.equal(state.items.history.status, 'mastered');
+    assert.equal(state.items.history.incorrectAttempts, wrongAttempts);
+    assert.deepEqual(state.reviewQueue, []);
+    assert.equal(state.phase, 'complete');
+  });
+}

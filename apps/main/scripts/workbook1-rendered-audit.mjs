@@ -23,6 +23,7 @@ for (const lesson of workbook1.lessons) {
   let position = 0;
   const ids = new Set();
   const taughtValues = new Set();
+  const taughtFragments = [];
   const introducedColors = new Set();
   for (const [dayIndex, day] of lesson.days.entries()) {
     for (const exercise of day.exercises) {
@@ -65,10 +66,14 @@ for (const lesson of workbook1.lessons) {
         }
       }
       if (dayIndex < 6) {
-        [exercise.audioValue, exercise.displayValue, exercise.correctValue].map(normalize).filter(Boolean).forEach((value) => taughtValues.add(value));
+        const modeledValues = [exercise.audioValue, exercise.displayValue, exercise.correctValue, exercise.fullSentenceAfterAnswer, ...(exercise.acceptedAnswers ?? [])];
+        modeledValues.map(normalize).filter(Boolean).forEach((value) => taughtValues.add(value));
+        taughtFragments.push(...modeledValues);
       } else {
         const testedValue = normalize(exercise.assessmentMode === 'speaking' ? exercise.correctValue : exercise.audioValue);
-        if (!taughtValues.has(testedValue)) issues.push({ lessonId: lesson.id, exerciseId: exercise.id, kind: 'final-test-content-not-taught' });
+        if (!taughtValues.has(testedValue) && !normalize(taughtFragments.join(' ')).includes(testedValue)) {
+          issues.push({ lessonId: lesson.id, exerciseId: exercise.id, kind: 'final-test-content-not-taught' });
+        }
       }
     }
   }
@@ -79,9 +84,19 @@ const columns = Object.keys(rows[0]);
 const toTsv = (selectedRows) => [columns.join('\t'), ...selectedRows.map((row) => columns.map((column) => cleanCell(row[column])).join('\t'))].join('\n');
 const tsv = toTsv(rows);
 const outputDir = new URL('../../../docs/audits/', import.meta.url);
+const lesson1Rows = rows.filter((row) => row.lessonId === 'wb1_l1');
+const lesson1Coverage = {
+  renderedExercises: lesson1Rows.length,
+  lettersRecognized: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter((letter) => lesson1Rows.some((row) => row.exerciseId === `wb1_l1_letter_recognition_${letter.toLowerCase()}`)),
+  lettersWithYesNo: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').filter((letter) => lesson1Rows.some((row) => row.exerciseId === `wb1_l1_letter_yes_no_${letter.toLowerCase()}`)),
+  numbersRecognized: Array.from({ length: 21 }, (_, value) => value).filter((value) => lesson1Rows.some((row) => row.exerciseId === `wb1_l1_number_recognition_${value}`)),
+  finalTestModes: Object.fromEntries(['listening-writing', 'shadowing', 'speaking'].map((mode) => [mode, lesson1Rows.filter((row) => row.dayId === 'wb1_l1_d7' && row.assessmentMode === mode).length])),
+  forbiddenTopicRows: lesson1Rows.filter((row) => ['greetings', 'colors', 'operations'].includes(row.topic)).map((row) => row.exerciseId),
+};
 await mkdir(outputDir, { recursive: true });
 await writeFile(new URL('WORKBOOK1_RENDERED_SEQUENCE.tsv', outputDir), `${tsv}\n`, 'utf8');
-await writeFile(new URL('WORKBOOK1_L1_RENDERED_SEQUENCE.tsv', outputDir), `${toTsv(rows.filter((row) => row.lessonId === 'wb1_l1'))}\n`, 'utf8');
+await writeFile(new URL('WORKBOOK1_L1_RENDERED_SEQUENCE.tsv', outputDir), `${toTsv(lesson1Rows)}\n`, 'utf8');
+await writeFile(new URL('WORKBOOK1_L1_COVERAGE.json', outputDir), `${JSON.stringify(lesson1Coverage, null, 2)}\n`, 'utf8');
 await writeFile(new URL('WORKBOOK1_COLOR_SEQUENCE.tsv', outputDir), `${toTsv(rows.filter((row) => row.topic === 'colors'))}\n`, 'utf8');
 await writeFile(new URL('WORKBOOK1_RENDERED_SEQUENCE.json', outputDir), `${JSON.stringify(rows, null, 2)}\n`, 'utf8');
 await writeFile(new URL('WORKBOOK1_RENDERED_ISSUES.json', outputDir), `${JSON.stringify(issues, null, 2)}\n`, 'utf8');

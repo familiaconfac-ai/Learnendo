@@ -517,6 +517,7 @@ export const PracticeSection: React.FC<{
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const PL = getPL(copyLanguage || currentLanguage || uiLanguage);
+    const instructionAudioText = item.instruction.trim();
     // Deterministic voice pair for this exercise: odd #→ female prompt, even #→ male prompt
     const { prompt: promptVoice, feedback: feedbackVoice } = exerciseVoices(currentIdx);
 
@@ -1161,6 +1162,18 @@ export const PracticeSection: React.FC<{
               if (!clickTranslatorMode) setShowHint(!showHint);
             }}
           >
+            <button
+              type="button"
+              aria-label="Play instruction"
+              title="Play instruction"
+              onClick={(event) => {
+                event.stopPropagation();
+                speak(instructionAudioText, 1, promptVoice);
+              }}
+              className="absolute right-0 top-0 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-white shadow active:translate-y-0.5"
+            >
+              <img src={speakerIcon} className="h-4 w-4 brightness-0 invert" alt="" />
+            </button>
             {isReadingExercise ? (
               <div className="flex flex-col items-center gap-2">
                 <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">{PL.badgeReading}</span>
