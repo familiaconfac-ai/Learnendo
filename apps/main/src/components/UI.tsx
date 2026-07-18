@@ -544,6 +544,10 @@ export const PracticeSection: React.FC<{
     const promptAudioText = resolvePromptAudioText(item);
     const speakingMode = item.type === 'speaking' ? classifySpeakingExercise(item) : null;
     const isShadowing = speakingMode === 'shadowing';
+    const isInformalEnglish = item.pedagogicalTopic === 'informal-aint-recognition';
+    const informalDialogueTitle = isInformalEnglish && item.displayValue?.startsWith('Dialogue 18')
+      ? item.displayValue.split('\n')[0]
+      : '';
     const isQuestionDrivenSpeaking = item.type === 'speaking' && isQuestionPrompt(promptAudioText || item.audioValue);
     const shadowingSupportText = isShadowing && isQuestionDrivenSpeaking ? translation : '';
     const speakingPlaceholder = (shadowingSupportText ? shadowingSupportText.replace(/\*\*/g, '') : '') || PL.speakPlaceholder;
@@ -1207,6 +1211,16 @@ export const PracticeSection: React.FC<{
               </div>
             ) : item.type === 'speaking' && isShadowing ? (
               <div className="flex flex-col items-center gap-2">
+                {informalDialogueTitle && (
+                  <p className="text-base font-black text-amber-200 text-center">
+                    {informalDialogueTitle}
+                  </p>
+                )}
+                {isInformalEnglish && (
+                  <span className="inline-block px-3 py-1 text-xs font-black text-amber-200 bg-amber-950/70 border border-amber-500 rounded-full uppercase tracking-widest">
+                    Informal Spoken English
+                  </span>
+                )}
                 <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">{PL.badgeShadowing}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"

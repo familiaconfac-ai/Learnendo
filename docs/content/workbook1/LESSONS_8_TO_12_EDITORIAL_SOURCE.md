@@ -2,7 +2,7 @@
 
 **Unit:** 2 — Everyday Communication Basics  
 **Canonical implementation:** `apps/main/src/data/workbook1/lesson8.ts` through `lesson12.ts`  
-**Distribution in every lesson:** Day 1: 15; Day 2: 15; Day 3: 15; Day 4: 10; Day 5: 15; Day 6: 15; Day 7: 15. Total: 100 raw exercises.
+**Authoring distribution:** Day 1: 15; Day 2: 15; Day 3: 15; Day 4: 10; Day 5: 15; Day 6: 15; Day 7: 15. **Rendered app distribution after finalization:** 15 / 15 / 15 / 10 / 15 / 10 / 20. Total: 100 exercises.
 
 This document is the printable-editorial projection of the implemented app content. It does not add activities or language that are absent from the trails. The app remains the primary source; this file organizes the same material for the future four-page workbook format.
 
@@ -13,75 +13,92 @@ This document is the printable-editorial projection of the implemented app conte
 - Recognize full and contracted affirmative forms of `to be`.
 - Use `I'm`, `you're`, `he's`, `she's`, `it's`, `we're`, and `they're` naturally.
 - Form negatives with `I'm not`, `isn't`, `aren't`, and the alternative `’s/’re not` patterns.
-- Distinguish `is/isn't` and `are/aren't` in listening.
-- Ask and answer simple confirmation questions using short and complete answers.
+- Complete the special question tag after `I am`: `I'm ..., aren't I?`.
+- Ask and answer simple `to be` questions with standard short answers.
+- Recognize `ain't` as informal spoken English and map it to a standard equivalent without using it as the default grammatical form.
 
 ### Grammar focus and short explanation
 
-In natural spoken English, forms of `to be` often join the subject: `I am → I'm`, `she is → she's`, and `they are → they're`. Negative forms can contract in two common ways: `she isn't / she's not` and `they aren't / they're not`. With `I am not`, the natural form is `I'm not`; the lesson does not teach the nonstandard `I amn't`. Full forms remain useful for clarity and contrast.
+In natural spoken English, forms of `to be` often join the subject: `I am → I'm`, `she is → she's`, and `they are → they're`. Negative forms can contract in two common ways: `she isn't / she's not` and `they aren't / they're not`. With `I am not`, the standard negative statement is `I'm not`. In the fixed standard question tag after `I'm`, this lesson teaches `aren't I?`: `I'm late, aren't I?` It does not accept `amn't I?`, and it does not treat `ain't I?` as the standard answer.
+
+`Ain't` appears only at recognition level under the visible label **Informal English** or **Informal Spoken English**. Every such activity supplies a standard equivalent after completion: `I ain't tired → I'm not tired`, `He ain't here → He isn't here`, `They ain't ready → They aren't ready`, and `We ain't late → We aren't late`.
 
 ### Vocabulary and reviewed content
 
-Student, teacher, classmate, friend, class, school, ready, late, tired, happy; names, age, country, days, months, dates, greetings, personal information, pronouns, and affirmative `to be`.
+Productive zoo vocabulary: zoo, animal/animals, lion, zebra, giraffe/giraffes, guide, tree, strong, beautiful, afraid, ready, and happy. Recognition-only vocabulary in the reading: explore, entrance, beside, nature, and group. Familiar school language remains in selected examples: student, teacher, friend, class, school, and classroom. The lesson also reviews pronouns, personal information, affirmative and negative `to be`, questions, short answers, register, listening, and shadowing.
 
 ### Target structures and question patterns
 
 - `I am Daniel. → I'm Daniel.`
 - `She is from Mexico. → She's from Mexico.`
-- `Today is Monday. → Today's Monday.`
 - `I am not a teacher. → I'm not a teacher.`
 - `He is not twelve. → He isn't twelve. / He's not twelve.`
 - `They are not at home. → They aren't at home. / They're not at home.`
-- `Are you a student? — Yes, I am. / No, I'm not.`
-- `Is she twelve? — No, she isn't.`
+- `He is the guide. → He's the guide.`
+- `Is Emily near a giraffe? — Yes, she is.`
+- `Lucas is not afraid. → Lucas isn't afraid.`
+- `Are they at the zoo? — Yes, they are.`
+- `Are you ready? — Yes, I am. / No, I'm not.`
+- `Is he sad? — No, he isn't.`
+- `I'm right, aren't I?`
+- `I'm late, aren't I?`
+- `I'm your friend, aren't I?`
+- `I'm in the right classroom, aren't I?`
 
-### Complete dialogues
+### Reading and complete dialogues
 
-**Dialogue 1 — Meeting a classmate**
+**Reading — At the Zoo**
 
-> Maya: Hi, I'm Maya. What's your name?  
-> Leo: I'm Leo. Nice to meet you.  
-> Maya: Nice to meet you too. Are you a student here?  
-> Leo: Yes, I am. We're classmates.
+> Today is Tuesday. Ben, Anna, Lucas, and Emily are at the zoo. They are not late. They're ready to explore. The guide says, “Good morning, everyone. Are you ready?” Ben says, “Yes, I am. I'm ready.” Anna says, “I'm ready too. I'm not tired today.” Lucas is happy. He isn't afraid. He is with his friends.
+>
+> Emily is near the giraffes. She isn't at the entrance. She is beside a tall tree. The guide points to a lion and says, “He's strong.” Then she points to a zebra and says, “It's beautiful too.” After that, the guide looks at the group and says, “You're all ready. We're ready to see more animals.” The students smile. They're happy because they can enjoy nature and understand contractions in English.
 
-**Dialogue 2 — Confirming information**
+**Dialogue 17 — Lucas Isn't Afraid**
 
-> Ms. Green: Is Maya from Brazil?  
-> Leo: No, she isn't. She's from Mexico.  
-> Ms. Green: Is she twelve?  
-> Leo: No, she's not. She's eleven.  
-> Ms. Green: Are you both ready?  
-> Leo: Yes, we are.
+> Guide: Where is Lucas?
+> Anna: He's near the lion.
+> Guide: Is he afraid?
+> Anna: No, he isn't.
+> Guide: Is he happy?
+> Anna: Yes, he is.
+> Lucas: I'm happy today!
+
+**Dialogue 18 — They Ain't Late**
+**Informal Spoken English**
+
+> Guide: Are Ben and Anna late?
+> Lucas: No, they ain't.
+> Guide: Are they near the giraffes?
+> Lucas: Yes, they are.
+> Guide: Are they ready to see more animals?
+> Lucas: Yes, they are.
+> Guide: Good. They ain't late, and they're ready.
+
+Standard equivalent: `No, they aren't. They aren't late, and they're ready.`
 
 ### Practice and Writing
 
-The app implements conversion from full forms to contractions, affirmative-to-negative transformation, equivalent negative contractions, short answers, complete answers, and correction of personal information. Writing accepts both negative contractions where both are valid, but contraction-specific prompts keep the contracted target as the primary answer.
+The app separates affirmative contractions, negative contractions, questions and short answers, the fixed tag `I'm ..., aren't I?`, natural reading/listening/dialogue work, and informal `ain't` recognition. Zoo vocabulary is distributed through the existing grammar practice while familiar school language remains in selected items. Equivalent standard full and contracted forms are accepted when the prompt allows either. A contraction-specific prompt requires the contraction. Standard-English prompts never accept `ain't`; exact informal listening transcription accepts the exact `ain't` form heard.
 
 ### Speaking and Review
 
-Students repeat all affirmative and negative patterns, contrast full and spoken forms, answer personal questions, and produce a guided introduction: `Hi, I'm Alex. I'm from Brazil. I'm not a teacher; I'm a student.` The review integrates personal information, classroom context, day/month language, confirmation, and correction.
-
-### Reading and Checking — Ready for English
-
-> It is Monday, January eighth. Maya and Leo are new students at Learnendo School. Maya says, “Hi, I'm Maya. I'm eleven, and I'm from Mexico.” Leo answers, “I'm Leo. I'm not from Mexico. I'm from Brazil.” Their teacher is Ms. Green. She's friendly, but she isn't in the classroom yet. The students are ready. They aren't late, and their books are on the desks. At nine o'clock, Ms. Green arrives and says, “Good morning! We're ready for English.” The class practices full forms and contractions. At the end, Maya says, “English isn't easy yet, but it's fun.” Everyone smiles.
-
-The 14 checking activities ask about the day, date, new students, countries, teacher, classroom status, lateness, arrival time, lesson focus, Maya’s opinion, and written/spoken contractions.
+Speaking and shadowing exercises use `audioValue`, so the existing interface provides normal playback, slower replay, microphone capture, comparison, correction, and completion feedback. Shadowing targets include affirmative and negative contractions, questions, `aren't I?`, natural dialogue, and recognition-level informal speech.
 
 ### Seven-day editorial plan
 
-1. Vocabulary and recognition: all affirmative contractions and prior personal information.
-2. Grammar and structure: full negative, `isn't/aren't`, and `’s/’re not` alternatives.
-3. Questions and answers: yes/no questions, short answers, complete answers, and negative transformation.
-4. Dialogue: introduction and correction/confirmation.
-5. Speaking: controlled production of every target form and a personal introduction.
-6. Reading: one coherent school text plus 14 linked activities.
-7. Review: integrated contractions, negatives, questions, dates, people, and classroom context.
+1. Day 1: 15 affirmative-contraction exercises.
+2. Day 2: 15 negative-contraction exercises.
+3. Day 3: 15 question-and-short-answer exercises.
+4. Day 4: 10 exercises on the fixed standard tag `I'm ..., aren't I?`.
+5. Day 5: 15 natural reading, listening, dialogue, and shadowing exercises in the zoo context.
+6. Day 6: 10 visible informal-`ain't` recognition, register, meaning, transcription, dialogue, and shadowing exercises.
+7. Day 7: a generated 20-item mixed Final Test with 8 listening-writing, 6 shadowing, and 6 spoken-answer items.
 
-**New content:** affirmative contractions, negative contractions, spoken/full-form contrast.  
+**New content:** affirmative contractions, negative contractions, questions and short answers, `I'm ..., aren't I?`, recognition-level informal `ain't`, and A1 zoo vocabulary in a balanced familiar context.
 **Reviewed:** personal information, greetings, pronouns, age, country, days, dates, and affirmative `to be`.  
-**Difficulty increase:** recognition → transformation → contextual choice → personal production.  
+**Difficulty increase:** recognition → controlled production → listening discrimination → register classification → mixed assessment.
 **Preparation for Lesson 9:** natural contractions, confirmation, and correction in real-life dialogues.  
-**Pronunciation/listening:** contrast `is/isn't`, `are/aren't`, and reduced natural contracted forms. No external audio file is required; `audioValue` supplies reproducible TTS text.
+**Pronunciation/listening:** contrast `is/isn't`, `are/aren't`, `I'm/aren't I?`, and informal `ain't` against its standard equivalents. No external audio file is required; `audioValue` supplies reproducible TTS text.
 
 ## Lesson 9 — Practical Speaking
 

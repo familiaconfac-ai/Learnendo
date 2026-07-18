@@ -44,6 +44,52 @@ test('generated Final Tests use versioned IDs instead of reassigning practice ID
   }
 });
 
+test('Lesson 8 follows the updated Spoken Patterns scope and register rules', () => {
+  const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l8');
+  assert.ok(lesson, 'wb1_l8 missing');
+  assert.deepEqual(lesson.days.map((day) => day.exercises.length), [15, 15, 15, 10, 15, 10, 20]);
+
+  const day4 = lesson.days[3].exercises;
+  assert.equal(day4.length, 10);
+  assert.ok(day4.every((exercise) => /aren['’]t i/i.test(exercise.correctValue)), 'Day 4 must teach the fixed standard tag');
+  assert.ok(day4.every((exercise) => !/amn['’]t i|ain['’]t i/i.test(exercise.correctValue)), 'nonstandard tags cannot be correct');
+
+  const day6 = lesson.days[5].exercises;
+  assert.equal(day6.length, 10);
+  assert.ok(day6.every((exercise) => /informal english/i.test(exercise.instruction)), 'every ain’t activity needs an Informal English label');
+  assert.ok(day6.every((exercise) => /ain['’]t/i.test(`${exercise.audioValue} ${exercise.displayValue ?? ''}`)), 'every Day 6 item must explicitly contain ain’t');
+  assert.ok(day6.every((exercise) => /^standard:/i.test(exercise.fullSentenceAfterAnswer ?? '')), 'every ain’t activity needs its standard equivalent');
+  assert.ok(day6.some((exercise) => /Dialogue 18 — They Ain't Late/.test(exercise.displayValue ?? '') && /Informal Spoken English/.test(exercise.displayValue ?? '')), 'informal Dialogue 18 label missing');
+  assert.ok(day6.some((exercise) => exercise.type === 'writing' && /exactly what you hear/i.test(exercise.instruction) && /ain['’]t/i.test(exercise.correctValue)), 'exact informal transcription missing');
+
+  const standardPractice = lesson.days.slice(0, 5).flatMap((day) => day.exercises);
+  assert.ok(standardPractice.every((exercise) => !/ain['’]t/i.test(exercise.correctValue)), 'standard practice cannot use ain’t as the answer');
+  assert.ok(standardPractice.every((exercise) => !(exercise.acceptedAnswers ?? []).some((answer) => /amn['’]t|ain['’]t/i.test(answer))), 'nonstandard forms cannot be accepted');
+
+  const practiceCorpus = lesson.days.slice(0, 6)
+    .flatMap((day) => day.exercises)
+    .map((exercise) => `${exercise.audioValue} ${exercise.displayValue ?? ''} ${exercise.correctValue}`)
+    .join(' ');
+  for (const term of ['zoo', 'animal', 'animals', 'lion', 'zebra', 'giraffe', 'giraffes', 'guide', 'tree', 'strong', 'beautiful', 'afraid']) {
+    assert.match(practiceCorpus, new RegExp(`\\b${term}\\b`, 'i'), `Lesson 8 zoo vocabulary missing: ${term}`);
+  }
+  for (const term of ['explore', 'entrance', 'beside', 'nature', 'group']) {
+    assert.match(practiceCorpus, new RegExp(`\\b${term}\\b`, 'i'), `Lesson 8 reading vocabulary missing: ${term}`);
+  }
+  assert.match(practiceCorpus, /Reading — At the Zoo/i, 'updated zoo reading missing');
+  assert.match(practiceCorpus, /school|classroom|teacher|students/i, 'familiar school context must remain represented');
+  assert.doesNotMatch(practiceCorpus, /\bI['’]d\b/i, 'I’d is outside the Lesson 8 scope');
+
+  const finalTest = lesson.days[6].exercises;
+  const finalCorpus = finalTest.map((exercise) => `${exercise.audioValue} ${exercise.correctValue}`).join(' ');
+  assert.match(finalCorpus, /\bI am\b|\bI'm\b/i, 'affirmative contractions missing from Final Test');
+  assert.match(finalCorpus, /isn['’]t|aren['’]t|not/i, 'negative contractions missing from Final Test');
+  assert.match(finalCorpus, /\b(?:is|are)\b[^?]*\?/i, 'questions and short answers missing from Final Test');
+  assert.match(finalCorpus, /aren['’]t I/i, 'aren’t I missing from Final Test');
+  assert.match(finalCorpus, /ain['’]t/i, 'informal ain’t recognition missing from Final Test');
+  assert.ok(finalTest.filter((exercise) => ['listening-writing', 'shadowing'].includes(exercise.assessmentMode)).every((exercise) => exercise.audioValue.trim()), 'listening and shadowing audio must be populated');
+});
+
 test('Lesson 1 starts deterministically with alphabet and numbers and contains no greetings', () => {
   const lesson = workbook1.lessons[0];
   assert.deepEqual(lesson.days[0].exercises.slice(0, 5).map((exercise) => exercise.id), [
