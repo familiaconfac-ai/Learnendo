@@ -224,6 +224,59 @@ service cloud.firestore {
       allow read, create, update, delete: if isOwner(uid) || isAdmin();
     }
 
+    match /exerciseReports/{reportId} {
+      allow get, list: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'reportId', 'createdAt', 'updatedAt', 'status', 'priority', 'source',
+          'userId', 'userName', 'userEmail', 'language', 'workbookId', 'workbookTitle',
+          'lessonId', 'lessonTitle', 'dayId', 'dayNumber', 'exerciseId', 'exerciseType',
+          'exerciseMode', 'sessionPhase', 'currentExerciseIndex', 'instruction',
+          'displayedText', 'audioText', 'audioSource', 'options', 'expectedAnswer',
+          'acceptedAnswers', 'studentAnswer', 'attemptCount', 'problemCategory',
+          'studentComment', 'route', 'appVersion', 'browser', 'operatingSystem',
+          'deviceType', 'screenSize', 'adminNote', 'reviewedBy', 'reviewedAt',
+          'resolvedAt', 'dismissedAt', 'emailNotificationStatus'
+        ])
+        && request.resource.data.reportId == reportId
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status == 'new'
+        && request.resource.data.priority == 'normal'
+        && request.resource.data.adminNote == ''
+        && request.resource.data.reviewedBy == null
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.resolvedAt == null
+        && request.resource.data.dismissedAt == null
+        && request.resource.data.emailNotificationStatus == 'not_requested'
+        && request.resource.data.source == 'exercise-practice'
+        && request.resource.data.workbookId is int
+        && request.resource.data.currentExerciseIndex is int
+        && request.resource.data.attemptCount is int
+        && request.resource.data.options is list
+        && request.resource.data.acceptedAnswers is list
+        && request.resource.data.problemCategory in [
+          'Erro de texto ou ortografia',
+          'Áudio incorreto',
+          'Resposta correta não aceita',
+          'Alternativas incorretas ou duplicadas',
+          'Tradução incorreta',
+          'Exercício travado',
+          'Conteúdo incompatível com a lição',
+          'Outro problema'
+        ];
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'priority', 'adminNote', 'updatedAt', 'reviewedBy',
+          'reviewedAt', 'resolvedAt', 'dismissedAt'
+        ])
+        && request.resource.data.reportId == resource.data.reportId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.status in ['new', 'reviewing', 'resolved', 'dismissed']
+        && request.resource.data.priority in ['low', 'normal', 'high', 'critical'];
+      allow delete: if false;
+    }
+
     match /groups/{groupId} {
       allow read: if signedIn();
       allow create, update, delete: if isAdmin();

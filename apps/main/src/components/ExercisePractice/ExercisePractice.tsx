@@ -28,6 +28,11 @@ import {
   type MasterySessionState,
 } from '../../engine/masteryQueueEngine';
 import { buildFinalTestReport } from '../../engine/finalTestReportEngine';
+import {
+  createExerciseReport,
+  EXERCISE_REPORT_CATEGORIES,
+  type ExerciseReportCategory,
+} from '../../services/exerciseReportsService';
 
 interface ExercisePracticeProps {
   day: Day;
@@ -55,6 +60,10 @@ interface ExercisePracticeProps {
   userId?: string;
   workbookId?: number;
   workbook?: Workbook;
+  userName?: string | null;
+  userEmail?: string | null;
+  workbookTitle?: string;
+  lessonTitle?: string;
   initialExerciseIndex?: number;
   onContinueToNextDay?: () => void;
   isDayCompleted?: boolean;
@@ -78,6 +87,10 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   userId = 'anonymous',
   workbookId = 1,
   workbook,
+  userName = null,
+  userEmail = null,
+  workbookTitle = '',
+  lessonTitle = '',
   initialExerciseIndex,
   onContinueToNextDay,
   isDayCompleted = false,
@@ -97,6 +110,13 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const [runEndExclusive, setRunEndExclusive] = useState(day.exercises.length);
   const [isReplay, setIsReplay] = useState(false);
   const [technicalHelpOpen, setTechnicalHelpOpen] = useState(false);
+  const [reportFormOpen, setReportFormOpen] = useState(false);
+  const [reportCategory, setReportCategory] = useState<ExerciseReportCategory>(EXERCISE_REPORT_CATEGORIES[0]);
+  const [reportComment, setReportComment] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportConfirmation, setReportConfirmation] = useState('');
+  const [lastStudentAnswer, setLastStudentAnswer] = useState<string | null>(null);
+  const [lastAttemptCount, setLastAttemptCount] = useState(0);
   const [mastery, setMastery] = useState<MasterySessionState>(() => createMasterySession([]));
   const masteryRef = useRef(mastery);
   const isCompletedRef = useRef(false);
@@ -192,6 +212,10 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     }
     setStorageWarning(false);
     setTechnicalHelpOpen(false);
+    setReportFormOpen(false);
+    setReportConfirmation('');
+    setLastStudentAnswer(null);
+    setLastAttemptCount(0);
     isCompletedRef.current = false;
     completionPromiseRef.current = null;
   }, [day.id, day.exercises, lessonId, userId, workbookId, initialExerciseIndex, workbook, isDayCompleted]);
@@ -303,7 +327,9 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     finishTransition();
   };
 
-  const handleAttempt = ({ attemptNumber, isCorrect }: { attemptNumber: number; isCorrect: boolean }) => {
+  const handleAttempt = ({ answer, attemptNumber, isCorrect }: { answer: string; attemptNumber: number; isCorrect: boolean }) => {
+    setLastStudentAnswer(answer);
+    setLastAttemptCount(attemptNumber);
     const before = masteryRef.current;
     if (before.phase !== 'initial' && before.phase !== 'review') return;
     const next = recordMasteryAttempt(before, currentExercise.id, isCorrect);
@@ -358,6 +384,63 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     masteryRef.current = reported;
     setMastery(reported);
     storeMastery(reported);
+    setTechnicalHelpOpen(false);
+    setReportFormOpen(true);
+    setReportCategory('Exercício travado');
+  };
+
+  const submitProblemReport = async () => {
+    if (reportSubmitting) return;
+    setReportSubmitting(true);
+    setReportConfirmation('');
+    try {
+      const userAgent = navigator.userAgent;
+      const browser = /Edg\//.test(userAgent) ? 'Microsoft Edge' : /OPR\//.test(userAgent) ? 'Opera' : /Chrome\//.test(userAgent) ? 'Chrome' : /Firefox\//.test(userAgent) ? 'Firefox' : /Safari\//.test(userAgent) ? 'Safari' : 'Outro';
+      const operatingSystem = /Windows/.test(userAgent) ? 'Windows' : /Android/.test(userAgent) ? 'Android' : /iPhone|iPad|iPod/.test(userAgent) ? 'iOS/iPadOS' : /Mac OS/.test(userAgent) ? 'macOS' : /Linux/.test(userAgent) ? 'Linux' : 'Outro';
+      const deviceType = /Mobi|Android|iPhone/.test(userAgent) ? 'mobile' : /iPad|Tablet/.test(userAgent) ? 'tablet' : 'desktop';
+      const result = await createExerciseReport({
+        source: 'exercise-practice',
+        userId,
+        userName,
+        userEmail,
+        language: currentLanguage,
+        workbookId,
+        workbookTitle: workbookTitle || workbook?.title || `Workbook ${workbookId}`,
+        lessonId,
+        lessonTitle: lessonTitle || lessonId,
+        dayId: day.id,
+        dayNumber: dayNumber ?? null,
+        exerciseId: currentExercise.id,
+        exerciseType: currentExercise.type,
+        exerciseMode: currentExercise.assessmentMode ?? currentExercise.promptMode ?? null,
+        sessionPhase: masteryRef.current.phase,
+        currentExerciseIndex: currentIdx,
+        instruction: currentExercise.instruction,
+        displayedText: currentExercise.displayValue ?? null,
+        audioText: currentExercise.audioValue || null,
+        audioSource: currentExercise.audioValue ? 'text-to-speech' : null,
+        options: currentExercise.options ?? [],
+        expectedAnswer: currentExercise.correctValue,
+        acceptedAnswers: [currentExercise.correctValue, ...(currentExercise.acceptedAnswers ?? [])],
+        studentAnswer: lastStudentAnswer,
+        attemptCount: lastAttemptCount,
+        problemCategory: reportCategory,
+        studentComment: reportComment.trim(),
+        route: `${window.location.pathname}${window.location.search}${window.location.hash}`,
+        appVersion: import.meta.env.VITE_APP_VERSION ?? '0.0.0',
+        browser,
+        operatingSystem,
+        deviceType,
+        screenSize: `${window.innerWidth}x${window.innerHeight}`,
+      });
+      setReportComment('');
+      setReportFormOpen(false);
+      setReportConfirmation(result.duplicate ? `Relatório já recebido (${result.reportId}).` : `Relatório enviado (${result.reportId}).`);
+      window.setTimeout(() => setReportConfirmation(''), 5000);
+    } catch (error) {
+      console.error('[ExercisePractice] report submission failed:', error);
+      setReportConfirmation('Não foi possível enviar agora. Tente novamente sem sair do exercício.');
+    } finally { setReportSubmitting(false); }
   };
 
   const skipAsTechnical = () => {
@@ -401,6 +484,36 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         currentLanguage={currentLanguage}
         onAttempt={handleAttempt}
       />
+      {phase === 'exercise' && (
+        <button
+          type="button"
+          onClick={() => setReportFormOpen(true)}
+          className="fixed bottom-[72px] right-3 z-40 rounded-full border border-slate-500 bg-slate-900/95 px-3 py-2 text-xs font-bold text-slate-200 shadow-lg"
+        >
+          Reportar problema
+        </button>
+      )}
+      {reportConfirmation && <div role="status" className="fixed bottom-[122px] left-1/2 z-[90] w-[min(92vw,30rem)] -translate-x-1/2 rounded-2xl border border-emerald-500/50 bg-slate-950 p-3 text-center text-sm font-bold text-emerald-300 shadow-2xl">{reportConfirmation}</div>}
+      {phase === 'exercise' && reportFormOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" onClick={() => !reportSubmitting && setReportFormOpen(false)}>
+          <form className="w-full max-w-md rounded-3xl border border-slate-600 bg-slate-900 p-5 text-left shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); void submitProblemReport(); }}>
+            <h2 className="text-xl font-black text-white">Reportar problema</h2>
+            <p className="mt-1 text-sm text-slate-300">O exercício e seu progresso permanecerão exatamente como estão.</p>
+            <label className="mt-4 block text-sm font-bold text-slate-200">Categoria
+              <select value={reportCategory} onChange={(event) => setReportCategory(event.target.value as ExerciseReportCategory)} disabled={reportSubmitting} className="mt-1 w-full rounded-xl border border-slate-600 bg-slate-800 p-3 text-white">
+                {EXERCISE_REPORT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}
+              </select>
+            </label>
+            <label className="mt-4 block text-sm font-bold text-slate-200">Comentário (opcional)
+              <textarea value={reportComment} onChange={(event) => setReportComment(event.target.value)} maxLength={2000} disabled={reportSubmitting} className="mt-1 min-h-28 w-full rounded-xl border border-slate-600 bg-slate-800 p-3 font-normal text-white" placeholder="Conte o que aconteceu…" />
+            </label>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <button type="button" disabled={reportSubmitting} onClick={() => setReportFormOpen(false)} className="rounded-xl border border-slate-600 p-3 font-black text-white disabled:opacity-50">Cancelar</button>
+              <button type="submit" disabled={reportSubmitting} className="rounded-xl bg-blue-600 p-3 font-black text-white disabled:opacity-50">{reportSubmitting ? 'Enviando…' : 'Enviar relatório'}</button>
+            </div>
+          </form>
+        </div>
+      )}
       {phase === 'summary' && (
         <div className="fixed inset-x-0 top-[68px] bottom-[56px] z-50 flex items-center justify-center overflow-y-auto bg-slate-950 px-6 py-8 text-center">
           <div className="w-full max-w-md rounded-3xl border border-cyan-400/30 bg-slate-900 p-7 shadow-2xl">

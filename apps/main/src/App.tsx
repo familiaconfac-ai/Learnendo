@@ -15,6 +15,7 @@ import { LessonView } from './components/LessonView';
 import { ExercisePractice } from './components/ExercisePractice';
 import { PronunciationTrainer } from './components/PronunciationTrainer/PronunciationTrainer';
 import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
+import { ProblemReportsDashboard } from './components/ProblemReports/ProblemReportsDashboard';
 import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
 import { LanguageSelector } from './components/LanguageSelector';
 import { RankScreen } from './components/RankScreen';
@@ -35,6 +36,7 @@ import { ensureLessonStarted, completeCourseDay, getCumulativeUserStats, LessonP
 import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 import { trackLessonCompletion } from './services/progressService';
+import { subscribePendingExerciseReportCount } from './services/exerciseReportsService';
 import { lesson1NewWords } from './data/workbook1/lesson1';
 import { subscribeLiveSession, updateLiveSession } from './services/liveSessionService';
 import {
@@ -492,6 +494,7 @@ const App: React.FC = () => {
     return SectionType.COURSES;
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pendingProblemReports, setPendingProblemReports] = useState(0);
   const [courseMenuOpen, setCourseMenuOpen] = useState(false);
   const [currentWorkbookId, setCurrentWorkbookId] = useState<number | null>(() => initialTabContextRef.current.workbookId ?? null);
   const [currentLessonId, setCurrentLessonId] = useState<string | null>(() => initialTabContextRef.current.lessonId ?? null);
@@ -712,7 +715,21 @@ const App: React.FC = () => {
     if (currentSection === SectionType.TEACHER_DASHBOARD && !canAccessTeacherDashboard) {
       setCurrentSection(SectionType.COURSES);
     }
-  }, [canAccessTeacherDashboard, currentSection]);
+    if (currentSection === SectionType.PROBLEM_REPORTS && !isAdmin) {
+      setCurrentSection(SectionType.COURSES);
+    }
+  }, [canAccessTeacherDashboard, currentSection, isAdmin]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setPendingProblemReports(0);
+      return;
+    }
+    return subscribePendingExerciseReportCount(
+      setPendingProblemReports,
+      (error) => console.warn('[App] problem report badge subscription failed:', error),
+    );
+  }, [isAdmin]);
 
   // Self-heal navigation/restore races where the active course changes but the
   // content language stays on the previous course, which makes TTS pick the
@@ -3162,6 +3179,10 @@ const App: React.FC = () => {
             userId={user?.uid ?? 'anonymous'}
             workbookId={progress.currentWorkbook}
             workbook={currentWorkbook ?? undefined}
+            userName={accountDisplayName}
+            userEmail={accountDisplayEmail}
+            workbookTitle={currentWorkbook?.title}
+            lessonTitle={currentPracticeLesson?.title}
             isDayCompleted={isCurrentPracticeDayCompleted}
             onComplete={handleDayComplete}
             onContinueToNextDay={nextPracticeDay ? () => {
@@ -3230,6 +3251,14 @@ const App: React.FC = () => {
           <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
             <p className="text-slate-300 font-semibold">Access denied. Teacher dashboard is for authorized users only.</p>
           </div>
+        );
+      case SectionType.PROBLEM_REPORTS:
+        return (
+          <ProblemReportsDashboard
+            isAdmin={isAdmin}
+            reviewer={{ uid: user?.uid ?? '', name: accountDisplayName }}
+            onBack={() => setCurrentSection(SectionType.COURSES)}
+          />
         );
       case SectionType.RANK:
         return <RankScreen currentUserId={user?.uid} courseId={currentCourseId ?? DEFAULT_COURSE_ID} />;
@@ -3431,6 +3460,12 @@ const App: React.FC = () => {
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
               {canAccessTeacherDashboard && (
                 <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>
+              )}
+              {isAdmin && (
+                <button className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left font-medium text-rose-700 transition-colors hover:bg-rose-50" onClick={() => { setCurrentSection(SectionType.PROBLEM_REPORTS); setMenuOpen(false); }}>
+                  <span>Relatórios de problemas</span>
+                  {pendingProblemReports > 0 && <span className="min-w-6 rounded-full bg-rose-600 px-2 py-0.5 text-center text-xs font-black text-white">{pendingProblemReports}</span>}
+                </button>
               )}
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
