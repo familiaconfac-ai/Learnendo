@@ -44,6 +44,17 @@ test('generated Final Tests use versioned IDs instead of reassigning practice ID
   }
 });
 
+test('Lesson 4 address feedback preserves the complete modeled sentence', () => {
+  const exercise = workbook1.lessons
+    .flatMap((lesson) => lesson.days)
+    .flatMap((day) => day.exercises)
+    .find((item) => item.id === 'wb1_l4_d4_e10');
+  assert.ok(exercise, 'wb1_l4_d4_e10 missing');
+  assert.equal(exercise.correctValue, '21 First Street');
+  assert.equal(exercise.fullSentenceAfterAnswer, 'It is at 21 First Street.');
+  assert.ok(exercise.acceptedAnswers.some((answer) => normalized(answer) === normalized('It is at 21 First Street ')));
+});
+
 test('Lesson 8 follows the updated Spoken Patterns scope and register rules', () => {
   const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l8');
   assert.ok(lesson, 'wb1_l8 missing');
