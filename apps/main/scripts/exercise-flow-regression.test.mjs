@@ -7,6 +7,7 @@ const exercisePracticeSource = await readFile(
   new URL('../src/components/ExercisePractice/ExercisePractice.tsx', import.meta.url),
   'utf8',
 );
+const lesson4Source = await readFile(new URL('../src/data/workbook1/lesson4.ts', import.meta.url), 'utf8');
 
 test('resolves the prompt audio before deriving speaking state', () => {
   const declaration = uiSource.indexOf('const promptAudioText = resolvePromptAudioText(item);');
@@ -83,4 +84,26 @@ test('attempt dots preserve an orange error history after eventual mastery', () 
 test('every exercise instruction has its own audio control', () => {
   assert.match(uiSource, /aria-label="Play instruction"/);
   assert.match(uiSource, /speak\(instructionAudioText, 1, promptVoice\)/);
+});
+
+test('mobile feedback keeps contextual help inside the footer instead of floating over Continue', () => {
+  assert.match(uiSource, /aria-label="Grammar help and report problem"/);
+  assert.match(uiSource, /flex shrink-0 items-center gap-1\.5/);
+  assert.doesNotMatch(exercisePracticeSource, /fixed bottom-\[72px\][^>]+Reportar problema/);
+  assert.match(exercisePracticeSource, /Ajuda gramatical/);
+  assert.match(exercisePracticeSource, /Voltar ao exercício/);
+});
+
+test('speaking answer field starts on one row and wraps safely on narrow screens', () => {
+  assert.match(uiSource, /rows=\{1\}/);
+  assert.match(uiSource, /overflow-x-hidden/);
+  assert.match(uiSource, /\[overflow-wrap:anywhere\]/);
+  assert.match(uiSource, /Math\.min\(textareaRef\.current\.scrollHeight, 120\)/);
+});
+
+test('ordinal speaking questions include visible context and complete accepted answers', () => {
+  assert.match(lesson4Source, /Who is second\?/);
+  assert.match(lesson4Source, /contextVisual: \{ type: 'ordinal-line', people: \['Anna', 'Lucas', 'Daniel', 'Emily'\] \}/);
+  assert.match(lesson4Source, /acceptedAnswers: \['Lucas\.', 'Lucas is second\.'\]/);
+  assert.match(lesson4Source, /grammarHelp: \{ title: 'Ordinal numbers: second'/);
 });

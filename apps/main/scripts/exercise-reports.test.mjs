@@ -8,6 +8,7 @@ const read = (path) => readFileSync(path, 'utf8');
 const service = read(resolve(app, 'services', 'exerciseReportsService.ts'));
 const practice = read(resolve(app, 'components', 'ExercisePractice', 'ExercisePractice.tsx'));
 const dashboard = read(resolve(app, 'components', 'ProblemReports', 'ProblemReportsDashboard.tsx'));
+const generalReport = read(resolve(app, 'components', 'ProblemReports', 'GeneralProblemReportModal.tsx'));
 const appSource = read(resolve(app, 'App.tsx'));
 const rules = read(resolve(root, 'firestore.rules'));
 const indexes = JSON.parse(read(resolve(root, 'firestore.indexes.json')));
@@ -19,6 +20,9 @@ assert.match(service, /recentSubmissions/, 'immediate duplicate submissions must
 assert.match(practice, /disabled=\{reportSubmitting\}/, 'submit controls must lock while sending');
 assert.match(practice, /setReportFormOpen\(true\)/, 'exercise must open a report form');
 assert.match(practice, /Reportar problema/, 'report action must remain visible in practice');
+assert.match(generalReport, /source: 'hamburger-menu'/, 'general reports must identify their menu origin');
+assert.match(generalReport, /initialWorkbookId/, 'general reports should prefill available context');
+assert.match(appSource, /setGeneralReportOpen\(true\)/, 'the hamburger menu must open the general report');
 assert.doesNotMatch(practice, /setCurrentIdx\([^)]*submitProblemReport/, 'report submission must not advance the exercise');
 assert.match(appSource, /isAdmin && \([\s\S]*Relatórios de problemas/, 'menu item must be admin-only');
 assert.match(appSource, /pendingProblemReports > 0/, 'pending badge must hide at zero');
@@ -35,6 +39,7 @@ assert.match(rules, /allow create: if signedIn\(\)/, 'signed-in students can cre
 assert.match(rules, /request\.resource\.data\.userId == request\.auth\.uid/, 'students can create only owned reports');
 assert.match(rules, /request\.resource\.data\.status == 'new'/, 'students cannot choose report status');
 assert.match(rules, /request\.resource\.data\.priority == 'normal'/, 'students cannot choose priority');
+assert.match(rules, /source in \['exercise-practice', 'hamburger-menu'\]/, 'rules must allow both authorized report entry points');
 assert.match(rules, /allow update: if isAdmin\(\)/, 'only admins can update reports');
 assert.match(rules, /allow delete: if false/, 'reports are permanent and cannot be deleted');
 

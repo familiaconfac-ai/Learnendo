@@ -112,10 +112,27 @@ assert.equal(create.status, 200, `Student should create a valid report: ${create
 const duplicate = await request(createUrl, { method: 'PATCH', token: student.idToken, data: validReport });
 assert.notEqual(duplicate.status, 200, 'A repeated deterministic document write must not create/update a duplicate');
 
+const generalReportId = 'er_rules_general_report';
+const generalReport = await request(`${documentsUrl}/exerciseReports/${generalReportId}`, {
+  method: 'PATCH',
+  token: student.idToken,
+  data: {
+    ...validReport,
+    reportId: generalReportId,
+    source: 'hamburger-menu',
+    exerciseId: 'not-informed',
+    exerciseType: 'general-report',
+    sessionPhase: 'outside-exercise',
+    currentExerciseIndex: -1,
+  },
+});
+assert.equal(generalReport.status, 200, `Student should create a general menu report: ${generalReport.body}`);
+
 for (const [label, patch] of [
   ['foreign userId', { userId: otherStudent.localId }],
   ['non-new status', { status: 'reviewing' }],
   ['non-normal priority', { priority: 'high' }],
+  ['unknown source', { source: 'unknown-entry-point' }],
 ]) {
   const id = `invalid_${label.replace(/\W+/g, '_')}`;
   const result = await request(`${documentsUrl}/exerciseReports/${id}`, {

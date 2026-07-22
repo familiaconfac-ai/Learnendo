@@ -449,6 +449,15 @@ export interface PracticeItem {
   options?: string[];
   correctValue: string;
   acceptedAnswers?: string[];
+  contextVisual?: {
+    type: 'ordinal-line';
+    people: string[];
+  };
+  grammarHelp?: {
+    title: string;
+    explanation: string;
+    examples: string[];
+  };
   translation?: string;
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;

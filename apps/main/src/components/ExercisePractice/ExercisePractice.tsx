@@ -110,6 +110,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const [runEndExclusive, setRunEndExclusive] = useState(day.exercises.length);
   const [isReplay, setIsReplay] = useState(false);
   const [technicalHelpOpen, setTechnicalHelpOpen] = useState(false);
+  const [contextualHelpOpen, setContextualHelpOpen] = useState(false);
   const [reportFormOpen, setReportFormOpen] = useState(false);
   const [reportCategory, setReportCategory] = useState<ExerciseReportCategory>(EXERCISE_REPORT_CATEGORIES[0]);
   const [reportComment, setReportComment] = useState('');
@@ -212,6 +213,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     }
     setStorageWarning(false);
     setTechnicalHelpOpen(false);
+    setContextualHelpOpen(false);
     setReportFormOpen(false);
     setReportConfirmation('');
     setLastStudentAnswer(null);
@@ -311,6 +313,13 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
 
   const currentExercise = exercises[currentIdx];
   const practiceItem = { ...currentExercise, moduleType: `${lessonId}_${day.id}`, lessonId: lessonNumber };
+  const contextualHelp = currentExercise.grammarHelp ?? {
+    title: 'Ajuda deste exercício',
+    explanation: currentExercise.translation
+      ? currentExercise.translation.replace(/\*\*/g, '')
+      : 'Observe a pergunta, escute o áudio novamente e responda usando o mesmo padrão apresentado na lição.',
+    examples: [currentExercise.correctValue].filter(Boolean),
+  };
 
   const finishTransition = () => {
     const nextExerciseId = masteryRef.current.currentExerciseId;
@@ -479,21 +488,30 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         unitNumber={unitNumber}
         onBack={onBack}
         onGrammar={onGrammar}
+        onContextHelp={() => setContextualHelpOpen(true)}
         dayNumber={dayNumber}
         totalDays={totalDays}
         currentLanguage={currentLanguage}
         onAttempt={handleAttempt}
       />
-      {phase === 'exercise' && (
-        <button
-          type="button"
-          onClick={() => setReportFormOpen(true)}
-          className="fixed bottom-[72px] right-3 z-40 rounded-full border border-slate-500 bg-slate-900/95 px-3 py-2 text-xs font-bold text-slate-200 shadow-lg"
-        >
-          Reportar problema
-        </button>
-      )}
       {reportConfirmation && <div role="status" className="fixed bottom-[122px] left-1/2 z-[90] w-[min(92vw,30rem)] -translate-x-1/2 rounded-2xl border border-emerald-500/50 bg-slate-950 p-3 text-center text-sm font-bold text-emerald-300 shadow-2xl">{reportConfirmation}</div>}
+      {phase === 'exercise' && contextualHelpOpen && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center overflow-y-auto bg-black/65 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:items-center sm:p-4" onClick={() => setContextualHelpOpen(false)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="contextual-help-title" className="max-h-[min(82dvh,42rem)] w-full max-w-md overflow-y-auto rounded-3xl border border-cyan-400/40 bg-slate-900 p-5 text-left shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-cyan-300">Ajuda gramatical</p>
+            <h2 id="contextual-help-title" className="mt-1 text-xl font-black text-white">{contextualHelp.title}</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-200">{contextualHelp.explanation}</p>
+            {contextualHelp.examples.length > 0 && (
+              <div className="mt-4 rounded-2xl bg-slate-800 p-4">
+                <p className="text-xs font-black uppercase tracking-wider text-slate-400">Exemplo</p>
+                {contextualHelp.examples.slice(0, 2).map((example) => <p key={example} className="mt-1 font-bold text-amber-200">{example}</p>)}
+              </div>
+            )}
+            <button type="button" onClick={() => setContextualHelpOpen(false)} className="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-black text-white">Voltar ao exercício</button>
+            <button type="button" onClick={() => { setContextualHelpOpen(false); setReportFormOpen(true); }} className="mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold text-slate-300 underline decoration-slate-500 underline-offset-4">Reportar problema</button>
+          </section>
+        </div>
+      )}
       {phase === 'exercise' && reportFormOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" onClick={() => !reportSubmitting && setReportFormOpen(false)}>
           <form className="w-full max-w-md rounded-3xl border border-slate-600 bg-slate-900 p-5 text-left shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); void submitProblemReport(); }}>

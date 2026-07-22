@@ -457,6 +457,7 @@ export const PracticeSection: React.FC<{
   unitNumber?: number;
   onBack?: () => void;
   onGrammar?: () => void;
+  onContextHelp?: () => void;
   dayNumber?: number;
   totalDays?: number;
   currentLanguage?: string;
@@ -488,6 +489,7 @@ export const PracticeSection: React.FC<{
     unitNumber,
     onBack,
     onGrammar,
+    onContextHelp,
     dayNumber,
     totalDays,
     currentLanguage = 'en',
@@ -1120,13 +1122,16 @@ export const PracticeSection: React.FC<{
         );
       }
 
+      const cleanDisplayValue = item.type === 'speaking'
+        ? item.displayValue?.replace(/^Question:\s*/i, '').trim()
+        : item.displayValue;
       const displaySizeClass = isListeningExercise
         ? (isShortViewport ? 'text-xl leading-tight' : 'text-2xl sm:text-4xl')
         : (isShortViewport ? 'text-2xl leading-tight' : 'text-3xl sm:text-5xl');
 
       return (
         <div className={`${displaySizeClass} font-black mb-2 tracking-tighter text-center transition-colors duration-500 break-words ${clickTranslatorMode ? '' : 'select-none'} ${item.isNewVocab && !showFooter ? 'text-blue-400' : 'text-white'}`}>
-          {renderInteractiveText(item.displayValue)}
+          {renderInteractiveText(cleanDisplayValue ?? '')}
         </div>
       );
     };
@@ -1236,12 +1241,14 @@ export const PracticeSection: React.FC<{
                 }`}>
                   {PL.badgeSpeaking}
                 </span>
-                <h2
-                  className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words"
-                  {...selectionGestureProps}
-                >
-                  {isQuestionDrivenSpeaking ? PL.answerQuestion : PL.listenAndAnswer}
-                </h2>
+                {!isQuestionDrivenSpeaking && (
+                  <h2
+                    className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words"
+                    {...selectionGestureProps}
+                  >
+                    {PL.listenAndAnswer}
+                  </h2>
+                )}
               </div>
             ) : (
               /* multiple-choice and identification → Listening badge.
@@ -1396,6 +1403,20 @@ export const PracticeSection: React.FC<{
               </div>
             )}
 
+            {item.contextVisual?.type === 'ordinal-line' && (
+              <div className="w-full rounded-2xl border border-cyan-400/30 bg-slate-800/80 px-2 py-3" aria-label="People standing in ordinal positions">
+                <div className="grid grid-cols-4 gap-1.5">
+                  {item.contextVisual.people.map((person, index) => (
+                    <div key={person} className="min-w-0 text-center">
+                      <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border-2 border-cyan-300 bg-gradient-to-b from-blue-400 to-blue-700 text-lg shadow-md" aria-hidden="true">{['👧', '👦', '👦', '👧'][index] ?? '🧑'}</div>
+                      <p className="mt-1 truncate text-[11px] font-black text-white sm:text-sm">{person}</p>
+                      <p className="text-[10px] font-bold uppercase text-cyan-300">{['1st', '2nd', '3rd', '4th'][index] ?? `${index + 1}th`}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {shadowingSupportText && (
               <div className="w-full rounded-3xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-center shadow-[0_10px_30px_rgba(16,185,129,0.12)]">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-300">
@@ -1469,12 +1490,13 @@ export const PracticeSection: React.FC<{
               </div>
               )
             ) : item.type === 'speaking' ? (
-              <div className="w-full flex flex-col gap-4">
+              <div className="w-full min-w-0 flex flex-col gap-2">
                 {/* Auto-growing textarea for speaking exercises - moved below buttons */}
                 <textarea
                   ref={textareaRef}
                   disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
-                  className={`w-full px-4 py-3 border-2 rounded-3xl text-center text-lg font-black focus:border-blue-500 outline-none transition-all resize-none overflow-hidden min-h-16 max-h-32 ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
+                  rows={1}
+                  className={`block w-full max-w-full min-w-0 box-border overflow-x-hidden overflow-y-hidden whitespace-pre-wrap break-words px-3 py-2 border-2 rounded-2xl text-center text-lg leading-6 font-black focus:border-blue-500 outline-none transition-[border-color,height] resize-none min-h-[44px] max-h-32 [overflow-wrap:anywhere] ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
                   onChange={handleTextareaChange}
                   onKeyDown={handleKeyDown}
@@ -1505,7 +1527,7 @@ export const PracticeSection: React.FC<{
           <div className={`w-full ${footerWidthClass}`}>
             {showFooter ? (
               <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex min-w-0 items-center justify-between gap-2 sm:gap-4">
                   <div className="flex flex-col flex-1">
                     <div className={`font-black uppercase text-lg tracking-widest animate-in slide-in-from-left-2 ${feedback === 'correct' ? 'text-yellow-400' : 'text-white'}`}>
                       {praiseText}
@@ -1535,18 +1557,25 @@ export const PracticeSection: React.FC<{
                       </div>
                     )}
                   </div>
-                  <button
-                    disabled={footerActionLocked}
-                      onClick={performFooterAction}
-                      onPointerDown={(e) => {
-                        if (footerActionLocked) return;
-                        e.preventDefault();
-                        performFooterAction();
-                    }}
-                    className={`px-7 py-3 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-white rounded-2xl font-black uppercase shadow-[0_3px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all shrink-0 [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
-                  >
-                    {feedback === 'correct' ? PL.continueBtn : PL.gotItBtn}
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                    <button
+                      disabled={footerActionLocked}
+                        onClick={performFooterAction}
+                        onPointerDown={(e) => {
+                          if (footerActionLocked) return;
+                          e.preventDefault();
+                          performFooterAction();
+                        }}
+                      className={`max-w-[8.5rem] px-3 py-2.5 sm:px-5 sm:py-3 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-[11px] sm:text-sm text-white rounded-xl sm:rounded-2xl font-black uppercase shadow-[0_3px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
+                    >
+                      {feedback === 'correct' ? PL.continueBtn : PL.gotItBtn}
+                    </button>
+                    {onContextHelp && (
+                      <button type="button" onClick={onContextHelp} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-300/70 bg-amber-400 text-lg text-slate-950 shadow-[0_3px_0_0_#b45309] active:translate-y-1 sm:h-12 sm:w-12 sm:rounded-2xl" aria-label="Grammar help and report problem" title="Grammar help">
+                        <i className="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ) : (

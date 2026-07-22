@@ -16,6 +16,7 @@ import { ExercisePractice } from './components/ExercisePractice';
 import { PronunciationTrainer } from './components/PronunciationTrainer/PronunciationTrainer';
 import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
 import { ProblemReportsDashboard } from './components/ProblemReports/ProblemReportsDashboard';
+import { GeneralProblemReportModal } from './components/ProblemReports/GeneralProblemReportModal';
 import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
 import { LanguageSelector } from './components/LanguageSelector';
 import { RankScreen } from './components/RankScreen';
@@ -494,6 +495,7 @@ const App: React.FC = () => {
     return SectionType.COURSES;
   });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [generalReportOpen, setGeneralReportOpen] = useState(false);
   const [pendingProblemReports, setPendingProblemReports] = useState(0);
   const [courseMenuOpen, setCourseMenuOpen] = useState(false);
   const [currentWorkbookId, setCurrentWorkbookId] = useState<number | null>(() => initialTabContextRef.current.workbookId ?? null);
@@ -3469,10 +3471,23 @@ const App: React.FC = () => {
               )}
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
+              <button className="block w-full rounded-xl px-4 py-3 text-left font-medium text-amber-700 transition-colors hover:bg-amber-50" onClick={() => { setMenuOpen(false); setGeneralReportOpen(true); }}>⚠ Reportar problema</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 font-medium transition-colors" onClick={handleLogout}>Logout</button>
             </div>
           </div>
         </div>
+      )}
+      {generalReportOpen && (
+        <GeneralProblemReportModal
+          onClose={() => setGeneralReportOpen(false)}
+          userId={user?.uid ?? 'anonymous'}
+          userName={accountDisplayName}
+          userEmail={accountDisplayEmail}
+          language={language}
+          initialWorkbookId={currentWorkbookId ?? progress.currentWorkbook}
+          initialLessonId={currentLessonId}
+          initialDayId={currentDay?.id}
+        />
       )}
       <main data-app-chrome="main" className="pt-[68px] pb-[56px]">{renderSection()}</main>
       {weekCompletionResult && (
