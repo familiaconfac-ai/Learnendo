@@ -124,6 +124,14 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const completionPromiseRef = useRef<Promise<void> | null>(null);
   const exercises = day.exercises;
 
+  useEffect(() => {
+    // Report context belongs only to the exercise currently on screen. Without
+    // this reset, opening help immediately after Continue could attach the
+    // previous exercise's answer to the new exercise report.
+    setLastStudentAnswer(null);
+    setLastAttemptCount(0);
+  }, [currentIdx, day.id]);
+
   const createRunId = () => typeof crypto !== 'undefined' && 'randomUUID' in crypto
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;

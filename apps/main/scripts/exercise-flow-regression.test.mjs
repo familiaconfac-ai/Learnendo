@@ -8,6 +8,7 @@ const exercisePracticeSource = await readFile(
   'utf8',
 );
 const lesson4Source = await readFile(new URL('../src/data/workbook1/lesson4.ts', import.meta.url), 'utf8');
+const lesson8Source = await readFile(new URL('../src/data/workbook1/lesson8.ts', import.meta.url), 'utf8');
 
 test('resolves the prompt audio before deriving speaking state', () => {
   const declaration = uiSource.indexOf('const promptAudioText = resolvePromptAudioText(item);');
@@ -106,4 +107,14 @@ test('ordinal speaking questions include visible context and complete accepted a
   assert.match(lesson4Source, /contextVisual: \{ type: 'ordinal-line', people: \['Anna', 'Lucas', 'Daniel', 'Emily'\] \}/);
   assert.match(lesson4Source, /acceptedAnswers: \['Lucas\.', 'Lucas is second\.'\]/);
   assert.match(lesson4Source, /grammarHelp: \{ title: 'Ordinal numbers: second'/);
+});
+
+test('reports never carry the previous exercise answer into the current exercise', () => {
+  assert.match(exercisePracticeSource, /setLastStudentAnswer\(null\);\s*setLastAttemptCount\(0\);\s*\}, \[currentIdx, day\.id\]\)/);
+});
+
+test('Lesson 8 day 4 exercise 8 uses an A1-sized direct completion prompt', () => {
+  assert.match(lesson8Source, /choice\("I'm happy, ___\?", "aren't I\?"/);
+  assert.doesNotMatch(lesson8Source, /Is amn't I accepted as the standard answer in this lesson\?/);
+  assert.doesNotMatch(lesson8Source, /No\. The standard tag is aren’t I\?/);
 });

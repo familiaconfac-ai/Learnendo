@@ -76,7 +76,7 @@ export const lesson8 = buildLesson(8, 'Lesson 8: Spoken Patterns', [
     write("I'm with the group, aren't I?", "aren't I?", "Complete the standard question tag: I'm with the group, ______", [], { instruction: 'Write the fixed standard question tag.' }),
     write("I'm near the entrance, aren't I?", "aren't I?", "Complete the standard question tag: I'm near the entrance, ______", [], { instruction: 'Write the fixed standard question tag.' }),
     choice("Which sentence uses the standard question tag after I'm?", "I'm ready, aren't I?", ["I'm ready, amn't I?", "I'm ready, do I?", "I'm ready, isn't I?"], 2, { instruction: 'Choose the standard English sentence.' }),
-    choice("Is amn't I accepted as the standard answer in this lesson?", 'No. The standard tag is aren’t I?', ['Yes. It is the only correct tag.', 'Yes. It replaces aren’t I.', 'No. The standard tag is isn’t I?'], 3, { instruction: 'Choose the rule used in this lesson.' }),
+    choice("I'm happy, ___?", "aren't I?", ["amn't I?", "isn't I?", 'do I?'], 3, { instruction: "Complete the sentence with the words you learned: aren't I?", translation: 'Eu estou feliz, não estou?', coverageObjective: "I'm ..., aren't I?" }),
     speak("I'm right, aren't I?", [], { instruction: 'Listen and repeat the standard question tag.', assessmentMode: 'shadowing', coverageObjective: "I'm ..., aren't I?" }),
     speak("I'm in the correct classroom, aren't I?", [], { instruction: 'Listen and repeat the standard question tag.', assessmentMode: 'shadowing', coverageObjective: "I'm ..., aren't I?" }),
   ] },
