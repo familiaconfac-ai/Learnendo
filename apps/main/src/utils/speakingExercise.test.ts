@@ -23,6 +23,22 @@ test('question-and-answer accepts authored answer variants, not the question', (
   assert.equal(isSpeakingResponseCorrect(qa, 'What is five plus five?'), false);
 });
 
+test('reported Joe answer accepts normalization without accepting another name', () => {
+  const choosingTeam = {
+    instruction: 'Listen and answer aloud in English.',
+    audioValue: 'Who came first?',
+    correctValue: 'Joe',
+    acceptedAnswers: ['Joe', 'Jo'],
+    assessmentMode: 'speaking' as const,
+  };
+  for (const answer of ['Joe', ' joe ', 'JOE.', 'Joe!', 'Jo']) {
+    assert.equal(isSpeakingResponseCorrect(choosingTeam, answer), true, answer);
+  }
+  for (const answer of ['John', 'Tom', 'Sam']) {
+    assert.equal(isSpeakingResponseCorrect(choosingTeam, answer), false, answer);
+  }
+});
+
 test('isolated H uses an unambiguous TTS phrase without changing the target', () => {
   assert.equal(resolvePromptAudioText({ audioValue: 'H', correctValue: 'H' }), 'the letter H');
   assert.notEqual(resolvePromptAudioText({ audioValue: 'H', correctValue: 'H' }), 'eight');

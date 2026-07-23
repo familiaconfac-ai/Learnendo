@@ -7,6 +7,7 @@ import {
   ExerciseReportPriority,
   ExerciseReportStatus,
   getExerciseReportCounts,
+  isActiveExerciseReport,
   listExerciseReports,
   updateExerciseReport,
 } from '../../services/exerciseReportsService';
@@ -86,9 +87,22 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     try {
       await updateExerciseReport(selected, patch, reviewer);
       const next = { ...selected, ...patch };
-      setSelected(next);
-      setReports((current) => current.map((report) => report.reportId === next.reportId ? next : report));
-      setCounts(await getExerciseReportCounts());
+      if (isActiveExerciseReport(next)) {
+        setSelected(next);
+        setReports((current) => current.map((report) => report.reportId === next.reportId ? next : report));
+      } else {
+        setSelected(null);
+        setReports((current) => current.filter((report) => report.reportId !== next.reportId));
+        setCounts((current) => ({
+          ...current,
+          [selected.status]: Math.max(0, current[selected.status] - 1),
+          [next.status]: current[next.status] + 1,
+          pending: Math.max(0, current.pending - 1),
+        }));
+      }
+      void getExerciseReportCounts().then(setCounts).catch((countError) => {
+        console.warn('[ProblemReports] count refresh failed:', countError);
+      });
     } catch (saveError) {
       console.error('[ProblemReports] update failed:', saveError);
       setError('Não foi possível salvar a alteração.');
@@ -127,7 +141,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
 
         <div className="mb-5 rounded-2xl bg-white p-4 shadow-sm">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((f) => ({ ...f, status: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todos os status</option>{Object.entries(STATUS_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
+            <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((f) => ({ ...f, status: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todos os ativos</option>{(['new', 'reviewing'] as const).map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select>
             <select aria-label="Prioridade" value={filters.priority} onChange={(event) => setFilters((f) => ({ ...f, priority: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todas as prioridades</option>{Object.entries(PRIORITY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
             <select aria-label="Workbook" value={filters.workbookId ?? ''} onChange={(event) => setFilters((f) => ({ ...f, workbookId: event.target.value ? Number(event.target.value) : null }))} className="rounded-xl border p-2"><option value="">Todos os livros</option>{options.workbooks.map((book) => <option key={book} value={book}>Livro {book}</option>)}</select>
             <select aria-label="Lição" value={filters.lessonId ?? ''} onChange={(event) => setFilters((f) => ({ ...f, lessonId: event.target.value }))} className="rounded-xl border p-2"><option value="">Todas as lições</option>{options.lessons.map((lesson) => <option key={lesson}>{lesson}</option>)}</select>

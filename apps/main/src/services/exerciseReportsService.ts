@@ -18,6 +18,9 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { ACTIVE_EXERCISE_REPORT_STATUSES, isActiveExerciseReport } from './exerciseReportStatus';
+
+export { isActiveExerciseReport } from './exerciseReportStatus';
 
 export const EXERCISE_REPORT_CATEGORIES = [
   'Erro de texto ou ortografia',
@@ -172,6 +175,7 @@ export function filterAndSortExerciseReports(reports: ExerciseReport[], filters:
   const user = filters.user?.trim().toLowerCase();
   const text = filters.text?.trim().toLowerCase();
   const filtered = reports.filter((report) => {
+    if (!isActiveExerciseReport(report)) return false;
     if (filters.status && filters.status !== 'all' && report.status !== filters.status) return false;
     if (filters.priority && filters.priority !== 'all' && report.priority !== filters.priority) return false;
     if (filters.workbookId && report.workbookId !== filters.workbookId) return false;
@@ -204,12 +208,12 @@ export async function listExerciseReports(filters: ExerciseReportFilters, cursor
   // Remaining filters are applied to the bounded page below.
   if (filters.status && filters.status !== 'all' && filters.priority && filters.priority !== 'all') {
     constraints.push(where('status', '==', filters.status), where('priority', '==', filters.priority));
-  } else if (filters.workbookId && filters.lessonId) {
-    constraints.push(where('workbookId', '==', filters.workbookId), where('lessonId', '==', filters.lessonId));
   } else if (filters.status && filters.status !== 'all') {
     constraints.push(where('status', '==', filters.status));
   } else if (filters.priority && filters.priority !== 'all') {
-    constraints.push(where('priority', '==', filters.priority));
+    constraints.push(where('status', 'in', [...ACTIVE_EXERCISE_REPORT_STATUSES]), where('priority', '==', filters.priority));
+  } else {
+    constraints.push(where('status', 'in', [...ACTIVE_EXERCISE_REPORT_STATUSES]));
   }
   constraints.push(orderBy('createdAt', filters.sort === 'oldest' ? 'asc' : 'desc'));
   if (cursor) constraints.push(startAfter(cursor));
@@ -238,8 +242,12 @@ export async function getExerciseReportCounts(): Promise<Record<ExerciseReportSt
     resolved: resolved.data().count,
     dismissed: dismissed.data().count,
     total: total.data().count,
-    pending: newCount.data().count + reviewing.data().count,
+    pending: 0,
   };
+  counts.pending = (Object.entries(counts) as [ExerciseReportStatus | 'total' | 'pending', number][])
+    .reduce((sum, [status, count]) => (
+      status !== 'total' && status !== 'pending' && isActiveExerciseReport({ status }) ? sum + count : sum
+    ), 0);
   return counts;
 }
 
@@ -255,7 +263,7 @@ export function subscribePendingExerciseReportCount(onCount: (count: number) => 
   };
   const newestPending = query(
     collection(db, COLLECTION),
-    where('status', 'in', ['new', 'reviewing']),
+    where('status', 'in', [...ACTIVE_EXERCISE_REPORT_STATUSES]),
     orderBy('createdAt', 'desc'),
     limit(1),
   );

@@ -60,7 +60,7 @@ function asListeningWriting(source: Exercise, targetId: string, objective: strin
     displayValue: undefined,
     options: undefined,
     correctValue: heardText,
-    acceptedAnswers: [heardText],
+    acceptedAnswers: [heardText, ...(source.acceptedAnswers ?? [])],
     promptMode: undefined,
   };
 }

@@ -55,6 +55,36 @@ test('Lesson 4 address feedback preserves the complete modeled sentence', () => 
   assert.ok(exercise.acceptedAnswers.some((answer) => normalized(answer) === normalized('It is at 21 First Street ')));
 });
 
+test('reported Lesson 4 exercises keep their corrected answers and visual context', () => {
+  const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l4');
+  const exercises = lesson.days.flatMap((day) => day.exercises);
+  const byId = (id) => exercises.find((exercise) => exercise.id === id);
+
+  const joe = byId('wb1_l4_final_v2_speak_5');
+  assert.equal(joe.correctValue, 'Joe');
+  assert.ok(joe.acceptedAnswers.includes('Joe'));
+  assert.ok(joe.acceptedAnswers.includes('Jo'));
+
+  const birthday = byId('wb1_l4_final_v2_listen_write_5');
+  assert.equal(birthday.correctValue, 'My birthday is January twenty-first.');
+  assert.ok(birthday.acceptedAnswers.includes('My birthday is January twenty-first.'));
+  assert.ok(birthday.acceptedAnswers.includes('My birthday is January 21st.'));
+
+  const sam = byId('wb1_l4_final_v2_listen_write_8');
+  assert.equal(sam.audioValue, 'Sam is fifth.');
+  assert.equal(sam.correctValue, 'Sam is fifth.');
+
+  const ordinalLine = byId('wb1_l4_d5_e1');
+  assert.equal(ordinalLine.displayValue, 'Who is first in line?');
+  assert.deepEqual(ordinalLine.contextVisual.people, ['Anna', 'Lucas', 'Daniel', 'Emily']);
+  for (const answer of ['Anna.', 'Anna is first.', 'Anna is first in line.']) {
+    assert.ok(ordinalLine.acceptedAnswers.includes(answer));
+  }
+  for (const id of ['wb1_l4_d5_e2', 'wb1_l4_d5_e3', 'wb1_l4_d5_e4']) {
+    assert.deepEqual(byId(id).contextVisual, ordinalLine.contextVisual, `${id}: missing shared ordinal-line context`);
+  }
+});
+
 test('Lesson 8 follows the updated Spoken Patterns scope and register rules', () => {
   const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l8');
   assert.ok(lesson, 'wb1_l8 missing');
@@ -62,6 +92,11 @@ test('Lesson 8 follows the updated Spoken Patterns scope and register rules', ()
 
   const day4 = lesson.days[3].exercises;
   assert.equal(day4.length, 10);
+  const reportedExercise = day4.find((exercise) => exercise.id === 'wb1_l8_d4_e8');
+  assert.equal(reportedExercise.type, 'multiple-choice');
+  assert.equal(reportedExercise.audioValue, "I'm happy, ___?");
+  assert.equal(reportedExercise.correctValue, "aren't I?");
+  assert.match(reportedExercise.instruction, /complete the sentence/i);
   assert.ok(day4.every((exercise) => /aren['’]t i/i.test(exercise.correctValue)), 'Day 4 must teach the fixed standard tag');
   assert.ok(day4.every((exercise) => !/amn['’]t i|ain['’]t i/i.test(exercise.correctValue)), 'nonstandard tags cannot be correct');
 

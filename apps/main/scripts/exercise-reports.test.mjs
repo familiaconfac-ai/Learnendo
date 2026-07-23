@@ -6,6 +6,7 @@ const root = resolve(import.meta.dirname, '..', '..', '..');
 const app = resolve(root, 'apps', 'main', 'src');
 const read = (path) => readFileSync(path, 'utf8');
 const service = read(resolve(app, 'services', 'exerciseReportsService.ts'));
+const reportStatus = read(resolve(app, 'services', 'exerciseReportStatus.ts'));
 const practice = read(resolve(app, 'components', 'ExercisePractice', 'ExercisePractice.tsx'));
 const dashboard = read(resolve(app, 'components', 'ProblemReports', 'ProblemReportsDashboard.tsx'));
 const generalReport = read(resolve(app, 'components', 'ProblemReports', 'GeneralProblemReportModal.tsx'));
@@ -15,6 +16,9 @@ const indexes = JSON.parse(read(resolve(root, 'firestore.indexes.json')));
 
 assert.match(service, /status:\s*'new'/, 'new reports must use status new');
 assert.match(service, /priority:\s*'normal'/, 'new reports must use normal priority');
+assert.match(reportStatus, /function isActiveExerciseReport/, 'one active-report helper must define list and count behavior');
+assert.match(service, /if \(!isActiveExerciseReport\(report\)\) return false/, 'the main list must exclude closed reports');
+assert.match(service, /isActiveExerciseReport\(\{ status \}\)/, 'the counter must reuse the active-report helper');
 assert.match(service, /PAGE_SIZE = 25/, 'reports must be paginated');
 assert.match(service, /recentSubmissions/, 'immediate duplicate submissions must be guarded');
 assert.match(practice, /disabled=\{reportSubmitting\}/, 'submit controls must lock while sending');
@@ -30,6 +34,7 @@ assert.match(appSource, /currentSection === SectionType\.PROBLEM_REPORTS && !isA
 assert.match(dashboard, /status:\s*'reviewing'/, 'admin can mark reviewing');
 assert.match(dashboard, /status:\s*'resolved'/, 'admin can resolve');
 assert.match(dashboard, /status:\s*'dismissed'/, 'admin can dismiss');
+assert.match(dashboard, /setReports\(\(current\) => current\.filter/, 'closing a report must remove it from local state immediately');
 assert.match(dashboard, /Copiar dados do exercício/, 'details must copy exercise data');
 assert.match(dashboard, /adminNote/, 'details must edit the admin note');
 assert.match(dashboard, /Próxima/, 'dashboard must expose pagination');

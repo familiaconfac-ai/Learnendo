@@ -52,3 +52,15 @@ test('strict writing preserves the digit-versus-word distinction', () => {
   assert.notEqual(normalizeStrictWritingAnswer('18'), normalizeStrictWritingAnswer('eighteen'));
   assert.equal(normalizeStrictWritingAnswer('Eighteen.'), normalizeStrictWritingAnswer('eighteen'));
 });
+
+test('reported January date accepts only its authored word and numeric ordinal forms', () => {
+  const targets = ['My birthday is January twenty-first.', 'My birthday is January 21st.'];
+  const accepts = (answer: string) => targets.some((target) => isAnswerMatch(answer, target));
+  for (const answer of [
+    'My birthday is January twenty-first.',
+    'My birthday is January twenty-first',
+    'My birthday is January 21st.',
+    'My birthday is January 21st',
+  ]) assert.equal(accepts(answer), true, answer);
+  assert.equal(accepts('My birthday is January 22nd.'), false);
+});
