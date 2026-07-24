@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import {
   EXERCISE_REPORT_CATEGORIES,
@@ -47,6 +47,9 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
+  const [statusNotice, setStatusNotice] = useState('');
+  const actionInFlightRef = useRef(false);
   const [counts, setCounts] = useState({ new: 0, reviewing: 0, resolved: 0, dismissed: 0, total: 0, pending: 0 });
 
   const load = useCallback(async (targetCursor: QueryDocumentSnapshot<DocumentData> | null = null) => {
@@ -80,25 +83,36 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     days: [...new Set(reports.map((report) => report.dayId))].sort(),
   }), [reports]);
 
-  const patchSelected = async (patch: { status?: ExerciseReportStatus; priority?: ExerciseReportPriority; adminNote?: string }) => {
-    if (!selected || saving) return;
+  const patchSelected = async (
+    patch: { status?: ExerciseReportStatus; priority?: ExerciseReportPriority; adminNote?: string },
+    closeAfterSuccess = false,
+  ) => {
+    if (!selected || saving || actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
     setSaving(true);
     setError('');
     try {
       await updateExerciseReport(selected, patch, reviewer);
       const next = { ...selected, ...patch };
-      if (isActiveExerciseReport(next)) {
-        setSelected(next);
-        setReports((current) => current.map((report) => report.reportId === next.reportId ? next : report));
-      } else {
-        setSelected(null);
-        setReports((current) => current.filter((report) => report.reportId !== next.reportId));
+      const staysInCurrentFilter = filters.status === 'all' || !filters.status || filters.status === next.status;
+      setReports((current) => staysInCurrentFilter
+        ? current.map((report) => report.reportId === next.reportId ? next : report)
+        : current.filter((report) => report.reportId !== next.reportId));
+      if (patch.status && patch.status !== selected.status) {
+        const wasPending = isActiveExerciseReport(selected);
+        const isPending = isActiveExerciseReport(next);
         setCounts((current) => ({
           ...current,
           [selected.status]: Math.max(0, current[selected.status] - 1),
           [next.status]: current[next.status] + 1,
-          pending: Math.max(0, current.pending - 1),
+          pending: Math.max(0, current.pending + Number(isPending) - Number(wasPending)),
         }));
+      }
+      if (closeAfterSuccess) {
+        setSelected(null);
+        setStatusNotice(`Relatório atualizado para ${STATUS_LABELS[next.status]}.`);
+      } else {
+        setSelected(next);
       }
       void getExerciseReportCounts().then(setCounts).catch((countError) => {
         console.warn('[ProblemReports] count refresh failed:', countError);
@@ -106,17 +120,39 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     } catch (saveError) {
       console.error('[ProblemReports] update failed:', saveError);
       setError('Não foi possível salvar a alteração.');
-    } finally { setSaving(false); }
+    } finally {
+      actionInFlightRef.current = false;
+      setSaving(false);
+    }
   };
 
   const copyExerciseData = async (report: ExerciseReport) => {
+    if (copyStatus === 'copying') return;
+    setCopyStatus('copying');
     const data = {
-      workbookId: report.workbookId, lessonId: report.lessonId, dayId: report.dayId,
-      exerciseId: report.exerciseId, displayedText: report.displayedText,
-      expectedAnswer: report.expectedAnswer, studentAnswer: report.studentAnswer,
-      problemCategory: report.problemCategory, studentComment: report.studentComment,
+      reportId: report.reportId, status: report.status, priority: report.priority,
+      workbookId: report.workbookId, workbookTitle: report.workbookTitle,
+      lessonId: report.lessonId, lessonTitle: report.lessonTitle,
+      dayId: report.dayId, dayNumber: report.dayNumber, exerciseId: report.exerciseId,
+      exerciseType: report.exerciseType, exerciseMode: report.exerciseMode,
+      instruction: report.instruction, displayedText: report.displayedText,
+      audioText: report.audioText, audioSource: report.audioSource,
+      options: report.options, expectedAnswer: report.expectedAnswer,
+      acceptedAnswers: report.acceptedAnswers, studentAnswer: report.studentAnswer,
+      attemptCount: report.attemptCount, problemCategory: report.problemCategory,
+      studentComment: report.studentComment, route: report.route,
+      appVersion: report.appVersion, browser: report.browser,
+      operatingSystem: report.operatingSystem, deviceType: report.deviceType,
+      screenSize: report.screenSize, userId: report.userId,
+      userName: report.userName, userEmail: report.userEmail,
     };
-    await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      setCopyStatus('copied');
+    } catch (copyError) {
+      console.error('[ProblemReports] copy failed:', copyError);
+      setCopyStatus('error');
+    }
   };
 
   if (!isAdmin) {
@@ -141,7 +177,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
 
         <div className="mb-5 rounded-2xl bg-white p-4 shadow-sm">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((f) => ({ ...f, status: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todos os ativos</option>{(['new', 'reviewing'] as const).map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select>
+            <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((f) => ({ ...f, status: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todos os status</option>{(Object.keys(STATUS_LABELS) as ExerciseReportStatus[]).map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select>
             <select aria-label="Prioridade" value={filters.priority} onChange={(event) => setFilters((f) => ({ ...f, priority: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todas as prioridades</option>{Object.entries(PRIORITY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
             <select aria-label="Workbook" value={filters.workbookId ?? ''} onChange={(event) => setFilters((f) => ({ ...f, workbookId: event.target.value ? Number(event.target.value) : null }))} className="rounded-xl border p-2"><option value="">Todos os livros</option>{options.workbooks.map((book) => <option key={book} value={book}>Livro {book}</option>)}</select>
             <select aria-label="Lição" value={filters.lessonId ?? ''} onChange={(event) => setFilters((f) => ({ ...f, lessonId: event.target.value }))} className="rounded-xl border p-2"><option value="">Todas as lições</option>{options.lessons.map((lesson) => <option key={lesson}>{lesson}</option>)}</select>
@@ -156,9 +192,10 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
         </div>
 
         {error && <p role="alert" className="mb-4 rounded-xl bg-red-100 p-3 font-bold text-red-800">{error}</p>}
+        {statusNotice && <p role="status" className="mb-4 rounded-xl bg-emerald-100 p-3 font-bold text-emerald-800">{statusNotice}</p>}
         <div className="space-y-3">
           {loading ? <p className="p-8 text-center">Carregando…</p> : reports.length === 0 ? <p className="rounded-2xl bg-white p-8 text-center text-slate-500">Nenhum relatório encontrado nesta página.</p> : reports.map((report) => (
-            <button key={report.reportId} onClick={() => setSelected(report)} className="block w-full rounded-2xl bg-white p-4 text-left shadow-sm transition hover:ring-2 hover:ring-blue-300">
+            <button key={report.reportId} onClick={() => { setCopyStatus('idle'); setStatusNotice(''); setSelected(report); }} className="block w-full rounded-2xl bg-white p-4 text-left shadow-sm transition hover:ring-2 hover:ring-blue-300">
               <div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-xs font-black ${STATUS_STYLE[report.status]}`}>{STATUS_LABELS[report.status]}</span><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{PRIORITY_LABELS[report.priority]}</span><span className="ml-auto text-xs text-slate-500">{formatDate(report.createdAt)}</span></div>
               <p className="mt-2 font-black">{report.workbookTitle || `Livro ${report.workbookId}`} · {report.lessonTitle || report.lessonId} · dia {report.dayNumber ?? report.dayId}</p>
               <p className="text-sm text-slate-600">{report.exerciseId} · {report.problemCategory}</p>
@@ -176,9 +213,10 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
       </div>
 
       {selected && (
-        <div className="fixed inset-0 z-[1100] overflow-y-auto bg-black/55 p-3 sm:p-8" onClick={() => setSelected(null)}>
+        <div className="fixed inset-0 z-[1100] overflow-y-auto bg-black/55 p-3 sm:p-8" onClick={() => { if (!saving) setSelected(null); }}>
           <div className="mx-auto max-w-4xl rounded-3xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3"><div><p className="text-xs text-slate-500">{selected.reportId}</p><h2 className="text-xl font-black">Detalhes do relatório</h2></div><button aria-label="Fechar" onClick={() => setSelected(null)} className="rounded-lg bg-slate-100 px-3 py-2 font-black">×</button></div>
+            <div className="flex items-start justify-between gap-3"><div><p className="text-xs text-slate-500">{selected.reportId}</p><h2 className="text-xl font-black">Detalhes do relatório</h2></div><button aria-label="Fechar" disabled={saving} onClick={() => setSelected(null)} className="rounded-lg bg-slate-100 px-3 py-2 font-black disabled:opacity-40">×</button></div>
+            {error && <p role="alert" className="mt-4 rounded-xl bg-red-100 p-3 font-bold text-red-800">{error}</p>}
             <DetailSection title="Identificação" rows={[
               ['Data e hora', formatDate(selected.createdAt)], ['Status', STATUS_LABELS[selected.status]], ['Prioridade', PRIORITY_LABELS[selected.priority]], ['Usuário', selected.userName || selected.userEmail || selected.userId],
               ['Livro', `${selected.workbookTitle} (${selected.workbookId})`], ['Lição', `${selected.lessonTitle} (${selected.lessonId})`], ['Dia', `${selected.dayNumber ?? ''} (${selected.dayId})`], ['Exercício', selected.exerciseId], ['Tipo', selected.exerciseType], ['Modo', selected.exerciseMode], ['Fase', selected.sessionPhase],
@@ -190,12 +228,19 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
             <DetailSection title="Contexto técnico" rows={[
               ['Rota', selected.route], ['Versão', selected.appVersion], ['Navegador', selected.browser], ['Sistema operacional', selected.operatingSystem], ['Dispositivo', selected.deviceType], ['Tela', selected.screenSize],
             ]} />
-            <div className="mt-5 rounded-2xl bg-slate-50 p-4"><h3 className="font-black">Ações administrativas</h3><div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="mt-5 rounded-2xl bg-slate-50 p-4"><h3 className="font-black">Ações administrativas</h3>
+            {saving && <p role="status" className="mt-2 font-bold text-blue-700">Salvando alteração…</p>}
+            {copyStatus === 'copying' && <p role="status" className="mt-2 font-bold text-blue-700">Copiando dados…</p>}
+            {copyStatus === 'copied' && <p role="status" className="mt-2 font-bold text-emerald-700">Dados copiados.</p>}
+            {copyStatus === 'error' && <p role="alert" className="mt-2 font-bold text-red-700">Não foi possível copiar. Tente novamente.</p>}
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <select value={selected.priority} disabled={saving} onChange={(event) => void patchSelected({ priority: event.target.value as ExerciseReportPriority })} className="rounded-xl border p-3">{Object.entries(PRIORITY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
-              <button disabled={saving} onClick={() => void copyExerciseData(selected)} className="rounded-xl border border-blue-300 bg-white p-3 font-bold text-blue-700">Copiar dados do exercício</button>
-              <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing' })} className="rounded-xl bg-amber-500 p-3 font-black text-white">Marcar em análise</button>
-              <button disabled={saving} onClick={() => void patchSelected({ status: 'resolved' })} className="rounded-xl bg-emerald-600 p-3 font-black text-white">Marcar resolvido</button>
-              <button disabled={saving} onClick={() => void patchSelected({ status: 'dismissed' })} className="rounded-xl bg-slate-600 p-3 font-black text-white">Descartar</button>
+              <button disabled={saving || copyStatus === 'copying'} onClick={() => void copyExerciseData(selected)} className="rounded-xl border border-blue-300 bg-white p-3 font-bold text-blue-700 disabled:opacity-50">{copyStatus === 'copying' ? 'Copiando…' : copyStatus === 'copied' ? 'Copiado' : 'Copiar dados do exercício'}</button>
+              {selected.status === 'new' && <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing' }, true)} className="rounded-xl bg-amber-500 p-3 font-black text-white">Marcar em análise</button>}
+              {selected.status === 'reviewing' && <button disabled={saving} onClick={() => void patchSelected({ status: 'new' }, true)} className="rounded-xl border border-blue-400 bg-white p-3 font-black text-blue-700">Retirar de análise</button>}
+              {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'resolved' }, true)} className="rounded-xl bg-emerald-600 p-3 font-black text-white">Marcar resolvido</button>}
+              {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'dismissed' }, true)} className="rounded-xl bg-slate-600 p-3 font-black text-white">Descartar</button>}
+              {!isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'new' }, true)} className="rounded-xl bg-blue-600 p-3 font-black text-white">Reabrir como novo</button>}
             </div><label className="mt-4 block text-sm font-bold">Nota administrativa<textarea defaultValue={selected.adminNote} onBlur={(event) => { if (event.target.value !== selected.adminNote) void patchSelected({ adminNote: event.target.value }); }} className="mt-1 min-h-24 w-full rounded-xl border p-3 font-normal" /></label></div>
           </div>
         </div>

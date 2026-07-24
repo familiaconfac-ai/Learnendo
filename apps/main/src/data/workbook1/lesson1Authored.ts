@@ -139,7 +139,7 @@ const day6 = [
   }),
   authored('speak_number_12', {
     type: 'speaking', assessmentMode: 'speaking', instruction: 'Listen and answer.', audioValue: 'What is this?', displayValue: '12',
-    correctValue: 'It is a number.', acceptedAnswers: ["It's a number."], pedagogicalTopic: 'numbers', prerequisite: 'number recognition and modeled identification',
+    correctValue: 'It is a number.', acceptedAnswers: ["It's a number.", 'This is a number.'], pedagogicalTopic: 'numbers', prerequisite: 'number recognition and modeled identification',
   }),
 ];
 
@@ -174,7 +174,17 @@ const day7: Exercise[] = [
   })),
   ...finalSpeaking.map(([key, audioValue, displayValue, correctValue, topic]) => authored(`final_speak_${key}`, {
     type: 'speaking', assessmentMode: 'speaking', coverageObjective: 'Alphabet A-Z and numbers 0-20',
-    instruction: 'Listen and answer.', audioValue, displayValue, correctValue, pedagogicalTopic: topic,
+    instruction: 'Listen and answer.', audioValue, displayValue, correctValue,
+    acceptedAnswers: correctValue === 'Yes, it is.'
+      ? ['Yes']
+      : correctValue === 'No, it is not.'
+        ? ['No']
+        : correctValue === 'It is a number.'
+          ? ["It's a number.", 'This is a number.']
+          : correctValue === 'It is a letter.'
+            ? ["It's a letter.", 'This is a letter.']
+            : undefined,
+    pedagogicalTopic: topic,
     prerequisite: 'recognition, Yes/No and oral modeling',
   })),
 ];

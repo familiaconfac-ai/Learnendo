@@ -6,6 +6,7 @@ import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '..
 import { isFillInBlankExercise, resolveFullSentenceAfterAnswer, resolvePromptAudioText } from '../utils/fillInBlankAudio';
 import { isWritingPromptResponseCorrect } from '../utils/writingPrompt';
 import { classifySpeakingExercise, speakingTargets } from '../utils/speakingExercise';
+import { isDictationWritingExercise, resolveSpokenOptionText } from '../utils/exerciseAudio';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import {
   isAnswerMatch,
@@ -531,19 +532,18 @@ export const PracticeSection: React.FC<{
     // Tracks whether the student has had at least one wrong attempt on this item.
     // Writing exercises reveal the audio hint only after the first wrong attempt.
     const [hasWrongAttempt, setHasWrongAttempt] = useState(false);
+    const [audioStatus, setAudioStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
     // Dictation exercises: audio should be visible from the start; digits rejected
     // Catches English "you hear", Portuguese "ouvir", and Spanish "oyes" phrasings
     // so that the audio button is immediately available in all three languages.
-    const isDictationWriting = item.type === 'writing' &&
-      (item.instruction.toLowerCase().includes('you hear') ||
-       item.instruction.toLowerCase().includes('ouvir') ||
-       item.instruction.toLowerCase().includes('oyes'));
+    const isDictationWriting = isDictationWritingExercise(item);
     const isFinalTestListeningWriting = item.assessmentMode === 'listening-writing';
 
     const translation = item.translation ? fixPortugueseSupportText(item.translation) : '';
     const displayCorrectValue = fixPortugueseSupportText(item.correctValue);
     const promptAudioText = resolvePromptAudioText(item);
+    const exerciseActionLocked = actionLocked || (isDictationWriting && audioStatus === 'loading');
     const speakingMode = item.type === 'speaking' ? classifySpeakingExercise(item) : null;
     const isShadowing = speakingMode === 'shadowing';
     const isInformalEnglish = item.pedagogicalTopic === 'informal-aint-recognition';
@@ -618,6 +618,7 @@ export const PracticeSection: React.FC<{
       setSelectedOption(null);
       setHasWrongAttempt(false);
       setLocalWrongFooterLocked(false);
+      setAudioStatus(promptAudioText ? 'loading' : 'ready');
 
       if (item.options && item.options.length > 0) {
         setShuffledOptions(shuffle(item.options));
@@ -644,16 +645,30 @@ export const PracticeSection: React.FC<{
       const _cleanups: Array<() => void> = [];
 
       if (autoPlayAudio && promptAudioText && item.type !== 'speaking' && item.type !== 'writing') {
-        _cleanups.push(onVoicesReady(() => speak(promptAudioText, 1, promptVoice)));
+        _cleanups.push(onVoicesReady(() => {
+          setAudioStatus('ready');
+          playPrompt(promptAudioText, 1, promptVoice, 'autoplay');
+        }));
       } else if (autoPlayAudio && promptAudioText && item.type === 'speaking') {
         // ✅ Auto-play audio for speaking/shadowing exercises
         const t = setTimeout(() => {
-          _cleanups.push(onVoicesReady(() => speak(promptAudioText, 1, promptVoice)));
+          _cleanups.push(onVoicesReady(() => {
+            setAudioStatus('ready');
+            playPrompt(promptAudioText, 1, promptVoice, 'autoplay');
+          }));
         }, 500);
         _cleanups.push(() => clearTimeout(t));
       } else if (autoPlayAudio && promptAudioText && isDictationWriting) {
-        // Dictation writing: play audio upfront so students can hear before typing
-        _cleanups.push(onVoicesReady(() => speak(promptAudioText, 1, promptVoice)));
+        // Give short Bluetooth streams time to open before the meaningful words.
+        const t = setTimeout(() => {
+          _cleanups.push(onVoicesReady(() => {
+            setAudioStatus('ready');
+            playPrompt(promptAudioText, 1, promptVoice, 'autoplay');
+          }));
+        }, 500);
+        _cleanups.push(() => clearTimeout(t));
+      } else if (promptAudioText) {
+        _cleanups.push(onVoicesReady(() => setAudioStatus('ready')));
       }
       // non-dictation writing: audio is only revealed after the first wrong attempt
 
@@ -698,7 +713,7 @@ export const PracticeSection: React.FC<{
 
     // Auto-grow textarea
     const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      if (actionLocked) return;
+      if (exerciseActionLocked) return;
       setUserInput(e.target.value);
       if (feedback === 'wrong') { setFeedback('none'); setShowFooter(false); }
       if (textareaRef.current) {
@@ -710,7 +725,13 @@ export const PracticeSection: React.FC<{
     // Thin wrapper so existing call sites don't need changing.
     // Language comes from the currentLanguage prop set by ExercisePractice.
     // voicePref allows callers to request a specific gender; falls back safely.
-    const speak = (text: string, rate = 1, voicePref?: 'male' | 'female', origin = 'interaction') => {
+    function speak(
+      text: string,
+      rate = 1,
+      voicePref?: 'male' | 'female',
+      origin = 'interaction',
+      lifecycle: { onEnd?: () => void; onError?: () => void } = {},
+    ) {
       const vc = getVoiceCount();
       console.log(
         `[EXERCISE SPEAK] ex#${currentIdx} lang=${currentLanguage}` +
@@ -719,11 +740,19 @@ export const PracticeSection: React.FC<{
         ` | voiceCount=${vc} | origin=${origin}` +
         ` | text="${text.slice(0, 50)}${text.length > 50 ? '\u2026' : ''}"`
       );
-      return ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref });
-    };
+      return ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref, ...lifecycle });
+    }
+
+    function playPrompt(text: string, rate: number, voicePref: 'male' | 'female', origin = 'interaction') {
+      setAudioStatus('ready');
+      speak(text, rate, voicePref, origin, {
+        onEnd: () => setAudioStatus('ready'),
+        onError: () => setAudioStatus('error'),
+      });
+    }
 
     const handleSTT = () => {
-      if (actionLocked) return;
+      if (exerciseActionLocked) return;
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) return alert("Mic not supported");
 
@@ -758,7 +787,7 @@ export const PracticeSection: React.FC<{
     };
 
     const handleCheck = () => {
-      if (actionLocked) return;
+      if (exerciseActionLocked) return;
       // Dismiss keyboard immediately so the footer is at its final position
       // before the CONTINUE button renders — prevents the "double-tap" ghost click.
       inputRef.current?.blur();
@@ -911,7 +940,7 @@ export const PracticeSection: React.FC<{
     };
 
     const performPrimaryAction = () => {
-      if (actionLocked || primaryActionInFlightRef.current) return;
+      if (exerciseActionLocked || primaryActionInFlightRef.current) return;
       if (showFooter) {
         performFooterAction();
         return;
@@ -943,12 +972,12 @@ export const PracticeSection: React.FC<{
     });
 
       const handleOptionClick = (opt: string) => {
-        if (actionLocked) return;
+        if (exerciseActionLocked) return;
         if (showFooter && feedback === 'correct') return;
         if (wrongFooterLocked) return;
         if (clickTranslatorMode && onTranslatorWordSelect) return;
         setSelectedOption(opt);
-      speak(opt, 1, promptVoice);
+      speak(resolveSpokenOptionText(opt), 1, promptVoice);
       if (feedback === 'wrong') {
         setShowFooter(false);
         setFeedback('none');
@@ -1263,7 +1292,7 @@ export const PracticeSection: React.FC<{
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            speak(activeAudioText, 1, promptVoice);
+                            playPrompt(activeAudioText, 1, promptVoice);
                           }}
                           className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
                           title="Play audio"
@@ -1274,7 +1303,7 @@ export const PracticeSection: React.FC<{
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            speak(activeAudioText, 0.5, feedbackVoice);
+                            playPrompt(activeAudioText, 0.5, feedbackVoice);
                           }}
                           className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
                           title="Slow pronunciation"
@@ -1301,7 +1330,7 @@ export const PracticeSection: React.FC<{
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            speak(activeAudioText, 1, promptVoice);
+                            playPrompt(activeAudioText, 1, promptVoice);
                           }}
                           className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
                           title="Play audio"
@@ -1312,7 +1341,7 @@ export const PracticeSection: React.FC<{
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
-                            speak(activeAudioText, 0.5, feedbackVoice);
+                            playPrompt(activeAudioText, 0.5, feedbackVoice);
                           }}
                           className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
                           title="Slow pronunciation"
@@ -1336,7 +1365,7 @@ export const PracticeSection: React.FC<{
                       <button
                         onClick={(event) => {
                           event.stopPropagation();
-                          speak(activeAudioText, 1, promptVoice);
+                          playPrompt(activeAudioText, 1, promptVoice);
                         }}
                         className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
                         title="Play audio"
@@ -1347,7 +1376,7 @@ export const PracticeSection: React.FC<{
                       <button
                         onClick={(event) => {
                           event.stopPropagation();
-                          speak(activeAudioText, 0.5, feedbackVoice);
+                          playPrompt(activeAudioText, 0.5, feedbackVoice);
                         }}
                         className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
                         title="Slow pronunciation"
@@ -1375,19 +1404,19 @@ export const PracticeSection: React.FC<{
             {/* ✅ Audio control buttons in correct order */}
             <div className={`flex ${isShortViewport ? 'gap-3' : 'gap-4'}`}>
               {promptAudioText && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || isFillInBlankWriting || hasWrongAttempt) && (
-                <button onClick={() => speak(activeAudioText, 1, promptVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center`} title="Play audio">
+                <button onClick={() => playPrompt(activeAudioText, 1, promptVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-blue-600 text-white rounded-2xl shadow-[0_4px_0_0_#1e40af] active:translate-y-1 transition-all flex items-center justify-center`} title="Play audio">
                   <img src={speakerIcon} className="w-6 h-6 brightness-0 invert" alt="Play" />
                 </button>
               )}
               {promptAudioText && !isListeningExercise && (item.type !== 'writing' || isDictationWriting || isSentenceWriting || isFillInBlankWriting || hasWrongAttempt) && (
-                <button onClick={() => speak(activeAudioText, 0.5, feedbackVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center`} title="Slow pronunciation">
+                <button onClick={() => playPrompt(activeAudioText, 0.5, feedbackVoice)} className={`${isShortViewport ? 'w-12 h-12' : 'w-14 h-14'} bg-orange-400 text-white rounded-2xl shadow-[0_4px_0_0_#c2410c] active:translate-y-1 transition-all flex items-center justify-center`} title="Slow pronunciation">
                   <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
               )}
               {item.type === 'speaking' && (
                 <button 
                   onClick={handleSTT}
-                  disabled={actionLocked || (showFooter && feedback === 'correct')}
+                  disabled={exerciseActionLocked || (showFooter && feedback === 'correct')}
                   className={`${isShortViewport ? 'w-12 h-12 text-xl' : 'w-14 h-14 text-2xl'} rounded-2xl active:translate-y-1 transition-all flex items-center justify-center ${isListening ? 'bg-red-500 text-white animate-pulse shadow-[0_4px_0_0_#b91c1c]' : 'bg-red-500 text-white shadow-[0_4px_0_0_#991b1b] hover:bg-red-600'}`}
                   title="Tap to speak"
                 >
@@ -1395,6 +1424,14 @@ export const PracticeSection: React.FC<{
                 </button>
               )}
             </div>
+            {isDictationWriting && audioStatus === 'loading' && (
+              <p role="status" className="text-xs font-bold text-blue-300">Preparing audio...</p>
+            )}
+            {isDictationWriting && audioStatus === 'error' && (
+              <p role="alert" className="text-center text-xs font-bold text-red-300">
+                Audio could not be played. Tap a playback button to try again.
+              </p>
+            )}
 
             {/* Listening dictation and shadowing should not reveal the target text visually. */}
             {item.displayValue && !isShadowing && !isDictationWriting && (
@@ -1437,7 +1474,7 @@ export const PracticeSection: React.FC<{
                     return (
                       <button
                         key={opt}
-                        disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
+                        disabled={exerciseActionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
                         onClick={() => handleOptionClick(opt)}
                         aria-label={opt}
                         className={`rounded-2xl overflow-hidden border-4 transition-all [touch-action:manipulation] ${isSelected ? 'border-blue-400 shadow-lg ring-2 ring-blue-400' : 'border-slate-700 hover:border-blue-400'}`}
@@ -1467,7 +1504,7 @@ export const PracticeSection: React.FC<{
                 {shuffledOptions.map((opt) => (
                   <button
                     key={opt}
-                    disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
+                    disabled={exerciseActionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
                     onPointerDown={(event) => {
                       if (clickTranslatorMode && onTranslatorWordSelect) {
                         openTranslatorForWord(opt, event.currentTarget, event);
@@ -1494,7 +1531,7 @@ export const PracticeSection: React.FC<{
                 {/* Auto-growing textarea for speaking exercises - moved below buttons */}
                 <textarea
                   ref={textareaRef}
-                  disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
+                  disabled={exerciseActionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
                   rows={1}
                   className={`block w-full max-w-full min-w-0 box-border overflow-x-hidden overflow-y-hidden whitespace-pre-wrap break-words px-3 py-2 border-2 rounded-2xl text-center text-lg leading-6 font-black focus:border-blue-500 outline-none transition-[border-color,height] resize-none min-h-[44px] max-h-32 [overflow-wrap:anywhere] ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
@@ -1508,7 +1545,7 @@ export const PracticeSection: React.FC<{
               <div className="w-full">
                 <input
                   ref={inputRef}
-                  disabled={actionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
+                  disabled={exerciseActionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
                   className={`w-full px-3 py-2.5 border-2 rounded-2xl text-center text-[clamp(1rem,3vw,1.35rem)] font-black focus:border-blue-500 outline-none transition-all ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
                   onChange={(e) => {

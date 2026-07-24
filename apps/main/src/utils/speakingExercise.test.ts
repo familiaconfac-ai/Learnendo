@@ -39,7 +39,9 @@ test('reported Joe answer accepts normalization without accepting another name',
   }
 });
 
-test('isolated H uses an unambiguous TTS phrase without changing the target', () => {
-  assert.equal(resolvePromptAudioText({ audioValue: 'H', correctValue: 'H' }), 'the letter H');
+test('isolated letters use a Bluetooth-safe TTS phrase without changing the target', () => {
+  assert.equal(resolvePromptAudioText({ audioValue: 'H', correctValue: 'H' }), 'This is the letter H.');
+  assert.equal(resolvePromptAudioText({ audioValue: 'A', correctValue: 'A' }), 'This is the letter A.');
+  assert.equal(resolvePromptAudioText({ audioValue: 'E', correctValue: 'E' }), 'This is the letter E.');
   assert.notEqual(resolvePromptAudioText({ audioValue: 'H', correctValue: 'H' }), 'eight');
 });

@@ -175,7 +175,6 @@ export function filterAndSortExerciseReports(reports: ExerciseReport[], filters:
   const user = filters.user?.trim().toLowerCase();
   const text = filters.text?.trim().toLowerCase();
   const filtered = reports.filter((report) => {
-    if (!isActiveExerciseReport(report)) return false;
     if (filters.status && filters.status !== 'all' && report.status !== filters.status) return false;
     if (filters.priority && filters.priority !== 'all' && report.priority !== filters.priority) return false;
     if (filters.workbookId && report.workbookId !== filters.workbookId) return false;
@@ -211,9 +210,7 @@ export async function listExerciseReports(filters: ExerciseReportFilters, cursor
   } else if (filters.status && filters.status !== 'all') {
     constraints.push(where('status', '==', filters.status));
   } else if (filters.priority && filters.priority !== 'all') {
-    constraints.push(where('status', 'in', [...ACTIVE_EXERCISE_REPORT_STATUSES]), where('priority', '==', filters.priority));
-  } else {
-    constraints.push(where('status', 'in', [...ACTIVE_EXERCISE_REPORT_STATUSES]));
+    constraints.push(where('priority', '==', filters.priority));
   }
   constraints.push(orderBy('createdAt', filters.sort === 'oldest' ? 'asc' : 'desc'));
   if (cursor) constraints.push(startAfter(cursor));

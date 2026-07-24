@@ -368,7 +368,11 @@ export function speak(
   langCode: string = 'en',
   options: SpeakOptions = {},
 ): void {
-  if (!text || !('speechSynthesis' in window)) return;
+  if (!text) return;
+  if (!('speechSynthesis' in window)) {
+    options.onError?.();
+    return;
+  }
 
   stopRemoteAudio();
   window.speechSynthesis.cancel();

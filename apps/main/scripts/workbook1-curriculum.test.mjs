@@ -205,3 +205,18 @@ test('Lesson 1 instructions are short and Final Test content was modeled first',
   assert.ok(lesson.days.flatMap((day) => day.exercises).every((exercise) => allowedInstructions.has(exercise.instruction)));
   assert.ok(lesson.days[6].exercises.every((exercise) => !exercise.introducesNewContent));
 });
+
+test('reported Lesson 1 speaking answers preserve meaning without requiring punctuation', () => {
+  const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l1');
+  const exercises = lesson.days.flatMap((day) => day.exercises);
+  const byId = (id) => exercises.find((exercise) => exercise.id === id);
+
+  const number = byId('wb1_l1_speak_number_12');
+  assert.ok(number.acceptedAnswers.includes('This is a number.'));
+
+  const yes = byId('wb1_l1_final_speak_yes_letter');
+  assert.ok(yes.acceptedAnswers.includes('Yes'));
+
+  const no = byId('wb1_l1_final_speak_no_letter');
+  assert.ok(no.acceptedAnswers.includes('No'));
+});
