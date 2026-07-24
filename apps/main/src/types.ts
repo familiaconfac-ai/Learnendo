@@ -19,6 +19,7 @@ export interface Exercise {
   options?: string[];
   correctValue: string;
   acceptedAnswers?: string[];
+  acceptedQuestions?: string[];
   translation?: string;
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;

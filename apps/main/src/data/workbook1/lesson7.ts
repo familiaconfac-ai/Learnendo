@@ -1,5 +1,10 @@
 import { Lesson } from '../../types';
 
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const MONTHS_OF_YEAR = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const ANY_DAY_ANSWERS = DAYS_OF_WEEK.flatMap((day) => [day, `It is ${day}.`, `Today is ${day}.`]);
+const ANY_MONTH_ANSWERS = MONTHS_OF_YEAR.flatMap((month) => [month, `It is ${month}.`, `The month is ${month}.`]);
+
 export const lesson7: Lesson = {
   id: 'wb1_l7',
   title: 'Lesson 7: Days, Months, and Dates',
@@ -191,18 +196,22 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d3_e5',
           type: 'writing',
-          instruction: 'Answer the question.',
+          instruction: 'Write any day of the week.',
           audioValue: 'What day is it today?',
           correctValue: 'It is Monday.',
+          acceptedAnswers: ANY_DAY_ANSWERS,
+          audioValueBeforeAnswer: 'Write any day of the week.',
           displayValue: 'What day is it today? ______',
           isNewVocab: false
         },
         {
           id: 'wb1_l7_d3_e6',
           type: 'writing',
-          instruction: 'Answer the question.',
+          instruction: 'Write any month of the year.',
           audioValue: 'What month is it?',
           correctValue: 'It is January.',
+          acceptedAnswers: ANY_MONTH_ANSWERS,
+          audioValueBeforeAnswer: 'Write any month of the year.',
           displayValue: 'What month is it? ______',
           isNewVocab: false
         },
@@ -293,45 +302,55 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d5_e1',
           type: 'speaking',
-          instruction: 'Say the day.',
+          instruction: 'Say any day of the week.',
           audioValue: 'Today is Monday.',
           correctValue: 'Today is Monday.',
+          acceptedAnswers: ANY_DAY_ANSWERS,
+          audioValueBeforeAnswer: 'Say any day of the week.',
           displayValue: 'Today is ______.',
           isNewVocab: false
         },
         {
           id: 'wb1_l7_d5_e2',
           type: 'speaking',
-          instruction: 'Say the month.',
+          instruction: 'Say any month of the year.',
           audioValue: 'It is April.',
           correctValue: 'It is April.',
+          acceptedAnswers: ANY_MONTH_ANSWERS,
+          audioValueBeforeAnswer: 'Say any month of the year.',
           displayValue: 'The month is ______.',
           isNewVocab: false
         },
         {
           id: 'wb1_l7_d5_e3',
           type: 'speaking',
-          instruction: 'Answer the question.',
+          instruction: 'Answer with any day of the week.',
           audioValue: 'What day is it today?',
           correctValue: 'It is Friday.',
+          acceptedAnswers: ANY_DAY_ANSWERS,
+          audioValueBeforeAnswer: 'Answer with any day of the week.',
           displayValue: 'A: What day is it today?\nB: It is ______.',
           isNewVocab: false
         },
         {
           id: 'wb1_l7_d5_e4',
           type: 'speaking',
-          instruction: 'Answer the question.',
+          instruction: 'Answer with any month of the year.',
           audioValue: 'What month is it?',
           correctValue: 'It is May.',
+          acceptedAnswers: ANY_MONTH_ANSWERS,
+          audioValueBeforeAnswer: 'Answer with any month of the year.',
           displayValue: 'A: What month is it?\nB: It is ______.',
           isNewVocab: false
         },
         {
           id: 'wb1_l7_d5_e5',
           type: 'writing',
-          instruction: 'Write a short answer.',
+          instruction: 'Write any day of the week.',
           audioValue: 'What day is it today?',
           correctValue: 'It is Sunday.',
+          acceptedAnswers: ANY_DAY_ANSWERS,
+          audioValueBeforeAnswer: 'Write any day of the week.',
           displayValue: 'What day is it today? ______',
           isNewVocab: false
         },
@@ -375,6 +394,7 @@ export const lesson7: Lesson = {
           audioValue: 'What day is it?',
           options: ['Monday', 'Friday'],
           correctValue: 'Monday',
+          acceptedQuestions: ['What day is it today?'],
           isNewVocab: false
         },
         {
@@ -384,6 +404,7 @@ export const lesson7: Lesson = {
           audioValue: 'What month is it?',
           options: ['January', 'March'],
           correctValue: 'January',
+          acceptedQuestions: ['What month is it now?'],
           isNewVocab: false
         },
         {
@@ -467,18 +488,22 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d7_e5',
           type: 'writing',
-          instruction: 'Complete the sentence.',
+          instruction: 'Complete with any day of the week.',
           audioValue: 'Today is Friday.',
           correctValue: 'Friday',
+          acceptedAnswers: ANY_DAY_ANSWERS,
+          audioValueBeforeAnswer: 'Complete with any day of the week.',
           displayValue: 'Today is ______.',
           isNewVocab: false
         },
         {
           id: 'wb1_l7_d7_e6',
           type: 'writing',
-          instruction: 'Complete the sentence.',
+          instruction: 'Complete with any month of the year.',
           audioValue: 'It is December.',
           correctValue: 'December',
+          acceptedAnswers: ANY_MONTH_ANSWERS,
+          audioValueBeforeAnswer: 'Complete with any month of the year.',
           displayValue: 'It is ______.',
           isNewVocab: false
         },

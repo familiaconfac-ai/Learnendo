@@ -13,6 +13,7 @@ type QuestionProductionSource = {
   audioValue: string;
   correctValue: string;
   options?: string[];
+  acceptedQuestions?: string[];
 };
 
 export function normalizeProducedQuestion(value: string): string {
@@ -67,12 +68,16 @@ export function questionProductionFields(source: QuestionProductionSource): {
     return null;
   }
   const contracted = contractedQuestion(question);
+  const acceptedQuestions = [...new Set([
+    ...(source.acceptedQuestions ?? []),
+    ...(contracted && normalizeProducedQuestion(contracted) === normalizeProducedQuestion(question) ? [contracted] : []),
+  ])];
   return {
     instruction: 'Write the question.',
     displayValue: `Answer: ${source.correctValue}`,
     audioValue: source.correctValue,
     correctValue: question,
-    acceptedAnswers: contracted && normalizeProducedQuestion(contracted) === normalizeProducedQuestion(question) ? [contracted] : undefined,
+    acceptedAnswers: acceptedQuestions.length ? acceptedQuestions : undefined,
     promptMode: 'write-question',
   };
 }

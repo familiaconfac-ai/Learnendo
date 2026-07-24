@@ -40,3 +40,16 @@ for (const example of [
 test('does not invert a bare yes/no answer without an explicit target question', () => {
   assert.equal(questionProductionFields({ type: 'writing', audioValue: 'Yes, I am.', correctValue: 'Yes, I am.' }), null);
 });
+
+test('preserves natural alternative questions authored for an answer', () => {
+  const fields = questionProductionFields({
+    type: 'multiple-choice',
+    audioValue: 'What day is it?',
+    correctValue: 'Monday',
+    options: ['Monday', 'Friday'],
+    acceptedQuestions: ['What day is it today?'],
+  });
+  assert.ok(fields);
+  assert.equal(isWritingPromptResponseCorrect(fields, 'What day is it?'), true);
+  assert.equal(isWritingPromptResponseCorrect(fields, 'What day is it today?'), true);
+});

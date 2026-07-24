@@ -85,6 +85,30 @@ test('reported Lesson 4 exercises keep their corrected answers and visual contex
   }
 });
 
+test('Lesson 7 open day and month prompts accept natural valid alternatives', () => {
+  const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l7');
+  assert.ok(lesson, 'wb1_l7 missing');
+  const exercises = lesson.days.flatMap((day) => day.exercises);
+  const byId = (id) => exercises.find((exercise) => exercise.id === id);
+  const bySourceId = (id) => exercises.find((exercise) => exercise.sourceExerciseId === id);
+
+  const reportedDayQuestion = byId('wb1_l7_d6_e2');
+  assert.equal(reportedDayQuestion.promptMode, 'write-question');
+  assert.ok(reportedDayQuestion.acceptedAnswers.includes('What day is it today?'));
+
+  const reportedMonthQuestion = byId('wb1_l7_d6_e3');
+  assert.equal(reportedMonthQuestion.promptMode, 'write-question');
+  assert.ok(reportedMonthQuestion.acceptedAnswers.includes('What month is it now?'));
+
+  const openDay = bySourceId('wb1_l7_d5_e1');
+  assert.ok(openDay.acceptedAnswers.includes('Today is Tuesday.'));
+  assert.equal(openDay.audioValueBeforeAnswer, 'Say any day of the week.');
+
+  const openMonth = bySourceId('wb1_l7_d5_e2');
+  assert.ok(openMonth.acceptedAnswers.includes('It is February.'));
+  assert.equal(openMonth.audioValueBeforeAnswer, 'Say any month of the year.');
+});
+
 test('Lesson 8 follows the updated Spoken Patterns scope and register rules', () => {
   const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l8');
   assert.ok(lesson, 'wb1_l8 missing');
