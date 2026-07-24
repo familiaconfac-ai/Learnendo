@@ -36,6 +36,7 @@ export const EXERCISE_REPORT_CATEGORIES = [
 export type ExerciseReportCategory = typeof EXERCISE_REPORT_CATEGORIES[number];
 export type ExerciseReportStatus = 'new' | 'reviewing' | 'resolved' | 'dismissed';
 export type ExerciseReportPriority = 'low' | 'normal' | 'high' | 'critical';
+export type ExerciseReportVerificationResult = 'ready-for-verification' | 'fixed' | 'better-than-expected' | 'not-fixed' | 'needs-improvement';
 
 export interface ExerciseReport {
   reportId: string;
@@ -81,6 +82,10 @@ export interface ExerciseReport {
   reviewedAt: any;
   resolvedAt: any;
   dismissedAt: any;
+  verificationResult?: ExerciseReportVerificationResult | null;
+  verificationNote?: string | null;
+  verifiedBy?: string | null;
+  verifiedAt?: any;
   emailNotificationStatus: 'not_requested' | 'pending' | 'sent' | 'failed';
 }
 
@@ -202,25 +207,50 @@ export function filterAndSortExerciseReports(reports: ExerciseReport[], filters:
 }
 
 export async function listExerciseReports(filters: ExerciseReportFilters, cursor: QueryDocumentSnapshot<DocumentData> | null = null): Promise<ExerciseReportPage> {
-  const constraints: QueryConstraint[] = [];
+  const baseConstraints: QueryConstraint[] = [];
   // Keep server-side combinations aligned with the declared composite indexes.
-  // Remaining filters are applied to the bounded page below.
+  // Remaining filters are applied while scanning so a sparse match is not lost
+  // just because it was outside the first raw Firestore page.
   if (filters.status && filters.status !== 'all' && filters.priority && filters.priority !== 'all') {
-    constraints.push(where('status', '==', filters.status), where('priority', '==', filters.priority));
+    baseConstraints.push(where('status', '==', filters.status), where('priority', '==', filters.priority));
   } else if (filters.status && filters.status !== 'all') {
-    constraints.push(where('status', '==', filters.status));
+    baseConstraints.push(where('status', '==', filters.status));
   } else if (filters.priority && filters.priority !== 'all') {
-    constraints.push(where('priority', '==', filters.priority));
+    baseConstraints.push(where('priority', '==', filters.priority));
   }
-  constraints.push(orderBy('createdAt', filters.sort === 'oldest' ? 'asc' : 'desc'));
-  if (cursor) constraints.push(startAfter(cursor));
-  constraints.push(limit(PAGE_SIZE + 1));
-  const snapshot = await getDocs(query(collection(db, COLLECTION), ...constraints));
-  const pageDocs = snapshot.docs.slice(0, PAGE_SIZE);
+  baseConstraints.push(orderBy('createdAt', filters.sort === 'oldest' ? 'asc' : 'desc'));
+
+  const scanSize = 50;
+  const reports: ExerciseReport[] = [];
+  let scanCursor = cursor;
+  let hasMore = false;
+  let exhausted = false;
+  while (reports.length < PAGE_SIZE && !exhausted) {
+    const constraints = [...baseConstraints];
+    if (scanCursor) constraints.push(startAfter(scanCursor));
+    constraints.push(limit(scanSize));
+    const snapshot = await getDocs(query(collection(db, COLLECTION), ...constraints));
+    if (snapshot.empty) {
+      exhausted = true;
+      break;
+    }
+    for (let index = 0; index < snapshot.docs.length; index += 1) {
+      const document = snapshot.docs[index];
+      scanCursor = document;
+      const report = asReport(document);
+      if (filterAndSortExerciseReports([report], filters).length > 0) reports.push(report);
+      if (reports.length === PAGE_SIZE) {
+        hasMore = index < snapshot.docs.length - 1 || snapshot.docs.length === scanSize;
+        break;
+      }
+    }
+    if (reports.length === PAGE_SIZE) break;
+    exhausted = snapshot.docs.length < scanSize;
+  }
   return {
-    reports: filterAndSortExerciseReports(pageDocs.map(asReport), filters),
-    cursor: pageDocs.at(-1) ?? null,
-    hasMore: snapshot.docs.length > PAGE_SIZE,
+    reports: filterAndSortExerciseReports(reports, filters),
+    cursor: scanCursor,
+    hasMore: !exhausted && hasMore,
   };
 }
 
@@ -279,6 +309,8 @@ export async function updateExerciseReport(report: ExerciseReport, patch: {
   status?: ExerciseReportStatus;
   priority?: ExerciseReportPriority;
   adminNote?: string;
+  verificationResult?: ExerciseReportVerificationResult;
+  verificationNote?: string;
 }, reviewer: { uid: string; name: string }): Promise<void> {
   const updates: Record<string, unknown> = { ...patch, updatedAt: serverTimestamp() };
   if (patch.status === 'reviewing' && report.status !== 'reviewing') {
@@ -287,6 +319,10 @@ export async function updateExerciseReport(report: ExerciseReport, patch: {
   }
   if (patch.status === 'resolved') updates.resolvedAt = serverTimestamp();
   if (patch.status === 'dismissed') updates.dismissedAt = serverTimestamp();
+  if (patch.verificationResult) {
+    updates.verifiedBy = reviewer.name || reviewer.uid;
+    updates.verifiedAt = serverTimestamp();
+  }
   await updateDoc(doc(db, COLLECTION, report.reportId), updates);
   window.dispatchEvent(new CustomEvent('learnendo:exercise-reports-changed'));
 }

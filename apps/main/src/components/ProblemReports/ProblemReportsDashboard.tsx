@@ -6,15 +6,21 @@ import {
   ExerciseReportFilters,
   ExerciseReportPriority,
   ExerciseReportStatus,
+  ExerciseReportVerificationResult,
   getExerciseReportCounts,
   isActiveExerciseReport,
   listExerciseReports,
   updateExerciseReport,
 } from '../../services/exerciseReportsService';
+import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
+import type { Workbook } from '../../types';
+import { findReportedExercise, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
+import { AdminExerciseVerification, type VerificationVerdict } from './AdminExerciseVerification';
 
 interface ProblemReportsDashboardProps {
   isAdmin: boolean;
   reviewer: { uid: string; name: string };
+  currentCourseId: string;
   onBack: () => void;
 }
 
@@ -35,8 +41,18 @@ const emptyFilters: ExerciseReportFilters = {
 
 const formatDate = (value: any) => value?.toDate?.().toLocaleString('pt-BR') ?? 'Agora';
 const value = (content: unknown) => content === null || content === undefined || content === '' ? '—' : String(content);
+const VERIFICATION_LABELS: Record<ExerciseReportVerificationResult, string> = {
+  'ready-for-verification': 'Correção pronta para verificar',
+  fixed: 'Problema corrigido',
+  'better-than-expected': 'Melhor que o esperado',
+  'not-fixed': 'Problema não corrigido',
+  'needs-improvement': 'Corrigido, mas pode melhorar',
+};
+const LANGUAGE_COURSE: Record<string, string> = {
+  en: 'english', es: 'spanish', el: 'greek_koine', he: 'hebrew_biblical', pt: 'portuguese_foreigners',
+};
 
-export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = ({ isAdmin, reviewer, onBack }) => {
+export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = ({ isAdmin, reviewer, currentCourseId, onBack }) => {
   const [filters, setFilters] = useState<ExerciseReportFilters>(emptyFilters);
   const [reports, setReports] = useState<ExerciseReport[]>([]);
   const [selected, setSelected] = useState<ExerciseReport | null>(null);
@@ -51,6 +67,12 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
   const [statusNotice, setStatusNotice] = useState('');
   const actionInFlightRef = useRef(false);
   const [counts, setCounts] = useState({ new: 0, reviewing: 0, resolved: 0, dismissed: 0, total: 0, pending: 0 });
+  const [catalogWorkbook, setCatalogWorkbook] = useState<Workbook | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [verification, setVerification] = useState<{ report: ExerciseReport; location: ReportExerciseLocation } | null>(null);
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [verificationSaving, setVerificationSaving] = useState(false);
+  const [verificationError, setVerificationError] = useState('');
 
   const load = useCallback(async (targetCursor: QueryDocumentSnapshot<DocumentData> | null = null) => {
     if (!isAdmin) return;
@@ -77,14 +99,44 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     void load(null);
   }, [load]);
 
-  const options = useMemo(() => ({
-    workbooks: [...new Set(reports.map((report) => report.workbookId))].sort((a, b) => a - b),
-    lessons: [...new Set(reports.map((report) => report.lessonId))].sort(),
-    days: [...new Set(reports.map((report) => report.dayId))].sort(),
-  }), [reports]);
+  const courseRegistry = COURSE_WORKBOOKS[currentCourseId] ?? COURSE_WORKBOOKS.english;
+  const workbookIds = useMemo(
+    () => Object.keys(courseRegistry).map(Number).sort((left, right) => left - right),
+    [courseRegistry],
+  );
+
+  useEffect(() => {
+    const workbookId = filters.workbookId;
+    if (!workbookId) {
+      setCatalogWorkbook(null);
+      setCatalogLoading(false);
+      return;
+    }
+    const loader = courseRegistry[workbookId];
+    if (!loader) {
+      setCatalogWorkbook(null);
+      return;
+    }
+    let cancelled = false;
+    setCatalogLoading(true);
+    void loader()
+      .then((module) => {
+        if (!cancelled) setCatalogWorkbook(resolveWorkbookModule(module as Record<string, unknown>, workbookId));
+      })
+      .catch((catalogError) => {
+        console.error('[ProblemReports] curriculum catalog failed:', catalogError);
+        if (!cancelled) setCatalogWorkbook(null);
+      })
+      .finally(() => { if (!cancelled) setCatalogLoading(false); });
+    return () => { cancelled = true; };
+  }, [courseRegistry, filters.workbookId]);
+
+  const lessonOptions = catalogWorkbook?.lessons ?? [];
+  const selectedCatalogLesson = lessonOptions.find((lesson) => lesson.id === filters.lessonId);
+  const dayOptions = selectedCatalogLesson?.days ?? [];
 
   const patchSelected = async (
-    patch: { status?: ExerciseReportStatus; priority?: ExerciseReportPriority; adminNote?: string },
+    patch: { status?: ExerciseReportStatus; priority?: ExerciseReportPriority; adminNote?: string; verificationResult?: ExerciseReportVerificationResult; verificationNote?: string },
     closeAfterSuccess = false,
   ) => {
     if (!selected || saving || actionInFlightRef.current) return;
@@ -123,6 +175,67 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     } finally {
       actionInFlightRef.current = false;
       setSaving(false);
+    }
+  };
+
+  const openExerciseVerification = async (report: ExerciseReport) => {
+    if (verificationLoading) return;
+    setVerificationLoading(true);
+    setVerificationError('');
+    setError('');
+    try {
+      const inferredCourse = LANGUAGE_COURSE[report.language] ?? currentCourseId;
+      const courseCandidates = [...new Set([currentCourseId, inferredCourse, 'english'])];
+      let location: ReportExerciseLocation | null = null;
+      for (const courseId of courseCandidates) {
+        const loader = (COURSE_WORKBOOKS[courseId] ?? {})[report.workbookId];
+        if (!loader) continue;
+        const module = await loader();
+        const workbook = resolveWorkbookModule(module as Record<string, unknown>, report.workbookId);
+        if (!workbook) continue;
+        location = findReportedExercise(workbook, report);
+        if (location) break;
+      }
+      if (!location) {
+        setError('Não foi possível localizar este exercício na versão atual do currículo. Confira o ID e o livro registrados.');
+        return;
+      }
+      setSelected(null);
+      setVerification({ report, location });
+    } catch (verificationLoadError) {
+      console.error('[ProblemReports] exercise verification load failed:', verificationLoadError);
+      setError('Não foi possível abrir o exercício para verificação. Tente novamente.');
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  const saveVerificationVerdict = async (
+    verdict: VerificationVerdict,
+    note: string,
+    status: ExerciseReportStatus,
+  ) => {
+    if (!verification || verificationSaving) return;
+    setVerificationSaving(true);
+    setVerificationError('');
+    const report = verification.report;
+    const verificationNote = note.trim();
+    const logEntry = `[${new Date().toLocaleString('pt-BR')}] Verificação: ${VERIFICATION_LABELS[verdict]}.${verificationNote ? ` ${verificationNote}` : ''}`;
+    try {
+      await updateExerciseReport(report, {
+        status,
+        verificationResult: verdict,
+        verificationNote,
+        adminNote: [report.adminNote?.trim(), logEntry].filter(Boolean).join('\n'),
+      }, reviewer);
+      setVerification(null);
+      setStatusNotice(`Verificação salva: ${VERIFICATION_LABELS[verdict]}.`);
+      await load(currentStart);
+    } catch (verificationSaveError) {
+      console.error('[ProblemReports] verification save failed:', verificationSaveError);
+      setVerificationError('Não foi possível salvar o resultado. O exercício continua aberto para uma nova tentativa.');
+    } finally {
+      setVerificationSaving(false);
     }
   };
 
@@ -179,9 +292,9 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((f) => ({ ...f, status: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todos os status</option>{(Object.keys(STATUS_LABELS) as ExerciseReportStatus[]).map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select>
             <select aria-label="Prioridade" value={filters.priority} onChange={(event) => setFilters((f) => ({ ...f, priority: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todas as prioridades</option>{Object.entries(PRIORITY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
-            <select aria-label="Workbook" value={filters.workbookId ?? ''} onChange={(event) => setFilters((f) => ({ ...f, workbookId: event.target.value ? Number(event.target.value) : null }))} className="rounded-xl border p-2"><option value="">Todos os livros</option>{options.workbooks.map((book) => <option key={book} value={book}>Livro {book}</option>)}</select>
-            <select aria-label="Lição" value={filters.lessonId ?? ''} onChange={(event) => setFilters((f) => ({ ...f, lessonId: event.target.value }))} className="rounded-xl border p-2"><option value="">Todas as lições</option>{options.lessons.map((lesson) => <option key={lesson}>{lesson}</option>)}</select>
-            <select aria-label="Dia" value={filters.dayId ?? ''} onChange={(event) => setFilters((f) => ({ ...f, dayId: event.target.value }))} className="rounded-xl border p-2"><option value="">Todos os dias</option>{options.days.map((day) => <option key={day}>{day}</option>)}</select>
+            <select aria-label="Workbook" value={filters.workbookId ?? ''} onChange={(event) => setFilters((current) => ({ ...current, workbookId: event.target.value ? Number(event.target.value) : null, lessonId: '', dayId: '' }))} className="rounded-xl border p-2"><option value="">Todos os livros</option>{workbookIds.map((book) => <option key={book} value={book}>Livro {book}</option>)}</select>
+            <select aria-label="Lição" disabled={!filters.workbookId || catalogLoading} value={filters.lessonId ?? ''} onChange={(event) => setFilters((current) => ({ ...current, lessonId: event.target.value, dayId: '' }))} className="rounded-xl border p-2 disabled:bg-slate-100 disabled:text-slate-400"><option value="">{catalogLoading ? 'Carregando lições…' : filters.workbookId ? 'Todas as lições' : 'Selecione um livro'}</option>{lessonOptions.map((lesson) => <option key={lesson.id} value={lesson.id}>{lesson.title || lesson.id} ({lesson.id})</option>)}</select>
+            <select aria-label="Dia" disabled={!filters.lessonId} value={filters.dayId ?? ''} onChange={(event) => setFilters((current) => ({ ...current, dayId: event.target.value }))} className="rounded-xl border p-2 disabled:bg-slate-100 disabled:text-slate-400"><option value="">{filters.lessonId ? 'Todos os dias' : 'Selecione uma lição'}</option>{dayOptions.map((day, index) => <option key={day.id} value={day.id}>Dia {index + 1} ({day.id})</option>)}</select>
             <select aria-label="Categoria" value={filters.category} onChange={(event) => setFilters((f) => ({ ...f, category: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todas as categorias</option>{EXERCISE_REPORT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}</select>
             <input aria-label="Data" type="date" value={filters.date ?? ''} onChange={(event) => setFilters((f) => ({ ...f, date: event.target.value }))} className="rounded-xl border p-2" />
             <select aria-label="Ordenação" value={filters.sort} onChange={(event) => setFilters((f) => ({ ...f, sort: event.target.value as any }))} className="rounded-xl border p-2"><option value="newest">Mais recentes</option><option value="oldest">Mais antigos</option><option value="priority">Prioridade</option><option value="workbook">Livro e lição</option></select>
@@ -196,7 +309,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
         <div className="space-y-3">
           {loading ? <p className="p-8 text-center">Carregando…</p> : reports.length === 0 ? <p className="rounded-2xl bg-white p-8 text-center text-slate-500">Nenhum relatório encontrado nesta página.</p> : reports.map((report) => (
             <button key={report.reportId} onClick={() => { setCopyStatus('idle'); setStatusNotice(''); setSelected(report); }} className="block w-full rounded-2xl bg-white p-4 text-left shadow-sm transition hover:ring-2 hover:ring-blue-300">
-              <div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-xs font-black ${STATUS_STYLE[report.status]}`}>{STATUS_LABELS[report.status]}</span><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{PRIORITY_LABELS[report.priority]}</span><span className="ml-auto text-xs text-slate-500">{formatDate(report.createdAt)}</span></div>
+              <div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-xs font-black ${STATUS_STYLE[report.status]}`}>{STATUS_LABELS[report.status]}</span><span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold">{PRIORITY_LABELS[report.priority]}</span>{report.verificationResult && <span className="rounded-full bg-violet-100 px-2 py-1 text-xs font-black text-violet-800">{VERIFICATION_LABELS[report.verificationResult]}</span>}<span className="ml-auto text-xs text-slate-500">{formatDate(report.createdAt)}</span></div>
               <p className="mt-2 font-black">{report.workbookTitle || `Livro ${report.workbookId}`} · {report.lessonTitle || report.lessonId} · dia {report.dayNumber ?? report.dayId}</p>
               <p className="text-sm text-slate-600">{report.exerciseId} · {report.problemCategory}</p>
               <p className="mt-2 line-clamp-2 text-sm">{report.displayedText || report.instruction}</p>
@@ -228,12 +341,18 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
             <DetailSection title="Contexto técnico" rows={[
               ['Rota', selected.route], ['Versão', selected.appVersion], ['Navegador', selected.browser], ['Sistema operacional', selected.operatingSystem], ['Dispositivo', selected.deviceType], ['Tela', selected.screenSize],
             ]} />
+            {selected.verificationResult && <DetailSection title="Última verificação administrativa" rows={[
+              ['Resultado', VERIFICATION_LABELS[selected.verificationResult]], ['Observação', selected.verificationNote], ['Verificado por', selected.verifiedBy], ['Data da verificação', formatDate(selected.verifiedAt)],
+            ]} />}
             <div className="mt-5 rounded-2xl bg-slate-50 p-4"><h3 className="font-black">Ações administrativas</h3>
             {saving && <p role="status" className="mt-2 font-bold text-blue-700">Salvando alteração…</p>}
             {copyStatus === 'copying' && <p role="status" className="mt-2 font-bold text-blue-700">Copiando dados…</p>}
             {copyStatus === 'copied' && <p role="status" className="mt-2 font-bold text-emerald-700">Dados copiados.</p>}
             {copyStatus === 'error' && <p role="alert" className="mt-2 font-bold text-red-700">Não foi possível copiar. Tente novamente.</p>}
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <button disabled={saving || verificationLoading} onClick={() => void openExerciseVerification(selected)} className="rounded-xl bg-violet-700 p-3 font-black text-white disabled:opacity-50 sm:col-span-2">{verificationLoading ? 'Abrindo exercício…' : 'Abrir exercício para verificar'}</button>
+              <p className="text-xs text-slate-500 sm:col-span-2">Abre exatamente o exercício reportado, sem exigir os anteriores e sem alterar o progresso do aluno.</p>
+              <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing', verificationResult: 'ready-for-verification', verificationNote: 'Correção publicada e aguardando validação administrativa.' }, true)} className="rounded-xl border border-violet-400 bg-white p-3 font-black text-violet-800 disabled:opacity-50 sm:col-span-2">Marcar correção pronta para verificar</button>
               <select value={selected.priority} disabled={saving} onChange={(event) => void patchSelected({ priority: event.target.value as ExerciseReportPriority })} className="rounded-xl border p-3">{Object.entries(PRIORITY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
               <button disabled={saving || copyStatus === 'copying'} onClick={() => void copyExerciseData(selected)} className="rounded-xl border border-blue-300 bg-white p-3 font-bold text-blue-700 disabled:opacity-50">{copyStatus === 'copying' ? 'Copiando…' : copyStatus === 'copied' ? 'Copiado' : 'Copiar dados do exercício'}</button>
               {selected.status === 'new' && <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing' }, true)} className="rounded-xl bg-amber-500 p-3 font-black text-white">Marcar em análise</button>}
@@ -245,6 +364,18 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
           </div>
         </div>
       )}
+      {verification && <AdminExerciseVerification
+        report={verification.report}
+        location={verification.location}
+        saving={verificationSaving}
+        error={verificationError}
+        onClose={() => {
+          if (verificationSaving) return;
+          setVerification(null);
+          setVerificationError('');
+        }}
+        onVerdict={saveVerificationVerdict}
+      />}
     </div>
   );
 };

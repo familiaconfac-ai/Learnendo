@@ -3259,6 +3259,7 @@ const App: React.FC = () => {
           <ProblemReportsDashboard
             isAdmin={isAdmin}
             reviewer={{ uid: user?.uid ?? '', name: accountDisplayName }}
+            currentCourseId={currentCourseId ?? DEFAULT_COURSE_ID}
             onBack={() => setCurrentSection(SectionType.COURSES)}
           />
         );

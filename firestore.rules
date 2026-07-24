@@ -248,7 +248,7 @@ service cloud.firestore {
         && request.resource.data.resolvedAt == null
         && request.resource.data.dismissedAt == null
         && request.resource.data.emailNotificationStatus == 'not_requested'
-        && request.resource.data.source == 'exercise-practice'
+        && request.resource.data.source in ['exercise-practice', 'hamburger-menu']
         && request.resource.data.workbookId is int
         && request.resource.data.currentExerciseIndex is int
         && request.resource.data.attemptCount is int
@@ -267,13 +267,16 @@ service cloud.firestore {
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'priority', 'adminNote', 'updatedAt', 'reviewedBy',
-          'reviewedAt', 'resolvedAt', 'dismissedAt'
+          'reviewedAt', 'resolvedAt', 'dismissedAt', 'verificationResult',
+          'verificationNote', 'verifiedBy', 'verifiedAt'
         ])
         && request.resource.data.reportId == resource.data.reportId
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.status in ['new', 'reviewing', 'resolved', 'dismissed']
-        && request.resource.data.priority in ['low', 'normal', 'high', 'critical'];
+        && request.resource.data.priority in ['low', 'normal', 'high', 'critical']
+        && (!request.resource.data.keys().hasAny(['verificationResult'])
+          || request.resource.data.verificationResult in ['ready-for-verification', 'fixed', 'better-than-expected', 'not-fixed', 'needs-improvement']);
       allow delete: if false;
     }
 

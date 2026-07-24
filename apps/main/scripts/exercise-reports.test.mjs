@@ -9,6 +9,7 @@ const service = read(resolve(app, 'services', 'exerciseReportsService.ts'));
 const reportStatus = read(resolve(app, 'services', 'exerciseReportStatus.ts'));
 const practice = read(resolve(app, 'components', 'ExercisePractice', 'ExercisePractice.tsx'));
 const dashboard = read(resolve(app, 'components', 'ProblemReports', 'ProblemReportsDashboard.tsx'));
+const verification = read(resolve(app, 'components', 'ProblemReports', 'AdminExerciseVerification.tsx'));
 const generalReport = read(resolve(app, 'components', 'ProblemReports', 'GeneralProblemReportModal.tsx'));
 const appSource = read(resolve(app, 'App.tsx'));
 const rules = read(resolve(root, 'firestore.rules'));
@@ -20,6 +21,7 @@ assert.match(reportStatus, /function isActiveExerciseReport/, 'one active-report
 assert.doesNotMatch(service, /if \(!isActiveExerciseReport\(report\)\) return false/, 'the admin list must allow closed reports to be reopened');
 assert.match(service, /isActiveExerciseReport\(\{ status \}\)/, 'the counter must reuse the active-report helper');
 assert.match(service, /PAGE_SIZE = 25/, 'reports must be paginated');
+assert.match(service, /while \(reports\.length < PAGE_SIZE/, 'client-side filters must scan beyond the first raw Firestore page');
 assert.match(service, /recentSubmissions/, 'immediate duplicate submissions must be guarded');
 assert.match(practice, /disabled=\{reportSubmitting\}/, 'submit controls must lock while sending');
 assert.match(practice, /setReportFormOpen\(true\)/, 'exercise must open a report form');
@@ -39,6 +41,14 @@ assert.match(dashboard, /closeAfterSuccess/, 'status transitions close only afte
 assert.match(dashboard, /actionInFlightRef/, 'duplicate status requests must be blocked synchronously');
 assert.match(dashboard, /copyStatus === 'error'/, 'copy failures must be visible');
 assert.match(dashboard, /Todos os status/, 'closed reports must be filterable and reopenable');
+assert.match(dashboard, /COURSE_WORKBOOKS/, 'workbook filters must use the complete course catalog');
+assert.match(dashboard, /lessonOptions\.map/, 'lesson filters must list catalog lessons');
+assert.match(dashboard, /Abrir exercício para verificar/, 'admin must be able to open the exact reported exercise');
+assert.match(dashboard, /Marcar correção pronta para verificar/, 'published corrections must have an explicit verification-ready state');
+assert.match(verification, /PracticeSection/, 'verification must render the reported exercise directly');
+assert.doesNotMatch(verification, /ExercisePractice/, 'admin verification must not use the progress-writing exercise flow');
+assert.match(verification, /Problema não corrigido/, 'verification must support reporting an unsuccessful correction');
+assert.match(service, /verificationResult/, 'verification results must persist on the report');
 assert.match(dashboard, /Copiar dados do exercício/, 'details must copy exercise data');
 assert.match(dashboard, /adminNote/, 'details must edit the admin note');
 assert.match(dashboard, /Próxima/, 'dashboard must expose pagination');
@@ -50,6 +60,7 @@ assert.match(rules, /request\.resource\.data\.status == 'new'/, 'students cannot
 assert.match(rules, /request\.resource\.data\.priority == 'normal'/, 'students cannot choose priority');
 assert.match(rules, /source in \['exercise-practice', 'hamburger-menu'\]/, 'rules must allow both authorized report entry points');
 assert.match(rules, /allow update: if isAdmin\(\)/, 'only admins can update reports');
+assert.match(rules, /'verificationResult'/, 'admins must be allowed to save verification outcomes');
 assert.match(rules, /allow delete: if false/, 'reports are permanent and cannot be deleted');
 
 const indexFields = indexes.indexes.map((index) => index.fields.map((field) => field.fieldPath).join('+'));
