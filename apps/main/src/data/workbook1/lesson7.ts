@@ -302,6 +302,7 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d5_e1',
           type: 'speaking',
+          assessmentMode: 'speaking',
           instruction: 'Say any day of the week.',
           audioValue: 'Today is Monday.',
           correctValue: 'Today is Monday.',
@@ -313,6 +314,7 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d5_e2',
           type: 'speaking',
+          assessmentMode: 'speaking',
           instruction: 'Say any month of the year.',
           audioValue: 'It is April.',
           correctValue: 'It is April.',
@@ -324,6 +326,7 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d5_e3',
           type: 'speaking',
+          assessmentMode: 'speaking',
           instruction: 'Answer with any day of the week.',
           audioValue: 'What day is it today?',
           correctValue: 'It is Friday.',
@@ -335,6 +338,7 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d5_e4',
           type: 'speaking',
+          assessmentMode: 'speaking',
           instruction: 'Answer with any month of the year.',
           audioValue: 'What month is it?',
           correctValue: 'It is May.',

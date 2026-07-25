@@ -101,10 +101,12 @@ test('Lesson 7 open day and month prompts accept natural valid alternatives', ()
   assert.ok(reportedMonthQuestion.acceptedAnswers.includes('What month is it now?'));
 
   const openDay = bySourceId('wb1_l7_d5_e1');
+  assert.equal(openDay.assessmentMode, 'speaking');
   assert.ok(openDay.acceptedAnswers.includes('Today is Tuesday.'));
   assert.equal(openDay.audioValueBeforeAnswer, 'Say any day of the week.');
 
   const openMonth = bySourceId('wb1_l7_d5_e2');
+  assert.equal(openMonth.assessmentMode, 'speaking');
   assert.ok(openMonth.acceptedAnswers.includes('It is February.'));
   assert.equal(openMonth.audioValueBeforeAnswer, 'Say any month of the year.');
 });
