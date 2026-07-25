@@ -39,18 +39,20 @@ test('reported Joe answer accepts normalization without accepting another name',
   }
 });
 
-test('open day speaking accepts a day alone or in a complete sentence', () => {
-  const openDay = {
-    instruction: 'Say any day of the week.',
-    audioValue: 'Today is Monday.',
-    correctValue: 'Today is Monday.',
-    acceptedAnswers: ['Monday', 'Today is Tuesday.', 'It is Wednesday.'],
+test('beginner day speaking uses a simple model and accepts short or complete answers', () => {
+  const modeledDay = {
+    instruction: 'Listen and say the day.',
+    audioValue: 'Monday',
+    correctValue: 'Monday',
+    acceptedAnswers: ['Monday', 'It is Monday.', 'Today is Monday.'],
     assessmentMode: 'speaking' as const,
   };
-  assert.equal(classifySpeakingExercise(openDay), 'question-and-answer');
-  for (const answer of ['Monday', 'Today is Monday.', 'Today is Tuesday.', 'It is Wednesday.']) {
-    assert.equal(isSpeakingResponseCorrect(openDay, answer), true, answer);
+  assert.equal(classifySpeakingExercise(modeledDay), 'question-and-answer');
+  for (const answer of ['Monday', 'It is Monday.', 'Today is Monday.']) {
+    assert.equal(isSpeakingResponseCorrect(modeledDay, answer), true, answer);
   }
+  assert.equal(isSpeakingResponseCorrect(modeledDay, 'Say any day of the week.'), false);
+  assert.equal(isSpeakingResponseCorrect(modeledDay, 'Tuesday'), false);
 });
 
 test('isolated letters use a Bluetooth-safe TTS phrase without changing the target', () => {

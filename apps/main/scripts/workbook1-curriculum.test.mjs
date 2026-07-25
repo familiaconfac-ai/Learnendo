@@ -85,7 +85,7 @@ test('reported Lesson 4 exercises keep their corrected answers and visual contex
   }
 });
 
-test('Lesson 7 open day and month prompts accept natural valid alternatives', () => {
+test('Lesson 7 day and month prompts distinguish modeled repetition from open answers', () => {
   const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l7');
   assert.ok(lesson, 'wb1_l7 missing');
   const exercises = lesson.days.flatMap((day) => day.exercises);
@@ -102,13 +102,22 @@ test('Lesson 7 open day and month prompts accept natural valid alternatives', ()
 
   const openDay = bySourceId('wb1_l7_d5_e1');
   assert.equal(openDay.assessmentMode, 'speaking');
-  assert.ok(openDay.acceptedAnswers.includes('Today is Tuesday.'));
-  assert.equal(openDay.audioValueBeforeAnswer, 'Say any day of the week.');
+  assert.equal(openDay.audioValueBeforeAnswer, 'Monday');
+  assert.ok(openDay.acceptedAnswers.includes('Monday'));
+  assert.ok(openDay.acceptedAnswers.includes('Today is Monday.'));
+  assert.ok(!openDay.acceptedAnswers.includes('Today is Tuesday.'));
 
   const openMonth = bySourceId('wb1_l7_d5_e2');
   assert.equal(openMonth.assessmentMode, 'speaking');
-  assert.ok(openMonth.acceptedAnswers.includes('It is February.'));
-  assert.equal(openMonth.audioValueBeforeAnswer, 'Say any month of the year.');
+  assert.equal(openMonth.audioValueBeforeAnswer, 'April');
+  assert.ok(openMonth.acceptedAnswers.includes('April'));
+  assert.ok(openMonth.acceptedAnswers.includes('The month is April.'));
+  assert.ok(!openMonth.acceptedAnswers.includes('It is February.'));
+
+  const anyDay = bySourceId('wb1_l7_d5_e3');
+  assert.ok(anyDay.acceptedAnswers.includes('Today is Tuesday.'));
+  const anyMonth = bySourceId('wb1_l7_d5_e4');
+  assert.ok(anyMonth.acceptedAnswers.includes('It is February.'));
 });
 
 test('Lesson 8 follows the updated Spoken Patterns scope and register rules', () => {
