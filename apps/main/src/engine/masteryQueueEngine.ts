@@ -127,8 +127,17 @@ export function jumpToMasteryExercise(state: MasterySessionState, exerciseId: st
 }
 
 function finishInitial(state: MasterySessionState): MasterySessionState {
-  if (state.reviewQueue.length) {
-    return { ...state, phase: 'review', currentExerciseId: state.reviewQueue[0], completionBonus: 0 };
+  // Rebuild the obligation from item history as a final safety net. This keeps
+  // an incorrect exercise from being lost after dot navigation or cache restore.
+  const reviewQueue = [...new Set([
+    ...state.reviewQueue,
+    ...state.exerciseIds.filter((exerciseId) => {
+      const item = state.items[exerciseId];
+      return item?.incorrectDuringInitial && !item.masteredDuringReview;
+    }),
+  ])];
+  if (reviewQueue.length) {
+    return { ...state, reviewQueue, phase: 'review', currentExerciseId: reviewQueue[0], completionBonus: 0 };
   }
   return { ...state, phase: 'complete', currentExerciseId: null, completionBonus: MASTERY_COMPLETION_BONUS };
 }

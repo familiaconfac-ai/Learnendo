@@ -844,7 +844,7 @@ export const PracticeSection: React.FC<{
         );
         reportAttempt(rawInput, isStrictWritingCorrect);
         setFeedback(isStrictWritingCorrect ? 'correct' : 'wrong');
-        setShowFooter(true);
+        setShowFooter(!isStrictWritingCorrect || !autoAdvanceOnCorrect);
         if (isStrictWritingCorrect) {
           prepareOrRunCorrectAction(rawInput);
           new Audio(SUCCESS_SOUND).play().catch(() => {});
@@ -878,7 +878,7 @@ export const PracticeSection: React.FC<{
         );
         reportAttempt(rawInput, isSentenceCorrect);
         setFeedback(isSentenceCorrect ? 'correct' : 'wrong');
-        setShowFooter(true);
+        setShowFooter(!isSentenceCorrect || !autoAdvanceOnCorrect);
         if (isSentenceCorrect) {
           prepareOrRunCorrectAction(rawInput);
           new Audio(SUCCESS_SOUND).play().catch(() => {});
@@ -906,7 +906,7 @@ export const PracticeSection: React.FC<{
 
       reportAttempt(rawInput, isCorrect);
       setFeedback(isCorrect ? 'correct' : 'wrong');
-      setShowFooter(true);
+      setShowFooter(!isCorrect || !autoAdvanceOnCorrect);
 
       if (isCorrect) {
         prepareOrRunCorrectAction(rawInput);
@@ -1614,7 +1614,7 @@ export const PracticeSection: React.FC<{
                   </div>
                 </div>
               </div>
-            ) : (
+            ) : (allowContinueWithoutAnswer || (isMultipleChoice ? selectedOption : userInput.trim())) ? (
               <div className="flex gap-3">
                 <button
                   disabled={
@@ -1631,7 +1631,7 @@ export const PracticeSection: React.FC<{
                   )}
                 </button>
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

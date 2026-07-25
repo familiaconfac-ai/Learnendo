@@ -23,6 +23,20 @@ test('jumping forward preserves completed work and moves skipped exercises to th
   assert.equal(state.masteredCount, 5);
 });
 
+test('an incorrect exercise still returns after jumping forward through the dots', () => {
+  let state = createMasterySession(['1', '2', '3', '4']);
+  state = recordMasteryAttempt(state, '1', false);
+  state = recordMasteryAttempt(state, '1', true);
+  state = jumpToMasteryExercise(state, '4');
+  for (const id of ['4', '2', '3']) state = recordMasteryAttempt(state, id, true);
+
+  assert.equal(state.phase, 'review');
+  assert.equal(state.currentExerciseId, '1');
+  assert.deepEqual(state.reviewQueue, ['1']);
+  state = recordMasteryAttempt(state, '1', true);
+  assert.equal(state.phase, 'complete');
+});
+
 test('jumping inside the review queue keeps every correction obligation', () => {
   let state = createMasterySession(['1', '2']);
   state = recordMasteryAttempt(state, '1', false);
