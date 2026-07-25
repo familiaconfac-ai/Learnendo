@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Workbook } from '../types.ts';
-import { findReportedExercise, resolveWorkbookModule } from './exerciseReportCurriculum.ts';
+import { findReportedExercise, reportedWorkbookCandidates, resolveWorkbookModule } from './exerciseReportCurriculum.ts';
 
 const workbook = {
   id: 'wb1',
@@ -23,6 +23,15 @@ const workbook = {
 test('resolves a workbook export from a dynamic module', () => {
   assert.equal(resolveWorkbookModule({ workbook1: workbook }, 1), workbook);
   assert.equal(resolveWorkbookModule({ default: workbook }, 1), workbook);
+});
+
+test('prefers the stable exercise IDs when the recorded workbook number is wrong', () => {
+  assert.deepEqual(reportedWorkbookCandidates({
+    workbookId: 2,
+    lessonId: 'wb1_l1',
+    dayId: 'wb1_l1_d6',
+    exerciseId: 'wb1_l1_speak_number_12',
+  }, [1, 2, 3]), [1, 2, 3]);
 });
 
 test('finds the exact reported exercise without traversing prior exercises', () => {

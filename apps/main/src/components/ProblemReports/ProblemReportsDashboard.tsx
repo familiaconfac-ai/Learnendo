@@ -15,7 +15,7 @@ import {
 } from '../../services/exerciseReportsService';
 import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
 import type { Workbook } from '../../types';
-import { findReportedExercise, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
+import { findReportedExercise, reportedWorkbookCandidates, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
 import { AdminExerciseVerification, type VerificationVerdict } from './AdminExerciseVerification';
 
 interface ProblemReportsDashboardProps {
@@ -190,15 +190,20 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     setError('');
     try {
       const inferredCourse = LANGUAGE_COURSE[report.language] ?? currentCourseId;
-      const courseCandidates = [...new Set([currentCourseId, inferredCourse, 'english'])];
+      const courseCandidates = [...new Set([inferredCourse, currentCourseId, 'english'])];
       let location: ReportExerciseLocation | null = null;
       for (const courseId of courseCandidates) {
-        const loader = (COURSE_WORKBOOKS[courseId] ?? {})[report.workbookId];
-        if (!loader) continue;
-        const module = await loader();
-        const workbook = resolveWorkbookModule(module as Record<string, unknown>, report.workbookId);
-        if (!workbook) continue;
-        location = findReportedExercise(workbook, report);
+        const registry = COURSE_WORKBOOKS[courseId] ?? {};
+        const workbookCandidates = reportedWorkbookCandidates(report, Object.keys(registry).map(Number));
+        for (const workbookId of workbookCandidates) {
+          const loader = registry[workbookId];
+          if (!loader) continue;
+          const module = await loader();
+          const workbook = resolveWorkbookModule(module as Record<string, unknown>, workbookId);
+          if (!workbook) continue;
+          location = findReportedExercise(workbook, report);
+          if (location) break;
+        }
         if (location) break;
       }
       if (!location) {

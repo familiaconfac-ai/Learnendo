@@ -47,6 +47,7 @@ assert.match(dashboard, /O relatório foi removido da lista/, 'successful verifi
 assert.match(dashboard, /COURSE_WORKBOOKS/, 'workbook filters must use the complete course catalog');
 assert.match(dashboard, /lessonOptions\.map/, 'lesson filters must list catalog lessons');
 assert.match(dashboard, /Abrir exercício para verificar/, 'admin must be able to open the exact reported exercise');
+assert.match(dashboard, /reportedWorkbookCandidates/, 'verification must recover from an incorrectly recorded workbook number');
 assert.match(dashboard, /Marcar correção pronta para verificar/, 'published corrections must have an explicit verification-ready state');
 assert.match(verification, /PracticeSection/, 'verification must render the reported exercise directly');
 assert.doesNotMatch(verification, /ExercisePractice/, 'admin verification must not use the progress-writing exercise flow');

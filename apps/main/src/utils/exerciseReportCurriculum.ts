@@ -17,6 +17,25 @@ export function resolveWorkbookModule(module: Record<string, unknown>, workbookI
   return Array.isArray(workbook.lessons) ? workbook : null;
 }
 
+function workbookIdFromStableId(value?: string): number | null {
+  const match = value?.match(/^wb(\d+)(?:_|$)/i);
+  if (!match) return null;
+  const workbookId = Number(match[1]);
+  return Number.isInteger(workbookId) && workbookId > 0 ? workbookId : null;
+}
+
+export function reportedWorkbookCandidates(report: Pick<ExerciseReport,
+  'workbookId' | 'lessonId' | 'dayId' | 'exerciseId'
+>, availableWorkbookIds: number[]): number[] {
+  return [...new Set([
+    workbookIdFromStableId(report.exerciseId),
+    workbookIdFromStableId(report.dayId),
+    workbookIdFromStableId(report.lessonId),
+    report.workbookId,
+    ...availableWorkbookIds,
+  ].filter((workbookId): workbookId is number => Number.isInteger(workbookId) && Number(workbookId) > 0))];
+}
+
 export function findReportedExercise(workbook: Workbook, report: Pick<ExerciseReport,
   'lessonId' | 'dayId' | 'exerciseId' | 'currentExerciseIndex'
 >): ReportExerciseLocation | null {
