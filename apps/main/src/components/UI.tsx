@@ -467,7 +467,7 @@ export const PracticeSection: React.FC<{
     actionLocked?: boolean;
     feedbackActionLocked?: boolean;
     persistCorrectFooterAction?: boolean;
-    autoAdvanceOnCorrect?: boolean;
+    validateChoiceOnSelect?: boolean;
     allowContinueWithoutAnswer?: boolean;
     copyLanguage?: 'en' | 'pt' | 'es';
     lockWrongFeedbackImmediately?: boolean;
@@ -500,7 +500,7 @@ export const PracticeSection: React.FC<{
       actionLocked = false,
       feedbackActionLocked = false,
       persistCorrectFooterAction = false,
-      autoAdvanceOnCorrect = false,
+      validateChoiceOnSelect = false,
       allowContinueWithoutAnswer = false,
       copyLanguage,
       lockWrongFeedbackImmediately = false,
@@ -788,14 +788,14 @@ export const PracticeSection: React.FC<{
       rec.start();
     };
 
-    const handleCheck = () => {
+    const handleCheck = (answerOverride?: string) => {
       if (exerciseActionLocked) return;
       // Dismiss keyboard immediately so the footer is at its final position
       // before the CONTINUE button renders — prevents the "double-tap" ghost click.
       inputRef.current?.blur();
       textareaRef.current?.blur();
 
-      const rawInput = userInput || selectedOption || '';
+      const rawInput = answerOverride ?? (userInput || selectedOption || '');
       if (!rawInput.trim() && allowContinueWithoutAnswer) {
         onContinue?.({
           answer: '',
@@ -812,14 +812,12 @@ export const PracticeSection: React.FC<{
         lastAttemptMetaRef.current = payload;
         onAttempt?.(payload);
       };
-      const prepareOrRunCorrectAction = (answer: string) => {
-        const action = () => {
+      const prepareCorrectAction = (answer: string) => {
+        pendingOnResultRef.current = () => {
           const payload = lastAttemptMetaRef.current;
           if (payload) onContinue?.(payload);
           onResult(true, answer);
         };
-        if (autoAdvanceOnCorrect) action();
-        else pendingOnResultRef.current = action;
       };
 
       // Dictation writing: reject pure numeric input — student must type words
@@ -844,9 +842,9 @@ export const PracticeSection: React.FC<{
         );
         reportAttempt(rawInput, isStrictWritingCorrect);
         setFeedback(isStrictWritingCorrect ? 'correct' : 'wrong');
-        setShowFooter(!isStrictWritingCorrect || !autoAdvanceOnCorrect);
+        setShowFooter(true);
         if (isStrictWritingCorrect) {
-          prepareOrRunCorrectAction(rawInput);
+          prepareCorrectAction(rawInput);
           new Audio(SUCCESS_SOUND).play().catch(() => {});
           const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
           setPraiseText(p);
@@ -878,9 +876,9 @@ export const PracticeSection: React.FC<{
         );
         reportAttempt(rawInput, isSentenceCorrect);
         setFeedback(isSentenceCorrect ? 'correct' : 'wrong');
-        setShowFooter(!isSentenceCorrect || !autoAdvanceOnCorrect);
+        setShowFooter(true);
         if (isSentenceCorrect) {
-          prepareOrRunCorrectAction(rawInput);
+          prepareCorrectAction(rawInput);
           new Audio(SUCCESS_SOUND).play().catch(() => {});
           const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
           setPraiseText(p);
@@ -906,10 +904,10 @@ export const PracticeSection: React.FC<{
 
       reportAttempt(rawInput, isCorrect);
       setFeedback(isCorrect ? 'correct' : 'wrong');
-      setShowFooter(!isCorrect || !autoAdvanceOnCorrect);
+      setShowFooter(true);
 
       if (isCorrect) {
-        prepareOrRunCorrectAction(rawInput);
+        prepareCorrectAction(rawInput);
         new Audio(SUCCESS_SOUND).play().catch(() => { });
         const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
         setPraiseText(p);
@@ -972,17 +970,22 @@ export const PracticeSection: React.FC<{
 
       const handleOptionClick = (opt: string) => {
         if (exerciseActionLocked) return;
-        if (showFooter && feedback === 'correct') return;
+        if (showFooter && (feedback === 'correct' || validateChoiceOnSelect)) return;
         if (wrongFooterLocked) return;
         if (clickTranslatorMode && onTranslatorWordSelect) return;
         setSelectedOption(opt);
-      speak(resolveSpokenOptionText(opt), 1, promptVoice);
-      if (feedback === 'wrong') {
-        setShowFooter(false);
-        setFeedback('none');
-        setUserInput('');
-      }
-    };
+        speak(resolveSpokenOptionText(opt), 1, promptVoice);
+        if (feedback === 'wrong') {
+          setShowFooter(false);
+          setFeedback('none');
+          setUserInput('');
+        }
+        if (validateChoiceOnSelect) {
+          primaryActionInFlightRef.current = true;
+          handleCheck(opt);
+          window.setTimeout(() => { primaryActionInFlightRef.current = false; }, 0);
+        }
+      };
 
     const openTranslatorForWord = (
       rawWord: string,
@@ -1559,7 +1562,7 @@ export const PracticeSection: React.FC<{
           </div>
         </div>
 
-        <div data-practice-footer="true" className={`sticky bottom-0 z-20 w-full shrink-0 ${isShortViewport ? 'px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))]' : 'px-4 sm:px-6 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]'} flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
+        {(!validateChoiceOnSelect || !isMultipleChoice || showFooter) && <div data-practice-footer="true" className={`sticky bottom-0 z-20 w-full shrink-0 ${isShortViewport ? 'px-3 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))]' : 'px-4 sm:px-6 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]'} flex flex-col items-center border-t-2 transition-all ${feedback === 'correct' ? 'bg-green-950 border-green-800' : feedback === 'wrong' ? 'bg-red-950 border-red-800' : 'bg-slate-900 border-slate-700'}`}>
           <div className={`w-full ${footerWidthClass}`}>
             {showFooter ? (
               <div className="flex flex-col gap-3">
@@ -1594,6 +1597,11 @@ export const PracticeSection: React.FC<{
                     )}
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+                    {onContextHelp && (
+                      <button type="button" onClick={onContextHelp} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-300/70 bg-amber-400 text-lg text-slate-950 shadow-[0_3px_0_0_#b45309] active:translate-y-1 sm:h-12 sm:w-12 sm:rounded-2xl" aria-label="Grammar help and report problem" title="Grammar help">
+                        <i className="fas fa-exclamation-triangle" aria-hidden="true"></i>
+                      </button>
+                    )}
                     <button
                       disabled={footerActionLocked}
                         onClick={performFooterAction}
@@ -1604,17 +1612,12 @@ export const PracticeSection: React.FC<{
                         }}
                       className={`max-w-[8.5rem] px-3 py-2.5 sm:px-5 sm:py-3 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-[11px] sm:text-sm text-white rounded-xl sm:rounded-2xl font-black uppercase shadow-[0_3px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
                     >
-                      {feedback === 'correct' || autoAdvanceOnCorrect ? PL.continueBtn : PL.gotItBtn}
+                      {feedback === 'correct' || validateChoiceOnSelect ? PL.continueBtn : PL.gotItBtn}
                     </button>
-                    {onContextHelp && (
-                      <button type="button" onClick={onContextHelp} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-300/70 bg-amber-400 text-lg text-slate-950 shadow-[0_3px_0_0_#b45309] active:translate-y-1 sm:h-12 sm:w-12 sm:rounded-2xl" aria-label="Grammar help and report problem" title="Grammar help">
-                        <i className="fas fa-exclamation-triangle" aria-hidden="true"></i>
-                      </button>
-                    )}
                   </div>
                 </div>
               </div>
-            ) : (allowContinueWithoutAnswer || (isMultipleChoice ? selectedOption : userInput.trim())) ? (
+            ) : (!validateChoiceOnSelect || !isMultipleChoice) && (allowContinueWithoutAnswer || (isMultipleChoice ? selectedOption : userInput.trim())) ? (
               <div className="flex gap-3">
                 <button
                   disabled={
@@ -1624,7 +1627,7 @@ export const PracticeSection: React.FC<{
                   onClick={performPrimaryAction}
                   className="w-full py-3 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_3px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-40 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center [touch-action:manipulation]"
                 >
-                  {autoAdvanceOnCorrect || (allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim())) ? (
+                  {allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim()) ? (
                     <span>{PL.continueBtn}</span>
                   ) : (
                     <img src={checkIcon} className="w-6 h-6 brightness-0 invert" alt="Check" />
@@ -1633,7 +1636,7 @@ export const PracticeSection: React.FC<{
               </div>
             ) : null}
           </div>
-        </div>
+        </div>}
       </div>
     );
   };

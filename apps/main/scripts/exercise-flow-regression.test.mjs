@@ -53,6 +53,17 @@ test('Enter uses one contextual action with duplicate-dispatch protection', () =
   assert.match(uiSource, /pendingOnResultRef\.current = null/, 'Continue must consume its pending action once');
 });
 
+test('choice exercises validate on selection and render only the feedback Continue', () => {
+  assert.match(exercisePracticeSource, /validateChoiceOnSelect/);
+  assert.match(uiSource, /handleCheck\(opt\)/, 'the selected option must call the existing validator directly');
+  assert.match(uiSource, /\(!validateChoiceOnSelect \|\| !isMultipleChoice \|\| showFooter\)/,
+    'the feedback footer must not exist before a choice is validated');
+  assert.match(uiSource, /\(!validateChoiceOnSelect \|\| !isMultipleChoice\).*allowContinueWithoutAnswer/s,
+    'the intermediate action must not render for selection exercises');
+  assert.doesNotMatch(uiSource, /autoAdvanceOnCorrect/,
+    'selection validation must wait for the final feedback Continue instead of auto-advancing');
+});
+
 test('correct answers persist before Continue and active retry state survives returning to the trail', () => {
   const attemptHandler = exercisePracticeSource.indexOf('const handleAttempt');
   const completionWrite = exercisePracticeSource.indexOf('completeExercise(exerciseProgressRef.current', attemptHandler);

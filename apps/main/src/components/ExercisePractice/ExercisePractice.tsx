@@ -527,7 +527,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         totalDays={totalDays}
         currentLanguage={currentLanguage}
         onAttempt={handleAttempt}
-        autoAdvanceOnCorrect
+        validateChoiceOnSelect
       />
       {reportConfirmation && <div role="status" className="fixed bottom-[122px] left-1/2 z-[90] w-[min(92vw,30rem)] -translate-x-1/2 rounded-2xl border border-emerald-500/50 bg-slate-950 p-3 text-center text-sm font-bold text-emerald-300 shadow-2xl">{reportConfirmation}</div>}
       {phase === 'exercise' && contextualHelpOpen && (
