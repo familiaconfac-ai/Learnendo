@@ -18,9 +18,9 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { ACTIVE_EXERCISE_REPORT_STATUSES, isActiveExerciseReport } from './exerciseReportStatus';
+import { ACTIVE_EXERCISE_REPORT_STATUSES, isActiveExerciseReport, isVisibleExerciseReport } from './exerciseReportStatus';
 
-export { isActiveExerciseReport } from './exerciseReportStatus';
+export { isActiveExerciseReport, isVisibleExerciseReport } from './exerciseReportStatus';
 
 export const EXERCISE_REPORT_CATEGORIES = [
   'Erro de texto ou ortografia',
@@ -180,6 +180,7 @@ export function filterAndSortExerciseReports(reports: ExerciseReport[], filters:
   const user = filters.user?.trim().toLowerCase();
   const text = filters.text?.trim().toLowerCase();
   const filtered = reports.filter((report) => {
+    if (!isVisibleExerciseReport(report)) return false;
     if (filters.status && filters.status !== 'all' && report.status !== filters.status) return false;
     if (filters.priority && filters.priority !== 'all' && report.priority !== filters.priority) return false;
     if (filters.workbookId && report.workbookId !== filters.workbookId) return false;

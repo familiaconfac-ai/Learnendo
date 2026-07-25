@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isActiveExerciseReport } from './exerciseReportStatus.ts';
+import { isActiveExerciseReport, isVisibleExerciseReport } from './exerciseReportStatus.ts';
 
 test('only new and reviewing exercise reports are active', () => {
   assert.equal(isActiveExerciseReport({ status: 'new' }), true);
@@ -17,4 +17,11 @@ test('closing a report removes it from an active local list', () => {
   ];
   const closed = reports.map((report) => report.reportId === 'one' ? { ...report, status: 'resolved' } : report);
   assert.deepEqual(closed.filter(isActiveExerciseReport).map((report) => report.reportId), ['two']);
+});
+
+test('resolved reports leave the operational dashboard queue', () => {
+  assert.equal(isVisibleExerciseReport({ status: 'new' }), true);
+  assert.equal(isVisibleExerciseReport({ status: 'reviewing' }), true);
+  assert.equal(isVisibleExerciseReport({ status: 'dismissed' }), true);
+  assert.equal(isVisibleExerciseReport({ status: 'resolved' }), false);
 });

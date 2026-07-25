@@ -5,3 +5,7 @@ export function isActiveExerciseReport(report: { status: string }): boolean {
     report.status as typeof ACTIVE_EXERCISE_REPORT_STATUSES[number],
   );
 }
+
+export function isVisibleExerciseReport(report: { status: string }): boolean {
+  return report.status !== 'resolved';
+}

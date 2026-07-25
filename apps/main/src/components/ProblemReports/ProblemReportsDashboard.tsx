@@ -9,6 +9,7 @@ import {
   ExerciseReportVerificationResult,
   getExerciseReportCounts,
   isActiveExerciseReport,
+  isVisibleExerciseReport,
   listExerciseReports,
   updateExerciseReport,
 } from '../../services/exerciseReportsService';
@@ -34,6 +35,7 @@ const STATUS_STYLE: Record<ExerciseReportStatus, string> = {
   new: 'bg-blue-100 text-blue-800', reviewing: 'bg-amber-100 text-amber-800',
   resolved: 'bg-emerald-100 text-emerald-800', dismissed: 'bg-slate-200 text-slate-700',
 };
+const VISIBLE_STATUS_FILTERS: ExerciseReportStatus[] = ['new', 'reviewing', 'dismissed'];
 
 const emptyFilters: ExerciseReportFilters = {
   status: 'all', priority: 'all', category: 'all', sort: 'newest',
@@ -146,7 +148,8 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     try {
       await updateExerciseReport(selected, patch, reviewer);
       const next = { ...selected, ...patch };
-      const staysInCurrentFilter = filters.status === 'all' || !filters.status || filters.status === next.status;
+      const staysInCurrentFilter = isVisibleExerciseReport(next)
+        && (filters.status === 'all' || !filters.status || filters.status === next.status);
       setReports((current) => staysInCurrentFilter
         ? current.map((report) => report.reportId === next.reportId ? next : report)
         : current.filter((report) => report.reportId !== next.reportId));
@@ -162,7 +165,9 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
       }
       if (closeAfterSuccess) {
         setSelected(null);
-        setStatusNotice(`Relatório atualizado para ${STATUS_LABELS[next.status]}.`);
+        setStatusNotice(next.status === 'resolved'
+          ? 'Problema marcado como corrigido e removido da lista.'
+          : `Relatório atualizado para ${STATUS_LABELS[next.status]}.`);
       } else {
         setSelected(next);
       }
@@ -229,7 +234,9 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
         adminNote: [report.adminNote?.trim(), logEntry].filter(Boolean).join('\n'),
       }, reviewer);
       setVerification(null);
-      setStatusNotice(`Verificação salva: ${VERIFICATION_LABELS[verdict]}.`);
+      setStatusNotice(status === 'resolved'
+        ? `Verificação salva: ${VERIFICATION_LABELS[verdict]}. O relatório foi removido da lista.`
+        : `Verificação salva: ${VERIFICATION_LABELS[verdict]}.`);
       await load(currentStart);
     } catch (verificationSaveError) {
       console.error('[ProblemReports] verification save failed:', verificationSaveError);
@@ -290,7 +297,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
 
         <div className="mb-5 rounded-2xl bg-white p-4 shadow-sm">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((f) => ({ ...f, status: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todos os status</option>{(Object.keys(STATUS_LABELS) as ExerciseReportStatus[]).map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select>
+            <select aria-label="Status" value={filters.status} onChange={(event) => setFilters((f) => ({ ...f, status: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todos os status da lista</option>{VISIBLE_STATUS_FILTERS.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}</select>
             <select aria-label="Prioridade" value={filters.priority} onChange={(event) => setFilters((f) => ({ ...f, priority: event.target.value as any }))} className="rounded-xl border p-2"><option value="all">Todas as prioridades</option>{Object.entries(PRIORITY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
             <select aria-label="Workbook" value={filters.workbookId ?? ''} onChange={(event) => setFilters((current) => ({ ...current, workbookId: event.target.value ? Number(event.target.value) : null, lessonId: '', dayId: '' }))} className="rounded-xl border p-2"><option value="">Todos os livros</option>{workbookIds.map((book) => <option key={book} value={book}>Livro {book}</option>)}</select>
             <select aria-label="Lição" disabled={!filters.workbookId || catalogLoading} value={filters.lessonId ?? ''} onChange={(event) => setFilters((current) => ({ ...current, lessonId: event.target.value, dayId: '' }))} className="rounded-xl border p-2 disabled:bg-slate-100 disabled:text-slate-400"><option value="">{catalogLoading ? 'Carregando lições…' : filters.workbookId ? 'Todas as lições' : 'Selecione um livro'}</option>{lessonOptions.map((lesson) => <option key={lesson.id} value={lesson.id}>{lesson.title || lesson.id} ({lesson.id})</option>)}</select>
