@@ -242,8 +242,6 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
             </div>
           ) : loading ? (
             <div role="status" className="py-10 text-center font-semibold text-slate-500">Loading…</div>
-          ) : loadError ? (
-            <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{loadError}</div>
           ) : editing ? (
             <div className="mx-auto max-w-3xl">
               <div className="mb-5 flex gap-2 overflow-x-auto pb-1" role="tablist">
@@ -266,6 +264,17 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
                 <button type="button" disabled={saving} onClick={() => setPreviewing((value) => !value)} className="rounded-2xl bg-slate-800 px-5 py-3 font-black text-white disabled:opacity-50">{previewing ? copy.editor : copy.preview}</button>
                 <button type="button" disabled={saving || !dirty} onClick={() => void handleSave()} className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af] disabled:opacity-50 disabled:shadow-none">{saving ? copy.saving : copy.save}</button>
               </div>
+            </div>
+          ) : loadError ? (
+            <div className="mx-auto max-w-3xl">
+              {isAdmin ? (
+                <>
+                  <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{loadError}</div>
+                  <button type="button" onClick={beginEditing} className="mt-6 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{copy.add}</button>
+                </>
+              ) : (
+                <p className="text-sm text-slate-500">{copy.noNotes}</p>
+              )}
             </div>
           ) : (
             <div className="mx-auto max-w-3xl">

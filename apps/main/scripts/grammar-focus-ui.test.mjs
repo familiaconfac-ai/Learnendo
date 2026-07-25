@@ -11,6 +11,8 @@ test('students receive the active locale without administrative controls', () =>
   assert.match(component, /normalizeGrammarFocusLanguage\(activeLanguage\)/);
   assert.match(component, /\{isAdmin && <button[^>]+onClick=\{beginEditing\}/);
   assert.match(component, /hasActiveContent \? <div/);
+  assert.match(component, /loadError[\s\S]+isAdmin[\s\S]+copy\.add[\s\S]+copy\.noNotes/,
+    'a read failure must keep the admin add action available while students see the empty localized state');
 });
 
 test('admin editor supports all locales, preview, unsaved confirmation and retained errors', () => {

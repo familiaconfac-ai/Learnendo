@@ -28,6 +28,36 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
+    function validGrammarLocale(locale) {
+      return locale is map
+        && locale.keys().hasOnly(['title', 'body'])
+        && locale.title is string
+        && locale.title.size() <= 160
+        && locale.title.matches('[^<>]*')
+        && locale.body is string
+        && locale.body.size() <= 50000
+        && locale.body.matches('[^<>]*');
+    }
+
+    function validGrammarFocus(data) {
+      return data.keys().hasOnly([
+          'workbookId', 'lessonId', 'content', 'schemaVersion', 'updatedAt', 'updatedBy'
+        ])
+        && data.workbookId is int
+        && data.workbookId >= 1
+        && data.workbookId <= 100
+        && data.lessonId is string
+        && data.lessonId.matches('[A-Za-z0-9_-]{1,120}')
+        && data.schemaVersion == 1
+        && data.updatedAt is timestamp
+        && data.updatedBy == request.auth.uid
+        && data.content is map
+        && data.content.keys().hasOnly(['en', 'pt', 'es'])
+        && validGrammarLocale(data.content.en)
+        && validGrammarLocale(data.content.pt)
+        && validGrammarLocale(data.content.es);
+    }
+
     function liveClassDoc(classId) {
       return get(/databases/$(database)/documents/liveClasses/$(classId));
     }
@@ -209,6 +239,12 @@ service cloud.firestore {
         && (request.resource.data.responseAnsweredAt[request.auth.uid] == null || request.resource.data.responseAnsweredAt[request.auth.uid] is string)
         && request.resource.data.updatedBy.uid == request.auth.uid
         && request.resource.data.updatedBy.name is string;
+    }
+
+    match /grammarFocus/{grammarFocusId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin() && validGrammarFocus(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /users/{uid} {
