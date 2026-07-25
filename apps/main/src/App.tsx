@@ -1739,6 +1739,10 @@ const App: React.FC = () => {
               : [],
           });
           setLessonProgress(lp);
+          setLessonScore(prev => ({
+            ...prev,
+            completed: lp?.days.filter(day => day.completed).length ?? 0,
+          }));
         })
         .catch(e => console.warn('[UNLOCK] ensureLessonStarted failed:', e));
     } else {
@@ -2182,14 +2186,11 @@ const App: React.FC = () => {
     dayStartTimeRef.current = null;
 
     // ── Accumulate local lesson score immediately (no Firebase dependency) ────────
-    // Reverse-engineer the correct count from the percentage score reported by
-    // ExercisePractice.  This runs for BOTH regular exercises and the weekly test
-    // so that the final ResultAnimation shows cumulative lesson totals.
-    const _qCount = Math.max(1, currentDay?.exercises?.length ?? 0);
-    const _cCount = Math.round((score / 100) * _qCount);
+    // Exercise totals are streamed as each answer is mastered. Day completion
+    // only advances the fire/day counter, avoiding a second increment here.
     setLessonScore(prev => ({
-      correct:   prev.correct   + _cCount,
-      total:     prev.total     + _qCount,
+      correct:   prev.correct,
+      total:     prev.total,
       completed: prev.completed + 1,
       missed:    prev.missed, // days missed — tracked separately, 0 until implemented
     }));
@@ -2700,6 +2701,21 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLessonExerciseProgress = React.useCallback(({
+    completedExercises,
+    errors,
+  }: {
+    completedExercises: number;
+    errors: number;
+  }) => {
+    setLessonScore(prev => ({
+      ...prev,
+      correct: completedExercises,
+      total: completedExercises,
+      missed: errors,
+    }));
+  }, []);
+
   const renderSection = () => {
     switch (currentSection) {
       case SectionType.COURSES:
@@ -3179,7 +3195,7 @@ const App: React.FC = () => {
             currentLanguage={language}
             progress={progress}
             userId={user?.uid ?? 'anonymous'}
-            workbookId={progress.currentWorkbook}
+            workbookId={activePracticeWorkbookId}
             workbook={currentWorkbook ?? undefined}
             userName={accountDisplayName}
             userEmail={accountDisplayEmail}
@@ -3187,6 +3203,7 @@ const App: React.FC = () => {
             lessonTitle={currentPracticeLesson?.title}
             isDayCompleted={isCurrentPracticeDayCompleted}
             onComplete={handleDayComplete}
+            onLessonProgressChange={handleLessonExerciseProgress}
             onContinueToNextDay={nextPracticeDay ? () => {
               dayStartTimeRef.current = Date.now();
               setCurrentDay(nextPracticeDay);

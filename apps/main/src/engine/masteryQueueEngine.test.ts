@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createMasterySession, masteryMetrics, recordMasteryAttempt, restoreMasterySession } from './masteryQueueEngine.ts';
+import { createMasterySession, jumpToMasteryExercise, masteryMetrics, recordMasteryAttempt, restoreMasterySession } from './masteryQueueEngine.ts';
 
 test('all initial answers correct complete without review', () => {
   let state = createMasterySession(['1', '2', '3']);
@@ -8,6 +8,30 @@ test('all initial answers correct complete without review', () => {
   assert.equal(state.phase, 'complete');
   assert.deepEqual(state.reviewQueue, []);
   assert.equal(state.masteredCount, 3);
+});
+
+test('jumping forward preserves completed work and moves skipped exercises to the end', () => {
+  let state = createMasterySession(['1', '2', '3', '4', '5']);
+  state = recordMasteryAttempt(state, '1', true);
+  state = jumpToMasteryExercise(state, '4');
+  assert.equal(state.currentExerciseId, '4');
+  assert.deepEqual(state.exerciseIds, ['1', '4', '5', '2', '3']);
+  assert.equal(state.items['1'].status, 'mastered');
+
+  for (const id of ['4', '5', '2', '3']) state = recordMasteryAttempt(state, id, true);
+  assert.equal(state.phase, 'complete');
+  assert.equal(state.masteredCount, 5);
+});
+
+test('jumping inside the review queue keeps every correction obligation', () => {
+  let state = createMasterySession(['1', '2']);
+  state = recordMasteryAttempt(state, '1', false);
+  state = recordMasteryAttempt(state, '1', true);
+  state = recordMasteryAttempt(state, '2', false);
+  state = recordMasteryAttempt(state, '2', true);
+  state = jumpToMasteryExercise(state, '2');
+  assert.deepEqual(state.reviewQueue, ['2', '1']);
+  assert.equal(state.currentExerciseId, '2');
 });
 
 test('initial correction unlocks progress but preserves the logical review obligation', () => {

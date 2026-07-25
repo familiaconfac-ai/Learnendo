@@ -467,6 +467,7 @@ export const PracticeSection: React.FC<{
     actionLocked?: boolean;
     feedbackActionLocked?: boolean;
     persistCorrectFooterAction?: boolean;
+    autoAdvanceOnCorrect?: boolean;
     allowContinueWithoutAnswer?: boolean;
     copyLanguage?: 'en' | 'pt' | 'es';
     lockWrongFeedbackImmediately?: boolean;
@@ -499,6 +500,7 @@ export const PracticeSection: React.FC<{
       actionLocked = false,
       feedbackActionLocked = false,
       persistCorrectFooterAction = false,
+      autoAdvanceOnCorrect = false,
       allowContinueWithoutAnswer = false,
       copyLanguage,
       lockWrongFeedbackImmediately = false,
@@ -810,6 +812,15 @@ export const PracticeSection: React.FC<{
         lastAttemptMetaRef.current = payload;
         onAttempt?.(payload);
       };
+      const prepareOrRunCorrectAction = (answer: string) => {
+        const action = () => {
+          const payload = lastAttemptMetaRef.current;
+          if (payload) onContinue?.(payload);
+          onResult(true, answer);
+        };
+        if (autoAdvanceOnCorrect) action();
+        else pendingOnResultRef.current = action;
+      };
 
       // Dictation writing: reject pure numeric input — student must type words
       if (isDictationWriting && !isFinalTestListeningWriting && /^\s*\d[\d\s]*$/.test(rawInput)) {
@@ -835,11 +846,7 @@ export const PracticeSection: React.FC<{
         setFeedback(isStrictWritingCorrect ? 'correct' : 'wrong');
         setShowFooter(true);
         if (isStrictWritingCorrect) {
-          pendingOnResultRef.current = () => {
-            const payload = lastAttemptMetaRef.current;
-            if (payload) onContinue?.(payload);
-            onResult(true, rawInput);
-          };
+          prepareOrRunCorrectAction(rawInput);
           new Audio(SUCCESS_SOUND).play().catch(() => {});
           const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
           setPraiseText(p);
@@ -873,11 +880,7 @@ export const PracticeSection: React.FC<{
         setFeedback(isSentenceCorrect ? 'correct' : 'wrong');
         setShowFooter(true);
         if (isSentenceCorrect) {
-          pendingOnResultRef.current = () => {
-            const payload = lastAttemptMetaRef.current;
-            if (payload) onContinue?.(payload);
-            onResult(true, rawInput);
-          };
+          prepareOrRunCorrectAction(rawInput);
           new Audio(SUCCESS_SOUND).play().catch(() => {});
           const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
           setPraiseText(p);
@@ -906,11 +909,7 @@ export const PracticeSection: React.FC<{
       setShowFooter(true);
 
       if (isCorrect) {
-        pendingOnResultRef.current = () => {
-          const payload = lastAttemptMetaRef.current;
-          if (payload) onContinue?.(payload);
-          onResult(true, rawInput);
-        };
+        prepareOrRunCorrectAction(rawInput);
         new Audio(SUCCESS_SOUND).play().catch(() => { });
         const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
         setPraiseText(p);
@@ -1605,7 +1604,7 @@ export const PracticeSection: React.FC<{
                         }}
                       className={`max-w-[8.5rem] px-3 py-2.5 sm:px-5 sm:py-3 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-[11px] sm:text-sm text-white rounded-xl sm:rounded-2xl font-black uppercase shadow-[0_3px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
                     >
-                      {feedback === 'correct' ? PL.continueBtn : PL.gotItBtn}
+                      {feedback === 'correct' || autoAdvanceOnCorrect ? PL.continueBtn : PL.gotItBtn}
                     </button>
                     {onContextHelp && (
                       <button type="button" onClick={onContextHelp} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-amber-300/70 bg-amber-400 text-lg text-slate-950 shadow-[0_3px_0_0_#b45309] active:translate-y-1 sm:h-12 sm:w-12 sm:rounded-2xl" aria-label="Grammar help and report problem" title="Grammar help">
@@ -1622,10 +1621,10 @@ export const PracticeSection: React.FC<{
                     actionLocked
                     || (!allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim()))
                   }
-                  onClick={() => handleCheck()}
+                  onClick={performPrimaryAction}
                   className="w-full py-3 bg-blue-600 text-white rounded-2xl font-black uppercase shadow-[0_3px_0_0_#1e40af] active:translate-y-1 transition-all disabled:opacity-40 disabled:shadow-none disabled:translate-y-0 flex items-center justify-center [touch-action:manipulation]"
                 >
-                  {allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim()) ? (
+                  {autoAdvanceOnCorrect || (allowContinueWithoutAnswer && !(isMultipleChoice ? selectedOption : userInput.trim())) ? (
                     <span>{PL.continueBtn}</span>
                   ) : (
                     <img src={checkIcon} className="w-6 h-6 brightness-0 invert" alt="Check" />

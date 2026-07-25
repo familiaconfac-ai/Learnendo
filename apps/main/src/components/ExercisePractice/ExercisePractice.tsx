@@ -18,6 +18,7 @@ import {
 import { PracticeSection } from '../UI';
 import {
   createMasterySession,
+  jumpToMasteryExercise,
   masteryMetrics,
   MAX_TECHNICAL_FAILURES,
   MASTERY_LESSON_COMPLETION_BONUS,
@@ -73,6 +74,7 @@ interface ExercisePracticeProps {
   onContinueToNextLesson?: () => void;
   onContinueToNextWorkbook?: () => void;
   onRepeatLesson?: () => void;
+  onLessonProgressChange?: (stats: { completedExercises: number; errors: number }) => void;
 }
 
 export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
@@ -100,6 +102,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   onContinueToNextLesson,
   onContinueToNextWorkbook,
   onRepeatLesson,
+  onLessonProgressChange,
 }) => {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [phase, setPhase] = useState<'exercise' | 'summary'>('exercise');
@@ -250,6 +253,14 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     () => workbook ? lessonCompletionSummary(workbook, lessonId, exerciseProgress) : null,
     [exerciseProgress, lessonId, workbook],
   );
+
+  useEffect(() => {
+    if (!lessonSummary) return;
+    onLessonProgressChange?.({
+      completedExercises: lessonSummary.completed,
+      errors: masterySummary.totalIncorrectAttempts,
+    });
+  }, [lessonSummary?.completed, masterySummary.totalIncorrectAttempts, onLessonProgressChange]);
   const workbookSummary = useMemo(
     () => workbook ? workbookCompletionSummary(workbook, exerciseProgress) : null,
     [exerciseProgress, workbook],
@@ -396,6 +407,21 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     setPhase('exercise');
   };
 
+  const navigateToExercise = (index: number) => {
+    if (index === currentIdx || index < 0 || index >= exercises.length) return;
+    const target = exercises[index];
+    const next = jumpToMasteryExercise(masteryRef.current, target.id);
+    if (next !== masteryRef.current) {
+      masteryRef.current = next;
+      setMastery(next);
+      storeMastery(next);
+    }
+    // A previously mastered/corrected dot is a harmless review. Its answer is
+    // not counted twice; after a correct response the active pending path resumes.
+    setCurrentIdx(index);
+    setPhase('exercise');
+  };
+
   const reportTechnicalProblem = () => {
     const reported = recordTechnicalFailure(masteryRef.current, currentExercise.id, MAX_TECHNICAL_FAILURES);
     masteryRef.current = reported;
@@ -484,7 +510,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
           const statusClass = incorrectAttempts > 0 ? 'bg-amber-400' : completed ? 'bg-emerald-400' : active ? 'bg-blue-400 ring-2 ring-white' : 'bg-slate-600';
           const attemptLabel = incorrectAttempts > 0 ? `, ${incorrectAttempts} incorrect attempt${incorrectAttempts === 1 ? '' : 's'}, eventually corrected` : completed ? ', correct on first attempt' : '';
           return <button type="button" key={exercise.id} title={`Practice exercise ${index + 1}${attemptLabel}`} aria-label={`Practice exercise ${index + 1}${attemptLabel}`}
-            onClick={() => startNewRun(index, index + 1)} className={`h-3 w-3 rounded-full ${statusClass}`} />;
+            onClick={() => navigateToExercise(index)} className={`h-3 w-3 rounded-full ${statusClass}`} />;
         })}
       </div>
       <PracticeSection
@@ -501,6 +527,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         totalDays={totalDays}
         currentLanguage={currentLanguage}
         onAttempt={handleAttempt}
+        autoAdvanceOnCorrect
       />
       {reportConfirmation && <div role="status" className="fixed bottom-[122px] left-1/2 z-[90] w-[min(92vw,30rem)] -translate-x-1/2 rounded-2xl border border-emerald-500/50 bg-slate-950 p-3 text-center text-sm font-bold text-emerald-300 shadow-2xl">{reportConfirmation}</div>}
       {phase === 'exercise' && contextualHelpOpen && (

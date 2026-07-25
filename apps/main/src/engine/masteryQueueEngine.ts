@@ -87,6 +87,45 @@ export function createMasterySession(exerciseIds: string[]): MasterySessionState
   };
 }
 
+/**
+ * Moves an unfinished exercise to the front without starting a new run.
+ * Exercises jumped over stay in the same session and are moved to the end of
+ * the pending path, so they still have to be mastered before completion.
+ */
+export function jumpToMasteryExercise(state: MasterySessionState, exerciseId: string): MasterySessionState {
+  if (state.currentExerciseId === exerciseId) return state;
+
+  if (state.phase === 'initial') {
+    const completedPrefix = state.exerciseIds.slice(0, state.firstPassIndex);
+    const pending = state.exerciseIds.slice(state.firstPassIndex);
+    const targetIndex = pending.indexOf(exerciseId);
+    if (targetIndex < 0) return state;
+    const reorderedPending = [
+      pending[targetIndex],
+      ...pending.slice(targetIndex + 1),
+      ...pending.slice(0, targetIndex),
+    ];
+    return {
+      ...state,
+      exerciseIds: [...completedPrefix, ...reorderedPending],
+      currentExerciseId: exerciseId,
+    };
+  }
+
+  if (state.phase === 'review') {
+    const targetIndex = state.reviewQueue.indexOf(exerciseId);
+    if (targetIndex < 0) return state;
+    const reviewQueue = [
+      state.reviewQueue[targetIndex],
+      ...state.reviewQueue.slice(targetIndex + 1),
+      ...state.reviewQueue.slice(0, targetIndex),
+    ];
+    return { ...state, reviewQueue, currentExerciseId: exerciseId };
+  }
+
+  return state;
+}
+
 function finishInitial(state: MasterySessionState): MasterySessionState {
   if (state.reviewQueue.length) {
     return { ...state, phase: 'review', currentExerciseId: state.reviewQueue[0], completionBonus: 0 };
