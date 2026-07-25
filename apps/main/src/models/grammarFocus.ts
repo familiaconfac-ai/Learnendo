@@ -26,16 +26,25 @@ export const emptyGrammarFocusContent = (): GrammarFocusContent => ({
   es: { title: '', body: '' },
 });
 
+export function canonicalGrammarFocusLessonId(lessonId: string): string {
+  return lessonId
+    .trim()
+    .replace(/^(?:en|pt|es|el|he)_/i, '')
+    .replace(/[^A-Za-z0-9_-]/g, '_');
+}
+
 export function grammarFocusDocumentId(workbookId: number, lessonId: string): string {
-  const normalizedLessonId = lessonId.trim().replace(/[^A-Za-z0-9_-]/g, '_');
+  const normalizedLessonId = canonicalGrammarFocusLessonId(lessonId);
   const workbookPrefix = `wb${workbookId}_`;
   return normalizedLessonId.toLowerCase().startsWith(workbookPrefix)
     ? normalizedLessonId
     : `${workbookPrefix}${normalizedLessonId}`;
 }
 
-export function normalizeGrammarFocusLanguage(language: string): GrammarFocusLanguage {
-  if (language === 'pt' || language === 'es') return language;
+export function normalizeGrammarFocusLanguage(language?: string): GrammarFocusLanguage {
+  const normalized = String(language ?? '').trim().toLowerCase();
+  if (normalized.startsWith('pt')) return 'pt';
+  if (normalized.startsWith('es')) return 'es';
   return 'en';
 }
 
@@ -47,6 +56,13 @@ export function hasGrammarFocusContent(content: GrammarFocusContent | null | und
   });
 }
 
+export function getLocalizedGrammarFocusContent(
+  content: GrammarFocusContent | null | undefined,
+  language?: string,
+): GrammarFocusLocaleContent {
+  return content?.[normalizeGrammarFocusLanguage(language)] ?? { title: '', body: '' };
+}
+
 export function normalizeGrammarFocusContent(value: unknown): GrammarFocusContent {
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const normalized = emptyGrammarFocusContent();
@@ -56,10 +72,47 @@ export function normalizeGrammarFocusContent(value: unknown): GrammarFocusConten
       : {};
     normalized[language] = {
       title: typeof locale.title === 'string' ? locale.title : '',
-      body: typeof locale.body === 'string' ? locale.body : '',
+      body: typeof locale.body === 'string'
+        ? locale.body
+        : typeof locale.content === 'string'
+          ? locale.content
+          : '',
     };
   }
   return normalized;
+}
+
+export function normalizeGrammarFocusDocumentContent(value: unknown): GrammarFocusContent {
+  const documentValue = value && typeof value === 'object'
+    ? value as Record<string, unknown>
+    : {};
+  const localizedSource = documentValue.content && typeof documentValue.content === 'object'
+    ? documentValue.content
+    : documentValue.translations;
+  const normalized = normalizeGrammarFocusContent(localizedSource);
+
+  if (!normalized.en.title && typeof documentValue.title === 'string') {
+    normalized.en.title = documentValue.title;
+  }
+  if (!normalized.en.body) {
+    if (typeof documentValue.body === 'string') normalized.en.body = documentValue.body;
+    else if (typeof documentValue.content === 'string') normalized.en.body = documentValue.content;
+  }
+  return normalized;
+}
+
+export function mergeGrammarFocusContent(
+  existing: GrammarFocusContent,
+  incoming: GrammarFocusContent,
+): GrammarFocusContent {
+  const merged = emptyGrammarFocusContent();
+  for (const language of GRAMMAR_FOCUS_LANGUAGES) {
+    merged[language] = {
+      title: incoming[language].title.trim() ? incoming[language].title : existing[language].title,
+      body: incoming[language].body.trim() ? incoming[language].body : existing[language].body,
+    };
+  }
+  return merged;
 }
 
 export function validateGrammarFocusContent(content: GrammarFocusContent): string | null {

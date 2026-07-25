@@ -9,6 +9,9 @@ const service = await readFile(new URL('../src/services/grammarFocusService.ts',
 test('students receive the active locale without administrative controls', () => {
   assert.match(app, /activeLanguage=\{language\}/);
   assert.match(component, /normalizeGrammarFocusLanguage\(activeLanguage\)/);
+  assert.match(component, /getLocalizedGrammarFocusContent\(documentValue\?\.content, activeLanguage\)/);
+  assert.match(component, /\[canonicalLessonId, isOverview, workbookId\]/,
+    'changing the global language must select another locale without resubscribing to a language-prefixed document');
   assert.match(component, /\{isAdmin && <button[^>]+onClick=\{beginEditing\}/);
   assert.match(component, /hasActiveContent \? <div/);
   assert.match(component, /loadError[\s\S]+isAdmin[\s\S]+copy\.add[\s\S]+copy\.noNotes/,
@@ -17,6 +20,9 @@ test('students receive the active locale without administrative controls', () =>
 
 test('admin editor supports all locales, preview, unsaved confirmation and retained errors', () => {
   assert.match(component, /GRAMMAR_FOCUS_LANGUAGES\.map/);
+  assert.match(component, /const previewLocale = draft\[editorLanguage\]/);
+  assert.match(component, /\[editorLanguage\]: \{ \.\.\.current\[editorLanguage\], \[field\]: value \}/,
+    'switching tabs must retain every locale in the same draft object');
   assert.match(component, /setPreviewing/);
   assert.match(component, /window\.confirm\(copy\.unsaved\)/);
   assert.match(component, /disabled=\{saving \|\| !dirty\}/);
@@ -28,5 +34,7 @@ test('Firestore persistence records audit metadata and refreshes through snapsho
   assert.match(service, /onSnapshot\(/);
   assert.match(service, /updatedAt: serverTimestamp\(\)/);
   assert.match(service, /updatedBy: input\.updatedBy/);
-  assert.match(service, /await setDoc\(ref, value\)/);
+  assert.match(service, /runTransaction\(/);
+  assert.match(service, /mergeGrammarFocusContent\(existingContent, input\.content\)/);
+  assert.match(service, /transaction\.set\(ref, value\)/);
 });

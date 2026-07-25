@@ -1,8 +1,11 @@
-import { doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import {
+  canonicalGrammarFocusLessonId,
+  emptyGrammarFocusContent,
   grammarFocusDocumentId,
-  normalizeGrammarFocusContent,
+  mergeGrammarFocusContent,
+  normalizeGrammarFocusDocumentContent,
   validateGrammarFocusContent,
   type GrammarFocusContent,
   type GrammarFocusDocument,
@@ -26,7 +29,7 @@ export function subscribeGrammarFocus(
     onValue({
       workbookId: Number(value.workbookId),
       lessonId: String(value.lessonId ?? lessonId),
-      content: normalizeGrammarFocusContent(value.content),
+      content: normalizeGrammarFocusDocumentContent(value),
       schemaVersion: 1,
       updatedAt: value.updatedAt,
       updatedBy: String(value.updatedBy ?? ''),
@@ -40,23 +43,33 @@ export async function saveGrammarFocus(input: {
   content: GrammarFocusContent;
   updatedBy: string;
 }): Promise<GrammarFocusDocument> {
-  const validationError = validateGrammarFocusContent(input.content);
-  if (validationError) throw new Error(validationError);
   if (!Number.isInteger(input.workbookId) || input.workbookId < 1 || input.workbookId > 100) {
     throw new Error('Invalid workbook.');
   }
   if (!/^[A-Za-z0-9_-]{1,120}$/.test(input.lessonId)) throw new Error('Invalid lesson.');
   if (!input.updatedBy) throw new Error('The administrator could not be identified.');
 
-  const value: GrammarFocusDocument = {
-    workbookId: input.workbookId,
-    lessonId: input.lessonId,
-    content: input.content,
-    schemaVersion: 1,
-    updatedAt: serverTimestamp(),
-    updatedBy: input.updatedBy,
-  };
+  const canonicalLessonId = canonicalGrammarFocusLessonId(input.lessonId);
   const ref = doc(db, GRAMMAR_FOCUS_COLLECTION, grammarFocusDocumentId(input.workbookId, input.lessonId));
-  await setDoc(ref, value);
-  return value;
+  return runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(ref);
+    const existingContent = snapshot.exists()
+      ? normalizeGrammarFocusDocumentContent(snapshot.data())
+      : emptyGrammarFocusContent();
+    const content = mergeGrammarFocusContent(existingContent, input.content);
+    const validationError = validateGrammarFocusContent(content);
+    if (validationError) throw new Error(validationError);
+
+    const value: GrammarFocusDocument = {
+      workbookId: input.workbookId,
+      lessonId: canonicalLessonId,
+      content,
+      schemaVersion: 1,
+      updatedAt: serverTimestamp(),
+      updatedBy: input.updatedBy,
+    };
+    // A full write also migrates legacy top-level title/content fields to schema v1.
+    transaction.set(ref, value);
+    return value;
+  });
 }

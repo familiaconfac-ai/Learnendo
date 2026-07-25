@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  canonicalGrammarFocusLessonId,
   emptyGrammarFocusContent,
   GRAMMAR_FOCUS_LANGUAGES,
   GRAMMAR_FOCUS_MAX_BODY_LENGTH,
   GRAMMAR_FOCUS_MAX_TITLE_LENGTH,
+  getLocalizedGrammarFocusContent,
   hasGrammarFocusContent,
   normalizeGrammarFocusLanguage,
   validateGrammarFocusContent,
@@ -116,10 +118,11 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   scrollRef, onScroll, onSelectLesson, onOpenOverview, onClose,
 }) => {
   const displayLanguage = normalizeGrammarFocusLanguage(activeLanguage);
+  const canonicalLessonId = lessonId ? canonicalGrammarFocusLessonId(lessonId) : null;
   const copy = COPY[displayLanguage];
   const [documentValue, setDocumentValue] = useState<GrammarFocusDocument | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState('');
+  const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [editorLanguage, setEditorLanguage] = useState<GrammarFocusLanguage>(displayLanguage);
@@ -131,7 +134,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
 
   const dirty = editing && JSON.stringify(draft) !== JSON.stringify(baseline);
   const isOverview = lessonNumber == null || lessonId == null;
-  const activeLocale = documentValue?.content[displayLanguage] ?? { title: '', body: '' };
+  const activeLocale = getLocalizedGrammarFocusContent(documentValue?.content, activeLanguage);
   const hasDocumentContent = hasGrammarFocusContent(documentValue?.content);
   const hasActiveContent = Boolean(activeLocale.title.trim() || activeLocale.body.trim());
 
@@ -141,23 +144,23 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     setSaveError('');
     setSavedMessage('');
     setEditorLanguage(displayLanguage);
-    if (isOverview || !lessonId) {
+    if (isOverview || !canonicalLessonId) {
       setDocumentValue(null);
       setLoading(false);
       return undefined;
     }
     setLoading(true);
-    setLoadError('');
-    return subscribeGrammarFocus(workbookId, lessonId, (next) => {
+    setLoadError(false);
+    return subscribeGrammarFocus(workbookId, canonicalLessonId, (next) => {
       setDocumentValue(next);
       setDraft(next?.content ?? emptyGrammarFocusContent());
       setBaseline(next?.content ?? emptyGrammarFocusContent());
       setLoading(false);
     }, () => {
-      setLoadError(copy.loadError);
+      setLoadError(true);
       setLoading(false);
     });
-  }, [copy.loadError, displayLanguage, isOverview, lessonId, workbookId]);
+  }, [canonicalLessonId, isOverview, workbookId]);
 
   const confirmDiscard = () => !dirty || window.confirm(copy.unsaved);
   const requestClose = () => {
@@ -188,7 +191,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     setSavedMessage('');
   };
   const handleSave = async () => {
-    if (!lessonId || !userId || saving) return;
+    if (!canonicalLessonId || !userId || saving) return;
     if (!hasGrammarFocusContent(draft)) {
       setSaveError(copy.required);
       return;
@@ -201,7 +204,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     setSaving(true);
     setSaveError('');
     try {
-      const saved = await saveGrammarFocus({ workbookId, lessonId, content: draft, updatedBy: userId });
+      const saved = await saveGrammarFocus({ workbookId, lessonId: canonicalLessonId, content: draft, updatedBy: userId });
       setDocumentValue(saved);
       setBaseline(draft);
       setEditing(false);
@@ -269,7 +272,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
             <div className="mx-auto max-w-3xl">
               {isAdmin ? (
                 <>
-                  <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{loadError}</div>
+                  <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{copy.loadError}</div>
                   <button type="button" onClick={beginEditing} className="mt-6 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{copy.add}</button>
                 </>
               ) : (
