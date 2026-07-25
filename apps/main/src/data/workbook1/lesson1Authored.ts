@@ -165,6 +165,7 @@ const day7: Exercise[] = [
   ...finalListening.map(([key, audioValue, topic]) => authored(`final_listen_write_${key}`, {
     type: 'writing', assessmentMode: 'listening-writing', coverageObjective: 'Alphabet A-Z and numbers 0-20',
     instruction: 'Listen and write.', audioValue, correctValue: audioValue, pedagogicalTopic: topic,
+    acceptedAnswers: topic === 'alphabet' ? [audioValue, `This is the letter ${audioValue}.`] : undefined,
     prerequisite: 'recognition practice',
   })),
   ...finalShadowing.map(([key, sentence, topic]) => authored(`final_shadow_${key}`, {

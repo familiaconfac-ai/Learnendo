@@ -244,3 +244,14 @@ test('reported Lesson 1 speaking answers preserve meaning without requiring punc
   const no = byId('wb1_l1_final_speak_no_letter');
   assert.ok(no.acceptedAnswers.includes('No'));
 });
+
+test('Lesson 1 letter dictation accepts both the letter and the sentence spoken by audio', () => {
+  const lesson = workbook1.lessons.find((item) => item.id === 'wb1_l1');
+  const exercises = lesson.days.flatMap((day) => day.exercises);
+  for (const letter of ['A', 'E', 'H', 'Z']) {
+    const exercise = exercises.find((item) => item.id === `wb1_l1_final_listen_write_letter_${letter.toLowerCase()}`);
+    assert.ok(exercise, `${letter}: final letter dictation missing`);
+    assert.ok(exercise.acceptedAnswers.includes(letter), `${letter}: isolated letter missing`);
+    assert.ok(exercise.acceptedAnswers.includes(`This is the letter ${letter}.`), `${letter}: full sentence missing`);
+  }
+});

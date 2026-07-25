@@ -64,3 +64,13 @@ test('reported January date accepts only its authored word and numeric ordinal f
   ]) assert.equal(accepts(answer), true, answer);
   assert.equal(accepts('My birthday is January 22nd.'), false);
 });
+
+test('letter dictation accepts the isolated letter or the complete sentence', () => {
+  const targets = ['E', 'This is the letter E.'];
+  const accepts = (answer: string) => targets.some((target) => isAnswerMatch(answer, target));
+  assert.equal(accepts('E'), true);
+  assert.equal(accepts('This is the letter E.'), true);
+  assert.equal(accepts('this is the letter e'), true);
+  assert.equal(accepts('this the letter e'), false);
+  assert.equal(accepts('does the letter e'), false);
+});
