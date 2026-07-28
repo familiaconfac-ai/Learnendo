@@ -76,6 +76,9 @@ export function validateExerciseOverride(
   const normalizedOptions = options.map((item) => item.trim().toLocaleLowerCase());
   if (new Set(normalizedOptions).size !== normalizedOptions.length) errors.push('Existem alternativas duplicadas.');
   if (options.length > 100 || (fields.acceptedAnswers?.length ?? 0) > 100) errors.push('A lista excede o limite de 100 itens.');
+  if (fields.imageUrl?.startsWith('blob:')) errors.push('A prévia local da imagem não pode ser publicada. Aguarde o upload para o Firebase Storage.');
+  if (fields.imageUrl && !fields.imageUrl.startsWith('https://')) errors.push('A URL da imagem publicada deve usar HTTPS.');
+  if (fields.imagePath && !fields.imagePath.startsWith('exercise-images/')) errors.push('O caminho da imagem não pertence ao diretório editorial permitido.');
   for (const [key, field] of Object.entries(fields)) {
     if (typeof field === 'string' && field.length > 10_000) errors.push(`${key}: texto excede 10.000 caracteres.`);
   }

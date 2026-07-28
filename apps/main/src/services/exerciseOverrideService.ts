@@ -9,6 +9,7 @@ import {
   type ExerciseEditorialDocument, type ExerciseIdentity, type ExerciseOverrideFields,
   type PublishedExerciseOverride,
 } from '../models/exerciseOverride';
+import { assertEditorialAdminAccess } from './editorialAccessService';
 
 export const EXERCISE_OVERRIDE_COLLECTION = 'exerciseOverrides';
 export const EXERCISE_DRAFT_COLLECTION = 'exerciseDrafts';
@@ -90,6 +91,7 @@ export async function saveExerciseDraft(input: {
   changeReason: string; adminNote: string; updatedBy: string; baseVersion: number; relatedReportId?: string | null;
   expectedDraftRevision?: number;
 }): Promise<void> {
+  await assertEditorialAdminAccess(input.updatedBy);
   const override = diffExerciseOverride(input.original, input.fields);
   const errors = validateExerciseOverride(input.original, input.identity, override);
   if (errors.some((error) => error.includes('ID') || error.includes('tipo') || error.includes('Idioma'))) throw new Error(errors.join('\n'));
@@ -113,6 +115,7 @@ export async function publishExerciseOverride(input: {
   status?: 'published' | 'disabled';
   expectedDraftRevision?: number;
 }): Promise<number> {
+  await assertEditorialAdminAccess(input.updatedBy);
   const override = diffExerciseOverride(input.original, input.fields);
   const errors = validateExerciseOverride(input.original, input.identity, override);
   if (!input.changeReason.trim()) errors.push('Informe o motivo da alteração antes de publicar.');

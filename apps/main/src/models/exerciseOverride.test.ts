@@ -23,3 +23,8 @@ test('rejects mismatched identity and an invalid multiple-choice answer', () => 
 test('stores only fields changed from local content', () => {
   assert.deepEqual(diffExerciseOverride(original, { instruction: 'Choose.', displayValue: 'Changed' }), { displayValue: 'Changed' });
 });
+
+test('never accepts a local blob preview as published content', () => {
+  const errors = validateExerciseOverride(original, identity, { imageUrl: 'blob:https://learnendo.vercel.app/local-preview' });
+  assert.ok(errors.some((error) => error.includes('prévia local')));
+});

@@ -10,6 +10,8 @@ import { uploadExerciseImage } from '../../services/exerciseImageService';
 import { applyExerciseOverride, type ExerciseEditorialDocument, type ExerciseIdentity, type ExerciseOverrideFields } from '../../models/exerciseOverride';
 import { normalizeAnswer } from '../../utils/answerNormalization';
 import { isActiveExerciseReport, listRelatedExerciseReports } from '../../services/exerciseReportsService';
+import { assertEditorialAdminAccess } from '../../services/editorialAccessService';
+import { describeEditorialFirebaseError, logEditorialFirebaseError } from '../../services/editorialFirebaseError';
 
 interface Props {
   report?: ExerciseReport | null;
@@ -23,6 +25,33 @@ interface Props {
 const arrayText = (items?: string[]) => (items ?? []).join('\n');
 const toArray = (value: string) => value.split('\n').map((item) => item.trim()).filter(Boolean);
 const stamp = (value: any) => value?.toDate?.().toLocaleString('pt-BR') ?? '—';
+type UploadPhase = 'idle' | 'selected' | 'uploading' | 'completed' | 'canceled' | 'error';
+interface ImageUploadState {
+  phase: UploadPhase;
+  fileName: string;
+  fileSize: number;
+  width?: number;
+  height?: number;
+  previewUrl: string;
+  progress: number;
+  imagePath?: string;
+  message: string;
+}
+const emptyImageUploadState = (): ImageUploadState => ({
+  phase: 'idle', fileName: '', fileSize: 0, previewUrl: '', progress: 0, message: '',
+});
+const formatFileSize = (bytes: number) => bytes < 1024 * 1024
+  ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+  : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
+function readImageDimensions(url: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
+    image.onerror = () => reject(new Error('Não foi possível ler as dimensões da imagem.'));
+    image.src = url;
+  });
+}
 
 export const ExerciseEditorModal: React.FC<Props> = ({ report, location, language, reviewer, onClose, onPublished }) => {
   const original = location.day.exercises[location.exerciseIndex];
@@ -43,13 +72,17 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const [preview, setPreview] = useState(false);
   const [testAnswer, setTestAnswer] = useState('');
   const [testResult, setTestResult] = useState<'correct' | 'incorrect' | ''>('');
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [imageUpload, setImageUpload] = useState<ImageUploadState>(emptyImageUploadState);
+  const [actionLabel, setActionLabel] = useState('');
   const [relatedReports, setRelatedReports] = useState<ExerciseReport[]>([]);
   const uploadTask = useRef<ReturnType<typeof uploadExerciseImage>['task'] | null>(null);
+  const previewUrlRef = useRef('');
+  const isUploading = imageUpload.phase === 'uploading';
+  const controlsBusy = saving || isUploading;
 
-  const hydrate = async () => {
+  const hydrate = async (preserveMessages = false) => {
     setLoading(true);
-    setError('');
+    if (!preserveMessages) setError('');
     try {
       const [next, history, related] = await Promise.all([getExerciseEditorialState(original.id), listExerciseVersions(original.id), listRelatedExerciseReports(original.id)]);
       setState(next); setVersions(history);
@@ -58,7 +91,10 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       const preferred = next.draft ?? activePublished;
       setFields(preferred?.override ?? {}); setReason(preferred?.changeReason ?? ''); setAdminNote(preferred?.adminNote ?? '');
       setDirty(false);
-    } catch (cause) { console.error(cause); setError('Não foi possível carregar o estado editorial.'); }
+    } catch (cause) {
+      logEditorialFirebaseError('Falha ao carregar editor', cause);
+      setError(describeEditorialFirebaseError(cause, 'load'));
+    }
     finally { setLoading(false); }
   };
   useEffect(() => { void hydrate(); }, [original.id]);
@@ -66,6 +102,10 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
     const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
     window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload);
   }, [dirty]);
+  useEffect(() => () => {
+    uploadTask.current?.cancel();
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+  }, []);
 
   const update = <K extends keyof ExerciseOverrideFields>(key: K, value: ExerciseOverrideFields[K]) => {
     setFields((current) => ({ ...current, [key]: value })); setDirty(true); setNotice('');
@@ -80,38 +120,109 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   }), [original, fields, state.published?.version]);
   const baseVersion = state.published?.version ?? 0;
 
+  const blockWhileUploading = (): boolean => {
+    if (!isUploading) return false;
+    setError('Aguarde o envio da imagem antes de salvar ou publicar. Você também pode cancelar o upload.');
+    return true;
+  };
+
   const saveDraft = async () => {
-    setSaving(true); setError('');
+    if (blockWhileUploading()) return;
+    setSaving(true); setActionLabel('Salvando rascunho…'); setError(''); setNotice('');
     try {
       await saveExerciseDraft({ original, identity, fields, changeReason: reason, adminNote, updatedBy: reviewer.uid, baseVersion, relatedReportId: report?.reportId, expectedDraftRevision: state.draft?.draftRevision ?? 0 });
-      setNotice('Rascunho salvo. Ele não será exibido aos alunos.'); setDirty(false); await hydrate();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o rascunho.'); }
-    finally { setSaving(false); }
+      setNotice('Rascunho salvo com sucesso. Ele não será exibido aos alunos.'); setDirty(false); await hydrate(true);
+    } catch (cause) {
+      logEditorialFirebaseError('Falha ao salvar rascunho', cause);
+      setError(describeEditorialFirebaseError(cause, 'draft'));
+    } finally { setSaving(false); setActionLabel(''); }
   };
   const publish = async (resolveReports: false | 'current' | 'all', status: 'published' | 'disabled' = 'published') => {
+    if (blockWhileUploading()) return;
     if (!window.confirm(status === 'disabled' ? 'Desativar este exercício para os alunos?' : 'Publicar esta correção agora?')) return;
-    setSaving(true); setError('');
+    setSaving(true); setActionLabel(status === 'disabled' ? 'Desativando exercício…' : 'Publicando correção…'); setError(''); setNotice('');
+    let version: number;
     try {
-      const version = await publishExerciseOverride({ original, identity, fields, changeReason: reason, adminNote, updatedBy: reviewer.uid, baseVersion, relatedReportId: report?.reportId, status, expectedDraftRevision: state.draft?.draftRevision ?? 0 });
-      setNotice(status === 'disabled' ? `Exercício desativado na versão ${version}.` : `Correção publicada na versão ${version}.`);
-      setDirty(false); await onPublished?.(version, resolveReports); await hydrate();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível publicar.'); }
-    finally { setSaving(false); }
+      version = await publishExerciseOverride({ original, identity, fields, changeReason: reason, adminNote, updatedBy: reviewer.uid, baseVersion, relatedReportId: report?.reportId, status, expectedDraftRevision: state.draft?.draftRevision ?? 0 });
+      setDirty(false);
+      setNotice(status === 'disabled' ? `Exercício desativado com sucesso na versão ${version}.` : `Correção publicada com sucesso na versão ${version}.`);
+    } catch (cause) {
+      logEditorialFirebaseError('Falha ao publicar correção', cause);
+      setError(describeEditorialFirebaseError(cause, 'publish'));
+      setSaving(false); setActionLabel('');
+      return;
+    }
+
+    if (resolveReports) {
+      setActionLabel('Correção publicada. Resolvendo relatório…');
+      try {
+        await onPublished?.(version, resolveReports);
+        setNotice(`Correção publicada com sucesso na versão ${version} e relatório(s) resolvido(s).`);
+      } catch (cause) {
+        logEditorialFirebaseError('Publicação concluída, mas resolução do relatório falhou', cause);
+        setError(`A correção foi publicada com sucesso na versão ${version}, mas o relatório não foi resolvido. ${describeEditorialFirebaseError(cause, 'resolve')}`);
+      }
+    }
+    await hydrate(true);
+    setSaving(false); setActionLabel('');
   };
-  const close = () => { if (!dirty || window.confirm('Descartar as alterações não salvas?')) onClose(); };
+  const close = () => {
+    if (isUploading && !window.confirm('Há um upload em andamento. Cancelar o envio e fechar o editor?')) return;
+    if (dirty && !window.confirm('Descartar as alterações não salvas?')) return;
+    uploadTask.current?.cancel();
+    onClose();
+  };
   const test = () => {
     const candidates = [effective.correctValue, ...(effective.acceptedAnswers ?? [])].map((answer) => normalizeAnswer(answer));
     setTestResult(candidates.includes(normalizeAnswer(testAnswer)) ? 'correct' : 'incorrect');
   };
-  const upload = (file?: File) => {
+  const upload = async (file?: File) => {
     if (!file) return;
+    if (uploadTask.current) uploadTask.current.cancel();
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const previewUrl = URL.createObjectURL(file);
+    previewUrlRef.current = previewUrl;
+    setError(''); setNotice('');
+    setImageUpload({ phase: 'selected', fileName: file.name, fileSize: file.size, previewUrl, progress: 0, message: 'Imagem selecionada — ainda não enviada.' });
     try {
-      setError(''); setUploadProgress(0);
-      const operation = uploadExerciseImage({ file, workbookId: identity.workbookId, lessonId: identity.lessonId, exerciseId: identity.exerciseId, onProgress: setUploadProgress });
+      const dimensions = await readImageDimensions(previewUrl);
+      setImageUpload((current) => ({ ...current, ...dimensions }));
+      await assertEditorialAdminAccess(reviewer.uid);
+      setImageUpload((current) => ({ ...current, phase: 'uploading', message: 'Iniciando envio para o Firebase Storage…' }));
+      const operation = uploadExerciseImage({ file, workbookId: identity.workbookId, lessonId: identity.lessonId, exerciseId: identity.exerciseId, onProgress: (progress) => {
+        setImageUpload((current) => ({ ...current, phase: 'uploading', progress, message: `Enviando imagem: ${progress}%.` }));
+      } });
       uploadTask.current = operation.task;
-      void operation.result.then(({ imagePath, imageUrl }) => { update('imagePath', imagePath); update('imageUrl', imageUrl); setUploadProgress(null); uploadTask.current = null; })
-        .catch((cause) => { if (cause?.code !== 'storage/canceled') setError(cause instanceof Error ? cause.message : 'Falha no upload.'); setUploadProgress(null); uploadTask.current = null; });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Imagem inválida.'); setUploadProgress(null); }
+      const { imagePath, imageUrl } = await operation.result;
+      update('imagePath', imagePath); update('imageUrl', imageUrl);
+      setImageUpload((current) => ({ ...current, phase: 'completed', progress: 100, imagePath, message: 'Upload concluído. Esta imagem será usada ao salvar ou publicar.' }));
+      setNotice('Upload da imagem concluído com sucesso.');
+    } catch (cause) {
+      const canceled = (cause as { code?: string })?.code === 'storage/canceled';
+      if (!canceled) logEditorialFirebaseError('Falha no upload da imagem', cause);
+      const message = describeEditorialFirebaseError(cause, 'upload');
+      setImageUpload((current) => ({ ...current, phase: canceled ? 'canceled' : 'error', message }));
+      if (!canceled) setError(message);
+      else setNotice('Upload cancelado. Nenhuma referência de imagem foi salva.');
+    } finally {
+      uploadTask.current = null;
+    }
+  };
+
+  const cancelUpload = () => {
+    const canceled = uploadTask.current?.cancel() ?? false;
+    if (!canceled) {
+      setImageUpload((current) => ({ ...current, phase: 'canceled', message: 'Upload cancelado. Nenhuma referência de imagem foi salva.' }));
+      setNotice('Upload cancelado. Nenhuma referência de imagem foi salva.');
+    }
+  };
+
+  const removeSelectedImage = () => {
+    uploadTask.current?.cancel(); uploadTask.current = null;
+    update('imageUrl', ''); update('imagePath', '');
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    previewUrlRef.current = '';
+    setImageUpload(emptyImageUploadState());
   };
 
   if (loading) return <div className="fixed inset-0 z-[1200] grid place-items-center bg-black/60 text-lg font-black text-white">Carregando editor…</div>;
@@ -138,8 +249,10 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
             <p className="rounded-xl bg-blue-50 p-3 text-xs text-blue-900">Normalizações globais preservadas: maiúsculas/minúsculas, espaços, pontuação terminal e apóstrofos são tratados pelo validador central atual.</p>
           </Section>
           <Section title="3 — Mídia">
-            {effective.imageUrl && <img src={effective.imageUrl} alt={effective.imageAlt || ''} className="max-h-64 w-full rounded-xl object-contain" />}
-            <div className="flex flex-wrap gap-2"><label className="cursor-pointer rounded-xl bg-blue-600 px-4 py-2 font-bold text-white">Enviar imagem<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => upload(event.target.files?.[0])} /></label>{uploadProgress !== null && <button onClick={() => uploadTask.current?.cancel()} className="rounded-xl border border-red-300 px-4 py-2 font-bold text-red-700">Cancelar upload ({uploadProgress}%)</button>}{effective.imageUrl && <button onClick={() => { update('imageUrl', ''); update('imagePath', ''); }} className="rounded-xl border px-4 py-2 font-bold">Remover imagem</button>}</div>
+            {(imageUpload.previewUrl || effective.imageUrl) && <img src={imageUpload.previewUrl || effective.imageUrl} alt={effective.imageAlt || ''} className="mx-auto max-h-[260px] w-full max-w-full rounded-xl object-contain sm:max-h-[360px]" />}
+            <p className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">Formatos: PNG, JPEG/JPG ou WEBP · máximo 5 MB. Recomendado: até 1200 × 1200 px e preferencialmente abaixo de 1 MB.</p>
+            <div className="flex flex-wrap gap-2"><label className={`rounded-xl bg-blue-600 px-4 py-2 font-bold text-white ${isUploading ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>Enviar imagem<input type="file" accept="image/png,image/jpeg,image/webp" disabled={isUploading} className="hidden" onChange={(event) => { void upload(event.target.files?.[0]); event.currentTarget.value = ''; }} /></label>{isUploading && <button type="button" onClick={cancelUpload} className="rounded-xl border border-red-300 px-4 py-2 font-bold text-red-700">Cancelar upload</button>}{(imageUpload.phase !== 'idle' || effective.imageUrl) && !isUploading && <button type="button" onClick={removeSelectedImage} className="rounded-xl border px-4 py-2 font-bold">Remover imagem</button>}</div>
+            {imageUpload.phase !== 'idle' && <div role={imageUpload.phase === 'error' ? 'alert' : 'status'} className={`rounded-xl border p-3 text-sm ${imageUpload.phase === 'error' ? 'border-red-300 bg-red-50 text-red-800' : imageUpload.phase === 'completed' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-blue-200 bg-blue-50 text-blue-900'}`}><p className="font-black">{imageUpload.message}</p><p className="mt-1 break-all text-xs">{imageUpload.fileName} · {formatFileSize(imageUpload.fileSize)}{imageUpload.width && imageUpload.height ? ` · ${imageUpload.width} × ${imageUpload.height}px` : ''}</p>{imageUpload.imagePath && <p className="mt-1 break-all text-xs">Storage: {imageUpload.imagePath}</p>}{isUploading && <div className="mt-2 h-2 overflow-hidden rounded-full bg-blue-100"><div className="h-full bg-blue-600 transition-all" style={{ width: `${Math.max(2, imageUpload.progress)}%` }} /></div>}</div>}
             <Field label="Texto alternativo da imagem" value={fields.imageAlt ?? original.imageAlt ?? ''} onChange={(value) => update('imageAlt', value)} />
             <Field label="Chave / referência de áudio" value={fields.audioValue ?? original.audioValue} onChange={(value) => update('audioValue', value)} />
             <div className="flex gap-2"><button disabled={!effective.audioValue} onClick={() => speechSynthesis.speak(new SpeechSynthesisUtterance(effective.audioValue))} className="rounded-xl border px-4 py-2 font-bold disabled:opacity-40">▶ Reproduzir áudio</button>{effective.audioValue && <button onClick={() => update('audioValue', '')} className="rounded-xl border px-4 py-2 font-bold">Remover referência</button>}</div>
@@ -153,7 +266,16 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
           {state.published && state.published.status !== 'archived' && <button disabled={saving} onClick={async () => { if (!window.confirm('Remover a correção publicada e voltar ao exercício original? O histórico será preservado.')) return; const why = window.prompt('Motivo da restauração do original:')?.trim(); if (!why) return; setSaving(true); try { await removePublishedExerciseOverride(original.id, reviewer.uid, why); await hydrate(); setNotice('Override removido. O conteúdo local voltou a ser usado.'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao remover override.'); } finally { setSaving(false); } }} className="w-full rounded-xl border border-red-300 p-3 font-black text-red-700">Voltar ao exercício original</button>}
         </aside>
       </main>
-      <footer className="sticky bottom-0 flex flex-wrap justify-end gap-2 rounded-b-3xl border-t bg-white p-4"><button onClick={close} disabled={saving} className="rounded-xl border px-4 py-3 font-bold">Cancelar</button><button onClick={saveDraft} disabled={saving} className="rounded-xl bg-amber-500 px-4 py-3 font-black text-white">Salvar rascunho</button><button onClick={() => void publish(false, state.published?.status === 'disabled' ? 'published' : 'disabled')} disabled={saving} className="rounded-xl border border-red-300 px-4 py-3 font-black text-red-700">{state.published?.status === 'disabled' ? 'Reativar' : 'Desativar'}</button><button onClick={() => void publish(false)} disabled={saving} className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white">Publicar correção</button>{report && <button onClick={() => void publish('current')} disabled={saving} className="rounded-xl bg-blue-700 px-4 py-3 font-black text-white">Publicar e resolver atual</button>}{relatedReports.filter(isActiveExerciseReport).length > 1 && <button onClick={() => void publish('all')} disabled={saving} className="rounded-xl bg-violet-700 px-4 py-3 font-black text-white">Publicar e resolver todos</button>}</footer>
+      <footer className="sticky bottom-0 z-20 flex flex-wrap justify-end gap-2 rounded-b-3xl border-t bg-white p-4 shadow-[0_-8px_24px_rgba(15,23,42,0.12)]">
+        {(error || notice || actionLabel) && <div className={`mb-1 w-full rounded-xl p-3 text-sm font-bold ${error ? 'bg-red-100 text-red-800' : notice ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`} role={error ? 'alert' : 'status'}>{error || notice || actionLabel}</div>}
+        {isUploading && <p className="w-full text-right text-xs font-bold text-amber-700">Aguarde o envio da imagem antes de salvar ou publicar.</p>}
+        <button type="button" onClick={close} disabled={saving} className="rounded-xl border px-4 py-3 font-bold disabled:opacity-40">Cancelar</button>
+        <button type="button" onClick={saveDraft} disabled={controlsBusy} className="rounded-xl bg-amber-500 px-4 py-3 font-black text-white disabled:opacity-40">{saving && actionLabel.includes('rascunho') ? 'Salvando…' : 'Salvar rascunho'}</button>
+        <button type="button" onClick={() => void publish(false, state.published?.status === 'disabled' ? 'published' : 'disabled')} disabled={controlsBusy} className="rounded-xl border border-red-300 px-4 py-3 font-black text-red-700 disabled:opacity-40">{state.published?.status === 'disabled' ? 'Reativar' : 'Desativar'}</button>
+        <button type="button" onClick={() => void publish(false)} disabled={controlsBusy} className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white disabled:opacity-40">{saving && actionLabel.includes('Publicando') ? 'Publicando…' : 'Publicar correção'}</button>
+        {report && <button type="button" onClick={() => void publish('current')} disabled={controlsBusy} className="rounded-xl bg-blue-700 px-4 py-3 font-black text-white disabled:opacity-40">Publicar e resolver atual</button>}
+        {relatedReports.filter(isActiveExerciseReport).length > 1 && <button type="button" onClick={() => void publish('all')} disabled={controlsBusy} className="rounded-xl bg-violet-700 px-4 py-3 font-black text-white disabled:opacity-40">Publicar e resolver todos</button>}
+      </footer>
     </div>
   </div>;
 };
