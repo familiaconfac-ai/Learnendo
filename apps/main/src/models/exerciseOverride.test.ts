@@ -28,3 +28,37 @@ test('never accepts a local blob preview as published content', () => {
   const errors = validateExerciseOverride(original, identity, { imageUrl: 'blob:https://learnendo.vercel.app/local-preview' });
   assert.ok(errors.some((error) => error.includes('prévia local')));
 });
+
+test('text-only editing preserves an original local image without writing empty image fields', () => {
+  const originalWithImage: Exercise = {
+    ...original,
+    imageUrl: '/assets/workbook/existing-image.png',
+    imageAlt: 'Existing workbook image',
+  };
+  const override = diffExerciseOverride(originalWithImage, { instruction: 'Choose the best answer.' });
+  assert.deepEqual(override, { instruction: 'Choose the best answer.' });
+  assert.equal(Object.hasOwn(override, 'imageUrl'), false);
+  assert.equal(Object.hasOwn(override, 'imagePath'), false);
+  assert.equal(Object.hasOwn(override, 'imageAlt'), false);
+
+  const resolved = applyExerciseOverride(originalWithImage, {
+    ...identity,
+    status: 'published',
+    version: 3,
+    override,
+  });
+  assert.equal(resolved.imageUrl, originalWithImage.imageUrl);
+  assert.equal(resolved.imageAlt, originalWithImage.imageAlt);
+});
+
+test('an existing valid editorial HTTPS image remains supported', () => {
+  const imageUrl = 'https://cdn.example.com/exercises/existing.png';
+  const resolved = applyExerciseOverride(original, {
+    ...identity,
+    status: 'published',
+    version: 4,
+    override: { instruction: 'Updated text.', imageUrl, imageAlt: 'Existing editorial image' },
+  });
+  assert.equal(resolved.imageUrl, imageUrl);
+  assert.equal(resolved.imageAlt, 'Existing editorial image');
+});

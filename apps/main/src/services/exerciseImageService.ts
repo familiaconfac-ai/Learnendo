@@ -16,7 +16,7 @@ function stalledUploadError(): UploadError {
 export function uploadExerciseImage(input: {
   file: File; workbookId: number; lessonId: string; exerciseId: string;
   onProgress?: (percent: number) => void;
-}): { task: UploadTask; result: Promise<{ imagePath: string; imageUrl: string }> } {
+}): { task: UploadTask; imagePath: string; result: Promise<{ imagePath: string; imageUrl: string }> } {
   const extension = validateExerciseImageFile(input.file);
   const nonce = `${Date.now()}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
   const imagePath = `exercise-images/wb${input.workbookId}/${input.lessonId}/${input.exerciseId}/${nonce}.${extension}`;
@@ -57,5 +57,5 @@ export function uploadExerciseImage(input: {
       }
     });
   });
-  return { task, result };
+  return { task, imagePath, result };
 }

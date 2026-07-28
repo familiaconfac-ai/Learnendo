@@ -14,7 +14,7 @@
     "test:exercise-reports": "node scripts/exercise-reports.test.mjs && node --experimental-strip-types src/services/exerciseReportStatus.test.ts && node --experimental-strip-types src/utils/exerciseReportCurriculum.test.ts",
     "test:exercise-reports-rules": "firebase emulators:exec --project learnendo-6f4d3 --only auth,firestore \"node scripts/firestore-exercise-reports.integration.mjs\"",
     "test:grammar-focus": "node --experimental-strip-types src/models/grammarFocus.test.ts && node --experimental-strip-types src/utils/controlledMarkdown.test.ts && node scripts/grammar-focus-rules.test.mjs && node scripts/grammar-focus-ui.test.mjs",
-    "test:exercise-overrides": "node --experimental-strip-types src/models/exerciseOverride.test.ts && node --experimental-strip-types src/services/exerciseImageValidation.test.ts && node --experimental-strip-types src/services/editorialFirebaseError.test.ts && node scripts/exercise-overrides-ui.test.mjs",
+    "test:exercise-overrides": "node --experimental-strip-types src/models/exerciseOverride.test.ts && node --experimental-strip-types src/models/exerciseChangeReason.test.ts && node --experimental-strip-types src/services/exerciseImageValidation.test.ts && node --experimental-strip-types src/services/editorialFirebaseError.test.ts && node scripts/exercise-overrides-ui.test.mjs",
     "audit:workbook1-rendered": "esbuild scripts/workbook1-rendered-audit-entry.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/workbook1-rendered-audit-bundle.mjs && node scripts/workbook1-rendered-audit.mjs",
     "deploy": "npm run build && vercel --prod"
   },

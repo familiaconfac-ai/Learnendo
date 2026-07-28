@@ -463,6 +463,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
         location={editor.location}
         language={editor.language}
         reviewer={reviewer}
+        showAuthorizationDiagnostics={isAdmin}
         onClose={() => setEditor(null)}
         onPublished={async (version, resolveReports) => {
           if (!resolveReports) return;

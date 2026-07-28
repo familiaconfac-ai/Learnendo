@@ -32,6 +32,10 @@ const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const storage = getStorage(app);
+export const firebaseRuntimeConfig = Object.freeze({
+  projectId: app.options.projectId ?? '',
+  storageBucket: app.options.storageBucket ?? '',
+});
 const db = (() => {
   try {
     return initializeFirestore(app, {

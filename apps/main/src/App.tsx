@@ -28,7 +28,7 @@ import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { appendUniqueCompletionActivities } from './engine/lessonProgressionEngine';
 import { auth, db, loginWithEmail, registerWithEmail, convertAnonymousToUser } from './services/firebase';
-import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress, promoteAdminIfNeeded } from './services/db';
+import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
 import { WeekCompletionPopup } from './components/WeekCompletionPopup/WeekCompletionPopup';
 import { WeekCompletionResult } from './services/db';
@@ -814,9 +814,6 @@ const App: React.FC = () => {
           ).catch(e => console.warn('[App] progress profile write failed:', e));
         }
 
-        // Promote to admin if the email is in the ADMIN_EMAILS list
-        await promoteAdminIfNeeded(authenticatedUser);
-        
         // Create session entry
         console.log('[App] Creating session...');
         const sessionId = await createSessionForUser(authenticatedUser);

@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const root = new URL('../../../', import.meta.url);
-const [rules, storageRules, service, editor, practice, dashboard, imageService, accessService, errorService] = await Promise.all([
+const [rules, storageRules, service, editor, practice, dashboard, imageService, accessService, errorService, userRoles, app, dbService, reasonModel] = await Promise.all([
   readFile(new URL('firestore.rules', root), 'utf8'),
   readFile(new URL('storage.rules', root), 'utf8'),
   readFile(new URL('../src/services/exerciseOverrideService.ts', import.meta.url), 'utf8'),
@@ -13,6 +13,10 @@ const [rules, storageRules, service, editor, practice, dashboard, imageService, 
   readFile(new URL('../src/services/exerciseImageService.ts', import.meta.url), 'utf8'),
   readFile(new URL('../src/services/editorialAccessService.ts', import.meta.url), 'utf8'),
   readFile(new URL('../src/services/editorialFirebaseError.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../src/services/userRoles.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../src/App.tsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/services/db.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../src/models/exerciseChangeReason.ts', import.meta.url), 'utf8'),
 ]);
 
 test('student projection is separate from admin drafts and history', () => {
@@ -54,22 +58,87 @@ test('admin workflow exposes manual search, drafts, preview, publishing, restore
   assert.match(service, /transaction\.set\(doc\(canonicalRef, 'versions'/);
 });
 
-test('upload cannot remain silently stuck and exposes every required visual state', () => {
+test('change reason has one draft-backed state and is not reused from the published version', () => {
+  assert.match(editor, /const \[changeReason, setChangeReason\] = useState\(''\)/);
+  assert.doesNotMatch(editor, /const \[reason, setReason\]/);
+  assert.match(editor, /setChangeReason\(next\.draft\?\.changeReason \?\? ''\)/);
+  assert.match(editor, /documentValue\?\.status === 'draft' \? documentValue\.changeReason : ''/);
+  assert.match(service, /status: 'draft'[\s\S]*changeReason: input\.changeReason\.trim\(\)/);
+});
+
+test('draft and preview do not require a change reason', () => {
+  assert.match(editor, /const saveDraft = async \(\) =>/);
+  assert.match(editor, /await saveExerciseDraft\(\{[^}]*changeReason/);
+  assert.match(editor, /setPreview\(true\)/);
+  assert.doesNotMatch(editor, /const saveDraft = async \(\) => \{[\s\S]{0,250}requireValidChangeReason/);
+});
+
+test('publishing, disabling and restoring the original require a trimmed specific reason', () => {
+  assert.match(editor, /requireValidChangeReason\(status\)/);
+  assert.match(service, /normalizeExerciseChangeReason\(input\.changeReason\)/);
+  assert.match(service, /validateExerciseChangeReason\(changeReason, input\.status === 'disabled'/);
+  assert.match(service, /removePublishedExerciseOverride[\s\S]*validateExerciseChangeReason\(changeReason\)/);
+  assert.match(editor, /Motivo da restauração do original \(mínimo 5 caracteres\)/);
+  assert.match(service, /Restauração da versão/);
+});
+
+test('missing publication reason is visible, focused and scrolled into view without clearing fields', () => {
+  assert.match(editor, /ref=\{changeReasonRef\}/);
+  assert.match(editor, /scrollIntoView\(\{ behavior: 'smooth', block: 'center' \}\)/);
+  assert.match(editor, /focus\(\{ preventScroll: true \}\)/);
+  assert.match(editor, /aria-invalid=\{Boolean\(changeReasonError\)\}/);
+  assert.match(reasonModel, /Informe o motivo da alteração antes de publicar\./);
+  assert.doesNotMatch(editor, /requireValidChangeReason[\s\S]{0,900}setFields\(/);
+});
+
+test('change reason UI is multiline, responsive, near the footer and can copy a report description explicitly', () => {
+  assert.match(editor, /Motivo da alteração\s*<span/);
+  assert.match(editor, /Explique brevemente o que foi corrigido e por quê\./);
+  assert.match(editor, /textarea[\s\S]*min-h-28 w-full/);
+  assert.match(editor, /pb-40[^"\n]*sm:pb-32/);
+  assert.match(editor, /Usar descrição do relatório como motivo/);
+  assert.match(editor, /onClick=\{\(\) => \{ setChangeReason\(report\.studentComment\.trim\(\)\)/);
+});
+
+test('reason stays in admin history and is excluded from the student projection', () => {
+  assert.match(editor, /version\.changeReason/);
+  assert.match(service, /const adminValue = \{[\s\S]*changeReason/);
+  assert.match(service, /const publicValue = \{ \.\.\.safeIdentity, status, version, override: sanitizeExerciseOverride\(override\), publishedAt/);
+  assert.doesNotMatch(service, /const publicValue = \{[^\n]*changeReason/);
+  assert.match(rules, /data\.status == 'draft' \|\| \(data\.changeReason\.size\(\) >= 5/);
+});
+
+test('image upload is disabled without making the editor depend on Storage', () => {
+  assert.match(editor, /Envio de novas imagens temporariamente indisponível/);
+  assert.match(editor, /O restante do exercício pode ser editado, salvo e publicado normalmente/);
+  assert.match(editor, /Upload de imagens/);
+  assert.doesNotMatch(editor, /uploadExerciseImage/);
+  assert.doesNotMatch(editor, /type="file"/);
+  assert.doesNotMatch(editor, /isUploading|uploadTask|imageUpload|pendingImage|selectedImageFile/);
+  assert.match(editor, /effective\.imageUrl/);
+  assert.match(editor, /effective\.imageAlt/);
+
+  // A arquitetura futura permanece disponível, mas não é importada pelo editor atual.
   assert.match(imageService, /EXERCISE_IMAGE_START_TIMEOUT_MS = 20_000/);
   assert.match(imageService, /storage\/upload-stalled/);
   assert.match(imageService, /task\.cancel\(\)/);
-  for (const state of ['selected', 'uploading', 'completed', 'canceled', 'error']) assert.match(editor, new RegExp(`'${state}'`));
-  assert.match(editor, /Aguarde o envio da imagem antes de salvar ou publicar/);
-  assert.match(editor, /Upload da imagem concluído com sucesso/);
-  assert.match(editor, /imageUpload\.imagePath/);
-  assert.match(editor, /600|1200 × 1200/);
 });
 
-test('frontend preflight uses the same Firestore admin profile as both rule sets', () => {
+test('frontend preflight and temporary diagnostics use the same Firestore admin profile as both rule sets', () => {
   assert.match(accessService, /users.*user\.uid/);
-  assert.match(accessService, /profile\.data\(\)\?\.role !== 'admin'/);
+  assert.match(accessService, /role === 'admin'/);
+  assert.match(accessService, /userDocumentPath/);
   assert.match(rules, /userDoc\(\)\.data\.role == 'admin'/);
   assert.match(storageRules, /documents\/users\/\$\(request\.auth\.uid\)/);
   assert.match(errorService, /storage\/unauthorized/);
+  assert.match(editor, /showAuthorizationDiagnostics/);
+  assert.match(editor, /Firebase Auth UID atual/);
+  assert.match(editor, /role === \"admin\"/);
+  assert.match(editor, /permission-denied/);
+  assert.doesNotMatch(userRoles, /if \(isReservedAdminEmail\(email\)\) return 'admin'/);
+  assert.match(userRoles, /return normalizeUserRole\(storedRole\)/);
+  assert.doesNotMatch(app, /promoteAdminIfNeeded/);
+  assert.doesNotMatch(dbService, /ADMIN_EMAILS|promoteAdminIfNeeded/);
+  assert.match(rules, /allow update: if isAdmin\(\)[\s\S]*affectedKeys\(\)\.hasAny\(\['role'\]\)/);
   assert.match(editor, /Correção publicada com sucesso[\s\S]*relatório não foi resolvido/);
 });

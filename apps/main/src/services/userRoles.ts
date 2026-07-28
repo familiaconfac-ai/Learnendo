@@ -49,7 +49,9 @@ export function normalizeUserRole(role?: string | null): UserRole {
 }
 
 export function getEffectiveUserRole(email?: string | null, storedRole?: string | null): UserRole {
-  if (isReservedAdminEmail(email)) return 'admin';
+  // E-mail reservado pode iniciar a promoção que grava o papel no Firestore,
+  // mas nunca concede autorização à interface por si só.
+  void email;
   return normalizeUserRole(storedRole);
 }
 

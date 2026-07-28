@@ -10,6 +10,7 @@ import {
   type PublishedExerciseOverride,
 } from '../models/exerciseOverride';
 import { assertEditorialAdminAccess } from './editorialAccessService';
+import { normalizeExerciseChangeReason, validateExerciseChangeReason } from '../models/exerciseChangeReason';
 
 export const EXERCISE_OVERRIDE_COLLECTION = 'exerciseOverrides';
 export const EXERCISE_DRAFT_COLLECTION = 'exerciseDrafts';
@@ -118,7 +119,9 @@ export async function publishExerciseOverride(input: {
   await assertEditorialAdminAccess(input.updatedBy);
   const override = diffExerciseOverride(input.original, input.fields);
   const errors = validateExerciseOverride(input.original, input.identity, override);
-  if (!input.changeReason.trim()) errors.push('Informe o motivo da alteração antes de publicar.');
+  const changeReason = normalizeExerciseChangeReason(input.changeReason);
+  const changeReasonError = validateExerciseChangeReason(changeReason, input.status === 'disabled' ? 'disable' : 'publish');
+  if (changeReasonError) errors.push(changeReasonError);
   if (errors.length) throw new Error(errors.join('\n'));
   const canonicalRef = doc(db, EXERCISE_OVERRIDE_COLLECTION, input.identity.exerciseId);
   const publicRef = doc(db, PUBLISHED_EXERCISE_OVERRIDE_COLLECTION, input.identity.exerciseId);
@@ -133,7 +136,7 @@ export async function publishExerciseOverride(input: {
     const version = currentVersion + 1;
     const status = input.status ?? 'published';
     const safeIdentity = identityValue(input.identity);
-    const adminValue = { ...safeIdentity, status, version, override, changeReason: input.changeReason.trim(),
+    const adminValue = { ...safeIdentity, status, version, override, changeReason,
       adminNote: input.adminNote.trim(), relatedReportId: input.relatedReportId ?? null, baseVersion: version,
       updatedAt: serverTimestamp(), updatedBy: input.updatedBy, publishedAt: serverTimestamp(), publishedBy: input.updatedBy };
     const publicValue = { ...safeIdentity, status, version, override: sanitizeExerciseOverride(override), publishedAt: serverTimestamp() };
@@ -156,6 +159,10 @@ export async function restoreExerciseVersion(original: Exercise, version: Exerci
 }
 
 export async function removePublishedExerciseOverride(exerciseId: string, updatedBy: string, reason: string): Promise<void> {
+  await assertEditorialAdminAccess(updatedBy);
+  const changeReason = normalizeExerciseChangeReason(reason);
+  const changeReasonError = validateExerciseChangeReason(changeReason);
+  if (changeReasonError) throw new Error(changeReasonError);
   const canonicalRef = doc(db, EXERCISE_OVERRIDE_COLLECTION, exerciseId);
   let identity: ExerciseEditorialDocument | null = null;
   await runTransaction(db, async (transaction) => {
@@ -165,7 +172,7 @@ export async function removePublishedExerciseOverride(exerciseId: string, update
     identity = value;
     const version = Number(value.version) + 1;
     const archived = {
-      ...value, status: 'archived', version, changeReason: reason, baseVersion: version,
+      ...value, status: 'archived', version, changeReason, baseVersion: version,
       updatedAt: serverTimestamp(), updatedBy,
     };
     transaction.set(doc(canonicalRef, 'versions', String(version).padStart(6, '0')), archived);
