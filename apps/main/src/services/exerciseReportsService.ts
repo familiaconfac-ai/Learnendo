@@ -87,11 +87,16 @@ export interface ExerciseReport {
   verifiedBy?: string | null;
   verifiedAt?: any;
   emailNotificationStatus: 'not_requested' | 'pending' | 'sent' | 'failed';
+  resolutionVersion?: number | null;
+  resolutionType?: 'editorial' | 'code' | null;
+  resolvedByEditorialAt?: any;
+  requiresCodeChange?: boolean;
 }
 
 export type CreateExerciseReportInput = Omit<ExerciseReport,
   'reportId' | 'createdAt' | 'updatedAt' | 'status' | 'priority' | 'adminNote' |
-  'reviewedBy' | 'reviewedAt' | 'resolvedAt' | 'dismissedAt' | 'emailNotificationStatus'>;
+  'reviewedBy' | 'reviewedAt' | 'resolvedAt' | 'dismissedAt' | 'emailNotificationStatus' |
+  'resolutionVersion' | 'resolutionType' | 'resolvedByEditorialAt' | 'requiresCodeChange'>;
 
 export interface ExerciseReportFilters {
   status?: ExerciseReportStatus | 'all';
@@ -279,6 +284,25 @@ export async function getExerciseReportCounts(): Promise<Record<ExerciseReportSt
   return counts;
 }
 
+export async function listRelatedExerciseReports(exerciseId: string): Promise<ExerciseReport[]> {
+  const snapshot = await getDocs(query(collection(db, COLLECTION), where('exerciseId', '==', exerciseId), limit(100)));
+  return snapshot.docs.map(asReport).sort((left, right) =>
+    (right.createdAt?.toMillis?.() ?? 0) - (left.createdAt?.toMillis?.() ?? 0));
+}
+
+export async function resolveOpenExerciseReports(
+  exerciseId: string,
+  version: number,
+  reviewer: { uid: string; name: string },
+): Promise<number> {
+  const related = (await listRelatedExerciseReports(exerciseId)).filter(isActiveExerciseReport);
+  await Promise.all(related.map((report) => updateExerciseReport(report, {
+    status: 'resolved', resolutionVersion: version, resolutionType: 'editorial',
+    adminNote: [report.adminNote, `Resolvido pela versão editorial ${version}.`].filter(Boolean).join('\n'),
+  }, reviewer)));
+  return related.length;
+}
+
 export function subscribePendingExerciseReportCount(onCount: (count: number) => void, onError?: (error: Error) => void): Unsubscribe {
   let active = true;
   let refreshInFlight = false;
@@ -312,6 +336,9 @@ export async function updateExerciseReport(report: ExerciseReport, patch: {
   adminNote?: string;
   verificationResult?: ExerciseReportVerificationResult;
   verificationNote?: string;
+  resolutionVersion?: number;
+  resolutionType?: 'editorial' | 'code';
+  requiresCodeChange?: boolean;
 }, reviewer: { uid: string; name: string }): Promise<void> {
   const updates: Record<string, unknown> = { ...patch, updatedAt: serverTimestamp() };
   if (patch.status === 'reviewing' && report.status !== 'reviewing') {
@@ -324,6 +351,7 @@ export async function updateExerciseReport(report: ExerciseReport, patch: {
     updates.verifiedBy = reviewer.name || reviewer.uid;
     updates.verifiedAt = serverTimestamp();
   }
+  if (patch.resolutionVersion) updates.resolvedByEditorialAt = serverTimestamp();
   await updateDoc(doc(db, COLLECTION, report.reportId), updates);
   window.dispatchEvent(new CustomEvent('learnendo:exercise-reports-changed'));
 }

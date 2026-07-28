@@ -33,6 +33,22 @@ export interface Exercise {
   introducesNewContent?: boolean;
   assessesContent?: boolean;
   formatJustification?: string;
+  imageUrl?: string;
+  imagePath?: string;
+  imageAlt?: string;
+  feedbackCorrect?: string;
+  feedbackIncorrect?: string;
+  explanation?: string;
+  editorialDisabled?: boolean;
+  contextVisual?: {
+    type: 'ordinal-line';
+    people: string[];
+  };
+  grammarHelp?: {
+    title: string;
+    explanation: string;
+    examples: string[];
+  };
 }
 
 export interface Day {
@@ -471,6 +487,12 @@ export interface PracticeItem {
   prerequisite?: string;
   introducesNewContent?: boolean;
   assessesContent?: boolean;
+  imageUrl?: string;
+  imagePath?: string;
+  imageAlt?: string;
+  feedbackCorrect?: string;
+  feedbackIncorrect?: string;
+  explanation?: string;
 }
 
 export interface OldUserProgress {

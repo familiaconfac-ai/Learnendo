@@ -11,12 +11,14 @@ import {
   isActiveExerciseReport,
   isVisibleExerciseReport,
   listExerciseReports,
+  resolveOpenExerciseReports,
   updateExerciseReport,
 } from '../../services/exerciseReportsService';
 import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
 import type { Workbook } from '../../types';
 import { findReportedExercise, reportedWorkbookCandidates, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
 import { AdminExerciseVerification, type VerificationVerdict } from './AdminExerciseVerification';
+import { ExerciseEditorModal } from './ExerciseEditorModal';
 
 interface ProblemReportsDashboardProps {
   isAdmin: boolean;
@@ -53,6 +55,13 @@ const VERIFICATION_LABELS: Record<ExerciseReportVerificationResult, string> = {
 const LANGUAGE_COURSE: Record<string, string> = {
   en: 'english', es: 'spanish', el: 'greek_koine', he: 'hebrew_biblical', pt: 'portuguese_foreigners',
 };
+const languageForCourse = (courseId: string): string => {
+  if (courseId === 'spanish') return 'es';
+  if (courseId === 'greek_koine') return 'el';
+  if (courseId === 'hebrew_biblical') return 'he';
+  if (courseId.startsWith('portuguese')) return 'pt';
+  return 'en';
+};
 
 export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = ({ isAdmin, reviewer, currentCourseId, onBack }) => {
   const [filters, setFilters] = useState<ExerciseReportFilters>(emptyFilters);
@@ -75,6 +84,8 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
   const [verificationLoading, setVerificationLoading] = useState(false);
   const [verificationSaving, setVerificationSaving] = useState(false);
   const [verificationError, setVerificationError] = useState('');
+  const [editor, setEditor] = useState<{ report: ExerciseReport | null; location: ReportExerciseLocation; language: string } | null>(null);
+  const [catalogSearch, setCatalogSearch] = useState('');
 
   const load = useCallback(async (targetCursor: QueryDocumentSnapshot<DocumentData> | null = null) => {
     if (!isAdmin) return;
@@ -138,7 +149,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
   const dayOptions = selectedCatalogLesson?.days ?? [];
 
   const patchSelected = async (
-    patch: { status?: ExerciseReportStatus; priority?: ExerciseReportPriority; adminNote?: string; verificationResult?: ExerciseReportVerificationResult; verificationNote?: string },
+    patch: { status?: ExerciseReportStatus; priority?: ExerciseReportPriority; adminNote?: string; verificationResult?: ExerciseReportVerificationResult; verificationNote?: string; resolutionVersion?: number; resolutionType?: 'editorial' | 'code'; requiresCodeChange?: boolean },
     closeAfterSuccess = false,
   ) => {
     if (!selected || saving || actionInFlightRef.current) return;
@@ -219,6 +230,53 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
       setVerificationLoading(false);
     }
   };
+
+  const openExerciseEditor = async (report: ExerciseReport) => {
+    if (verificationLoading) return;
+    setVerificationLoading(true);
+    setError('');
+    try {
+      const inferredCourse = LANGUAGE_COURSE[report.language] ?? currentCourseId;
+      const courseCandidates = [...new Set([inferredCourse, currentCourseId, 'english'])];
+      let location: ReportExerciseLocation | null = null;
+      for (const courseId of courseCandidates) {
+        const registry = COURSE_WORKBOOKS[courseId] ?? {};
+        for (const workbookId of reportedWorkbookCandidates(report, Object.keys(registry).map(Number))) {
+          const loader = registry[workbookId];
+          if (!loader) continue;
+          const workbook = resolveWorkbookModule(await loader() as Record<string, unknown>, workbookId);
+          if (workbook) location = findReportedExercise(workbook, report);
+          if (location) break;
+        }
+        if (location) break;
+      }
+      if (!location) throw new Error('Exercício não localizado no currículo atual.');
+      setSelected(null);
+      setEditor({ report, location, language: report.language || 'en' });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível abrir o editor.');
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  const catalogMatches = useMemo(() => {
+    const search = catalogSearch.trim().toLowerCase();
+    if (!catalogWorkbook || search.length < 2) return [];
+    const matches: ReportExerciseLocation[] = [];
+    for (const lesson of catalogWorkbook.lessons) {
+      if (filters.lessonId && lesson.id !== filters.lessonId) continue;
+      for (const day of lesson.days) {
+        if (filters.dayId && day.id !== filters.dayId) continue;
+        day.exercises.forEach((exercise, exerciseIndex) => {
+          if (matches.length >= 30) return;
+          if ([exercise.id, exercise.type, exercise.instruction, exercise.displayValue, exercise.correctValue]
+            .join(' ').toLowerCase().includes(search)) matches.push({ workbook: catalogWorkbook, lesson, day, exerciseIndex });
+        });
+      }
+    }
+    return matches;
+  }, [catalogSearch, catalogWorkbook, filters.dayId, filters.lessonId]);
 
   const saveVerificationVerdict = async (
     verdict: VerificationVerdict,
@@ -316,6 +374,16 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
           </div>
         </div>
 
+        <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
+          <h2 className="font-black">Localizar exercício sem relatório</h2>
+          <p className="mt-1 text-sm text-slate-600">Selecione um livro acima e busque por ID, tipo, enunciado ou resposta. No máximo 30 resultados são mostrados.</p>
+          <input aria-label="Localizar exercício" disabled={!catalogWorkbook} value={catalogSearch} onChange={(event) => setCatalogSearch(event.target.value)} placeholder={catalogWorkbook ? 'Digite pelo menos 2 caracteres…' : 'Selecione um livro primeiro'} className="mt-3 w-full rounded-xl border p-3 disabled:bg-slate-100" />
+          {catalogMatches.length > 0 && <div className="mt-3 grid gap-2 sm:grid-cols-2">{catalogMatches.map((location) => {
+            const exercise = location.day.exercises[location.exerciseIndex];
+            return <button key={`${location.day.id}:${exercise.id}`} onClick={() => setEditor({ report: null, location, language: languageForCourse(currentCourseId) })} className="rounded-xl bg-white p-3 text-left shadow-sm hover:ring-2 hover:ring-blue-300"><p className="break-all text-xs font-black text-blue-700">{exercise.id}</p><p className="text-sm font-bold">{location.lesson.title} · {location.day.id} · {exercise.type}</p><p className="line-clamp-1 text-xs text-slate-500">{exercise.displayValue || exercise.instruction || exercise.correctValue}</p></button>;
+          })}</div>}
+        </div>
+
         {error && <p role="alert" className="mb-4 rounded-xl bg-red-100 p-3 font-bold text-red-800">{error}</p>}
         {statusNotice && <p role="status" className="mb-4 rounded-xl bg-emerald-100 p-3 font-bold text-emerald-800">{statusNotice}</p>}
         <div className="space-y-3">
@@ -346,7 +414,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
               ['Data e hora', formatDate(selected.createdAt)], ['Status', STATUS_LABELS[selected.status]], ['Prioridade', PRIORITY_LABELS[selected.priority]], ['Usuário', selected.userName || selected.userEmail || selected.userId],
               ['Livro', `${selected.workbookTitle} (${selected.workbookId})`], ['Lição', `${selected.lessonTitle} (${selected.lessonId})`], ['Dia', `${selected.dayNumber ?? ''} (${selected.dayId})`], ['Exercício', selected.exerciseId], ['Tipo', selected.exerciseType], ['Modo', selected.exerciseMode], ['Fase', selected.sessionPhase],
             ]} />
-            <DetailSection title="Conteúdo" rows={[
+            <DetailSection title="Exercício relacionado" rows={[
               ['Instrução', selected.instruction], ['Texto exibido', selected.displayedText], ['Texto do áudio', selected.audioText], ['Fonte do áudio', selected.audioSource], ['Alternativas', selected.options.join(' · ')],
               ['Resposta esperada', selected.expectedAnswer], ['Respostas aceitas', selected.acceptedAnswers.join(' · ')], ['Resposta do aluno', selected.studentAnswer], ['Tentativas', selected.attemptCount], ['Categoria', selected.problemCategory], ['Comentário', selected.studentComment],
             ]} />
@@ -363,6 +431,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
             {copyStatus === 'error' && <p role="alert" className="mt-2 font-bold text-red-700">Não foi possível copiar. Tente novamente.</p>}
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <button disabled={saving || verificationLoading} onClick={() => void openExerciseVerification(selected)} className="rounded-xl bg-violet-700 p-3 font-black text-white disabled:opacity-50 sm:col-span-2">{verificationLoading ? 'Abrindo exercício…' : 'Abrir exercício para verificar'}</button>
+              <button disabled={saving || verificationLoading} onClick={() => void openExerciseEditor(selected)} className="rounded-xl bg-blue-700 p-3 font-black text-white disabled:opacity-50 sm:col-span-2">Editar exercício</button>
               <p className="text-xs text-slate-500 sm:col-span-2">Abre exatamente o exercício reportado, sem exigir os anteriores e sem alterar o progresso do aluno.</p>
               <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing', verificationResult: 'ready-for-verification', verificationNote: 'Correção publicada e aguardando validação administrativa.' }, true)} className="rounded-xl border border-violet-400 bg-white p-3 font-black text-violet-800 disabled:opacity-50 sm:col-span-2">Marcar correção pronta para verificar</button>
               <select value={selected.priority} disabled={saving} onChange={(event) => void patchSelected({ priority: event.target.value as ExerciseReportPriority })} className="rounded-xl border p-3">{Object.entries(PRIORITY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
@@ -371,6 +440,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
               {selected.status === 'reviewing' && <button disabled={saving} onClick={() => void patchSelected({ status: 'new' }, true)} className="rounded-xl border border-blue-400 bg-white p-3 font-black text-blue-700">Retirar de análise</button>}
               {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'resolved' }, true)} className="rounded-xl bg-emerald-600 p-3 font-black text-white">Marcar resolvido</button>}
               {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'dismissed' }, true)} className="rounded-xl bg-slate-600 p-3 font-black text-white">Descartar</button>}
+              {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing', requiresCodeChange: true, resolutionType: 'code', adminNote: [selected.adminNote, 'Requer alteração de código.'].filter(Boolean).join('\n') }, true)} className="rounded-xl border border-orange-400 bg-white p-3 font-black text-orange-800 sm:col-span-2">Requer alteração de código</button>}
               {!isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'new' }, true)} className="rounded-xl bg-blue-600 p-3 font-black text-white">Reabrir como novo</button>}
             </div><label className="mt-4 block text-sm font-bold">Nota administrativa<textarea defaultValue={selected.adminNote} onBlur={(event) => { if (event.target.value !== selected.adminNote) void patchSelected({ adminNote: event.target.value }); }} className="mt-1 min-h-24 w-full rounded-xl border p-3 font-normal" /></label></div>
           </div>
@@ -387,6 +457,27 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
           setVerificationError('');
         }}
         onVerdict={saveVerificationVerdict}
+      />}
+      {editor && <ExerciseEditorModal
+        report={editor.report}
+        location={editor.location}
+        language={editor.language}
+        reviewer={reviewer}
+        onClose={() => setEditor(null)}
+        onPublished={async (version, resolveReports) => {
+          if (!resolveReports) return;
+          if (resolveReports === 'all') {
+            const count = await resolveOpenExerciseReports(editor.location.day.exercises[editor.location.exerciseIndex].id, version, reviewer);
+            setStatusNotice(`Correção ${version} publicada e ${count} relatório(s) resolvido(s).`);
+          } else if (editor.report) {
+            await updateExerciseReport(editor.report, {
+              status: 'resolved', resolutionVersion: version, resolutionType: 'editorial',
+              adminNote: [editor.report.adminNote, `Resolvido pela versão editorial ${version}.`].filter(Boolean).join('\n'),
+            }, reviewer);
+            setStatusNotice(`Correção ${version} publicada e relatório resolvido.`);
+          }
+          await load(currentStart);
+        }}
       />}
     </div>
   );

@@ -34,6 +34,7 @@ import {
   EXERCISE_REPORT_CATEGORIES,
   type ExerciseReportCategory,
 } from '../../services/exerciseReportsService';
+import { loadPublishedDayOverrides, readCachedDayOverrides, resolveDayExercises } from '../../services/exerciseOverrideService';
 
 interface ExercisePracticeProps {
   day: Day;
@@ -125,7 +126,25 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const masteryRef = useRef(mastery);
   const isCompletedRef = useRef(false);
   const completionPromiseRef = useRef<Promise<void> | null>(null);
-  const exercises = day.exercises;
+  const [resolvedExercises, setResolvedExercises] = useState(() => {
+    const cached = readCachedDayOverrides(workbookId, lessonId, day.id, currentLanguage);
+    return resolveDayExercises(day.exercises, cached).filter((exercise) => !exercise.editorialDisabled);
+  });
+  const exercises = resolvedExercises;
+
+  useEffect(() => {
+    const cached = readCachedDayOverrides(workbookId, lessonId, day.id, currentLanguage);
+    const immediate = resolveDayExercises(day.exercises, cached).filter((exercise) => !exercise.editorialDisabled);
+    setResolvedExercises(immediate);
+    let cancelled = false;
+    void loadPublishedDayOverrides(workbookId, lessonId, day.id, currentLanguage).then((overrides) => {
+      if (cancelled) return;
+      const next = resolveDayExercises(day.exercises, overrides).filter((exercise) => !exercise.editorialDisabled);
+      setResolvedExercises(next);
+      setCurrentIdx((index) => Math.min(index, Math.max(0, next.length - 1)));
+    });
+    return () => { cancelled = true; };
+  }, [currentLanguage, day.id, day.exercises, lessonId, workbookId]);
 
   useEffect(() => {
     // Report context belongs only to the exercise currently on screen. Without

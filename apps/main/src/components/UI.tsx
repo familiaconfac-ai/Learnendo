@@ -1436,6 +1436,9 @@ export const PracticeSection: React.FC<{
             )}
 
             {/* Listening dictation and shadowing should not reveal the target text visually. */}
+            {item.imageUrl && (
+              <img src={item.imageUrl} alt={item.imageAlt || ''} className="max-h-[min(34dvh,20rem)] w-full rounded-2xl object-contain" />
+            )}
             {item.displayValue && !isShadowing && !isDictationWriting && (
               <div className="w-full" {...selectionGestureProps}>
                 {renderDisplay()}
@@ -1571,6 +1574,11 @@ export const PracticeSection: React.FC<{
                     <div className={`font-black uppercase text-lg tracking-widest animate-in slide-in-from-left-2 ${feedback === 'correct' ? 'text-yellow-400' : 'text-white'}`}>
                       {praiseText}
                     </div>
+                    {(feedback === 'correct' ? item.feedbackCorrect : item.feedbackIncorrect) && (
+                      <div className="mt-1 text-xs font-bold text-white animate-in fade-in">
+                        {feedback === 'correct' ? item.feedbackCorrect : item.feedbackIncorrect}
+                      </div>
+                    )}
                     {feedback === 'wrong' && (
                       <div className="text-white font-bold text-xs mt-1 animate-in fade-in">
                         {PL.correctAnswer} <span className="rounded-md bg-amber-400/15 px-1.5 py-0.5 font-black text-sm text-amber-300 underline decoration-2">{renderInlineRichText(displayCorrectValue)}</span>

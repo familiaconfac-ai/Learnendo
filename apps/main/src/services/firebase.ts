@@ -16,6 +16,7 @@ import {
 } from "firebase/auth";
 import { getFirestore, initializeFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDrZAa3AWzNRM-feVFpI1uSQEyZFY7Br0Q",
@@ -30,6 +31,7 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const storage = getStorage(app);
 const db = (() => {
   try {
     return initializeFirestore(app, {
@@ -77,7 +79,7 @@ if (typeof window !== 'undefined') {
   });
 }
 
-export { app, auth, db, analytics };
+export { app, auth, db, storage, analytics };
 
 export async function ensureAuthPersistenceReady() {
   await authPersistenceReady;
