@@ -12,6 +12,8 @@ export interface Exercise {
   id: string;
   type: 'speaking' | 'multiple-choice' | 'writing' | 'identification' | 'dialogue';
   instruction: string;
+  categoryLabel?: string;
+  contentOrder?: 'instruction-first' | 'display-first';
   displayValue?: string;
   audioValue: string;
   /** Optional exercise-specific language/locale for TTS; course language is the normal fallback. */
@@ -41,6 +43,7 @@ export interface Exercise {
   feedbackCorrect?: string;
   feedbackIncorrect?: string;
   explanation?: string;
+  responsePlaceholder?: string;
   editorialDisabled?: boolean;
   contextVisual?: {
     type: 'ordinal-line';
@@ -461,6 +464,8 @@ export interface PracticeItem {
   lessonId: number;
   type: 'speaking' | 'multiple-choice' | 'writing' | 'identification' | 'dialogue';
   instruction: string;
+  categoryLabel?: string;
+  contentOrder?: 'instruction-first' | 'display-first';
   displayValue?: string;
   audioValue: string;
   speechLanguage?: string;
@@ -496,6 +501,7 @@ export interface PracticeItem {
   feedbackCorrect?: string;
   feedbackIncorrect?: string;
   explanation?: string;
+  responsePlaceholder?: string;
 }
 
 export interface OldUserProgress {

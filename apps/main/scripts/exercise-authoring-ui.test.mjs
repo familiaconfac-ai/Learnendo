@@ -32,9 +32,14 @@ const sharedUi = readFileSync(new URL('../src/components/UI.tsx', import.meta.ur
 assert.match(sharedUi, /repeatMicAvailable\(repeatPhase\)/);
 assert.match(sharedUi, /Tentar ouvir novamente/);
 assert.match(sharedUi, /result\.state === 'cancelled'/);
-assert.match(ui, /Duplicar como outro tipo/);
-assert.match(ui, /validatePublishedExerciseTypes|lockType/);
-assert.match(service, /validatePublishedExerciseTypes/);
+assert.match(ui, /contentOrder/);
+assert.match(ui, /Texto para áudio\/TTS \(opcional\)/);
+assert.match(ui, /Categoria\/modalidade visual/);
+assert.doesNotMatch(service, /validatePublishedExerciseTypes/);
+assert.match(sharedUi, /item\.instruction \|\| PL\.listenAndAnswer/);
+assert.match(sharedUi, /item\.instruction \|\| PL\.listenAndRepeat/);
+assert.match(sharedUi, /item\.contentOrder === 'display-first'/);
+assert.match(sharedUi, /promptAudioText \? '' : 'hidden '/);
 assert.match(ui, /Descartar as alterações não salvas/);
 
 console.log('Exercise authoring UI and transactional wiring checks passed.');

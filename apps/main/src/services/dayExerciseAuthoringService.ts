@@ -4,7 +4,7 @@ import { assertEditorialAdminAccess } from './editorialAccessService';
 import { applyExerciseOverride, type PublishedExerciseOverride } from '../models/exerciseOverride';
 import { daySequenceScopeId } from '../models/editorialSequenceLoading';
 import type { Exercise } from '../types';
-import { validatePublishedExerciseTypes } from '../models/exerciseAuthoring';
+import { authoringTypeOf, canonicalFromExercise, exerciseFromCanonical } from '../models/exerciseAuthoring';
 
 export { daySequenceScopeId } from '../models/editorialSequenceLoading';
 
@@ -61,7 +61,8 @@ export function validateDaySequence(exercises: Exercise[]): string[] {
 }
 
 function cleanExercise(exercise: Exercise): Exercise {
-  return JSON.parse(JSON.stringify(exercise)) as Exercise;
+  const copy = JSON.parse(JSON.stringify(exercise)) as Exercise;
+  return authoringTypeOf(copy) ? exerciseFromCanonical(canonicalFromExercise(copy), copy) : copy;
 }
 
 export async function getDaySequenceState(identity: Omit<DaySequenceIdentity, 'schemaVersion' | 'scopeId'>): Promise<DaySequenceState> {
@@ -74,8 +75,8 @@ export async function getDaySequenceState(identity: Omit<DaySequenceIdentity, 's
   return {
     version: canonical.exists() ? Number(canonical.data().currentVersion ?? 0) : 0,
     draftRevision: draft.exists() ? Number(draft.data().draftRevision ?? 0) : 0,
-    draft: draft.exists() ? draft.data() as DaySequenceDraft : null,
-    published: published.exists() ? published.data() as PublishedDaySequence : null,
+    draft: draft.exists() ? { ...(draft.data() as DaySequenceDraft), exercises: (draft.data() as DaySequenceDraft).exercises.map(cleanExercise) } : null,
+    published: published.exists() ? { ...(published.data() as PublishedDaySequence), exercises: (published.data() as PublishedDaySequence).exercises.map(cleanExercise) } : null,
   };
 }
 
@@ -98,13 +99,9 @@ export async function saveDaySequenceDraft(input: {
   const draftRef = doc(db, DAY_SEQUENCE_DRAFT_COLLECTION, scopeId);
   const publicRef = doc(db, PUBLISHED_DAY_SEQUENCE_COLLECTION, scopeId);
   return runTransaction(db, async (transaction) => {
-    const [canonicalSnap, draftSnap, publicSnap] = await Promise.all([transaction.get(canonicalRef), transaction.get(draftRef), transaction.get(publicRef)]);
+    const [canonicalSnap, draftSnap] = await Promise.all([transaction.get(canonicalRef), transaction.get(draftRef)]);
     const currentVersion = canonicalSnap.exists() ? Number(canonicalSnap.data().currentVersion ?? 0) : 0;
     const currentDraftRevision = draftSnap.exists() ? Number(draftSnap.data().draftRevision ?? 0) : 0;
-    if (publicSnap.exists()) {
-      const typeErrors = validatePublishedExerciseTypes((publicSnap.data() as PublishedDaySequence).exercises, input.exercises);
-      if (typeErrors.length) throw new Error(typeErrors[0]);
-    }
     if (currentVersion !== input.expectedVersion || currentDraftRevision !== input.expectedDraftRevision) throw new Error('Este dia foi alterado em outra sessão. Recarregue antes de salvar.');
     const draftRevision = currentDraftRevision + 1;
     transaction.set(canonicalRef, { ...identity, currentVersion, draftRevision, updatedAt: serverTimestamp(), updatedBy: input.updatedBy }, { merge: true });
@@ -127,17 +124,13 @@ export async function publishDaySequence(input: {
   const draftRef = doc(db, DAY_SEQUENCE_DRAFT_COLLECTION, scopeId);
   const publicRef = doc(db, PUBLISHED_DAY_SEQUENCE_COLLECTION, scopeId);
   return runTransaction(db, async (transaction) => {
-    const [canonicalSnap, draftSnap, publicSnap] = await Promise.all([transaction.get(canonicalRef), transaction.get(draftRef), transaction.get(publicRef)]);
+    const [canonicalSnap, draftSnap] = await Promise.all([transaction.get(canonicalRef), transaction.get(draftRef)]);
     if (!canonicalSnap.exists() || !draftSnap.exists()) throw new Error('Salve o rascunho antes de publicar.');
     const currentVersion = Number(canonicalSnap.data().currentVersion ?? 0);
     const draft = draftSnap.data() as DaySequenceDraft;
     if (currentVersion !== input.expectedVersion || draft.draftRevision !== input.expectedDraftRevision || draft.baseVersion !== currentVersion) throw new Error('O rascunho está desatualizado. Recarregue antes de publicar.');
     const errors = validateDaySequence(draft.exercises);
     if (errors.length) throw new Error(errors.join('\n'));
-    if (publicSnap.exists()) {
-      const typeErrors = validatePublishedExerciseTypes((publicSnap.data() as PublishedDaySequence).exercises, draft.exercises);
-      if (typeErrors.length) throw new Error(typeErrors[0]);
-    }
     if (draft.changeReason.trim().length < 5) throw new Error('Informe um motivo de publicação com pelo menos 5 caracteres.');
     const version = currentVersion + 1;
     const published: PublishedDaySequence = { schemaVersion: 1, scopeId, courseId: draft.courseId, language: draft.language,
@@ -155,7 +148,7 @@ const publicCache = new Map<string, PublishedDaySequence | null>();
 export async function loadPublishedDaySequence(identity: Omit<DaySequenceIdentity, 'schemaVersion' | 'scopeId'>): Promise<PublishedDaySequence | null> {
   const scopeId = daySequenceScopeId(identity);
   const snapshot = await getDoc(doc(db, PUBLISHED_DAY_SEQUENCE_COLLECTION, scopeId));
-  const value = snapshot.exists() ? snapshot.data() as PublishedDaySequence : null;
+  const value = snapshot.exists() ? { ...(snapshot.data() as PublishedDaySequence), exercises: (snapshot.data() as PublishedDaySequence).exercises.map(cleanExercise) } : null;
   publicCache.set(scopeId, value);
   return value;
 }

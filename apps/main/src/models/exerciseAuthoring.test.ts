@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyBatch, buildAiPrompt, exerciseFromCanonical, parseExerciseBatch, validateCanonicalExercise, validatePublishedExerciseTypes, PUBLISHED_TYPE_IMMUTABLE_MESSAGE } from './exerciseAuthoring.ts';
+import { applyBatch, buildAiPrompt, canonicalFromExercise, exerciseFromCanonical, normalizeExerciseAlternatives, parseExerciseBatch, validateCanonicalExercise } from './exerciseAuthoring.ts';
 import type { Exercise } from '../types.ts';
 
 const original: Exercise = { id: 'old-1', type: 'multiple-choice', instruction: 'Old', audioValue: 'old', correctValue: 'A', options: ['A', 'B'], translation: 'preserve', coverageObjective: 'unknown-to-editor' };
@@ -23,16 +23,12 @@ test('shadowing e repeat usam targetText quando campos opcionais normalizados vi
   assert.equal(shadowing.correctValue, 'Good morning');
 });
 
-test('tipo pode mudar antes da publicação, mas não para o mesmo ID publicado', () => {
-  const unpublishedWriting = exerciseFromCanonical({ type: 'writing', instruction: 'Write', correctAnswer: 'A' }, original);
-  assert.equal(unpublishedWriting.type, 'writing');
-  assert.deepEqual(validatePublishedExerciseTypes([], [unpublishedWriting]), []);
-  assert.deepEqual(validatePublishedExerciseTypes([original], [unpublishedWriting]), [PUBLISHED_TYPE_IMMUTABLE_MESSAGE]);
-  assert.deepEqual(validatePublishedExerciseTypes([original], [{ ...original, instruction: 'Edited' }]), []);
-  assert.deepEqual(validatePublishedExerciseTypes([original], [{ ...original }]), []);
+test('tipo pode mudar mantendo ID e uma duplicação recebe ID novo', () => {
+  const changed = exerciseFromCanonical({ type: 'writing', instruction: 'Write', correctAnswer: 'A' }, original);
+  assert.equal(changed.type, 'writing');
+  assert.equal(changed.id, original.id);
   const duplicate = exerciseFromCanonical({ type: 'writing', instruction: 'Write', correctAnswer: 'A' });
   assert.notEqual(duplicate.id, original.id);
-  assert.deepEqual(validatePublishedExerciseTypes([original], [duplicate]), []);
 });
 
 test('edição preserva id e metadados que o formulário desconhece', () => {
@@ -111,6 +107,44 @@ test('preserva mídia, tradução e metadados quando o campo não foi alterado',
   assert.equal(next.translation, rich.translation);
   assert.equal(next.imageAlt, rich.imageAlt);
   assert.equal(next.feedbackCorrect, rich.feedbackCorrect);
+});
+
+test('troca speaking por multiple-choice preservando ID, áudio e campos compatíveis', () => {
+  const speaking: Exercise = { id: 'oral-1', type: 'speaking', instruction: 'Listen and answer', displayValue: 'Teacher greets Anna.', audioValue: 'Good afternoon, Anna.', speechLanguage: 'en-US', correctValue: 'Good afternoon', translation: 'Boa tarde', explanation: 'Greeting', imageUrl: 'https://example.com/anna.png' };
+  const canonical = canonicalFromExercise(speaking, 4);
+  const changed = exerciseFromCanonical({ ...canonical, type: 'multiple-choice', instruction: 'Listen and repeat', contentOrder: 'display-first', alternatives: ['Good morning', 'Good afternoon'], correctAnswer: 'Good afternoon' }, speaking);
+  assert.equal(changed.id, 'oral-1');
+  assert.equal(changed.type, 'multiple-choice');
+  assert.equal(changed.audioValue, 'Good afternoon, Anna.');
+  assert.equal(changed.speechLanguage, 'en-US');
+  assert.equal(changed.displayValue, 'Teacher greets Anna.');
+  assert.equal(changed.contentOrder, 'display-first');
+  assert.equal(changed.imageUrl, speaking.imageUrl);
+  assert.equal(changed.translation, speaking.translation);
+  assert.equal(changed.explanation, speaking.explanation);
+});
+
+test('normaliza alternativas antigas sem dividir caracteres ou corromper contrações', () => {
+  assert.deepEqual(normalizeExerciseAlternatives('"\n8\nat\neighth\ndon\'t'), ['"', '8', 'at', 'eighth', "don't"]);
+  assert.deepEqual(normalizeExerciseAlternatives([{ label: 'A' }, { value: 'B' }, { text: "isn't" }, 8]), ['A', 'B', "isn't", '8']);
+  const legacy = { ...original, options: [{ label: 'first' }, { value: 'second' }], correctValue: { index: 1 } } as unknown as Exercise;
+  const normalized = canonicalFromExercise(legacy);
+  assert.deepEqual(normalized.alternatives, ['first', 'second']);
+  assert.equal(normalized.correctAnswer, 'second');
+});
+
+test('round-trip canônico mantém todos os textos e a ordem do sandbox', () => {
+  const input = { type: 'multiple-choice' as const, categoryLabel: 'LISTENING', instruction: 'Listen and repeat', contentOrder: 'display-first' as const, displayValue: 'Teacher greets Anna.', speechText: 'Good afternoon, Anna.', speechLanguage: 'en-US', alternatives: ['Good morning', 'Good afternoon'], correctAnswer: 'Good afternoon', responsePlaceholder: 'Choose one', translation: 'Boa tarde', explanation: 'Greeting' };
+  const stored = exerciseFromCanonical(input);
+  const reloaded = canonicalFromExercise(stored);
+  assert.deepEqual({ ...reloaded, position: undefined }, { ...input, targetText: 'Good afternoon', acceptedAnswers: [], imageUrl: '', position: undefined });
+});
+
+test('multiple-choice sem speechText continua sem áudio após salvar e recarregar', () => {
+  const stored = exerciseFromCanonical({ type: 'multiple-choice', instruction: 'Choose', speechText: '', alternatives: ['A', 'B'], correctAnswer: 'B' });
+  assert.equal(stored.audioValue, '');
+  const reloaded = exerciseFromCanonical(canonicalFromExercise(stored), stored);
+  assert.equal(reloaded.audioValue, '');
 });
 
 test('detecta JSON inválido, obrigatório ausente e tipo real sem autoria completa', () => {

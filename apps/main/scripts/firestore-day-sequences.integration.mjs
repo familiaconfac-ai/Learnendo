@@ -62,4 +62,25 @@ assert.notEqual((await request(publicUrl, { method: 'PATCH', token: student.idTo
 assert.notEqual((await request(`${documentsUrl}/publishedDayExerciseSequences/${scopeId}-private`, { method: 'PATCH', token: admin.idToken, data: { ...published, scopeId: `${scopeId}-private`, adminNote: 'must not leak' } })).status, 200, 'public projection rejects private metadata');
 assert.notEqual((await request(`${documentsUrl}/publishedDayExerciseSequences/${scopeId}-oversize`, { method: 'PATCH', token: admin.idToken, data: { ...published, scopeId: `${scopeId}-oversize`, exercises: Array.from({ length: 101 }, (_, index) => ({ ...exercise, id: `oversize-${index}` })) } })).status, 200, 'public projection rejects more than 100 exercises');
 
+// Integrated authoring regression: edit + create, reload the draft, publish, then
+// reload through the same public collection consumed by the student app.
+const persistedScope = `${scopeId}-authoring`;
+const persistedIdentity = { ...identity, scopeId: persistedScope };
+const edited = { ...exercise, instruction: 'Listen and repeat', displayValue: 'Teacher greets Anna.', contentOrder: 'display-first', categoryLabel: 'LISTENING', audioValue: 'Good afternoon, Anna.', speechLanguage: 'en-US', imageUrl: 'https://example.com/anna.png', options: ['"', '8', 'at', 'eighth', "don't"], correctValue: "don't" };
+const created = { ...exercise, id: 'test-exercise-new', instruction: 'New exercise', audioValue: '', options: ['one', 'two'], correctValue: 'two' };
+const persistedCanonicalUrl = `${documentsUrl}/dayExerciseSequences/${persistedScope}`;
+const persistedDraftUrl = `${documentsUrl}/dayExerciseSequenceDrafts/${persistedScope}`;
+const persistedPublicUrl = `${documentsUrl}/publishedDayExerciseSequences/${persistedScope}`;
+assert.equal((await request(persistedCanonicalUrl, { method: 'PATCH', token: admin.idToken, data: { ...persistedIdentity, currentVersion: 0, draftRevision: 1, updatedAt: now, updatedBy: admin.localId } })).status, 200, 'authoring canonical created');
+assert.equal((await request(persistedDraftUrl, { method: 'PATCH', token: admin.idToken, data: { ...persistedIdentity, status: 'draft', baseVersion: 0, draftRevision: 1, exercises: [created, edited], operation: 'insert_at', changeReason: 'Integrated authoring persistence', relatedReportId: null, updatedAt: now, updatedBy: admin.localId } })).status, 200, 'edited and new exercises saved as one draft');
+const reloadedDraft = await request(persistedDraftUrl, { token: admin.idToken });
+assert.equal(reloadedDraft.status, 200, reloadedDraft.body);
+for (const value of ['test-exercise-new', 'test-exercise-1', 'Listen and repeat', 'Teacher greets Anna.', 'Good afternoon, Anna.', 'https://example.com/anna.png', "don't", 'display-first']) assert.match(reloadedDraft.body, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `draft reload preserves ${value}`);
+assert.ok(reloadedDraft.body.indexOf('test-exercise-new') < reloadedDraft.body.indexOf('test-exercise-1'), 'new exercise position survives draft reload');
+assert.equal((await request(persistedPublicUrl, { method: 'PATCH', token: admin.idToken, data: { ...persistedIdentity, version: 1, exercises: [created, edited], publishedAt: now } })).status, 200, 'confirmed draft is published');
+const reloadedPublic = await request(persistedPublicUrl, { token: student.idToken });
+assert.equal(reloadedPublic.status, 200, reloadedPublic.body);
+for (const value of ['Listen and repeat', 'Teacher greets Anna.', 'Good afternoon, Anna.', 'https://example.com/anna.png', "don't", 'display-first']) assert.match(reloadedPublic.body, new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `student reload preserves ${value}`);
+assert.equal((await request(`${documentsUrl}/dayExerciseSequenceDrafts/${persistedScope}-cancelled`, { token: admin.idToken })).status, 404, 'cancelled new exercise creates no draft document');
+
 console.log('Firestore day sequence permission integration tests passed.');

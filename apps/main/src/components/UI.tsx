@@ -568,7 +568,7 @@ export const PracticeSection: React.FC<{
       : '';
     const isQuestionDrivenSpeaking = item.type === 'speaking' && isQuestionPrompt(promptAudioText || item.audioValue);
     const shadowingSupportText = isShadowing && isQuestionDrivenSpeaking ? translation : '';
-    const speakingPlaceholder = (shadowingSupportText ? shadowingSupportText.replace(/\*\*/g, '') : '') || PL.speakPlaceholder;
+    const speakingPlaceholder = item.responsePlaceholder?.trim() || (shadowingSupportText ? shadowingSupportText.replace(/\*\*/g, '') : '') || PL.speakPlaceholder;
 
     // Math writing exercises that require a full English sentence answer
     const isSentenceWriting = item.type === 'writing' &&
@@ -1240,6 +1240,9 @@ export const PracticeSection: React.FC<{
               if (!clickTranslatorMode) setShowHint(!showHint);
             }}
           >
+            {item.contentOrder === 'display-first' && item.displayValue && !isDictationWriting && (
+              <div className="mb-2 w-full" {...selectionGestureProps}>{renderDisplay()}</div>
+            )}
             <button
               type="button"
               aria-label="Play instruction"
@@ -1254,7 +1257,7 @@ export const PracticeSection: React.FC<{
             </button>
             {isReadingExercise ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">{PL.badgeReading}</span>
+                <span className="inline-block px-3 py-1 text-base font-black text-emerald-300 bg-emerald-900/60 border border-emerald-700 rounded-full uppercase tracking-widest">{item.categoryLabel || PL.badgeReading}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
                   {...selectionGestureProps}
@@ -1264,7 +1267,7 @@ export const PracticeSection: React.FC<{
               </div>
             ) : item.type === 'writing' && isSentenceWriting ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-base font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
+                <span className="inline-block px-3 py-1 text-base font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{item.categoryLabel || PL.badgeWriting}</span>
                 <p className="text-xs font-bold text-slate-300 uppercase tracking-widest mt-0.5">{PL.answerFullSentence}</p>
                 <h2
                   className="text-xl sm:text-2xl font-black text-yellow-400 text-center leading-snug max-w-full break-words whitespace-pre-wrap bg-slate-800/60 px-4 py-2 rounded-xl mt-1"
@@ -1275,7 +1278,7 @@ export const PracticeSection: React.FC<{
               </div>
             ) : item.type === 'writing' ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{PL.badgeWriting}</span>
+                <span className="inline-block px-3 py-1 text-sm font-black text-blue-300 bg-blue-900/60 border border-blue-700 rounded-full uppercase tracking-widest">{item.categoryLabel || PL.badgeWriting}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
                   {...selectionGestureProps}
@@ -1285,9 +1288,9 @@ export const PracticeSection: React.FC<{
               </div>
             ) : item.type === 'speaking' && isRepeat ? (
               <div className="flex flex-col items-center gap-2">
-                <span className="inline-block rounded-full border border-cyan-600 bg-cyan-950/70 px-3 py-1 text-sm font-black uppercase tracking-widest text-cyan-200">{PL.badgeRepeat}</span>
+                <span className="inline-block rounded-full border border-cyan-600 bg-cyan-950/70 px-3 py-1 text-sm font-black uppercase tracking-widest text-cyan-200">{item.categoryLabel || PL.badgeRepeat}</span>
                 <h2 className="max-w-full text-center text-lg font-semibold leading-snug text-white sm:text-xl" {...selectionGestureProps}>
-                  {renderInteractiveText(PL.repeatInstruction)}
+                  {renderInteractiveText(item.instruction || PL.repeatInstruction)}
                 </h2>
               </div>
             ) : item.type === 'speaking' && isShadowing ? (
@@ -1302,12 +1305,12 @@ export const PracticeSection: React.FC<{
                     Informal Spoken English
                   </span>
                 )}
-                <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">{PL.badgeShadowing}</span>
+                <span className="inline-block px-3 py-1 text-sm font-black text-green-300 bg-green-900/60 border border-green-700 rounded-full uppercase tracking-widest">{item.categoryLabel || PL.badgeShadowing}</span>
                 <h2
                   className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
                   {...selectionGestureProps}
                 >
-                  {renderInteractiveText(PL.listenAndRepeat)}
+                  {renderInteractiveText(item.instruction || PL.listenAndRepeat)}
                 </h2>
               </div>
             ) : item.type === 'speaking' ? (
@@ -1315,16 +1318,14 @@ export const PracticeSection: React.FC<{
                 <span className={`inline-block px-3 py-1 text-sm font-black rounded-full uppercase tracking-widest ${
                   'text-orange-300 bg-orange-900/60 border border-orange-700'
                 }`}>
-                  {PL.badgeSpeaking}
+                  {item.categoryLabel || PL.badgeSpeaking}
                 </span>
-                {!isQuestionDrivenSpeaking && (
-                  <h2
-                    className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words"
-                    {...selectionGestureProps}
-                  >
-                    {PL.listenAndAnswer}
-                  </h2>
-                )}
+                <h2
+                  className="text-lg sm:text-xl font-semibold text-white text-center leading-snug max-w-full break-words whitespace-pre-wrap"
+                  {...selectionGestureProps}
+                >
+                  {renderInteractiveText(item.instruction || PL.listenAndAnswer)}
+                </h2>
               </div>
             ) : (
               /* multiple-choice and identification → Listening badge.
@@ -1341,18 +1342,18 @@ export const PracticeSection: React.FC<{
                             event.stopPropagation();
                             playPrompt(activeAudioText, 1, promptVoice);
                           }}
-                          className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
+                          className={`${promptAudioText ? '' : 'hidden '}h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center`}
                           title="Play audio"
                         >
                           <img src={speakerIcon} className="h-4 w-4 brightness-0 invert" alt="Play" />
                         </button>
-                        <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                        <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{item.categoryLabel || PL.badgeListening}</span>
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
                             playPrompt(activeAudioText, 0.5, feedbackVoice);
                           }}
-                          className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
+                          className={`${promptAudioText ? '' : 'hidden '}h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center`}
                           title="Slow pronunciation"
                         >
                           <img src={turtleIcon} className="h-4 w-4 brightness-0 invert" alt="Slow" />
@@ -1379,18 +1380,18 @@ export const PracticeSection: React.FC<{
                             event.stopPropagation();
                             playPrompt(activeAudioText, 1, promptVoice);
                           }}
-                          className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
+                          className={`${promptAudioText ? '' : 'hidden '}h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center`}
                           title="Play audio"
                         >
                           <img src={speakerIcon} className="h-4 w-4 brightness-0 invert" alt="Play" />
                         </button>
-                        <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                        <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{item.categoryLabel || PL.badgeListening}</span>
                         <button
                           onClick={(event) => {
                             event.stopPropagation();
                             playPrompt(activeAudioText, 0.5, feedbackVoice);
                           }}
-                          className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
+                          className={`${promptAudioText ? '' : 'hidden '}h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center`}
                           title="Slow pronunciation"
                         >
                           <img src={turtleIcon} className="h-4 w-4 brightness-0 invert" alt="Slow" />
@@ -1414,18 +1415,18 @@ export const PracticeSection: React.FC<{
                           event.stopPropagation();
                           playPrompt(activeAudioText, 1, promptVoice);
                         }}
-                        className="h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center"
+                        className={`${promptAudioText ? '' : 'hidden '}h-9 w-9 rounded-full border border-blue-500 bg-blue-600 text-white shadow-[0_3px_0_0_#1e40af] transition-all active:translate-y-1 flex items-center justify-center`}
                         title="Play audio"
                       >
                         <img src={speakerIcon} className="h-4 w-4 brightness-0 invert" alt="Play" />
                       </button>
-                      <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{PL.badgeListening}</span>
+                      <span className="inline-block px-3 py-1 text-sm font-black text-sky-300 bg-sky-900/60 border border-sky-700 rounded-full uppercase tracking-widest">{item.categoryLabel || PL.badgeListening}</span>
                       <button
                         onClick={(event) => {
                           event.stopPropagation();
                           playPrompt(activeAudioText, 0.5, feedbackVoice);
                         }}
-                        className="h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center"
+                        className={`${promptAudioText ? '' : 'hidden '}h-9 w-9 rounded-full border border-orange-400 bg-orange-400 text-white shadow-[0_3px_0_0_#c2410c] transition-all active:translate-y-1 flex items-center justify-center`}
                         title="Slow pronunciation"
                       >
                         <img src={turtleIcon} className="h-4 w-4 brightness-0 invert" alt="Slow" />
@@ -1472,7 +1473,7 @@ export const PracticeSection: React.FC<{
               )}
             </div>
             {isRepeat && (repeatPhase === 'idle' || repeatPhase === 'playingPrompt') && (
-              <p role="status" className="text-center text-xs font-bold text-cyan-200">{PL.repeatInstruction}</p>
+              <p role="status" className="text-center text-xs font-bold text-cyan-200">{item.instruction || PL.repeatInstruction}</p>
             )}
             {isRepeat && repeatPhase === 'playbackError' && (
               <button type="button" onClick={() => { setRepeatPhase((state) => reduceRepeatPlayback(state, 'retry')); playPrompt(promptAudioText, 1, promptVoice, 'retry'); }} className="rounded-xl border border-red-300 bg-red-950/40 px-4 py-2 text-sm font-black text-red-100">
@@ -1492,7 +1493,7 @@ export const PracticeSection: React.FC<{
             {item.imageUrl && (
               <img src={item.imageUrl} alt={item.imageAlt || ''} className="max-h-[min(34dvh,20rem)] w-full rounded-2xl object-contain" />
             )}
-            {item.displayValue && !isModeledSpeaking && !isDictationWriting && (
+            {item.displayValue && item.contentOrder !== 'display-first' && !isModeledSpeaking && !isDictationWriting && (
               <div className="w-full" {...selectionGestureProps}>
                 {renderDisplay()}
               </div>

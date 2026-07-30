@@ -9,7 +9,9 @@ export type BatchMode = typeof BATCH_MODES[number];
 
 export interface CanonicalExerciseInput {
   type: AuthoringType;
+  categoryLabel?: string;
   instruction: string;
+  contentOrder?: 'instruction-first' | 'display-first';
   displayValue?: string;
   targetText?: string;
   speechText?: string;
@@ -20,6 +22,7 @@ export interface CanonicalExerciseInput {
   imageUrl?: string;
   explanation?: string;
   translation?: string;
+  responsePlaceholder?: string;
   position?: number | null;
 }
 
@@ -41,9 +44,31 @@ export interface ValidatedBatch {
 }
 
 const allowedTopLevel = new Set(['schemaVersion', 'courseId', 'bookId', 'lessonId', 'dayId', 'day', 'mode', 'insertAt', 'exercises']);
-const allowedExercise = new Set(['type', 'instruction', 'displayValue', 'prompt', 'targetText', 'speechText', 'speechLanguage', 'correctAnswer', 'acceptedAnswers', 'alternatives', 'imageUrl', 'audioUrl', 'explanation', 'translation', 'position']);
+const allowedExercise = new Set(['type', 'categoryLabel', 'instruction', 'contentOrder', 'displayValue', 'prompt', 'targetText', 'speechText', 'speechLanguage', 'correctAnswer', 'acceptedAnswers', 'alternatives', 'imageUrl', 'audioUrl', 'explanation', 'translation', 'responsePlaceholder', 'position']);
 const text = (value: unknown) => typeof value === 'string' ? value.trim() : '';
-const stringList = (value: unknown) => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string').map((item) => item.trim()).filter(Boolean) : [];
+export const normalizeExerciseAlternatives = (value: unknown): string[] => {
+  const source = typeof value === 'string' ? value.split(/\r?\n/) : Array.isArray(value) ? value : [];
+  return source.map((item) => {
+    if (typeof item === 'string' || typeof item === 'number') return String(item).trim();
+    if (item && typeof item === 'object') {
+      const row = item as Record<string, unknown>;
+      return text(row.text) || text(row.label) || text(row.value);
+    }
+    return '';
+  }).filter(Boolean);
+};
+const stringList = normalizeExerciseAlternatives;
+
+function normalizeCorrectAnswer(value: unknown, alternatives: string[]): string {
+  if (typeof value === 'number' && Number.isInteger(value)) return alternatives[value] ?? alternatives[value - 1] ?? '';
+  if (value && typeof value === 'object') {
+    const row = value as Record<string, unknown>;
+    const direct = text(row.text) || text(row.label) || text(row.value);
+    if (direct) return direct;
+    if (typeof row.index === 'number') return alternatives[row.index] ?? alternatives[row.index - 1] ?? '';
+  }
+  return text(value);
+}
 
 export function generateExerciseId(): string {
   const value = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
@@ -63,14 +88,16 @@ export function authoringTypeOf(exercise: Exercise): AuthoringType | null {
 
 export function canonicalFromExercise(exercise: Exercise, position?: number): CanonicalExerciseInput {
   const type = authoringTypeOf(exercise);
+  const alternatives = normalizeExerciseAlternatives((exercise as { options?: unknown }).options);
   if (!type) throw new Error(`O tipo ${exercise.type} não possui fluxo de resposta completo no aluno.`);
   return {
-    type, instruction: exercise.instruction, displayValue: exercise.displayValue ?? '',
+    type, categoryLabel: exercise.categoryLabel ?? '', instruction: exercise.instruction,
+    contentOrder: exercise.contentOrder ?? 'instruction-first', displayValue: exercise.displayValue ?? '',
     targetText: exercise.correctValue, speechText: exercise.audioValue,
-    speechLanguage: exercise.speechLanguage ?? '', correctAnswer: exercise.correctValue,
-    acceptedAnswers: [...(exercise.acceptedAnswers ?? [])], alternatives: [...(exercise.options ?? [])],
+    speechLanguage: exercise.speechLanguage ?? '', correctAnswer: normalizeCorrectAnswer((exercise as { correctValue?: unknown }).correctValue, alternatives),
+    acceptedAnswers: normalizeExerciseAlternatives(exercise.acceptedAnswers), alternatives,
     imageUrl: exercise.imageUrl ?? '', explanation: exercise.explanation ?? '',
-    translation: exercise.translation ?? '', position: position ?? null,
+    translation: exercise.translation ?? '', responsePlaceholder: exercise.responsePlaceholder ?? '', position: position ?? null,
   };
 }
 
@@ -101,16 +128,21 @@ export function exerciseFromCanonical(input: CanonicalExerciseInput, previous?: 
   const listening = input.type === 'listening';
   const exerciseType: Exercise['type'] = oral ? 'speaking' : listening ? 'writing'
     : input.type as 'multiple-choice' | 'identification' | 'writing';
+  const audioValue = oral || listening
+    ? (input.speechText !== undefined || input.targetText !== undefined ? (text(input.speechText) || text(input.targetText)) : (previous?.audioValue ?? ''))
+    : (input.speechText !== undefined ? text(input.speechText) : (previous?.audioValue ?? ''));
   const next: Exercise = {
     ...(previous ?? {} as Exercise),
     id: previous?.id ?? generateExerciseId(), type: exerciseType,
     instruction: text(input.instruction),
-    audioValue: input.speechText !== undefined || input.targetText !== undefined ? (text(input.speechText) || text(input.targetText)) : (previous?.audioValue ?? ''),
+    audioValue,
     correctValue: input.correctAnswer !== undefined || input.targetText !== undefined ? correctValue : (previous?.correctValue ?? ''),
     assessmentMode: listening ? 'listening-writing' : oral
       ? (input.type === 'speaking' ? 'speaking' : input.type === 'repeat' ? 'repeat' : 'shadowing')
       : previous?.assessmentMode,
   };
+  if (input.categoryLabel !== undefined) next.categoryLabel = text(input.categoryLabel);
+  if (input.contentOrder !== undefined) next.contentOrder = input.contentOrder;
   if (input.displayValue !== undefined) next.displayValue = text(input.displayValue);
   if (input.speechLanguage !== undefined) next.speechLanguage = text(input.speechLanguage) || undefined;
   if (input.acceptedAnswers !== undefined) next.acceptedAnswers = stringList(input.acceptedAnswers);
@@ -118,25 +150,18 @@ export function exerciseFromCanonical(input: CanonicalExerciseInput, previous?: 
   if (input.imageUrl !== undefined) next.imageUrl = text(input.imageUrl);
   if (input.explanation !== undefined) next.explanation = text(input.explanation);
   if (input.translation !== undefined) next.translation = text(input.translation);
+  if (input.responsePlaceholder !== undefined) next.responsePlaceholder = text(input.responsePlaceholder);
   if (exerciseType !== 'multiple-choice' && exerciseType !== 'identification') delete next.options;
   if (!next.imageUrl) delete next.imageUrl;
   if (!next.explanation) delete next.explanation;
   if (!next.translation) delete next.translation;
+  if (!next.categoryLabel) delete next.categoryLabel;
+  if (!next.responsePlaceholder) delete next.responsePlaceholder;
+  if (next.contentOrder === 'instruction-first') delete next.contentOrder;
   if (!next.acceptedAnswers?.length) delete next.acceptedAnswers;
   if (!next.speechLanguage) delete next.speechLanguage;
   if (exerciseType !== 'speaking' && !listening) delete next.assessmentMode;
   return next;
-}
-
-export const PUBLISHED_TYPE_IMMUTABLE_MESSAGE = 'Não é possível alterar o tipo de um exercício já publicado. Duplique o exercício para criar uma nova versão com outro tipo.';
-
-export function validatePublishedExerciseTypes(previous: Exercise[], next: Exercise[]): string[] {
-  const previousById = new Map(previous.map((exercise) => [exercise.id, authoringTypeOf(exercise)]));
-  return next.flatMap((exercise) => {
-    const oldType = previousById.get(exercise.id);
-    const newType = authoringTypeOf(exercise);
-    return oldType && newType && oldType !== newType ? [PUBLISHED_TYPE_IMMUTABLE_MESSAGE] : [];
-  });
 }
 
 export function parseExerciseBatch(raw: string): ValidatedBatch {
@@ -169,11 +194,12 @@ export function parseExerciseBatch(raw: string): ValidatedBatch {
     if (unknown.length) rowErrors.push(`Campos desconhecidos: ${unknown.join(', ')}.`);
     if (text(row.audioUrl)) rowErrors.push('audioUrl não é suportado: o aluno usa texto para TTS (speechText).');
     const normalized: CanonicalExerciseInput = {
-      type: row.type as AuthoringType, instruction: text(row.instruction) || text(row.prompt),
+      type: row.type as AuthoringType, categoryLabel: text(row.categoryLabel), instruction: text(row.instruction) || text(row.prompt),
+      contentOrder: row.contentOrder === 'display-first' ? 'display-first' : 'instruction-first',
       displayValue: text(row.displayValue), targetText: text(row.targetText), speechText: text(row.speechText),
-      speechLanguage: text(row.speechLanguage), correctAnswer: text(row.correctAnswer),
+      speechLanguage: text(row.speechLanguage), correctAnswer: normalizeCorrectAnswer(row.correctAnswer, stringList(row.alternatives)),
       acceptedAnswers: stringList(row.acceptedAnswers), alternatives: stringList(row.alternatives),
-      imageUrl: text(row.imageUrl), explanation: text(row.explanation), translation: text(row.translation),
+      imageUrl: text(row.imageUrl), explanation: text(row.explanation), translation: text(row.translation), responsePlaceholder: text(row.responsePlaceholder),
       position: row.position == null ? null : Number(row.position),
     };
     rowErrors.push(...validateCanonicalExercise(normalized));
@@ -207,5 +233,5 @@ export function applyBatch(existing: Exercise[], inputs: CanonicalExerciseInput[
 }
 
 export function buildAiPrompt(input: { courseId: string; bookId: number; lessonId: string; dayId: string; subject: string; objective: string; language: string; level: string; quantity: number; distribution: string }): string {
-  return `Crie ${input.quantity} exercícios para o curso ${input.courseId}, Livro ${input.bookId}, lição ${input.lessonId}, dia ${input.dayId}. Assunto: ${input.subject || 'informar'}. Objetivo pedagógico: ${input.objective || 'informar'}. Idioma: ${input.language}. Nível: ${input.level || 'informar'}. Distribuição: ${input.distribution || 'informar'}. Responda somente com JSON válido, sem markdown. Use schemaVersion 1, mode "append", insertAt null e os tipos: ${AUTHORING_TYPES.join(', ')}. Cada item aceita apenas type, instruction, displayValue, targetText, speechText, speechLanguage, correctAnswer, acceptedAnswers, alternatives, imageUrl, explanation, translation e position. Múltipla escolha/identificação exigem duas alternativas e resposta correta presente nelas; writing exige resposta; listening exige speechText; speaking/shadowing/repeat exigem targetText e speechLanguage; imagens devem usar HTTPS. Estrutura: {"schemaVersion":1,"courseId":"${input.courseId}","bookId":${input.bookId},"lessonId":"${input.lessonId}","dayId":"${input.dayId}","mode":"append","insertAt":null,"exercises":[]}`;
+  return `Crie ${input.quantity} exercícios para o curso ${input.courseId}, Livro ${input.bookId}, lição ${input.lessonId}, dia ${input.dayId}. Assunto: ${input.subject || 'informar'}. Objetivo pedagógico: ${input.objective || 'informar'}. Idioma: ${input.language}. Nível: ${input.level || 'informar'}. Distribuição: ${input.distribution || 'informar'}. Responda somente com JSON válido, sem markdown. Use schemaVersion 1, mode "append", insertAt null e os tipos: ${AUTHORING_TYPES.join(', ')}. Cada item aceita apenas type, categoryLabel, instruction, contentOrder, displayValue, targetText, speechText, speechLanguage, correctAnswer, acceptedAnswers, alternatives, imageUrl, explanation, translation, responsePlaceholder e position. Múltipla escolha/identificação exigem duas alternativas e resposta correta presente nelas; writing exige resposta; listening exige speechText; speaking/shadowing/repeat exigem targetText e speechLanguage; imagens devem usar HTTPS. Estrutura: {"schemaVersion":1,"courseId":"${input.courseId}","bookId":${input.bookId},"lessonId":"${input.lessonId}","dayId":"${input.dayId}","mode":"append","insertAt":null,"exercises":[]}`;
 }

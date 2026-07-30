@@ -17,30 +17,34 @@ import {
 type Mode = 'new' | 'existing' | 'batch';
 const COURSE_LABELS: Record<string, string> = { english: 'Inglês', spanish: 'Espanhol', portuguese_native: 'Português', portuguese_foreigners: 'Português para estrangeiros', greek_koine: 'Grego koiné', hebrew_biblical: 'Hebraico bíblico', bible_language_track: 'Trilha bíblica' };
 const languageForCourse = (courseId: string) => courseId === 'spanish' ? 'es' : courseId === 'greek_koine' ? 'el' : courseId === 'hebrew_biblical' ? 'he' : courseId.startsWith('portuguese') ? 'pt' : 'en';
-const emptyInput = (type: AuthoringType = 'multiple-choice'): CanonicalExerciseInput => ({ type, instruction: '', displayValue: '', targetText: '', speechText: '', speechLanguage: 'en-US', correctAnswer: '', acceptedAnswers: [], alternatives: type === 'multiple-choice' ? ['', ''] : [], imageUrl: '', explanation: '', translation: '', position: null });
+const emptyInput = (type: AuthoringType = 'multiple-choice'): CanonicalExerciseInput => ({ type, categoryLabel: '', instruction: '', contentOrder: 'instruction-first', displayValue: '', targetText: '', speechText: '', speechLanguage: 'en-US', correctAnswer: '', acceptedAnswers: [], alternatives: type === 'multiple-choice' ? ['', ''] : [], imageUrl: '', explanation: '', translation: '', responsePlaceholder: '', position: null });
 
 interface Selection { courseId: string; workbookId: number; lessonId: string; dayId: string; }
 interface EditState { index: number | null; batchIndex?: number; replacePublishedIndex?: number; input: CanonicalExerciseInput; operation: 'edit' | 'reconstruct' | 'new'; original?: Exercise; }
 
 const TextList: React.FC<{ label: string; values: string[]; onChange: (values: string[]) => void }> = ({ label, values, onChange }) => <label className="block text-sm font-bold">{label}<textarea value={values.join('\n')} onChange={(event) => onChange(event.target.value.split(/\r?\n/))} className="mt-1 min-h-20 w-full rounded-lg border p-2" /></label>;
 
-const ExerciseForm: React.FC<{ value: CanonicalExerciseInput; onChange: (value: CanonicalExerciseInput) => void; lockType?: boolean }> = ({ value, onChange, lockType = false }) => {
+const ExerciseForm: React.FC<{ value: CanonicalExerciseInput; onChange: (value: CanonicalExerciseInput) => void; lockType?: boolean }> = ({ value, onChange }) => {
   const patch = (change: Partial<CanonicalExerciseInput>) => onChange({ ...value, ...change });
   const choice = value.type === 'multiple-choice' || value.type === 'identification';
   const oral = value.type === 'speaking' || value.type === 'shadowing' || value.type === 'repeat';
   const errors = validateCanonicalExercise(value);
   return <div className="space-y-3">
-    <label className="block text-sm font-bold">Tipo de exercício<select value={value.type} disabled={lockType} onChange={(event) => patch({ type: event.target.value as AuthoringType })} className="mt-1 w-full rounded-lg border p-2 disabled:bg-slate-100">{AUTHORING_TYPES.map((type) => <option key={type}>{type}</option>)}</select>{lockType && <span className="mt-1 block text-xs font-normal text-amber-700">Não é possível alterar o tipo de um exercício já publicado. Duplique o exercício para criar uma nova versão com outro tipo.</span>}</label>
+    <label className="block text-sm font-bold">Tipo de exercício<select value={value.type} onChange={(event) => patch({ type: event.target.value as AuthoringType })} className="mt-1 w-full rounded-lg border p-2">{AUTHORING_TYPES.map((type) => <option key={type}>{type}</option>)}</select></label>
+    <label className="block text-sm font-bold">Categoria/modalidade visual (opcional)<input value={value.categoryLabel ?? ''} onChange={(event) => patch({ categoryLabel: event.target.value })} placeholder="Ex.: LISTENING, SPEAKING, SHADOWING" className="mt-1 w-full rounded-lg border p-2" /></label>
     <label className="block text-sm font-bold">Instrução<textarea value={value.instruction} onChange={(event) => patch({ instruction: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
     <label className="block text-sm font-bold">Texto exibido<textarea value={value.displayValue ?? ''} onChange={(event) => patch({ displayValue: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
-    {(value.type === 'listening' || oral) && <label className="block text-sm font-bold">Texto para áudio/TTS<input value={value.speechText ?? ''} onChange={(event) => patch({ speechText: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>}
+    <label className="block text-sm font-bold">Ordem dos textos<select value={value.contentOrder ?? 'instruction-first'} onChange={(event) => patch({ contentOrder: event.target.value as 'instruction-first' | 'display-first' })} className="mt-1 w-full rounded-lg border p-2"><option value="instruction-first">Instrução acima do texto exibido</option><option value="display-first">Texto exibido acima da instrução</option></select></label>
+    <label className="block text-sm font-bold">Texto para áudio/TTS (opcional)<input value={value.speechText ?? ''} onChange={(event) => patch({ speechText: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+    <label className="block text-sm font-bold">Idioma da voz<input value={value.speechLanguage ?? ''} onChange={(event) => patch({ speechLanguage: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
     {(oral || value.type === 'writing' || value.type === 'listening') && <label className="block text-sm font-bold">Texto-alvo / resposta<input value={value.targetText ?? value.correctAnswer ?? ''} onChange={(event) => patch({ targetText: event.target.value, correctAnswer: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>}
-    {(oral || value.type === 'listening') && <label className="block text-sm font-bold">Idioma da voz<input value={value.speechLanguage ?? ''} onChange={(event) => patch({ speechLanguage: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>}
     {choice && <><TextList label="Alternativas (uma por linha)" values={value.alternatives ?? []} onChange={(alternatives) => patch({ alternatives })} /><label className="block text-sm font-bold">Resposta correta<input value={value.correctAnswer ?? ''} onChange={(event) => patch({ correctAnswer: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label></>}
     {(value.type === 'writing' || value.type === 'listening') && <TextList label="Respostas aceitas" values={value.acceptedAnswers ?? []} onChange={(acceptedAnswers) => patch({ acceptedAnswers })} />}
     <label className="block text-sm font-bold">Imagem HTTPS<input value={value.imageUrl ?? ''} onChange={(event) => patch({ imageUrl: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
     <label className="block text-sm font-bold">Tradução<input value={value.translation ?? ''} onChange={(event) => patch({ translation: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
     <label className="block text-sm font-bold">Explicação<textarea value={value.explanation ?? ''} onChange={(event) => patch({ explanation: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+    <label className="block text-sm font-bold">Placeholder/orientação de resposta (opcional)<input value={value.responsePlaceholder ?? ''} onChange={(event) => patch({ responsePlaceholder: event.target.value })} className="mt-1 w-full rounded-lg border p-2" /></label>
+    <label className="block text-sm font-bold">Posição no dia (opcional)<input type="number" min={1} value={value.position ?? ''} onChange={(event) => patch({ position: event.target.value ? Number(event.target.value) : null })} placeholder="Vazio acrescenta ao final" className="mt-1 w-full rounded-lg border p-2" /></label>
     {errors.length > 0 && <ul className="list-disc rounded-xl bg-amber-50 p-3 pl-8 text-sm text-amber-900">{errors.map((error) => <li key={error}>{error}</li>)}</ul>}
   </div>;
 };
@@ -164,9 +168,13 @@ export const ExerciseAuthoringWorkspace: React.FC<{
     if (edit.replacePublishedIndex != null) {
       if (!confirm('Substituir este exercício por uma duplicação com novo ID? O histórico, progresso e relatórios do ID anterior serão preservados separadamente.')) return;
       next[edit.replacePublishedIndex] = exerciseFromCanonical(edit.input);
-    } else if (edit.index == null) next.push(exerciseFromCanonical(edit.input));
+    } else if (edit.index == null) {
+      const created = exerciseFromCanonical(edit.input);
+      const target = edit.input.position == null ? next.length : Math.max(0, Math.min(next.length, edit.input.position - 1));
+      next.splice(target, 0, created);
+    }
     else next[edit.index] = exerciseFromCanonical(edit.input, edit.original ?? next[edit.index]);
-    setExercises(next); setOperation(edit.replacePublishedIndex != null ? 'replace_positions' : edit.operation === 'new' ? 'append' : edit.operation); setEdit(null); setNotice(edit.replacePublishedIndex != null ? 'Duplicação com novo ID preparada para substituir a referência anterior.' : edit.operation === 'new' ? 'Novo exercício preparado no fim do dia.' : 'Alteração preparada; salve como rascunho ou publique.'); setError('');
+    setExercises(next); setOperation(edit.replacePublishedIndex != null ? 'replace_positions' : edit.operation === 'new' ? (edit.input.position == null ? 'append' : 'insert_at') : edit.operation); setEdit(null); setNotice(edit.replacePublishedIndex != null ? 'Duplicação com novo ID preparada para substituir a referência anterior.' : edit.operation === 'new' ? `Novo exercício preparado na posição ${edit.input.position ?? next.length}.` : 'Alteração preparada; salve como rascunho ou publique.'); setError('');
   };
 
   const parseBatch = () => {
@@ -191,7 +199,9 @@ export const ExerciseAuthoringWorkspace: React.FC<{
     setBusy(true); setError('');
     try {
       const revision = await saveDaySequenceDraft({ identity, exercises, operation, changeReason: reason, relatedReportId: initial?.report.reportId ?? null, updatedBy: reviewer.uid, expectedVersion: state.version, expectedDraftRevision: state.draftRevision });
-      setState((current) => ({ ...current, draftRevision: revision, draft: { ...(current.draft ?? {} as DaySequenceDraft), ...identity, schemaVersion: 1, scopeId: '', status: 'draft', baseVersion: current.version, draftRevision: revision, exercises, operation, changeReason: reason, relatedReportId: initial?.report.reportId ?? null, updatedBy: reviewer.uid } }));
+      const persisted = await getDaySequenceState(identity);
+      if (!persisted.draft || persisted.draft.draftRevision !== revision) throw new Error('O Firestore não devolveu o rascunho recém-salvo. Recarregue antes de continuar.');
+      setState(persisted); setExercises(persisted.draft.exercises);
       setNotice(`Rascunho salvo (revisão ${revision}).`); return revision;
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao salvar rascunho.'); return null; }
     finally { setBusy(false); }
@@ -203,7 +213,7 @@ export const ExerciseAuthoringWorkspace: React.FC<{
     if (!confirm(`${destructive ? 'Esta publicação substitui conteúdo existente. Em replace_day, os novos IDs deixam o progresso anterior sem correspondência; reconstrução e replace_positions preservam IDs. ' : ''}Publicar a sequência completa do dia de forma atômica?`)) return;
     const revision = await saveDraft(); if (revision == null) return;
     setBusy(true);
-    try { const version = await publishDaySequence({ identity, updatedBy: reviewer.uid, expectedVersion: state.version, expectedDraftRevision: revision }); setState((current) => ({ ...current, version, draftRevision: 0, draft: null })); setNotice(`Dia publicado na versão ${version}. O relatório relacionado NÃO foi marcado como resolvido.`); }
+    try { const version = await publishDaySequence({ identity, updatedBy: reviewer.uid, expectedVersion: state.version, expectedDraftRevision: revision }); const persisted = await getDaySequenceState(identity); if (!persisted.published || persisted.published.version !== version) throw new Error('A publicação não pôde ser confirmada após a releitura do Firestore.'); setState(persisted); setExercises(persisted.published.exercises); setNotice(`Dia publicado na versão ${version}. Persistência confirmada por releitura do Firestore. O relatório relacionado NÃO foi marcado como resolvido.`); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao publicar.'); }
     finally { setBusy(false); }
   };
