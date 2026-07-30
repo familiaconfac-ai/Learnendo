@@ -185,4 +185,16 @@ test('draft and publication update report workflow without conflating statuses',
   assert.match(dashboard, /onDraftSaved=/);
   assert.match(dashboard, /status: 'reviewing'/);
   assert.match(dashboard, /resolveReports === 'current'/);
+  assert.match(editor, /Sandbox do exercício/);
+  assert.match(editor, /Voltar ao editor/);
+  assert.match(editor, /aria-label="Fechar sandbox"/);
+  assert.match(editor, /event\.key === 'Escape'/);
+  assert.match(editor, /currentLanguage=\{language\} embedded/);
+  assert.match(editor, /Abrir sandbox/);
+  assert.doesNotMatch(editor, /Resposta de teste/);
+  assert.doesNotMatch(editor, />Testar<\/button>/);
+  assert.match(editor, /Salvar rascunho e fechar/);
+  assert.match(editor, /report \? 'Publicar e resolver relatório' : 'Publicar correção'/);
+  assert.doesNotMatch(editor, /Publicar e resolver atual/);
+  assert.match(editor, /setDirty\(false\);\s*onClose\(\)/);
 });

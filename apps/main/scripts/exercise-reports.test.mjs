@@ -59,9 +59,9 @@ assert.match(dashboard, /reportedWorkbookCandidates/, 'verification must recover
 assert.match(dashboard, /Editar exercício existente/, 'report correction must expose the local override editor');
 assert.match(dashboard, /Novo exercício/, 'report correction must expose separate administrative creation');
 assert.match(dashboard, /setEditor\(\{ report, location: resolved\.location/, 'valid reports must open the existing override editor directly');
-assert.doesNotMatch(dashboard, /setEditor\([\s\S]{0,300}setAdminView\('exercise-builder'\)/, 'existing local exercises must not be redirected into sequence authoring');
-assert.match(dashboard, /AdminExerciseCreationModal/, 'new-from-report must use the separate adminExercises model');
-assert.match(adminBuilder, /relatedReportId: source\?\.report\.reportId/, 'new administrative drafts must keep the report link');
+assert.match(dashboard, /setBuilderInitial\(\{ report, location: resolved\.location, courseId: resolved\.courseId, intent: 'new' \}\)/, 'new-from-report must propagate the complete resolved location into sequence authoring');
+assert.doesNotMatch(dashboard, /AdminExerciseCreationModal/, 'new-from-report must not return to the disconnected legacy model');
+assert.match(adminBuilder, /intent\?: 'existing' \| 'new'/, 'the active builder must distinguish creation from override editing');
 assert.match(locationPicker, /COURSE_WORKBOOKS/, 'manual fallback must read the packaged curriculum registry');
 assert.match(locationPicker, /setLessonId\(''\); setDayId\(''\); setExerciseId\(''\)/, 'changing workbook context must clear dependent selectors');
 assert.match(locationPicker, /getExerciseEditorialStatuses/, 'manual exercise choices must expose existing editorial state');

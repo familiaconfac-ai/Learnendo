@@ -121,16 +121,21 @@ export async function saveDaySequenceDraft(input: {
 export async function publishDaySequence(input: {
   identity: Omit<DaySequenceIdentity, 'schemaVersion' | 'scopeId'>;
   updatedBy: string;
+  reviewerName?: string;
   expectedVersion: number;
   expectedDraftRevision: number;
+  resolveReportId?: string | null;
 }): Promise<number> {
   await assertEditorialAdminAccess(input.updatedBy);
   const scopeId = daySequenceScopeId(input.identity);
   const canonicalRef = doc(db, DAY_SEQUENCE_COLLECTION, scopeId);
   const draftRef = doc(db, DAY_SEQUENCE_DRAFT_COLLECTION, scopeId);
   const publicRef = doc(db, PUBLISHED_DAY_SEQUENCE_COLLECTION, scopeId);
+  const reportRef = input.resolveReportId ? doc(db, 'exerciseReports', input.resolveReportId) : null;
   return runTransaction(db, async (transaction) => {
-    const [canonicalSnap, draftSnap] = await Promise.all([transaction.get(canonicalRef), transaction.get(draftRef)]);
+    const [canonicalSnap, draftSnap, reportSnap] = await Promise.all([
+      transaction.get(canonicalRef), transaction.get(draftRef), reportRef ? transaction.get(reportRef) : Promise.resolve(null),
+    ]);
     if (!canonicalSnap.exists() || !draftSnap.exists()) throw new Error('Salve o rascunho antes de publicar.');
     const currentVersion = Number(canonicalSnap.data().currentVersion ?? 0);
     const draft = draftSnap.data() as DaySequenceDraft;
@@ -138,6 +143,8 @@ export async function publishDaySequence(input: {
     const errors = validateDaySequence(draft.exercises);
     if (errors.length) throw new Error(errors.join('\n'));
     if (draft.changeReason.trim().length < 5) throw new Error('Informe um motivo de publicação com pelo menos 5 caracteres.');
+    if (reportRef && (!reportSnap || !reportSnap.exists())) throw new Error('O relatório relacionado não existe mais. A substituição não foi publicada.');
+    if (reportSnap && !['new', 'reviewing'].includes(String(reportSnap.data().status))) throw new Error('O relatório relacionado já não está aberto. Recarregue antes de publicar.');
     const version = currentVersion + 1;
     const published: PublishedDaySequence = { schemaVersion: 1, scopeId, courseId: draft.courseId, language: draft.language,
       workbookId: draft.workbookId, lessonId: draft.lessonId, dayId: draft.dayId, version,
@@ -145,6 +152,14 @@ export async function publishDaySequence(input: {
     transaction.set(doc(canonicalRef, 'versions', String(version).padStart(6, '0')), { ...draft, version, publishedAt: serverTimestamp(), publishedBy: input.updatedBy });
     transaction.set(publicRef, published);
     transaction.update(canonicalRef, { currentVersion: version, draftRevision: 0, updatedAt: serverTimestamp(), updatedBy: input.updatedBy });
+    if (reportRef && reportSnap) {
+      transaction.update(reportRef, {
+        status: 'resolved', resolutionVersion: version, resolutionType: 'editorial', resolvedAt: serverTimestamp(),
+        resolvedByEditorialAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        adminNote: [String(reportSnap.data().adminNote ?? '').trim(), `Resolvido pela substituição da sequência editorial v${version}.`].filter(Boolean).join('\n'),
+        ...(reportSnap.data().status === 'new' ? { reviewedBy: input.reviewerName || input.updatedBy, reviewedAt: serverTimestamp() } : {}),
+      });
+    }
     transaction.delete(draftRef);
     return version;
   });

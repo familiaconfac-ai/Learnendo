@@ -8,9 +8,11 @@ const reports = readFileSync(new URL('../src/components/ProblemReports/ProblemRe
 const service = readFileSync(new URL('../src/services/dayExerciseAuthoringService.ts', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../../../firestore.rules', import.meta.url), 'utf8');
 
-for (const label of ['Novo exercício', 'Editar exercício existente', 'Reconstruir este exercício', 'Criar lote de exercícios', 'Importar JSON', 'Copiar modelo de prompt para IA', 'Visualizar no sandbox', 'Salvar rascunho', 'Publicar', 'Cancelar', 'Voltar']) assert.match(ui, new RegExp(label));
+for (const label of ['Novo exercício', 'Editar exercício existente', 'Reconstruir este exercício', 'Criar lote de exercícios', 'Importar JSON', 'Copiar modelo de prompt para IA', 'Visualizar exercício', 'Salvar rascunho e fechar', 'Publicar', 'Cancelar', 'Voltar']) assert.match(ui, new RegExp(label));
 for (const mode of ['append', 'insert_at', 'replace_day', 'replace_positions']) assert.match(ui + service, new RegExp(mode));
-assert.match(ui, /Fechar visualização/);
+assert.match(ui, /Sandbox do exercício/);
+assert.match(ui, /Voltar ao editor/);
+assert.match(ui, /aria-label="Fechar sandbox"/);
 assert.match(ui, /event\.key === 'Escape'/);
 assert.match(ui, /window\.history\?\.pushState/);
 assert.match(ui, /currentLanguage=\{language\} embedded/);
@@ -43,10 +45,21 @@ assert.match(sharedUi, /item\.contentOrder === 'display-first'/);
 assert.match(sharedUi, /promptAudioText \? '' : 'hidden '/);
 assert.match(ui, /Descartar as alterações não salvas/);
 assert.match(ui, /Publicar como novo exercício/);
-assert.match(ui, /Publicar substituindo o exercício reportado/);
+assert.match(ui, /Publicar substituindo e resolver relatório/);
 assert.match(ui, /Rascunhos/);
 assert.match(ui, /Localizar rascunhos/);
 assert.match(reports, /intent: 'new'/);
 assert.match(reports, /mode === 'replace-reported'/);
+assert.match(ui, /normalizeReportedWorkbookId\(initial\.location\.workbook\.id\)/);
+assert.match(ui, /Criando substituição para:/);
+assert.match(ui, /Exercício original:/);
+assert.match(ui, /Alterar localização/);
+assert.match(ui, /disabled=\{locationLocked\}/);
+assert.match(ui, /position: initial\.location\.exerciseIndex \+ 1/);
+assert.match(ui, /closeAfterConfirmedOperation\(\)/);
+assert.match(service, /resolveReportId/);
+assert.match(service, /transaction\.update\(reportRef/);
+assert.match(service, /status: 'resolved'/);
+assert.match(reports, /resolvido na mesma transação/);
 
 console.log('Exercise authoring UI and transactional wiring checks passed.');

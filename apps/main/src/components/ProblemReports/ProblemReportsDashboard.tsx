@@ -421,7 +421,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
       initial={builderInitial}
       onPublished={async ({ version, mode, report }) => {
         if (mode === 'replace-reported') {
-          await updateExerciseReport(report, { status: 'resolved', resolutionVersion: version, resolutionType: 'editorial', adminNote: [report.adminNote, `Resolvido pela substituição da sequência editorial v${version}.`].filter(Boolean).join('\n') }, reviewer);
+          setStatusNotice(`Exercício substituído na sequência v${version}; relatório ${report.reportId} resolvido na mesma transação.`);
         } else if (report.status !== 'reviewing') {
           await updateExerciseReport(report, { status: 'reviewing' }, reviewer);
         }

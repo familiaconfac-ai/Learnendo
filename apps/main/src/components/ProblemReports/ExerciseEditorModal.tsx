@@ -11,11 +11,11 @@ import {
   validateExerciseOverride, type ExerciseEditorialDocument, type ExerciseIdentity, type ExerciseOverrideFields,
 } from '../../models/exerciseOverride';
 import { normalizeExerciseChangeReason, validateExerciseChangeReason } from '../../models/exerciseChangeReason';
-import { normalizeAnswer } from '../../utils/answerNormalization';
 import { describeExerciseSpeechLocale, resolveExerciseSpeechLocale } from '../../utils/exerciseSpeechLocale';
 import { speak as speakExerciseText } from '../../services/ttsService';
 import { isActiveExerciseReport, listRelatedExerciseReports } from '../../services/exerciseReportsService';
 import { describeEditorialFirebaseError, logEditorialFirebaseError } from '../../services/editorialFirebaseError';
+import { PracticeSection } from '../UI';
 
 interface Props {
   report?: ExerciseReport | null;
@@ -36,6 +36,20 @@ const REPORT_STATUS_STYLE = {
 } as const;
 const stamp = (value: any) => value?.toDate?.().toLocaleString('pt-BR') ?? '—';
 
+const ExerciseSandbox: React.FC<{ exercise: Exercise; language: string; onClose: () => void }> = ({ exercise, language, onClose }) => {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+  return <div role="dialog" aria-modal="true" aria-label="Sandbox do exercício" className="fixed inset-0 z-[1300] overflow-y-auto bg-slate-950/80 p-2 sm:p-6">
+    <div className="mx-auto max-w-4xl rounded-2xl bg-white p-4 shadow-2xl">
+      <div className="sticky top-0 z-30 mb-3 flex items-center justify-between gap-3 rounded-xl bg-white p-2 shadow"><div><h2 className="text-xl font-black">Sandbox do exercício</h2><p className="text-xs text-slate-500">Sem gravação de progresso, domínio, mastery ou conclusão.</p></div><div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2 font-black">Voltar ao editor</button><button type="button" aria-label="Fechar sandbox" onClick={onClose} className="rounded-xl bg-slate-900 px-3 py-2 text-xl font-black text-white">×</button></div></div>
+      <div className="overflow-hidden rounded-xl border"><PracticeSection item={{ ...exercise, moduleType: 'override-sandbox', lessonId: 1 }} onResult={() => undefined} currentIdx={0} totalItems={1} lessonId={1} currentLanguage={language} embedded autoPlayAudio={false} /></div>
+    </div>
+  </div>;
+};
+
 export const ExerciseEditorModal: React.FC<Props> = ({ report, location, language, reviewer, onClose, onDraftSaved, onPublished }) => {
   const original = location.day.exercises[location.exerciseIndex];
   const identity: ExerciseIdentity = {
@@ -55,8 +69,7 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(false);
-  const [testAnswer, setTestAnswer] = useState('');
-  const [testResult, setTestResult] = useState<'correct' | 'incorrect' | ''>('');
+  const [sandboxOpen, setSandboxOpen] = useState(false);
   const [actionLabel, setActionLabel] = useState('');
   const [relatedReports, setRelatedReports] = useState<ExerciseReport[]>([]);
   const changeReasonRef = useRef<HTMLTextAreaElement | null>(null);
@@ -146,7 +159,8 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       setNotice(draftWarnings.length
         ? `Rascunho ${identity.exerciseId} (revisão ${revision}) confirmado no Firestore, mas ainda não pode ser publicado:\n${draftWarnings.join('\n')}`
         : `Rascunho ${identity.exerciseId} (revisão ${revision}) confirmado no Firestore. Ele não será exibido aos alunos até a publicação.`);
-      setDirty(false); await hydrate(true);
+      setDirty(false);
+      onClose();
     } catch (cause) {
       logEditorialFirebaseError('Falha ao salvar rascunho', cause);
       setError(describeEditorialFirebaseError(cause, 'draft'));
@@ -179,18 +193,20 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       } catch (cause) {
         logEditorialFirebaseError('Publicação concluída, mas resolução do relatório falhou', cause);
         setError(`A correção foi publicada com sucesso na versão ${version}, mas o status da denúncia não foi atualizado. ${describeEditorialFirebaseError(cause, 'resolve')}`);
+        setSaving(false); setActionLabel('');
+        return;
       }
     }
-    await hydrate(true);
-    setSaving(false); setActionLabel('');
+    if (report && (!onPublished || resolveReports !== 'current')) {
+      setError('A publicação foi concluída, mas o relatório não foi resolvido. O editor permanecerá aberto.');
+      setSaving(false); setActionLabel('');
+      return;
+    }
+    onClose();
   };
   const close = () => {
     if (dirty && !window.confirm('Descartar as alterações não salvas?')) return;
     onClose();
-  };
-  const test = () => {
-    const candidates = [effective.correctValue, ...(effective.acceptedAnswers ?? [])].map((answer) => normalizeAnswer(answer));
-    setTestResult(candidates.includes(normalizeAnswer(testAnswer)) ? 'correct' : 'incorrect');
   };
   if (loading) return <div className="fixed inset-0 z-[1200] grid place-items-center bg-black/60 text-lg font-black text-white">Carregando editor…</div>;
   return <div className="fixed inset-0 z-[1200] overflow-y-auto bg-black/60 p-2 sm:p-6" onClick={close}>
@@ -253,20 +269,18 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
         </div>
         <aside className="space-y-5">
           <Section title="Relatórios relacionados"><p className="text-sm text-slate-600">{relatedReports.length} relatório(s), {relatedReports.filter(isActiveExerciseReport).length} aberto(s).</p>{relatedReports.slice(0, 8).map((item) => <p key={item.reportId} className="rounded-lg bg-slate-50 p-2 text-xs"><span className={`mr-1 rounded-full px-2 py-1 font-black ${REPORT_STATUS_STYLE[item.status]}`}>{REPORT_STATUS_LABELS[item.status]}</span> {item.problemCategory} · {item.studentComment || 'sem comentário'}</p>)}</Section>
-          <Section title="Pré-visualização e teste"><button onClick={() => setPreview((value) => !value)} className="w-full rounded-xl bg-violet-600 p-3 font-black text-white">{preview ? 'Ocultar prévia' : 'Pré-visualizar'}</button>{preview && <div className="mt-3 rounded-2xl bg-slate-900 p-4 text-white"><p className="text-sm font-bold text-cyan-300">{effective.instruction}</p>{effective.imageUrl && <img src={effective.imageUrl} alt={effective.imageAlt || ''} className="my-3 max-h-48 w-full object-contain" />}<p className="my-4 text-lg font-black">{effective.displayValue}</p>{effective.options?.map((option) => <div key={option} className="my-2 rounded-xl bg-slate-700 p-3">{option}</div>)}</div>}<div className="mt-3 flex gap-2"><input aria-label="Resposta de teste" value={testAnswer} onChange={(event) => setTestAnswer(event.target.value)} className="min-w-0 flex-1 rounded-xl border p-3" /><button onClick={test} className="rounded-xl bg-blue-600 px-4 font-black text-white">Testar</button></div>{testResult && <p className={`mt-2 rounded-xl p-3 font-black ${testResult === 'correct' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{testResult === 'correct' ? effective.feedbackCorrect || 'Resposta correta.' : effective.feedbackIncorrect || 'Resposta incorreta.'}</p>}</Section>
+          <Section title="Pré-visualização e teste"><button onClick={() => setPreview((value) => !value)} className="w-full rounded-xl border border-violet-500 p-3 font-black text-violet-800">{preview ? 'Ocultar prévia simples' : 'Mostrar prévia simples'}</button>{preview && <div className="mt-3 rounded-2xl bg-slate-900 p-4 text-white"><p className="text-sm font-bold text-cyan-300">{effective.instruction}</p>{effective.imageUrl && <img src={effective.imageUrl} alt={effective.imageAlt || ''} className="my-3 max-h-48 w-full object-contain" />}<p className="my-4 text-lg font-black">{effective.displayValue}</p>{effective.options?.map((option) => <div key={option} className="my-2 rounded-xl bg-slate-700 p-3">{option}</div>)}<p className="mt-3 text-xs text-slate-300">Resposta configurada: {effective.correctValue}</p></div>}<button type="button" onClick={() => setSandboxOpen(true)} className="mt-3 w-full rounded-xl bg-violet-600 p-3 font-black text-white">Abrir sandbox</button></Section>
           <Section title="Histórico">{versions.length === 0 ? <p className="text-sm text-slate-500">Nenhuma versão publicada.</p> : versions.map((version) => <div key={version.version} className="mb-2 rounded-xl border p-3 text-sm"><p className="font-black">Versão {version.version} · {version.status}</p><p className="text-slate-500">{version.changeReason}</p><button disabled={saving} onClick={async () => { if (!window.confirm(`Restaurar a versão ${version.version} como uma nova publicação?`)) return; setSaving(true); try { await restoreExerciseVersion(original, version, reviewer.uid); await hydrate(); setNotice('Versão restaurada como nova publicação.'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao restaurar.'); } finally { setSaving(false); } }} className="mt-2 font-bold text-blue-700">Restaurar</button></div>)}</Section>
           {state.published && state.published.status !== 'archived' && <button disabled={saving} onClick={async () => { if (!window.confirm('Remover a correção publicada e voltar ao exercício original? O histórico será preservado.')) return; const why = window.prompt('Motivo da restauração do original (mínimo 5 caracteres):')?.trim(); if (!why || why.length < 5) { setError('Informe um motivo com pelo menos 5 caracteres para voltar ao conteúdo original.'); return; } setSaving(true); try { await removePublishedExerciseOverride(original.id, reviewer.uid, why); await hydrate(); setNotice('Override removido. O conteúdo local voltou a ser usado.'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao remover override.'); } finally { setSaving(false); } }} className="w-full rounded-xl border border-red-300 p-3 font-black text-red-700">Voltar ao exercício original</button>}
         </aside>
       </main>
       <footer className="sticky bottom-0 z-20 flex flex-wrap justify-end gap-2 rounded-b-3xl border-t bg-white p-4 shadow-[0_-8px_24px_rgba(15,23,42,0.12)]">
         {(error || notice || actionLabel) && <div className={`mb-1 w-full rounded-xl p-3 text-sm font-bold ${error ? 'bg-red-100 text-red-800' : notice ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`} role={error ? 'alert' : 'status'}>{error || notice || actionLabel}</div>}
-        <button type="button" onClick={close} disabled={saving} className="rounded-xl border px-4 py-3 font-bold disabled:opacity-40">Cancelar</button>
-        <button type="button" onClick={saveDraft} disabled={controlsBusy} className="rounded-xl bg-amber-500 px-4 py-3 font-black text-white disabled:opacity-40">{saving && actionLabel.includes('rascunho') ? 'Salvando…' : 'Salvar rascunho'}</button>
-        <button type="button" onClick={() => void publish(false, state.published?.status === 'disabled' ? 'published' : 'disabled')} disabled={controlsBusy} className="rounded-xl border border-red-300 px-4 py-3 font-black text-red-700 disabled:opacity-40">{state.published?.status === 'disabled' ? 'Reativar' : 'Desativar'}</button>
-        <button type="button" onClick={() => void publish(false)} disabled={controlsBusy} className="rounded-xl bg-emerald-600 px-4 py-3 font-black text-white disabled:opacity-40">{saving && actionLabel.includes('Publicando') ? 'Publicando…' : 'Publicar correção'}</button>
-        {report && <button type="button" onClick={() => void publish('current')} disabled={controlsBusy} className="rounded-xl bg-blue-700 px-4 py-3 font-black text-white disabled:opacity-40">Publicar e resolver atual</button>}
-        {relatedReports.filter(isActiveExerciseReport).length > 1 && <button type="button" onClick={() => void publish('all')} disabled={controlsBusy} className="rounded-xl bg-violet-700 px-4 py-3 font-black text-white disabled:opacity-40">Publicar e resolver todos</button>}
+        <button type="button" onClick={() => setSandboxOpen(true)} disabled={controlsBusy} className="rounded-xl border border-violet-500 px-4 py-3 font-black text-violet-800 disabled:opacity-40">Visualizar exercício</button>
+        <button type="button" onClick={saveDraft} disabled={controlsBusy} className="rounded-xl bg-amber-500 px-4 py-3 font-black text-white disabled:opacity-40">{saving && actionLabel.includes('rascunho') ? 'Salvando...' : 'Salvar rascunho e fechar'}</button>
+        <button type="button" onClick={() => void publish(report ? 'current' : false)} disabled={controlsBusy} className={`${report ? 'bg-blue-700' : 'bg-emerald-600'} rounded-xl px-4 py-3 font-black text-white disabled:opacity-40`}>{saving && actionLabel.includes('Publicando') ? 'Publicando...' : report ? 'Publicar e resolver relatório' : 'Publicar correção'}</button>
       </footer>
+      {sandboxOpen && <ExerciseSandbox exercise={effective} language={identity.language} onClose={() => setSandboxOpen(false)} />}
     </div>
   </div>;
 };

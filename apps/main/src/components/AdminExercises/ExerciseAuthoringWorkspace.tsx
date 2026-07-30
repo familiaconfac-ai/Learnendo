@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
 import type { Exercise, Workbook } from '../../types';
-import { resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
+import { normalizeReportedWorkbookId, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
 import type { ExerciseReport } from '../../services/exerciseReportsService';
 import { PracticeSection } from '../UI';
 import {
@@ -61,7 +61,7 @@ const SandboxModal: React.FC<{ exercise: Exercise; language: string; onClose: ()
     return () => { window.removeEventListener('popstate', pop); window.removeEventListener('keydown', key); };
   }, []);
   const close = () => { closingRef.current = true; if (window.history?.state?.learnendoSandbox) window.history.replaceState(null, ''); onCloseRef.current(); };
-  return <div role="dialog" aria-modal="true" className="fixed inset-0 z-[150] overflow-y-auto bg-slate-950/75 p-3 sm:p-8"><div className="mx-auto max-w-4xl rounded-2xl bg-white p-4 shadow-2xl"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-xl font-black">Visualização do aluno</h2><p className="text-xs text-slate-500">Sem gravação de progresso, domínio, mastery ou conclusão.</p></div><div className="flex gap-2"><button onClick={close} className="rounded-xl border px-3 py-2 font-bold">Voltar ao construtor</button><button onClick={close} className="rounded-xl bg-slate-900 px-3 py-2 font-bold text-white">Fechar visualização</button></div></div><div className="overflow-hidden rounded-xl border"><PracticeSection item={{ ...exercise, moduleType: 'authoring-sandbox', lessonId: 1 }} onResult={() => undefined} currentIdx={0} totalItems={1} lessonId={1} currentLanguage={language} embedded autoPlayAudio={false} /></div></div></div>;
+  return <div role="dialog" aria-modal="true" aria-label="Sandbox do exercício" className="fixed inset-0 z-[150] overflow-y-auto bg-slate-950/75 p-3 sm:p-8"><div className="mx-auto max-w-4xl rounded-2xl bg-white p-4 shadow-2xl"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-xl font-black">Sandbox do exercício</h2><p className="text-xs text-slate-500">Sem gravação de progresso, domínio, mastery ou conclusão.</p></div><div className="flex gap-2"><button onClick={close} className="rounded-xl border px-3 py-2 font-bold">Voltar ao editor</button><button aria-label="Fechar sandbox" onClick={close} className="rounded-xl bg-slate-900 px-3 py-2 text-xl font-black text-white">×</button></div></div><div className="overflow-hidden rounded-xl border"><PracticeSection item={{ ...exercise, moduleType: 'authoring-sandbox', lessonId: 1 }} onResult={() => undefined} currentIdx={0} totalItems={1} lessonId={1} currentLanguage={language} embedded autoPlayAudio={false} /></div></div></div>;
 };
 
 export const ExerciseAuthoringWorkspace: React.FC<{
@@ -72,9 +72,13 @@ export const ExerciseAuthoringWorkspace: React.FC<{
   onPublished?: (result: { version: number; mode: 'new' | 'replace-reported'; report: ExerciseReport }) => Promise<void> | void;
 }> = ({ reviewer, currentCourseId, onBack, initial, onPublished }) => {
   const firstBook = Number(Object.keys(COURSE_WORKBOOKS[currentCourseId] ?? COURSE_WORKBOOKS.english)[0] ?? 1);
+  const inheritedWorkbookId = initial
+    ? normalizeReportedWorkbookId(initial.location.workbook.id) ?? normalizeReportedWorkbookId(initial.report.workbookId)
+    : null;
   const [mode, setMode] = useState<Mode>(initial?.intent === 'new' ? 'new' : initial ? 'existing' : 'new');
-  const [selection, setSelection] = useState<Selection>({ courseId: initial?.courseId ?? currentCourseId, workbookId: initial?.location.workbook.id ?? firstBook, lessonId: initial?.location.lesson.id ?? '', dayId: initial?.location.day.id ?? '' });
+  const [selection, setSelection] = useState<Selection>({ courseId: initial?.courseId ?? currentCourseId, workbookId: inheritedWorkbookId ?? firstBook, lessonId: initial?.location.lesson.id ?? '', dayId: initial?.location.day.id ?? '' });
   const [workbook, setWorkbook] = useState<Workbook | null>(initial?.location.workbook ?? null);
+  const [locationLocked, setLocationLocked] = useState(Boolean(initial));
   const [exercises, setExercises] = useState<Exercise[]>(initial?.location.day.exercises ?? []);
   const [state, setState] = useState<DaySequenceState>({ version: 0, draftRevision: 0, draft: null, published: null });
   const [edit, setEdit] = useState<EditState | null>(null);
@@ -116,6 +120,11 @@ export const ExerciseAuthoringWorkspace: React.FC<{
     onBackRef.current();
     return true;
   };
+  const closeAfterConfirmedOperation = () => {
+    dirtyRef.current = false;
+    if (window.history?.state?.learnendoAuthoring) window.history.replaceState(null, '');
+    onBackRef.current();
+  };
 
   useEffect(() => {
     window.history?.pushState?.({ learnendoAuthoring: true }, '');
@@ -140,7 +149,7 @@ export const ExerciseAuthoringWorkspace: React.FC<{
 
   useEffect(() => {
     const loader = COURSE_WORKBOOKS[selection.courseId]?.[selection.workbookId];
-    if (!loader) { setWorkbook(null); return; }
+    if (!loader) { setWorkbook(null); setError(`O Livro ${selection.workbookId} não está disponível para ${COURSE_LABELS[selection.courseId] ?? selection.courseId}.`); return; }
     let cancelled = false;
     void loader().then((module) => { if (!cancelled) setWorkbook(resolveWorkbookModule(module as Record<string, unknown>, selection.workbookId)); });
     return () => { cancelled = true; };
@@ -159,7 +168,9 @@ export const ExerciseAuthoringWorkspace: React.FC<{
       }
       if (initial?.intent === 'new') {
         const localIds = new Set(day.exercises.map((item) => item.id));
-        const existingNew = loaded.draft?.exercises.find((item) => !localIds.has(item.id));
+        const existingNew = loaded.draft?.relatedReportId === initial.report.reportId
+          ? loaded.draft.exercises.find((item) => !localIds.has(item.id))
+          : undefined;
         if (existingNew) { setFocusExerciseId(existingNew.id); setNotice(`Rascunho reencontrado no Firestore: ${loaded.draft?.scopeId}. Exercício administrativo: ${existingNew.id}.`); }
         else if (!initialNewOpenedRef.current) {
           initialNewOpenedRef.current = true;
@@ -223,10 +234,15 @@ export const ExerciseAuthoringWorkspace: React.FC<{
       const persisted = await getDaySequenceState(identity);
       if (!persisted.draft || persisted.draft.draftRevision !== revision) throw new Error('O Firestore não devolveu o rascunho recém-salvo. Recarregue antes de continuar.');
       setState(persisted); setExercises(persisted.draft.exercises);
-      setDrafts(await listDaySequenceDrafts());
+      void listDaySequenceDrafts().then(setDrafts).catch(() => undefined);
       setNotice(`Rascunho ${persisted.draft.scopeId} confirmado no Firestore (revisão ${revision})${focusExerciseId ? ` · exercício ${focusExerciseId}` : ''}.`); return revision;
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao salvar rascunho.'); return null; }
     finally { setBusy(false); }
+  };
+
+  const saveDraftAndClose = async () => {
+    const revision = await saveDraft(exercises, operation);
+    if (revision != null) closeAfterConfirmedOperation();
   };
 
   const publish = async (publishMode: 'new' | 'replace-reported' = 'new') => {
@@ -245,21 +261,26 @@ export const ExerciseAuthoringWorkspace: React.FC<{
     }
     const targetPosition = Math.max(1, publishExercises.findIndex((item) => item.id === focusExerciseId) + 1);
     const action = publishMode === 'replace-reported'
-      ? `Substituir ${initial?.report.exerciseId} por ${focusExerciseId} em ${selection.lessonId}/${selection.dayId}? O ID anterior e seu histórico permanecerão armazenados, mas sairão desta sequência.`
+      ? `O exercício novo substituirá ${initial?.report.exerciseId} em:\n\n${COURSE_LABELS[selection.courseId] ?? selection.courseId}\nLivro ${selection.workbookId}\n${lesson?.title ?? selection.lessonId}\nDia ${selection.dayId}\n\nO exercício original deixará de ser apresentado aos alunos e o relatório será resolvido.\n\nDeseja continuar?`
       : `Publicar ${focusExerciseId ?? 'a sequência'} como novo exercício em Livro ${selection.workbookId}, ${selection.lessonId}/${selection.dayId}, posição ${targetPosition}? O exercício reportado permanecerá na sequência.`;
     if (!confirm(action)) return;
     const revision = await saveDraft(publishExercises, publishOperation); if (revision == null) return;
     setBusy(true);
     try {
-      const version = await publishDaySequence({ identity, updatedBy: reviewer.uid, expectedVersion: state.version, expectedDraftRevision: revision });
+      const version = await publishDaySequence({
+        identity, updatedBy: reviewer.uid, reviewerName: reviewer.name,
+        expectedVersion: state.version, expectedDraftRevision: revision,
+        resolveReportId: publishMode === 'replace-reported' ? initial?.report.reportId : null,
+      });
       const persisted = await getDaySequenceState(identity);
       if (!persisted.published || persisted.published.version !== version) throw new Error('A publicação não pôde ser confirmada após a releitura do Firestore.');
-      setState(persisted); setExercises(persisted.published.exercises); setDrafts(await listDaySequenceDrafts());
+      setState(persisted); setExercises(persisted.published.exercises); void listDaySequenceDrafts().then(setDrafts).catch(() => undefined);
       setNotice(`Dia publicado na versão ${version}. Persistência confirmada por releitura do Firestore.${publishMode === 'replace-reported' ? ' O exercício reportado foi substituído.' : ' O exercício reportado permaneceu inalterado.'}`);
       if (initial && onPublished) {
         try { await onPublished({ version, mode: publishMode, report: initial.report }); }
-        catch (cause) { setError(`A sequência foi publicada e confirmada na versão ${version}, mas o relatório não pôde ser atualizado: ${cause instanceof Error ? cause.message : 'falha desconhecida'}`); }
+        catch (cause) { setError(`A publicação foi confirmada na versão ${version}, mas a lista administrativa não pôde ser atualizada: ${cause instanceof Error ? cause.message : 'falha desconhecida'}`); return; }
       }
+      closeAfterConfirmedOperation();
     }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao publicar.'); }
     finally { setBusy(false); }
@@ -270,14 +291,15 @@ export const ExerciseAuthoringWorkspace: React.FC<{
 
   return <div className="min-h-[calc(100vh-124px)] bg-slate-100 p-3 text-slate-900 sm:p-6"><div className="mx-auto max-w-7xl space-y-4">
     <header className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-violet-600">Autoria editorial versionada</p><h1 className="text-2xl font-black">Construtor de exercícios</h1><p className="text-sm text-slate-600">Rascunho privado; publicação atômica da sequência do dia; IDs preservados em edição e reconstrução.</p></div><button onClick={requestBack} className="rounded-xl border bg-white px-4 py-2 font-bold">Voltar</button></header>
-    {initial && <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4"><p className="font-black">Relatório {initial.report.reportId}</p><p className="text-sm">{initial.report.problemCategory}: {initial.report.studentComment || 'Sem comentário'} · resposta do aluno: {initial.report.studentAnswer || '—'}</p><p className="mt-1 text-xs font-bold">Salvar rascunho e publicar como novo mantêm o relatório aberto. A ação explícita de substituir o exercício reportado resolve o relatório após a confirmação do Firestore.</p></section>}
+    {initial && <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4"><p className="font-black">Criando substituição para:</p><p className="mt-1 text-sm font-bold">{COURSE_LABELS[selection.courseId] ?? selection.courseId} · Livro {selection.workbookId} · {initial.location.lesson.title} · Dia {selection.dayId}</p><p className="font-mono text-sm">Exercício original: {initial.report.exerciseId} · posição {initial.location.exerciseIndex + 1}</p><p className="mt-2 text-xs">Relatório {initial.report.reportId} · {initial.report.problemCategory}: {initial.report.studentComment || 'Sem comentário'}</p><p className="mt-1 text-xs font-bold">O destino fica bloqueado para impedir publicação no lugar errado. Salvar rascunho não altera o exercício original.</p></section>}
     <section className="rounded-2xl bg-white p-4 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-black">Rascunhos salvos</h2><p className="text-xs text-slate-500">Pesquise por relatório, curso, livro, lição, dia, ID do exercício ou ID do rascunho.</p></div><input aria-label="Localizar rascunhos" value={draftSearch} onChange={(event) => setDraftSearch(event.target.value)} placeholder="Relatório, exercício ou destino" className="rounded-xl border p-2" /></div>{filteredDrafts.length === 0 ? <p className="mt-3 text-sm text-slate-500">Nenhum rascunho correspondente.</p> : <div className="mt-3 grid gap-2 md:grid-cols-2">{filteredDrafts.slice(0, 20).map((draft) => <button key={draft.scopeId} type="button" onClick={() => { setSelection({ courseId: draft.courseId, workbookId: draft.workbookId, lessonId: draft.lessonId, dayId: draft.dayId }); setFocusExerciseId(draft.exercises.find((item) => item.id.startsWith('ex_'))?.id ?? null); setMode('existing'); }} className="rounded-xl border p-3 text-left hover:border-violet-500"><p className="font-mono text-xs font-bold">{draft.scopeId}</p><p className="text-sm">{draft.courseId} · L{draft.workbookId} · {draft.lessonId}/{draft.dayId}</p><p className="text-xs text-slate-500">Relatório: {draft.relatedReportId ?? '—'} · revisão {draft.draftRevision} · {draft.exercises.length} exercícios</p></button>)}</div>}</section>
     <nav className="grid gap-2 sm:grid-cols-3">{([['new', 'Novo exercício'], ['existing', 'Editar exercício existente'], ['batch', 'Criar lote de exercícios']] as const).map(([id, label]) => <button key={id} onClick={() => setMode(id)} className={`rounded-xl px-4 py-3 font-black ${mode === id ? 'bg-violet-600 text-white' : 'border bg-white'}`}>{label}</button>)}</nav>
     <section className="grid gap-3 rounded-2xl bg-white p-4 shadow-sm sm:grid-cols-4">
-      <label className="text-sm font-bold">Curso<select value={selection.courseId} onChange={(event) => { const courseId = event.target.value; setSelection({ courseId, workbookId: Number(Object.keys(COURSE_WORKBOOKS[courseId] ?? {})[0] ?? 1), lessonId: '', dayId: '' }); }} className="mt-1 w-full rounded-lg border p-2">{Object.keys(COURSE_WORKBOOKS).map((id) => <option key={id} value={id}>{COURSE_LABELS[id] ?? id}</option>)}</select></label>
-      <label className="text-sm font-bold">Livro<select value={selection.workbookId} onChange={(event) => setSelection((current) => ({ ...current, workbookId: Number(event.target.value), lessonId: '', dayId: '' }))} className="mt-1 w-full rounded-lg border p-2">{workbookIds.map((id) => <option key={id}>{id}</option>)}</select></label>
-      <label className="text-sm font-bold">Lição<select value={selection.lessonId} onChange={(event) => setSelection((current) => ({ ...current, lessonId: event.target.value, dayId: '' }))} className="mt-1 w-full rounded-lg border p-2"><option value="">Selecione</option>{workbook?.lessons.map((item) => <option key={item.id} value={item.id}>{item.title} ({item.id})</option>)}</select></label>
-      <label className="text-sm font-bold">Dia<select value={selection.dayId} onChange={(event) => setSelection((current) => ({ ...current, dayId: event.target.value }))} className="mt-1 w-full rounded-lg border p-2"><option value="">Selecione</option>{lesson?.days.map((item, index) => <option key={item.id} value={item.id}>Dia {index + 1} ({item.id})</option>)}</select></label>
+      <label className="text-sm font-bold">Curso<select disabled={locationLocked} value={selection.courseId} onChange={(event) => { const courseId = event.target.value; setSelection({ courseId, workbookId: Number(Object.keys(COURSE_WORKBOOKS[courseId] ?? {})[0] ?? 1), lessonId: '', dayId: '' }); }} className="mt-1 w-full rounded-lg border p-2 disabled:bg-slate-100">{Object.keys(COURSE_WORKBOOKS).map((id) => <option key={id} value={id}>{COURSE_LABELS[id] ?? id}</option>)}</select></label>
+      <label className="text-sm font-bold">Livro<select disabled={locationLocked} value={selection.workbookId} onChange={(event) => setSelection((current) => ({ ...current, workbookId: Number(event.target.value), lessonId: '', dayId: '' }))} className="mt-1 w-full rounded-lg border p-2 disabled:bg-slate-100">{workbookIds.map((id) => <option key={id}>{id}</option>)}</select></label>
+      <label className="text-sm font-bold">Lição<select disabled={locationLocked} value={selection.lessonId} onChange={(event) => setSelection((current) => ({ ...current, lessonId: event.target.value, dayId: '' }))} className="mt-1 w-full rounded-lg border p-2 disabled:bg-slate-100"><option value="">Selecione</option>{workbook?.lessons.map((item) => <option key={item.id} value={item.id}>{item.title} ({item.id})</option>)}</select></label>
+      <label className="text-sm font-bold">Dia<select disabled={locationLocked} value={selection.dayId} onChange={(event) => setSelection((current) => ({ ...current, dayId: event.target.value }))} className="mt-1 w-full rounded-lg border p-2 disabled:bg-slate-100"><option value="">Selecione</option>{lesson?.days.map((item, index) => <option key={item.id} value={item.id}>Dia {index + 1} ({item.id})</option>)}</select></label>
+      {initial && <button type="button" onClick={() => setLocationLocked((locked) => !locked)} className="rounded-xl border px-4 py-2 text-sm font-bold sm:col-span-4">{locationLocked ? 'Alterar localização' : 'Bloquear localização do relatório'}</button>}
     </section>
     {mode === 'new' && <section className="rounded-2xl bg-white p-4 shadow-sm"><h2 className="font-black">Criar manualmente</h2><p className="mb-3 text-sm text-slate-600">O novo exercício será acrescentado ao final com um novo identificador.</p><button disabled={!selectReady} onClick={() => setEdit({ index: null, input: { ...emptyInput(), speechLanguage: `${languageForCourse(selection.courseId)}-${languageForCourse(selection.courseId).toUpperCase()}` }, operation: 'new' })} className="rounded-xl bg-violet-600 px-4 py-2 font-black text-white disabled:opacity-40">Novo exercício</button></section>}
     {mode === 'batch' && <section className="space-y-4 rounded-2xl bg-white p-4 shadow-sm"><div className="flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-black">Importar JSON</h2><p className="text-sm text-slate-600">Validação e revisão obrigatórias; nunca salva automaticamente.</p></div><button disabled={!selectReady} onClick={() => void copyPrompt()} className="rounded-xl border px-4 py-2 font-bold">Copiar modelo de prompt para IA</button></div><div className="grid gap-2 sm:grid-cols-4"><input placeholder="Assunto" value={promptFields.subject} onChange={(event) => setPromptFields((current) => ({ ...current, subject: event.target.value }))} className="rounded-lg border p-2" /><input placeholder="Objetivo pedagógico" value={promptFields.objective} onChange={(event) => setPromptFields((current) => ({ ...current, objective: event.target.value }))} className="rounded-lg border p-2" /><input placeholder="Nível" value={promptFields.level} onChange={(event) => setPromptFields((current) => ({ ...current, level: event.target.value }))} className="rounded-lg border p-2" /><input placeholder="Distribuição" value={promptFields.distribution} onChange={(event) => setPromptFields((current) => ({ ...current, distribution: event.target.value }))} className="rounded-lg border p-2" /></div><textarea value={json} onChange={(event) => setJson(event.target.value)} placeholder='{"schemaVersion":1,...}' className="min-h-52 w-full rounded-xl border p-3 font-mono text-xs" /><button onClick={parseBatch} className="rounded-xl bg-blue-600 px-4 py-2 font-black text-white">Validar e revisar</button>
@@ -285,7 +307,7 @@ export const ExerciseAuthoringWorkspace: React.FC<{
     </section>}
     {state.draft && <section className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-4 shadow-sm"><h2 className="font-black text-amber-950">Rascunhos</h2><p className="mt-1 text-sm text-amber-900">Rascunho reencontrável <span className="font-mono font-bold">{state.draft.scopeId}</span> · revisão {state.draft.draftRevision} · relatório {state.draft.relatedReportId ?? 'não relacionado'}.</p><p className="mt-1 text-xs text-amber-800">Local: {selection.courseId} · Livro {selection.workbookId} · {selection.lessonId} · {selection.dayId}{focusExerciseId ? ` · exercício ${focusExerciseId}` : ''}</p></section>}
     {selectReady && <section className="rounded-2xl bg-white p-4 shadow-sm"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="font-black">Sequência do dia · {exercises.length} exercícios</h2><p className="text-xs text-slate-500">v{state.version} · revisão de rascunho {state.draftRevision}</p></div></div><div className="space-y-2">{exercises.map((exercise, index) => <div key={exercise.id} className={`flex flex-wrap items-center gap-2 rounded-xl border p-3 ${exercise.id === focusExerciseId ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100' : ''}`}><span className="w-8 font-black">{index + 1}</span><div className="min-w-0 flex-1"><p className="truncate font-bold">{exercise.instruction || '(sem instrução)'}</p><p className="truncate font-mono text-xs text-slate-500">{exercise.id} · {authoringTypeOf(exercise) ?? `${exercise.type} (somente leitura)`}</p></div><button onClick={() => move(index, -1)} disabled={index === 0} className="rounded border px-2 py-1 disabled:opacity-30">↑</button><button onClick={() => move(index, 1)} disabled={index === exercises.length - 1} className="rounded border px-2 py-1 disabled:opacity-30">↓</button>{authoringTypeOf(exercise) && <><button onClick={() => setEdit({ index, input: canonicalFromExercise(exercise, index + 1), operation: 'edit', original: exercise })} className="rounded border px-2 py-1 font-bold">Editar no Construtor</button><button onClick={() => setEdit({ index, input: emptyInput(authoringTypeOf(exercise)!), operation: 'reconstruct', original: exercise })} className="rounded border px-2 py-1 font-bold">Reconstruir</button>{state.published?.exercises.some((item) => item.id === exercise.id) && <button onClick={() => setEdit({ index: null, replacePublishedIndex: index, input: canonicalFromExercise(exercise, index + 1), operation: 'new' })} className="rounded border border-amber-500 px-2 py-1 font-bold text-amber-800">Duplicar como outro tipo</button>}</>}<button onClick={() => setSandbox(exercise)} className="rounded bg-violet-600 px-2 py-1 font-bold text-white">Sandbox</button></div>)}</div></section>}
-    <section className="rounded-2xl bg-white p-4 shadow-sm"><label className="block text-sm font-bold">Motivo/observação da publicação<input value={reason} onChange={(event) => setReason(event.target.value)} className="mt-1 w-full rounded-lg border p-2" /></label>{focusExerciseId && <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm"><p className="font-black">Destino da publicação</p><p>Exercício {focusExerciseId} · Livro {selection.workbookId} · {selection.lessonId}/{selection.dayId} · posição {Math.max(1, exercises.findIndex((item) => item.id === focusExerciseId) + 1)}.</p><p>{initial ? `Exercício reportado: ${initial.report.exerciseId}. Escolha abaixo se ele permanecerá ou será substituído.` : 'A sequência atual será publicada.'}</p></div>}<div className="mt-3 flex flex-wrap gap-2"><button onClick={requestBack} className="rounded-xl border px-4 py-2 font-bold">Cancelar</button><button disabled={busy || !selectReady} onClick={() => void saveDraft()} className="rounded-xl border border-amber-500 px-4 py-2 font-black text-amber-800 disabled:opacity-40">Salvar rascunho</button><button disabled={busy || !selectReady} onClick={() => void publish('new')} className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white disabled:opacity-40">{focusExerciseId ? 'Publicar como novo exercício' : 'Publicar sequência'}</button>{initial && focusExerciseId && <button disabled={busy || !selectReady} onClick={() => void publish('replace-reported')} className="rounded-xl bg-red-700 px-4 py-2 font-black text-white disabled:opacity-40">Publicar substituindo o exercício reportado</button>}</div></section>
+    <section className="rounded-2xl bg-white p-4 shadow-sm"><label className="block text-sm font-bold">Motivo/observação da publicação<input value={reason} onChange={(event) => setReason(event.target.value)} className="mt-1 w-full rounded-lg border p-2" /></label>{focusExerciseId && <div className="mt-3 rounded-xl bg-slate-50 p-3 text-sm"><p className="font-black">Destino da publicação</p><p>Exercício novo: {focusExerciseId} · {COURSE_LABELS[selection.courseId] ?? selection.courseId} · Livro {selection.workbookId} · {lesson?.title ?? selection.lessonId} · Dia {selection.dayId}.</p><p>{initial ? `Substituirá ${initial.report.exerciseId} exatamente na posição ${initial.location.exerciseIndex + 1}; o relatório ${initial.report.reportId} será resolvido.` : `Será publicado na posição ${Math.max(1, exercises.findIndex((item) => item.id === focusExerciseId) + 1)}.`}</p></div>}<div className="mt-3 flex flex-wrap gap-2"><button disabled={busy || !focusExerciseId} onClick={() => { const exercise = exercises.find((item) => item.id === focusExerciseId); if (exercise) setSandbox(exercise); }} className="rounded-xl border border-violet-500 px-4 py-2 font-black text-violet-800 disabled:opacity-40">Visualizar exercício</button><button disabled={busy || !selectReady} onClick={() => void saveDraftAndClose()} className="rounded-xl border border-amber-500 px-4 py-2 font-black text-amber-800 disabled:opacity-40">{busy ? 'Salvando...' : 'Salvar rascunho e fechar'}</button>{initial ? focusExerciseId && <button disabled={busy || !selectReady} onClick={() => void publish('replace-reported')} className="rounded-xl bg-red-700 px-4 py-2 font-black text-white disabled:opacity-40">{busy ? 'Publicando...' : 'Publicar substituindo e resolver relatório'}</button> : <button disabled={busy || !selectReady} onClick={() => void publish('new')} className="rounded-xl bg-emerald-600 px-4 py-2 font-black text-white disabled:opacity-40">{busy ? 'Publicando...' : focusExerciseId ? 'Publicar como novo exercício' : 'Publicar sequência'}</button>}</div></section>
     {notice && <p className="rounded-xl bg-emerald-50 p-3 font-bold text-emerald-800">{notice}</p>}{error && <pre className="whitespace-pre-wrap rounded-xl bg-red-50 p-3 font-bold text-red-800">{error}</pre>}
     {edit && <div className="fixed inset-0 z-[120] overflow-y-auto bg-slate-950/70 p-3 sm:p-8"><div className="mx-auto max-w-2xl rounded-2xl bg-white p-5"><div className="mb-4 flex justify-between gap-2"><div><h2 className="text-xl font-black">{edit.operation === 'new' ? 'Novo exercício' : edit.operation === 'reconstruct' ? 'Reconstruir este exercício' : 'Editar no Construtor'}</h2>{edit.original && <p className="font-mono text-xs">ID preservado: {edit.original.id} · posição {(edit.index ?? 0) + 1}</p>}</div><button onClick={() => setEdit(null)} className="rounded border px-3 py-2 font-bold">Fechar</button></div><ExerciseForm value={edit.input} lockType={Boolean(edit.original && state.published?.exercises.some((item) => item.id === edit.original?.id))} onChange={(input) => setEdit((current) => current ? { ...current, input } : null)} /><div className="mt-4 flex flex-wrap justify-end gap-2"><button onClick={() => setSandbox(exerciseFromCanonical(edit.input, edit.original))} className="rounded-xl border px-4 py-2 font-bold">Visualizar no sandbox</button><button onClick={() => setEdit(null)} className="rounded-xl border px-4 py-2 font-bold">Cancelar</button><button onClick={commitEdit} className="rounded-xl bg-violet-600 px-4 py-2 font-black text-white">Aplicar alteração</button></div></div></div>}
     {sandbox && <SandboxModal exercise={sandbox} language={identity.language} onClose={() => setSandbox(null)} />}
