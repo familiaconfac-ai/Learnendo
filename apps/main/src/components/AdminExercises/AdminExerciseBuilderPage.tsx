@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
 import type { Workbook } from '../../types';
 import { PracticeSection } from '../UI';
-import { resolveWorkbookModule } from '../../utils/exerciseReportCurriculum';
+import { normalizeReportedWorkbookId, resolveWorkbookModule } from '../../utils/exerciseReportCurriculum';
 import { resolveExerciseSpeechLocale } from '../../utils/exerciseSpeechLocale';
 import { ExerciseAuthoringWorkspace } from './ExerciseAuthoringWorkspace';
 import type { ExerciseReport } from '../../services/exerciseReportsService';
@@ -40,15 +40,20 @@ interface EditorValue extends AdminExerciseDraftInput {
 const courseLanguage = (courseId: string) => courseId === 'spanish' ? 'es' : courseId.startsWith('portuguese') ? 'pt'
   : courseId.startsWith('greek') ? 'el' : courseId.startsWith('hebrew') ? 'he' : 'en';
 
-const newEditorValue = (courseId: string): EditorValue => {
+const newEditorValue = (courseId: string, source?: { report: ExerciseReport; location: ReportExerciseLocation }): EditorValue => {
   const resolvedCourseId = ADMIN_EXERCISE_COURSES.some((item) => item === courseId) ? courseId : 'english';
   const language = courseLanguage(resolvedCourseId);
+  const registry = COURSE_WORKBOOKS[resolvedCourseId] ?? COURSE_WORKBOOKS.english;
+  const reportedWorkbookId = normalizeReportedWorkbookId(source?.report.workbookId)
+    ?? normalizeReportedWorkbookId(source?.location.workbook.id);
   return {
   exerciseId: null, courseId: resolvedCourseId,
   language,
-  workbookId: Number(Object.keys(COURSE_WORKBOOKS[courseId] ?? COURSE_WORKBOOKS.english)[0] ?? 1),
-  lessonId: '', dayId: '', content: emptyAdminExerciseContent(language), changeReason: '', adminNote: '',
-  relatedReportId: null, imageValidation: null, baseVersion: 0, draftRevision: 0,
+  workbookId: reportedWorkbookId && registry[reportedWorkbookId]
+    ? reportedWorkbookId : Number(Object.keys(registry)[0] ?? 1),
+  lessonId: source?.location.lesson.id ?? '', dayId: source?.location.day.id ?? '',
+  content: emptyAdminExerciseContent(language), changeReason: '', adminNote: '',
+  relatedReportId: source?.report.reportId ?? null, imageValidation: null, baseVersion: 0, draftRevision: 0,
 }; };
 
 function editorFromState(state: AdminExerciseState): EditorValue {
@@ -188,7 +193,7 @@ const EditorModal: React.FC<{
   });
   return <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/70 p-2 sm:p-6">
     <div className="mx-auto max-w-6xl rounded-2xl bg-white p-4 shadow-2xl sm:p-6">
-      <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-violet-600">ETAPA 1 · múltipla escolha</p><h2 className="text-2xl font-black">{value.exerciseId ? `Editar ${value.exerciseId}` : 'Novo exercício administrativo'}</h2></div><button onClick={onClose} className="rounded-lg border px-3 py-2 font-bold">Fechar</button></div>
+      <div className="mb-5 flex items-start justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-violet-600">ETAPA 1 · múltipla escolha</p><h2 className="text-2xl font-black">{value.exerciseId ? `Editar ${value.exerciseId}` : 'Novo exercício administrativo'}</h2></div><button type="button" onClick={onClose} className="rounded-lg border px-3 py-2 font-bold">Fechar</button></div>
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4">
           <section className="grid gap-3 rounded-2xl border p-4 sm:grid-cols-2">
@@ -231,7 +236,7 @@ const EditorModal: React.FC<{
         </div>
       </div>
       {error && <pre className="mt-4 whitespace-pre-wrap rounded-xl bg-red-50 p-3 text-sm font-bold text-red-800">{error}</pre>}
-      <div className="mt-5 flex justify-end gap-3"><button onClick={onClose} className="rounded-xl border px-4 py-3 font-bold">Cancelar</button><button disabled={busy} onClick={save} className="rounded-xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-50">{busy ? 'Salvando…' : 'Salvar rascunho'}</button></div>
+      <div className="mt-5 flex justify-end gap-3"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-3 font-bold">Cancelar</button><button type="button" disabled={busy} onClick={save} className="rounded-xl bg-blue-600 px-5 py-3 font-black text-white disabled:opacity-50">{busy ? 'Salvando…' : 'Salvar rascunho'}</button></div>
     </div>
   </div>;
 };
@@ -295,6 +300,21 @@ export const AdminExerciseBuilderPage: React.FC<{
   onBack: () => void;
   initial?: { report: ExerciseReport; location: ReportExerciseLocation; courseId: string } | null;
 }> = (props) => <ExerciseAuthoringWorkspace {...props} />;
+
+export const AdminExerciseCreationModal: React.FC<{
+  reviewer: { uid: string; name: string };
+  courseId: string;
+  report: ExerciseReport;
+  location: ReportExerciseLocation;
+  onClose: () => void;
+  onSaved: (exerciseId: string) => void;
+}> = ({ reviewer, courseId, report, location, onClose, onSaved }) => {
+  const initial = useMemo(
+    () => newEditorValue(courseId, { report, location }),
+    [courseId, location.day.id, location.lesson.id, location.workbook.id, report.reportId],
+  );
+  return <EditorModal initial={initial} reviewerUid={reviewer.uid} onClose={onClose} onSaved={onSaved} />;
+};
 
 // Mantido temporariamente no bundle como leitor do formato paralelo da ETAPA 1.
 // Não é usado na autoria do currículo e pode ser removido somente após uma decisão de migração.

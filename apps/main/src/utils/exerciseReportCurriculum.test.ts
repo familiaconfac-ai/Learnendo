@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Workbook } from '../types.ts';
-import { findReportedExercise, reportedWorkbookCandidates, resolveWorkbookModule } from './exerciseReportCurriculum.ts';
+import {
+  courseIdForReportLanguage, findReportedExercise, normalizeReportedLocationId,
+  normalizeReportedWorkbookId, reportedWorkbookCandidates, resolveWorkbookModule,
+} from './exerciseReportCurriculum.ts';
 
 const workbook = {
   id: 'wb1',
@@ -34,12 +37,34 @@ test('prefers the stable exercise IDs when the recorded workbook number is wrong
   }, [1, 2, 3]), [1, 2, 3]);
 });
 
+test('normalizes workbook identifiers from number, numeric string and wb prefix', () => {
+  assert.equal(normalizeReportedWorkbookId(1), 1);
+  assert.equal(normalizeReportedWorkbookId('1'), 1);
+  assert.equal(normalizeReportedWorkbookId('wb1'), 1);
+  assert.equal(normalizeReportedWorkbookId('invalid'), null);
+});
+
+test('normalizes report language and trims hierarchical identifiers', () => {
+  assert.equal(courseIdForReportLanguage('English', 'spanish'), 'english');
+  assert.equal(courseIdForReportLanguage('en-US', 'spanish'), 'english');
+  assert.equal(courseIdForReportLanguage('pt-BR', 'english'), 'portuguese_foreigners');
+  assert.equal(courseIdForReportLanguage('unknown', 'spanish'), 'spanish');
+  assert.equal(normalizeReportedLocationId('  wb1_l6_d1  '), 'wb1_l6_d1');
+});
+
 test('finds the exact reported exercise without traversing prior exercises', () => {
   const found = findReportedExercise(workbook, {
     lessonId: 'wb1_l3', dayId: 'wb1_l3_d4', exerciseId: 'reported', currentExerciseIndex: 0,
   });
   assert.equal(found?.lesson.id, 'wb1_l3');
   assert.equal(found?.day.id, 'wb1_l3_d4');
+  assert.equal(found?.exerciseIndex, 1);
+});
+
+test('finds a valid report even when its stored identifiers contain surrounding spaces', () => {
+  const found = findReportedExercise(workbook, {
+    lessonId: ' wb1_l3 ', dayId: ' wb1_l3_d4 ', exerciseId: ' reported ', currentExerciseIndex: 0,
+  });
   assert.equal(found?.exerciseIndex, 1);
 });
 

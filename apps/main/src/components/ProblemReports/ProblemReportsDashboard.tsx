@@ -16,12 +16,13 @@ import {
 } from '../../services/exerciseReportsService';
 import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
 import type { Workbook } from '../../types';
-import { findReportedExercise, reportedWorkbookCandidates, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
+import { courseIdForReportLanguage, findReportedExercise, reportedWorkbookCandidates, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
 import { AdminExerciseVerification, type VerificationVerdict } from './AdminExerciseVerification';
 import { ExerciseEditorModal } from './ExerciseEditorModal';
 import { deleteExerciseDraft, getExerciseEditorialStatuses } from '../../services/exerciseOverrideService';
 import type { ExerciseEditorialStatus } from '../../models/exerciseOverride';
-import { AdminExerciseBuilderPage } from '../AdminExercises/AdminExerciseBuilderPage';
+import { AdminExerciseBuilderPage, AdminExerciseCreationModal } from '../AdminExercises/AdminExerciseBuilderPage';
+import { ReportExerciseLocationPicker } from './ReportExerciseLocationPicker';
 
 interface ProblemReportsDashboardProps {
   isAdmin: boolean;
@@ -62,9 +63,6 @@ const VERIFICATION_LABELS: Record<ExerciseReportVerificationResult, string> = {
   'not-fixed': 'Problema não corrigido',
   'needs-improvement': 'Corrigido, mas pode melhorar',
 };
-const LANGUAGE_COURSE: Record<string, string> = {
-  en: 'english', es: 'spanish', el: 'greek_koine', he: 'hebrew_biblical', pt: 'portuguese_foreigners',
-};
 const languageForCourse = (courseId: string): string => {
   if (courseId === 'spanish') return 'es';
   if (courseId === 'greek_koine') return 'el';
@@ -98,6 +96,8 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
   const [verificationSaving, setVerificationSaving] = useState(false);
   const [verificationError, setVerificationError] = useState('');
   const [editor, setEditor] = useState<{ report: ExerciseReport | null; location: ReportExerciseLocation; language: string } | null>(null);
+  const [newAdminExercise, setNewAdminExercise] = useState<{ report: ExerciseReport; location: ReportExerciseLocation; courseId: string } | null>(null);
+  const [locationPicker, setLocationPicker] = useState<{ report: ExerciseReport; action: 'existing' | 'new' } | null>(null);
   const [catalogSearch, setCatalogSearch] = useState('');
 
   const load = useCallback(async (targetCursor: QueryDocumentSnapshot<DocumentData> | null = null) => {
@@ -256,35 +256,36 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     await patchSelected({ status: 'dismissed' }, true);
   };
 
+  const resolveReportedLocation = async (report: ExerciseReport): Promise<{ location: ReportExerciseLocation; courseId: string } | null> => {
+    const inferredCourse = courseIdForReportLanguage(report.language, currentCourseId);
+    const courseCandidates = [...new Set([inferredCourse, currentCourseId, 'english'])];
+    for (const courseId of courseCandidates) {
+      const registry = COURSE_WORKBOOKS[courseId] ?? {};
+      for (const workbookId of reportedWorkbookCandidates(report, Object.keys(registry).map(Number))) {
+        const loader = registry[workbookId];
+        if (!loader) continue;
+        const workbook = resolveWorkbookModule(await loader() as Record<string, unknown>, workbookId);
+        if (!workbook) continue;
+        const location = findReportedExercise(workbook, report);
+        if (location) return { location, courseId };
+      }
+    }
+    return null;
+  };
+
   const openExerciseVerification = async (report: ExerciseReport) => {
     if (verificationLoading) return;
     setVerificationLoading(true);
     setVerificationError('');
     setError('');
     try {
-      const inferredCourse = LANGUAGE_COURSE[report.language] ?? currentCourseId;
-      const courseCandidates = [...new Set([inferredCourse, currentCourseId, 'english'])];
-      let location: ReportExerciseLocation | null = null;
-      for (const courseId of courseCandidates) {
-        const registry = COURSE_WORKBOOKS[courseId] ?? {};
-        const workbookCandidates = reportedWorkbookCandidates(report, Object.keys(registry).map(Number));
-        for (const workbookId of workbookCandidates) {
-          const loader = registry[workbookId];
-          if (!loader) continue;
-          const module = await loader();
-          const workbook = resolveWorkbookModule(module as Record<string, unknown>, workbookId);
-          if (!workbook) continue;
-          location = findReportedExercise(workbook, report);
-          if (location) break;
-        }
-        if (location) break;
-      }
-      if (!location) {
+      const resolved = await resolveReportedLocation(report);
+      if (!resolved) {
         setError('Não foi possível localizar este exercício na versão atual do currículo. Confira o ID e o livro registrados.');
         return;
       }
       setSelected(null);
-      setVerification({ report, location });
+      setVerification({ report, location: resolved.location });
     } catch (verificationLoadError) {
       console.error('[ProblemReports] exercise verification load failed:', verificationLoadError);
       setError('Não foi possível abrir o exercício para verificação. Tente novamente.');
@@ -293,31 +294,40 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
     }
   };
 
-  const openExerciseEditor = async (report: ExerciseReport) => {
+  const openExistingExerciseEditor = async (report: ExerciseReport) => {
     if (verificationLoading) return;
     setVerificationLoading(true);
     setError('');
     try {
-      const inferredCourse = LANGUAGE_COURSE[report.language] ?? currentCourseId;
-      const courseCandidates = [...new Set([inferredCourse, currentCourseId, 'english'])];
-      let location: ReportExerciseLocation | null = null;
-      for (const courseId of courseCandidates) {
-        const registry = COURSE_WORKBOOKS[courseId] ?? {};
-        for (const workbookId of reportedWorkbookCandidates(report, Object.keys(registry).map(Number))) {
-          const loader = registry[workbookId];
-          if (!loader) continue;
-          const workbook = resolveWorkbookModule(await loader() as Record<string, unknown>, workbookId);
-          if (workbook) location = findReportedExercise(workbook, report);
-          if (location) break;
-        }
-        if (location) break;
+      const resolved = await resolveReportedLocation(report);
+      if (!resolved) {
+        setSelected(null);
+        setLocationPicker({ report, action: 'existing' });
+        return;
       }
-      if (!location) throw new Error('Exercício não localizado no currículo atual.');
       setSelected(null);
-      setEditor({ report, location, language: report.language || 'en' });
-      setAdminView('exercise-builder');
+      setEditor({ report, location: resolved.location, language: languageForCourse(resolved.courseId) });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível abrir o editor.');
+    } finally {
+      setVerificationLoading(false);
+    }
+  };
+
+  const openNewExerciseEditor = async (report: ExerciseReport) => {
+    if (verificationLoading) return;
+    setVerificationLoading(true);
+    setError('');
+    try {
+      const resolved = await resolveReportedLocation(report);
+      setSelected(null);
+      if (!resolved) {
+        setLocationPicker({ report, action: 'new' });
+        return;
+      }
+      setNewAdminExercise({ report, location: resolved.location, courseId: resolved.courseId });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível abrir o construtor.');
     } finally {
       setVerificationLoading(false);
     }
@@ -407,7 +417,6 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
 
   if (adminView === 'exercise-builder') {
     return <AdminExerciseBuilderPage reviewer={reviewer} currentCourseId={currentCourseId}
-      initial={editor ? { report: editor.report!, location: editor.location, courseId: LANGUAGE_COURSE[editor.language] ?? currentCourseId } : null}
       onBack={() => { setEditor(null); setAdminView('reports'); }} />;
   }
 
@@ -502,10 +511,10 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
             {copyStatus === 'copied' && <p role="status" className="mt-2 font-bold text-emerald-700">Dados copiados.</p>}
             {copyStatus === 'error' && <p role="alert" className="mt-2 font-bold text-red-700">Não foi possível copiar. Tente novamente.</p>}
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <button disabled={saving || verificationLoading} onClick={() => void openExerciseVerification(selected)} className="rounded-xl bg-violet-700 p-3 font-black text-white disabled:opacity-50 sm:col-span-2">{verificationLoading ? 'Abrindo exercício…' : 'Abrir exercício para verificar'}</button>
-              {/* Compatibilidade do fluxo antes rotulado "Editar exercício": agora abre a autoria completa. */}
-              <button disabled={saving || verificationLoading} onClick={() => void openExerciseEditor(selected)} className="rounded-xl bg-blue-700 p-3 font-black text-white disabled:opacity-50 sm:col-span-2">Corrigir no Construtor</button>
-              <p className="text-xs text-slate-500 sm:col-span-2">Abre exatamente o exercício reportado, sem exigir os anteriores e sem alterar o progresso do aluno.</p>
+              <button type="button" disabled={saving || verificationLoading} onClick={() => void openExerciseVerification(selected)} className="rounded-xl bg-violet-700 p-3 font-black text-white disabled:opacity-50 sm:col-span-2">{verificationLoading ? 'Abrindo exercício…' : 'Abrir exercício para verificar'}</button>
+              <button type="button" disabled={saving || verificationLoading} onClick={() => void openExistingExerciseEditor(selected)} className="rounded-xl border-2 border-blue-700 bg-blue-700 p-3 font-black text-white disabled:opacity-50">Editar exercício existente</button>
+              <button type="button" disabled={saving || verificationLoading} onClick={() => void openNewExerciseEditor(selected)} className="rounded-xl border-2 border-violet-600 bg-white p-3 font-black text-violet-800 disabled:opacity-50">Novo exercício</button>
+              <p className="text-xs text-slate-500 sm:col-span-2">Editar preserva o ID local e usa overrides. Novo cria um ID administrativo separado e não altera a sequência automaticamente.</p>
               <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing', verificationResult: 'ready-for-verification', verificationNote: 'Correção publicada e aguardando validação administrativa.' }, true)} className="rounded-xl border border-violet-400 bg-white p-3 font-black text-violet-800 disabled:opacity-50 sm:col-span-2">Marcar correção pronta para verificar</button>
               <select value={selected.priority} disabled={saving} onChange={(event) => void patchSelected({ priority: event.target.value as ExerciseReportPriority })} className="rounded-xl border p-3">{Object.entries(PRIORITY_LABELS).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
               <button disabled={saving || copyStatus === 'copying'} onClick={() => void copyExerciseData(selected)} className="rounded-xl border border-blue-300 bg-white p-3 font-bold text-blue-700 disabled:opacity-50">{copyStatus === 'copying' ? 'Copiando…' : copyStatus === 'copied' ? 'Copiado' : 'Copiar dados do exercício'}</button>
@@ -564,6 +573,32 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
             }
           }
           await load(currentStart);
+        }}
+      />}
+      {newAdminExercise && <AdminExerciseCreationModal
+        reviewer={reviewer}
+        courseId={newAdminExercise.courseId}
+        report={newAdminExercise.report}
+        location={newAdminExercise.location}
+        onClose={() => setNewAdminExercise(null)}
+        onSaved={(exerciseId) => {
+          setNewAdminExercise(null);
+          setStatusNotice(`Novo exercício administrativo ${exerciseId} salvo como rascunho. A sequência não foi alterada.`);
+        }}
+      />}
+      {locationPicker && <ReportExerciseLocationPicker
+        report={locationPicker.report}
+        currentCourseId={currentCourseId}
+        action={locationPicker.action}
+        onCancel={() => setLocationPicker(null)}
+        onResolve={(location, courseId) => {
+          const pending = locationPicker;
+          setLocationPicker(null);
+          if (pending.action === 'existing') {
+            setEditor({ report: pending.report, location, language: languageForCourse(courseId) });
+          } else {
+            setNewAdminExercise({ report: pending.report, location, courseId });
+          }
         }}
       />}
     </div>
