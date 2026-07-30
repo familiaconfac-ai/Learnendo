@@ -62,6 +62,16 @@ test('stores only fields changed from local content', () => {
   assert.deepEqual(diffExerciseOverride(original, { instruction: 'Choose.', displayValue: 'Changed' }), { displayValue: 'Changed' });
 });
 
+test('speaking keeps its real displayed dialogue editable through an override', () => {
+  const speaking: Exercise = { id: 'wb1_l6_d4_e10', type: 'speaking', instruction: 'Listen and repeat.', audioValue: 'How are you?', displayValue: 'A: How are you?\nB: ______', correctValue: 'I am fine, thank you.', acceptedAnswers: ['I am fine'] };
+  const speakingIdentity: ExerciseIdentity = { ...identity, exerciseId: speaking.id, lessonId: 'wb1_l6', dayId: 'wb1_l6_d4', exerciseType: 'speaking' };
+  const override = diffExerciseOverride(speaking, { displayValue: 'A: How are you today?\nB: ______', acceptedAnswers: ['I am very well'] });
+  const reloaded = applyExerciseOverride(speaking, { ...speakingIdentity, status: 'published', version: 1, override });
+  assert.equal(reloaded.id, speaking.id);
+  assert.equal(reloaded.displayValue, 'A: How are you today?\nB: ______');
+  assert.deepEqual(reloaded.acceptedAnswers, ['I am very well']);
+});
+
 test('normalizes curriculum workbook ids to the integer required by Firestore rules', () => {
   assert.equal(normalizeExerciseWorkbookId('wb1'), 1);
   assert.equal(normalizeExerciseWorkbookId('9'), 9);

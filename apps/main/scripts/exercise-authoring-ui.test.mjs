@@ -8,7 +8,7 @@ const reports = readFileSync(new URL('../src/components/ProblemReports/ProblemRe
 const service = readFileSync(new URL('../src/services/dayExerciseAuthoringService.ts', import.meta.url), 'utf8');
 const rules = readFileSync(new URL('../../../firestore.rules', import.meta.url), 'utf8');
 
-for (const label of ['Novo exercício', 'Editar exercício existente', 'Reconstruir este exercício', 'Criar lote de exercícios', 'Importar JSON', 'Copiar modelo de prompt para IA', 'Visualizar no sandbox', 'Salvar como rascunho', 'Publicar', 'Cancelar', 'Voltar']) assert.match(ui, new RegExp(label));
+for (const label of ['Novo exercício', 'Editar exercício existente', 'Reconstruir este exercício', 'Criar lote de exercícios', 'Importar JSON', 'Copiar modelo de prompt para IA', 'Visualizar no sandbox', 'Salvar rascunho', 'Publicar', 'Cancelar', 'Voltar']) assert.match(ui, new RegExp(label));
 for (const mode of ['append', 'insert_at', 'replace_day', 'replace_positions']) assert.match(ui + service, new RegExp(mode));
 assert.match(ui, /Fechar visualização/);
 assert.match(ui, /event\.key === 'Escape'/);
@@ -18,11 +18,12 @@ assert.match(readFileSync(new URL('../src/components/UI.tsx', import.meta.url), 
 assert.match(ui, /Sem gravação de progresso, domínio, mastery ou conclusão/);
 assert.match(reports, /Editar exercício existente/);
 assert.match(reports, /Novo exercício/);
-assert.match(reports, /AdminExerciseCreationModal/);
-assert.match(ui, /NÃO foi marcado como resolvido/);
+assert.doesNotMatch(reports, /AdminExerciseCreationModal/);
+assert.match(reports, /builderInitial/);
 assert.match(service, /runTransaction/);
 assert.match(service, /transaction\.set\(publicRef/);
 assert.match(service, /transaction\.delete\(draftRef/);
+assert.match(service, /export async function listDaySequenceDrafts/);
 assert.match(practice, /resolveAuthoredDayExercises/);
 assert.match(app, /courseId=\{currentCourseId/);
 assert.match(rules, /match \/publishedDayExerciseSequences/);
@@ -41,5 +42,11 @@ assert.match(sharedUi, /item\.instruction \|\| PL\.listenAndRepeat/);
 assert.match(sharedUi, /item\.contentOrder === 'display-first'/);
 assert.match(sharedUi, /promptAudioText \? '' : 'hidden '/);
 assert.match(ui, /Descartar as alterações não salvas/);
+assert.match(ui, /Publicar como novo exercício/);
+assert.match(ui, /Publicar substituindo o exercício reportado/);
+assert.match(ui, /Rascunhos/);
+assert.match(ui, /Localizar rascunhos/);
+assert.match(reports, /intent: 'new'/);
+assert.match(reports, /mode === 'replace-reported'/);
 
 console.log('Exercise authoring UI and transactional wiring checks passed.');

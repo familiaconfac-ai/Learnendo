@@ -133,7 +133,7 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       const draftAdminNote = reopening
         ? [adminNote.trim(), `[${new Date().toLocaleString('pt-BR')}] Denúncia reaberta para edição em rascunho.`].filter(Boolean).join('\n')
         : adminNote;
-      await saveExerciseDraft({ original, identity, fields, changeReason, adminNote: draftAdminNote, updatedBy: reviewer.uid, baseVersion, relatedReportId: report?.reportId, expectedDraftRevision: state.draft?.draftRevision ?? 0 });
+      const revision = await saveExerciseDraft({ original, identity, fields, changeReason, adminNote: draftAdminNote, updatedBy: reviewer.uid, baseVersion, relatedReportId: report?.reportId, expectedDraftRevision: state.draft?.draftRevision ?? 0 });
       try {
         await onDraftSaved?.(reopening);
       } catch (cause) {
@@ -144,8 +144,8 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
         return;
       }
       setNotice(draftWarnings.length
-        ? `Rascunho salvo, mas ainda não pode ser publicado:\n${draftWarnings.join('\n')}`
-        : 'Rascunho salvo com sucesso. Ele não será exibido aos alunos.');
+        ? `Rascunho ${identity.exerciseId} (revisão ${revision}) confirmado no Firestore, mas ainda não pode ser publicado:\n${draftWarnings.join('\n')}`
+        : `Rascunho ${identity.exerciseId} (revisão ${revision}) confirmado no Firestore. Ele não será exibido aos alunos até a publicação.`);
       setDirty(false); await hydrate(true);
     } catch (cause) {
       logEditorialFirebaseError('Falha ao salvar rascunho', cause);
@@ -207,19 +207,23 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
           <Section title="1 — Identificação"><div className="grid gap-3 sm:grid-cols-2">{Object.entries({ Livro: identity.workbookId, Lição: identity.lessonId, Dia: identity.dayId, Idioma: identity.language, Tipo: identity.exerciseType, ID: identity.exerciseId }).map(([label, content]) => <label key={label} className="text-xs font-bold text-slate-500">{label}<input readOnly value={content} className="mt-1 w-full rounded-xl border bg-slate-100 p-3 text-slate-700" /></label>)}</div></Section>
           <Section title="2 — Conteúdo">
             <Field label="Instrução" value={fields.instruction ?? original.instruction} onChange={(value) => update('instruction', value)} />
-            {original.type !== 'speaking' && <Field label="Texto exibido / pergunta" value={fields.displayValue ?? original.displayValue ?? ''} onChange={(value) => update('displayValue', value)} />}
+            <Field label="Texto exibido ao aluno (aparece no corpo do exercício)" area value={fields.displayValue ?? original.displayValue ?? ''} onChange={(value) => update('displayValue', value)} />
             <Field label={original.type === 'speaking' ? 'Resposta de referência' : 'Resposta principal'} value={fields.correctValue ?? original.correctValue} onChange={(value) => update('correctValue', value)} />
             <Field label="Respostas alternativas aceitas (uma por linha)" area value={arrayText(fields.acceptedAnswers ?? original.acceptedAnswers)} onChange={(value) => update('acceptedAnswers', toArray(value))} />
+            <Field label="Perguntas alternativas aceitas (uma por linha)" area value={arrayText(fields.acceptedQuestions ?? original.acceptedQuestions)} onChange={(value) => update('acceptedQuestions', toArray(value))} />
             {original.type === 'multiple-choice' && <label className="block text-sm font-bold text-slate-700">Alternativas (uma por linha)<textarea aria-label="Alternativas (uma por linha)" value={optionsText} onChange={(event) => { const value = event.target.value; setOptionsText(value); update('options', parseExerciseOptions(value)); }} className="mt-1 min-h-32 max-h-80 w-full resize-y rounded-xl border p-3 font-normal" /><span className="mt-1 block text-xs font-normal text-slate-500">De {EXERCISE_OPTION_LIMITS.min} a {EXERCISE_OPTION_LIMITS.max} alternativas; uma por linha.</span></label>}
-            <Field label="Tradução / explicação" area value={fields.translation ?? original.translation ?? ''} onChange={(value) => update('translation', value)} />
+            <Field label="Tradução" area value={fields.translation ?? original.translation ?? ''} onChange={(value) => update('translation', value)} />
+            <Field label="Explicação" area value={fields.explanation ?? original.explanation ?? ''} onChange={(value) => update('explanation', value)} />
             <div className="grid gap-3 sm:grid-cols-2"><Field label="Feedback correto" value={fields.feedbackCorrect ?? original.feedbackCorrect ?? ''} onChange={(value) => update('feedbackCorrect', value)} /><Field label="Feedback incorreto" value={fields.feedbackIncorrect ?? original.feedbackIncorrect ?? ''} onChange={(value) => update('feedbackIncorrect', value)} /></div>
             <p className="rounded-xl bg-blue-50 p-3 text-xs text-blue-900">Normalizações globais preservadas: maiúsculas/minúsculas, espaços, pontuação terminal e apóstrofos são tratados pelo validador central atual.</p>
           </Section>
           <Section title="3 — Mídia">
             {effective.imageUrl && <img src={effective.imageUrl} alt={effective.imageAlt || ''} className="mx-auto max-h-[260px] w-full max-w-full rounded-xl object-contain sm:max-h-[360px]" />}
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-black">Envio de novas imagens temporariamente indisponível.</p><p className="mt-1 text-xs">O restante do exercício pode ser editado, salvo e publicado normalmente.</p></div>
+            <Field label="URL HTTPS da imagem" value={fields.imageUrl ?? original.imageUrl ?? ''} onChange={(value) => update('imageUrl', value)} />
             <Field label="Texto alternativo da imagem" value={fields.imageAlt ?? original.imageAlt ?? ''} onChange={(value) => update('imageAlt', value)} />
             <Field label="Texto do áudio / TTS" value={fields.audioValue ?? original.audioValue} onChange={(value) => update('audioValue', value)} />
+            <Field label="Áudio antes da resposta" value={fields.audioValueBeforeAnswer ?? original.audioValueBeforeAnswer ?? ''} onChange={(value) => update('audioValueBeforeAnswer', value)} />
+            <Field label="Frase completa depois da resposta" value={fields.fullSentenceAfterAnswer ?? original.fullSentenceAfterAnswer ?? ''} onChange={(value) => update('fullSentenceAfterAnswer', value)} />
             <p className="rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-900">Idioma da voz: {speechLocaleDescription}</p>
             <div className="flex gap-2"><button disabled={!effective.audioValue} onClick={() => speakExerciseText(effective.audioValue, speechLocale)} className="rounded-xl border px-4 py-2 font-bold disabled:opacity-40">▶ Reproduzir áudio</button>{effective.audioValue && <button onClick={() => update('audioValue', '')} className="rounded-xl border px-4 py-2 font-bold">Remover texto do áudio</button>}</div>
           </Section>

@@ -21,7 +21,7 @@ import { AdminExerciseVerification, type VerificationVerdict } from './AdminExer
 import { ExerciseEditorModal } from './ExerciseEditorModal';
 import { deleteExerciseDraft, getExerciseEditorialStatuses } from '../../services/exerciseOverrideService';
 import type { ExerciseEditorialStatus } from '../../models/exerciseOverride';
-import { AdminExerciseBuilderPage, AdminExerciseCreationModal } from '../AdminExercises/AdminExerciseBuilderPage';
+import { AdminExerciseBuilderPage } from '../AdminExercises/AdminExerciseBuilderPage';
 import { ReportExerciseLocationPicker } from './ReportExerciseLocationPicker';
 
 interface ProblemReportsDashboardProps {
@@ -96,7 +96,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
   const [verificationSaving, setVerificationSaving] = useState(false);
   const [verificationError, setVerificationError] = useState('');
   const [editor, setEditor] = useState<{ report: ExerciseReport | null; location: ReportExerciseLocation; language: string } | null>(null);
-  const [newAdminExercise, setNewAdminExercise] = useState<{ report: ExerciseReport; location: ReportExerciseLocation; courseId: string } | null>(null);
+  const [builderInitial, setBuilderInitial] = useState<{ report: ExerciseReport; location: ReportExerciseLocation; courseId: string; intent: 'new' } | null>(null);
   const [locationPicker, setLocationPicker] = useState<{ report: ExerciseReport; action: 'existing' | 'new' } | null>(null);
   const [catalogSearch, setCatalogSearch] = useState('');
 
@@ -325,7 +325,8 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
         setLocationPicker({ report, action: 'new' });
         return;
       }
-      setNewAdminExercise({ report, location: resolved.location, courseId: resolved.courseId });
+      setBuilderInitial({ report, location: resolved.location, courseId: resolved.courseId, intent: 'new' });
+      setAdminView('exercise-builder');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível abrir o construtor.');
     } finally {
@@ -417,7 +418,15 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
 
   if (adminView === 'exercise-builder') {
     return <AdminExerciseBuilderPage reviewer={reviewer} currentCourseId={currentCourseId}
-      onBack={() => { setEditor(null); setAdminView('reports'); }} />;
+      initial={builderInitial}
+      onPublished={async ({ version, mode, report }) => {
+        if (mode === 'replace-reported') {
+          await updateExerciseReport(report, { status: 'resolved', resolutionVersion: version, resolutionType: 'editorial', adminNote: [report.adminNote, `Resolvido pela substituição da sequência editorial v${version}.`].filter(Boolean).join('\n') }, reviewer);
+        } else if (report.status !== 'reviewing') {
+          await updateExerciseReport(report, { status: 'reviewing' }, reviewer);
+        }
+      }}
+      onBack={() => { setEditor(null); setBuilderInitial(null); setAdminView('reports'); void load(currentStart); }} />;
   }
 
   return (
@@ -426,7 +435,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
         <div className="mb-5 flex items-center justify-between gap-3">
           <div><p className="text-xs font-black uppercase tracking-[0.2em] text-blue-600">Administração</p><h1 className="text-2xl font-black">Relatórios de problemas</h1></div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => setAdminView('exercise-builder')} className="rounded-xl bg-violet-600 px-4 py-2 font-black text-white">Construtor de exercícios</button>
+            <button onClick={() => { setBuilderInitial(null); setAdminView('exercise-builder'); }} className="rounded-xl bg-violet-600 px-4 py-2 font-black text-white">Construtor de exercícios</button>
             <button onClick={onBack} className="rounded-xl border border-slate-300 bg-white px-4 py-2 font-bold">Voltar</button>
           </div>
         </div>
@@ -575,17 +584,6 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
           await load(currentStart);
         }}
       />}
-      {newAdminExercise && <AdminExerciseCreationModal
-        reviewer={reviewer}
-        courseId={newAdminExercise.courseId}
-        report={newAdminExercise.report}
-        location={newAdminExercise.location}
-        onClose={() => setNewAdminExercise(null)}
-        onSaved={(exerciseId) => {
-          setNewAdminExercise(null);
-          setStatusNotice(`Novo exercício administrativo ${exerciseId} salvo como rascunho. A sequência não foi alterada.`);
-        }}
-      />}
       {locationPicker && <ReportExerciseLocationPicker
         report={locationPicker.report}
         currentCourseId={currentCourseId}
@@ -597,7 +595,8 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
           if (pending.action === 'existing') {
             setEditor({ report: pending.report, location, language: languageForCourse(courseId) });
           } else {
-            setNewAdminExercise({ report: pending.report, location, courseId });
+            setBuilderInitial({ report: pending.report, location, courseId, intent: 'new' });
+            setAdminView('exercise-builder');
           }
         }}
       />}

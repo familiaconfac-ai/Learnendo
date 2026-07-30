@@ -145,15 +145,20 @@ const OptionsEditor: React.FC<{
   </div>;
 };
 
-const Sandbox: React.FC<{ value: EditorValue }> = ({ value }) => {
+const Sandbox: React.FC<{ value: EditorValue; onClose: () => void }> = ({ value, onClose }) => {
   const [key, setKey] = useState(0);
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); onClose(); } };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
   const exercise = adminExerciseToPracticeExercise({ exerciseId: value.exerciseId ?? 'sandbox', language: value.language }, value.content);
   const item = { ...exercise, moduleType: 'admin-sandbox', lessonId: Number(value.lessonId.replace(/\D/g, '')) || 1 };
-  return <div className="rounded-2xl border-2 border-violet-200 bg-white p-3">
-    <div className="mb-3 flex items-center justify-between"><div><p className="font-black">Sandbox real</p><p className="text-xs text-slate-500">Sem gravação de progresso, mastery ou conclusão.</p></div><button type="button" onClick={() => setKey((current) => current + 1)} className="rounded-lg border px-3 py-2 font-bold">Reiniciar</button></div>
+  return <div role="dialog" aria-modal="true" aria-label="Sandbox real" className="fixed inset-0 z-[180] overflow-y-auto bg-slate-950/80 p-2 sm:p-6"><div className="mx-auto max-w-4xl rounded-2xl border-2 border-violet-200 bg-white p-3 shadow-2xl">
+    <div className="sticky top-0 z-30 mb-3 flex items-center justify-between gap-3 rounded-xl bg-white p-2 shadow"><div><p className="font-black">Sandbox real</p><p className="text-xs text-slate-500">Sem gravação de progresso, mastery ou conclusão.</p></div><div className="flex gap-2"><button type="button" onClick={() => setKey((current) => current + 1)} className="rounded-lg border px-3 py-2 font-bold">Reiniciar</button><button type="button" autoFocus onClick={onClose} className="rounded-lg bg-slate-900 px-4 py-2 font-black text-white">Voltar ao editor</button></div></div>
     <PracticeSection key={key} item={item} onResult={() => undefined} currentIdx={0} totalItems={1}
-      lessonId={item.lessonId} currentLanguage={value.language} fullScreen={false} autoPlayAudio={false} />
-  </div>;
+      lessonId={item.lessonId} currentLanguage={value.language} embedded fullScreen={false} autoPlayAudio={false} />
+  </div></div>;
 };
 
 const EditorModal: React.FC<{
@@ -231,8 +236,8 @@ const EditorModal: React.FC<{
         </div>
         <div className="space-y-4 lg:sticky lg:top-4 lg:self-start">
           <div className={`rounded-2xl border p-4 ${errors.length ? 'border-amber-300 bg-amber-50' : 'border-emerald-300 bg-emerald-50'}`}><h3 className="font-black">Validação de publicação</h3>{errors.length ? <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{errors.map((item) => <li key={item}>{item}</li>)}</ul> : <p className="mt-2 text-sm font-bold text-emerald-700">Conteúdo pronto para publicação.</p>}</div>
-          <button type="button" onClick={() => setSandbox((current) => !current)} className="w-full rounded-xl bg-violet-600 px-4 py-3 font-black text-white">{sandbox ? 'Ocultar sandbox' : 'Abrir sandbox real'}</button>
-          {sandbox && <Sandbox value={value} />}
+          <button type="button" onClick={() => setSandbox(true)} className="w-full rounded-xl bg-violet-600 px-4 py-3 font-black text-white">Abrir sandbox real</button>
+          {sandbox && <Sandbox value={value} onClose={() => setSandbox(false)} />}
         </div>
       </div>
       {error && <pre className="mt-4 whitespace-pre-wrap rounded-xl bg-red-50 p-3 text-sm font-bold text-red-800">{error}</pre>}
@@ -289,7 +294,7 @@ const LegacyAdminExerciseBuilderPage: React.FC<{
       <button onClick={() => void listAdminExerciseVersions(item.exerciseId).then((values) => setVersions({ item, values })).catch((cause) => setError(cause instanceof Error ? cause.message : 'Falha ao carregar histórico.'))} className="rounded border px-2 py-1 font-bold">Histórico</button>
     </div></td></tr>)}</tbody></table></div>
     {editor && <EditorModal initial={editor} reviewerUid={reviewer.uid} onClose={() => setEditor(null)} onSaved={() => { setEditor(null); void refresh(); }} />}
-    {preview && <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/70 p-3"><div className="mx-auto max-w-3xl rounded-2xl bg-white p-4"><div className="mb-3 flex justify-between"><h2 className="text-xl font-black">Teste administrativo</h2><button onClick={() => setPreview(null)} className="rounded border px-3 py-2 font-bold">Fechar</button></div><Sandbox value={preview} /></div></div>}
+    {preview && <Sandbox value={preview} onClose={() => setPreview(null)} />}
     {versions && <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/70 p-3"><div className="mx-auto max-w-3xl rounded-2xl bg-white p-5"><div className="mb-4 flex justify-between"><div><h2 className="text-xl font-black">Histórico imutável</h2><p className="font-mono text-xs">{versions.item.exerciseId}</p></div><button onClick={() => setVersions(null)} className="rounded border px-3 py-2 font-bold">Fechar</button></div><div className="space-y-3">{versions.values.length === 0 ? <p>Nenhuma versão publicada.</p> : versions.values.map((version) => <div key={version.version} className="rounded-xl border p-4"><div className="flex flex-wrap items-center justify-between gap-2"><div><p className="font-black">v{version.version} · {STATUS_LABELS[version.status]}</p><p className="text-sm text-slate-600">{version.changeReason}</p></div><button onClick={() => void action(async () => { const reason = prompt(`Motivo para restaurar a versão ${version.version}:`); if (reason == null) return; await restoreAdminExerciseVersion({ exerciseId: versions.item.exerciseId, sourceVersion: version.version, updatedBy: reviewer.uid, reason, expectedVersion: versions.item.currentVersion }); setVersions(null); })} className="rounded bg-violet-600 px-3 py-2 font-bold text-white">Restaurar</button></div></div>)}</div></div></div>}
   </div></div>;
 };
@@ -298,7 +303,8 @@ export const AdminExerciseBuilderPage: React.FC<{
   reviewer: { uid: string; name: string };
   currentCourseId: string;
   onBack: () => void;
-  initial?: { report: ExerciseReport; location: ReportExerciseLocation; courseId: string } | null;
+  initial?: { report: ExerciseReport; location: ReportExerciseLocation; courseId: string; intent?: 'existing' | 'new' } | null;
+  onPublished?: (result: { version: number; mode: 'new' | 'replace-reported'; report: ExerciseReport }) => Promise<void> | void;
 }> = (props) => <ExerciseAuthoringWorkspace {...props} />;
 
 export const AdminExerciseCreationModal: React.FC<{

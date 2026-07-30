@@ -235,4 +235,28 @@ const publishOne = await request(publicUrl, {
 });
 assert.notEqual(publishOne.status, 200, 'Published override must require at least two alternatives');
 
+const speakingId = 'wb1_l6_d4_e10';
+const speakingDraftUrl = `${documentsUrl}/exerciseDrafts/${speakingId}`;
+const speakingOverride = { displayValue: 'A: How are you today?\nB: ______', acceptedAnswers: ['I am very well.'], audioValue: 'How are you today?' };
+const speakingDraft = await request(speakingDraftUrl, { method: 'PATCH', token: admin.idToken, data: {
+  exerciseId: speakingId, workbookId: 1, lessonId: 'wb1_l6', dayId: 'wb1_l6_d4', language: 'en', exerciseType: 'speaking',
+  status: 'draft', version: 0, override: speakingOverride, changeReason: '', adminNote: '', relatedReportId: reportId,
+  baseVersion: 0, draftRevision: 1, updatedAt: now, updatedBy: admin.localId,
+} });
+assert.equal(speakingDraft.status, 200, `Speaking draft stores displayed dialogue: ${speakingDraft.body}`);
+const speakingDraftReload = await request(speakingDraftUrl, { token: admin.idToken });
+assert.equal(speakingDraftReload.status, 200, speakingDraftReload.body);
+for (const text of ['A: How are you today?', 'I am very well.', 'How are you today?']) assert.match(speakingDraftReload.body, new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+const speakingPublicUrl = `${documentsUrl}/publishedExerciseOverrides/${speakingId}`;
+const speakingPublish = await request(speakingPublicUrl, { method: 'PATCH', token: admin.idToken, data: {
+  exerciseId: speakingId, workbookId: 1, lessonId: 'wb1_l6', dayId: 'wb1_l6_d4', language: 'en', exerciseType: 'speaking',
+  status: 'published', version: 1, override: speakingOverride, publishedAt: now,
+} });
+assert.equal(speakingPublish.status, 200, `Speaking correction publishes without recreating ID: ${speakingPublish.body}`);
+const speakingStudentReload = await request(speakingPublicUrl, { token: student.idToken });
+assert.equal(speakingStudentReload.status, 200, speakingStudentReload.body);
+assert.match(speakingStudentReload.body, /A: How are you today\?/);
+const failedStudentDraft = await request(`${documentsUrl}/exerciseDrafts/student-forbidden`, { method: 'PATCH', token: student.idToken, data: { ...editorialIdentity, exerciseId: 'student-forbidden', status: 'draft', override: speakingOverride } });
+assert.notEqual(failedStudentDraft.status, 200, 'failed Firestore write must not create a draft or report saved state');
+
 console.log('Firestore exerciseReports and editorial option permission integration tests passed.');

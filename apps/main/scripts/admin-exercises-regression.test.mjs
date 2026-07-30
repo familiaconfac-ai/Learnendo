@@ -16,6 +16,11 @@ assert.match(service, /transaction\.delete\(draftRef\)/, 'publish/restore must r
 assert.match(service, /PUBLISHED_EXERCISE_COLLECTION/, 'public projection must remain separate');
 
 assert.match(builder, /<PracticeSection/, 'sandbox must use the production PracticeSection');
+assert.match(builder, /role="dialog" aria-modal="true" aria-label="Sandbox real"/, 'sandbox must be a modal layer');
+assert.match(builder, /Voltar ao editor/, 'sandbox must always expose an independent close action');
+assert.match(builder, /event\.key === 'Escape'/, 'sandbox should also close with Escape');
+assert.match(builder, /onClose=\{\(\) => setSandbox\(false\)\}/, 'closing sandbox must preserve editor state');
+assert.match(builder, /currentLanguage=\{value\.language\} embedded/, 'sandbox must not navigate away from the editor');
 assert.doesNotMatch(builder, /progressService|masteryQueueEngine|lessonProgressionEngine/, 'admin sandbox must not touch learner state engines');
 assert.match(builder, /new Image\(\)/, 'external image must be validated by browser loading');
 assert.doesNotMatch(builder, /getStorage|uploadBytes|data:image|blob:/, 'Stage 1 must not persist images or use Firebase Storage');

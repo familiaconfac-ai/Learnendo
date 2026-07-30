@@ -58,6 +58,12 @@ test('admin workflow exposes manual search, drafts, preview, publishing, restore
   assert.match(service, /alterado por outro administrador/);
   assert.match(service, /transaction\.set\(doc\(canonicalRef, 'versions'/);
   assert.match(editor, /workbookId: normalizeExerciseWorkbookId\(location\.workbook\.id\)/);
+  assert.match(editor, /Texto exibido ao aluno \(aparece no corpo do exercício\)/);
+  assert.doesNotMatch(editor, /original\.type !== 'speaking'.*displayValue/);
+  assert.match(editor, /Perguntas alternativas aceitas/);
+  assert.match(editor, /Áudio antes da resposta/);
+  assert.match(editor, /Frase completa depois da resposta/);
+  assert.match(service, /Firestore não devolveu o rascunho recém-salvo/);
 });
 
 test('change reason has one draft-backed state and is not reused from the published version', () => {
@@ -110,10 +116,8 @@ test('reason stays in admin history and is excluded from the student projection'
   assert.match(rules, /data\.status == 'draft' \|\| \(data\.changeReason\.size\(\) >= 5/);
 });
 
-test('image upload is disabled without making the editor depend on Storage', () => {
-  assert.match(editor, /Envio de novas imagens temporariamente indisponível/);
-  assert.match(editor, /O restante do exercício pode ser editado, salvo e publicado normalmente/);
-  assert.match(editor, /Envio de novas imagens/);
+test('HTTPS image remains editable without making the editor depend on Storage uploads', () => {
+  assert.match(editor, /URL HTTPS da imagem/);
   assert.doesNotMatch(editor, /uploadExerciseImage/);
   assert.doesNotMatch(editor, /type="file"/);
   assert.doesNotMatch(editor, /isUploading|uploadTask|imageUpload|pendingImage|selectedImageFile/);

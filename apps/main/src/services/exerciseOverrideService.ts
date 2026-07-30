@@ -106,7 +106,7 @@ export async function saveExerciseDraft(input: {
   original: Exercise; identity: ExerciseIdentity; fields: ExerciseOverrideFields;
   changeReason: string; adminNote: string; updatedBy: string; baseVersion: number; relatedReportId?: string | null;
   expectedDraftRevision?: number;
-}): Promise<void> {
+}): Promise<number> {
   await assertEditorialAdminAccess(input.updatedBy);
   const override = diffExerciseOverride(input.original, input.fields);
   const errors = validateExerciseOverride(input.original, input.identity, override);
@@ -118,7 +118,7 @@ export async function saveExerciseDraft(input: {
     updatedAt: serverTimestamp(), updatedBy: input.updatedBy };
   let operationType: 'create' | 'update' = 'create';
   try {
-    await runTransaction(db, async (transaction) => {
+    const revision = await runTransaction(db, async (transaction) => {
       const current = await transaction.get(ref);
       operationType = current.exists() ? 'update' : 'create';
       if (current.exists() && (Number(current.data().baseVersion ?? 0) !== input.baseVersion
@@ -126,7 +126,13 @@ export async function saveExerciseDraft(input: {
         throw new Error('Este exercício foi alterado por outro administrador. Recarregue ou compare as versões antes de salvar.');
       }
       transaction.set(ref, payload);
+      return payload.draftRevision;
     });
+    const persisted = await getDoc(ref);
+    if (!persisted.exists() || Number(persisted.data().draftRevision ?? 0) !== revision) {
+      throw new Error('O Firestore não devolveu o rascunho recém-salvo. O editor foi mantido aberto para nova tentativa.');
+    }
+    return revision;
   } catch (cause) {
     throw attachEditorialOperationDiagnostic(cause, {
       action: 'salvar rascunho', collection: EXERCISE_DRAFT_COLLECTION,

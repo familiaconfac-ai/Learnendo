@@ -1,4 +1,4 @@
-import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { assertEditorialAdminAccess } from './editorialAccessService';
 import { applyExerciseOverride, type PublishedExerciseOverride } from '../models/exerciseOverride';
@@ -78,6 +78,12 @@ export async function getDaySequenceState(identity: Omit<DaySequenceIdentity, 's
     draft: draft.exists() ? { ...(draft.data() as DaySequenceDraft), exercises: (draft.data() as DaySequenceDraft).exercises.map(cleanExercise) } : null,
     published: published.exists() ? { ...(published.data() as PublishedDaySequence), exercises: (published.data() as PublishedDaySequence).exercises.map(cleanExercise) } : null,
   };
+}
+
+export async function listDaySequenceDrafts(): Promise<DaySequenceDraft[]> {
+  const snapshot = await getDocs(collection(db, DAY_SEQUENCE_DRAFT_COLLECTION));
+  return snapshot.docs.map((item) => ({ ...(item.data() as DaySequenceDraft), scopeId: item.id, exercises: (item.data() as DaySequenceDraft).exercises.map(cleanExercise) }))
+    .sort((left, right) => left.scopeId.localeCompare(right.scopeId));
 }
 
 export async function saveDaySequenceDraft(input: {
