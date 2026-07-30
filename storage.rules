@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function isAdmin() {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    match /exercise-images/{workbook}/{lessonId}/{exerciseId}/{fileName} {
+      allow read: if signedIn()
+        && firestore.exists(/databases/(default)/documents/publishedExerciseOverrides/$(exerciseId))
+        && firestore.get(/databases/(default)/documents/publishedExerciseOverrides/$(exerciseId)).data.status == 'published';
+      allow create, update: if isAdmin()
+        && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpeg|webp)')
+        && workbook.matches('wb[0-9]{1,3}')
+        && lessonId.matches('[A-Za-z0-9_-]{1,120}')
+        && exerciseId.matches('[A-Za-z0-9_-]{1,180}')
+        && fileName.matches('[A-Za-z0-9_-]+[.](png|jpg|jpeg|webp)');
+      allow delete: if isAdmin();
+    }
+
+    match /{allPaths=**} { allow read, write: if false; }
+  }
+}

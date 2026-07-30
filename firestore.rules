@@ -58,6 +58,307 @@ service cloud.firestore {
         && validGrammarLocale(data.content.es);
     }
 
+    function validExerciseIdentity(data, exerciseId) {
+      return data.exerciseId == exerciseId
+        && data.exerciseId is string
+        && data.exerciseId.matches('[A-Za-z0-9_-]{1,180}')
+        && data.workbookId is int && data.workbookId >= 1 && data.workbookId <= 100
+        && data.lessonId is string && data.lessonId.matches('[A-Za-z0-9_-]{1,120}')
+        && data.dayId is string && data.dayId.matches('[A-Za-z0-9_-]{1,120}')
+        && data.language in ['en', 'pt', 'es', 'el', 'he']
+        && data.exerciseType in ['speaking', 'multiple-choice', 'writing', 'identification', 'dialogue'];
+    }
+
+    function validExerciseOptions(options, allowIncomplete) {
+      return options is list
+        && options.size() <= 10
+        && (allowIncomplete || options.size() >= 2)
+        && (options.size() < 1 || (options[0] is string && options[0].size() >= 1 && options[0].size() <= 500))
+        && (options.size() < 2 || (options[1] is string && options[1].size() >= 1 && options[1].size() <= 500))
+        && (options.size() < 3 || (options[2] is string && options[2].size() >= 1 && options[2].size() <= 500))
+        && (options.size() < 4 || (options[3] is string && options[3].size() >= 1 && options[3].size() <= 500))
+        && (options.size() < 5 || (options[4] is string && options[4].size() >= 1 && options[4].size() <= 500))
+        && (options.size() < 6 || (options[5] is string && options[5].size() >= 1 && options[5].size() <= 500))
+        && (options.size() < 7 || (options[6] is string && options[6].size() >= 1 && options[6].size() <= 500))
+        && (options.size() < 8 || (options[7] is string && options[7].size() >= 1 && options[7].size() <= 500))
+        && (options.size() < 9 || (options[8] is string && options[8].size() >= 1 && options[8].size() <= 500))
+        && (options.size() < 10 || (options[9] is string && options[9].size() >= 1 && options[9].size() <= 500));
+    }
+
+    function validExerciseFields(value, allowIncompleteOptions) {
+      return value is map
+        && value.keys().hasOnly([
+          'instruction', 'displayValue', 'audioValue', 'audioValueBeforeAnswer',
+          'fullSentenceAfterAnswer', 'options', 'correctValue', 'acceptedAnswers',
+          'acceptedQuestions', 'translation', 'imageUrl', 'imagePath', 'imageAlt',
+          'feedbackCorrect', 'feedbackIncorrect', 'explanation'
+        ])
+        && (!value.keys().hasAny(['instruction']) || (value.instruction is string && value.instruction.size() <= 10000))
+        && (!value.keys().hasAny(['displayValue']) || (value.displayValue is string && value.displayValue.size() <= 10000))
+        && (!value.keys().hasAny(['audioValue']) || (value.audioValue is string && value.audioValue.size() <= 10000))
+        && (!value.keys().hasAny(['correctValue']) || (value.correctValue is string && value.correctValue.size() <= 10000))
+        && (!value.keys().hasAny(['translation']) || (value.translation is string && value.translation.size() <= 10000))
+        && (!value.keys().hasAny(['imageUrl']) || (value.imageUrl is string && value.imageUrl.size() <= 2048 && (value.imageUrl == '' || value.imageUrl.matches('https://.*'))))
+        && (!value.keys().hasAny(['imagePath']) || (value.imagePath is string && (value.imagePath == '' || value.imagePath.matches('exercise-images/[A-Za-z0-9_./-]{1,500}'))))
+        && (!value.keys().hasAny(['imageAlt']) || (value.imageAlt is string && value.imageAlt.size() <= 500))
+        && (!value.keys().hasAny(['options']) || validExerciseOptions(value.options, allowIncompleteOptions))
+        && (!value.keys().hasAny(['acceptedAnswers']) || (value.acceptedAnswers is list && value.acceptedAnswers.size() <= 100))
+        && (!value.keys().hasAny(['acceptedQuestions']) || (value.acceptedQuestions is list && value.acceptedQuestions.size() <= 100));
+    }
+
+    function validPublicExerciseOverride(data, exerciseId) {
+      return data.keys().hasOnly([
+          'exerciseId', 'workbookId', 'lessonId', 'dayId', 'language',
+          'exerciseType', 'status', 'version', 'override', 'publishedAt'
+        ])
+        && validExerciseIdentity(data, exerciseId)
+        && data.status in ['published', 'disabled']
+        && data.version is int && data.version >= 1
+        && data.publishedAt is timestamp
+        && validExerciseFields(data.override, false);
+    }
+
+    function validEditorialExercise(data, exerciseId) {
+      return data.keys().hasOnly([
+          'exerciseId', 'workbookId', 'lessonId', 'dayId', 'language', 'exerciseType',
+          'status', 'version', 'override', 'changeReason', 'adminNote', 'relatedReportId',
+          'baseVersion', 'draftRevision', 'updatedAt', 'updatedBy', 'publishedAt', 'publishedBy'
+        ])
+        && validExerciseIdentity(data, exerciseId)
+        && data.status in ['draft', 'published', 'archived', 'disabled']
+        && data.version is int && data.version >= 0
+        && data.baseVersion is int && data.baseVersion >= 0
+        && (!data.keys().hasAny(['draftRevision']) || (data.draftRevision is int && data.draftRevision >= 1))
+        && data.changeReason is string && data.changeReason.size() <= 2000
+        && (data.status == 'draft' || (data.changeReason.size() >= 5 && data.changeReason.matches('.*\\S.*')))
+        && data.adminNote is string && data.adminNote.size() <= 10000
+        && (data.relatedReportId == null || data.relatedReportId is string)
+        && data.updatedAt is timestamp && data.updatedBy == request.auth.uid
+        && (!data.keys().hasAny(['publishedAt']) || data.publishedAt is timestamp)
+        && (!data.keys().hasAny(['publishedBy']) || data.publishedBy is string)
+        && validExerciseFields(data.override, data.status == 'draft');
+    }
+
+    function validAdminExerciseIdentity(data, exerciseId) {
+      return data.schemaVersion == 1
+        && data.exerciseId == exerciseId
+        && data.exerciseId is string && data.exerciseId.matches('ex_[A-Za-z0-9_-]{8,180}')
+        && data.origin == 'admin'
+        && data.courseId in ['english', 'spanish', 'portuguese_native', 'portuguese_foreigners', 'greek_koine', 'hebrew_biblical', 'bible_language_track']
+        && data.language in ['en', 'pt', 'es', 'el', 'he']
+        && data.workbookId is int && data.workbookId >= 1 && data.workbookId <= 100
+        && data.lessonId is string && data.lessonId.matches('[A-Za-z0-9_-]{0,120}')
+        && data.dayId is string && data.dayId.matches('[A-Za-z0-9_-]{0,120}')
+        && data.type == 'multiple-choice';
+    }
+
+    function validDaySequenceIdentity(data, scopeId) {
+      return data.schemaVersion == 1
+        && data.scopeId == scopeId
+        && data.scopeId is string && data.scopeId.size() >= 5 && data.scopeId.size() <= 600
+        && data.courseId in ['english', 'spanish', 'portuguese_native', 'portuguese_foreigners', 'greek_koine', 'hebrew_biblical', 'bible_language_track']
+        && data.language in ['en', 'pt', 'es', 'el', 'he']
+        && data.workbookId is int && data.workbookId >= 1 && data.workbookId <= 100
+        && data.lessonId is string && data.lessonId.size() >= 1 && data.lessonId.size() <= 120
+        && data.dayId is string && data.dayId.size() >= 1 && data.dayId.size() <= 120;
+    }
+
+    function validDayExercises(exercises) {
+      return exercises is list && exercises.size() >= 1 && exercises.size() <= 100;
+    }
+
+    function validDaySequenceDraft(data, scopeId) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'scopeId', 'courseId', 'language', 'workbookId', 'lessonId', 'dayId',
+          'status', 'baseVersion', 'draftRevision', 'exercises', 'operation', 'changeReason',
+          'relatedReportId', 'updatedAt', 'updatedBy'
+        ])
+        && validDaySequenceIdentity(data, scopeId)
+        && data.status == 'draft'
+        && data.baseVersion is int && data.baseVersion >= 0
+        && data.draftRevision is int && data.draftRevision >= 1
+        && validDayExercises(data.exercises)
+        && data.operation in ['edit', 'reconstruct', 'append', 'insert_at', 'replace_day', 'replace_positions', 'reorder']
+        && data.changeReason is string && data.changeReason.size() <= 2000
+        && (data.relatedReportId == null || data.relatedReportId is string)
+        && data.updatedAt is timestamp && data.updatedBy == request.auth.uid;
+    }
+
+    function validPublishedDaySequence(data, scopeId) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'scopeId', 'courseId', 'language', 'workbookId', 'lessonId', 'dayId',
+          'version', 'exercises', 'publishedAt'
+        ])
+        && validDaySequenceIdentity(data, scopeId)
+        && data.version is int && data.version >= 1
+        && validDayExercises(data.exercises)
+        && data.publishedAt is timestamp;
+    }
+
+    function validDaySequenceVersion(data, scopeId) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'scopeId', 'courseId', 'language', 'workbookId', 'lessonId', 'dayId',
+          'status', 'baseVersion', 'draftRevision', 'exercises', 'operation', 'changeReason',
+          'relatedReportId', 'updatedAt', 'updatedBy', 'version', 'publishedAt', 'publishedBy'
+        ])
+        && validDaySequenceIdentity(data, scopeId)
+        && data.status == 'draft'
+        && data.baseVersion is int && data.baseVersion >= 0
+        && data.draftRevision is int && data.draftRevision >= 1
+        && validDayExercises(data.exercises)
+        && data.operation in ['edit', 'reconstruct', 'append', 'insert_at', 'replace_day', 'replace_positions', 'reorder']
+        && data.changeReason is string && data.changeReason.size() >= 5 && data.changeReason.size() <= 2000
+        && (data.relatedReportId == null || data.relatedReportId is string)
+        && data.updatedAt is timestamp && data.updatedBy is string
+        && data.version is int && data.version >= 1
+        && data.publishedAt is timestamp && data.publishedBy == request.auth.uid;
+    }
+
+    function unchangedAdminExerciseIdentity() {
+      return request.resource.data.schemaVersion == resource.data.schemaVersion
+        && request.resource.data.exerciseId == resource.data.exerciseId
+        && request.resource.data.origin == resource.data.origin
+        && request.resource.data.type == resource.data.type;
+    }
+
+    function validAdminExerciseOptions(options, allowIncomplete) {
+      return options is list
+        && options.size() <= 10
+        && (allowIncomplete || options.size() >= 2)
+        && (options.size() < 1 || (options[0] is string && options[0].size() <= 500 && (allowIncomplete || options[0].size() >= 1)))
+        && (options.size() < 2 || (options[1] is string && options[1].size() <= 500 && (allowIncomplete || options[1].size() >= 1)))
+        && (options.size() < 3 || (options[2] is string && options[2].size() <= 500 && (allowIncomplete || options[2].size() >= 1)))
+        && (options.size() < 4 || (options[3] is string && options[3].size() <= 500 && (allowIncomplete || options[3].size() >= 1)))
+        && (options.size() < 5 || (options[4] is string && options[4].size() <= 500 && (allowIncomplete || options[4].size() >= 1)))
+        && (options.size() < 6 || (options[5] is string && options[5].size() <= 500 && (allowIncomplete || options[5].size() >= 1)))
+        && (options.size() < 7 || (options[6] is string && options[6].size() <= 500 && (allowIncomplete || options[6].size() >= 1)))
+        && (options.size() < 8 || (options[7] is string && options[7].size() <= 500 && (allowIncomplete || options[7].size() >= 1)))
+        && (options.size() < 9 || (options[8] is string && options[8].size() <= 500 && (allowIncomplete || options[8].size() >= 1)))
+        && (options.size() < 10 || (options[9] is string && options[9].size() <= 500 && (allowIncomplete || options[9].size() >= 1)));
+    }
+
+    function validAdminExerciseContent(content, allowIncomplete) {
+      return content is map
+        && content.keys().hasOnly([
+          'instruction', 'displayValue', 'audioValue', 'speechLanguage', 'options',
+          'correctValue', 'acceptedAnswers', 'translation', 'imageUrl', 'imageAlt',
+          'feedbackCorrect', 'feedbackIncorrect', 'explanation'
+        ])
+        && content.instruction is string && content.instruction.size() <= 10000
+        && content.displayValue is string && content.displayValue.size() <= 10000
+        && content.audioValue is string && content.audioValue.size() <= 10000
+        && content.speechLanguage in ['en', 'en-US', 'pt', 'pt-BR', 'es', 'es-ES', 'el', 'el-GR', 'he', 'he-IL']
+        && validAdminExerciseOptions(content.options, allowIncomplete)
+        && content.correctValue is string && content.correctValue.size() <= 10000
+        && content.acceptedAnswers is list && content.acceptedAnswers.size() <= 100
+        && content.translation is string && content.translation.size() <= 10000
+        && content.imageUrl is string && content.imageUrl.size() <= 2048
+        && (content.imageUrl == '' || content.imageUrl.matches('https://[^@/]+/?.*'))
+        && content.imageAlt is string && content.imageAlt.size() <= 500
+        && content.feedbackCorrect is string && content.feedbackCorrect.size() <= 10000
+        && content.feedbackIncorrect is string && content.feedbackIncorrect.size() <= 10000
+        && content.explanation is string && content.explanation.size() <= 10000
+        && (allowIncomplete || (
+          content.instruction.size() >= 1
+          && content.correctValue.size() >= 1
+          && content.correctValue in content.options
+        ));
+    }
+
+    function validAdminExerciseCanonical(data, exerciseId) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'exerciseId', 'origin', 'courseId', 'language', 'workbookId',
+          'lessonId', 'dayId', 'type', 'status', 'currentVersion', 'draftRevision',
+          'createdAt', 'createdBy', 'updatedAt', 'updatedBy', 'publishedAt', 'publishedBy',
+          'changeReason', 'adminNote', 'relatedReportId', 'duplicatedFromExerciseId'
+        ])
+        && validAdminExerciseIdentity(data, exerciseId)
+        && data.status in ['draft', 'published', 'disabled']
+        && data.currentVersion is int && data.currentVersion >= 0
+        && data.draftRevision is int && data.draftRevision >= 0
+        && data.createdAt is timestamp && data.createdBy is string
+        && data.updatedAt is timestamp && data.updatedBy == request.auth.uid
+        && (!data.keys().hasAny(['publishedAt']) || data.publishedAt is timestamp)
+        && (!data.keys().hasAny(['publishedBy']) || data.publishedBy is string)
+        && data.changeReason is string && data.changeReason.size() <= 2000
+        && data.adminNote is string && data.adminNote.size() <= 10000
+        && (data.relatedReportId == null || data.relatedReportId is string)
+        && (data.duplicatedFromExerciseId == null || data.duplicatedFromExerciseId is string);
+    }
+
+    function validAdminExerciseDraft(data, exerciseId) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'exerciseId', 'origin', 'courseId', 'language', 'workbookId',
+          'lessonId', 'dayId', 'type', 'status', 'baseVersion', 'draftRevision', 'content',
+          'imageValidation', 'changeReason', 'adminNote', 'relatedReportId',
+          'duplicatedFromExerciseId', 'updatedAt', 'updatedBy'
+        ])
+        && validAdminExerciseIdentity(data, exerciseId)
+        && data.status == 'draft'
+        && data.baseVersion is int && data.baseVersion >= 0
+        && data.draftRevision is int && data.draftRevision >= 1
+        && validAdminExerciseContent(data.content, true)
+        && (data.imageValidation == null || (
+          data.imageValidation is map
+          && data.imageValidation.keys().hasOnly(['validatedUrl', 'validatedAt'])
+          && data.imageValidation.validatedUrl is string
+          && data.imageValidation.validatedUrl == data.content.imageUrl
+          && data.imageValidation.validatedAt is string
+        ))
+        && data.changeReason is string && data.changeReason.size() <= 2000
+        && data.adminNote is string && data.adminNote.size() <= 10000
+        && (data.relatedReportId == null || data.relatedReportId is string)
+        && (data.duplicatedFromExerciseId == null || data.duplicatedFromExerciseId is string)
+        && data.updatedAt is timestamp && data.updatedBy == request.auth.uid;
+    }
+
+    function validAdminExerciseVersion(data, exerciseId) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'exerciseId', 'origin', 'courseId', 'language', 'workbookId',
+          'lessonId', 'dayId', 'type', 'status', 'version', 'content', 'changeReason',
+          'adminNote', 'relatedReportId', 'duplicatedFromExerciseId', 'publishedAt', 'publishedBy'
+        ])
+        && validAdminExerciseIdentity(data, exerciseId)
+        && data.lessonId.size() >= 1 && data.dayId.size() >= 1
+        && data.status in ['published', 'disabled']
+        && data.version is int && data.version >= 1
+        && validAdminExerciseContent(data.content, false)
+        && data.changeReason is string && data.changeReason.size() >= 5 && data.changeReason.size() <= 2000
+        && data.adminNote is string && data.adminNote.size() <= 10000
+        && (data.relatedReportId == null || data.relatedReportId is string)
+        && (data.duplicatedFromExerciseId == null || data.duplicatedFromExerciseId is string)
+        && data.publishedAt is timestamp && data.publishedBy == request.auth.uid;
+    }
+
+    function validPublishedAdminExercise(data, exerciseId) {
+      return data.keys().hasOnly([
+          'schemaVersion', 'exerciseId', 'origin', 'courseId', 'language', 'workbookId',
+          'lessonId', 'dayId', 'type', 'instruction', 'displayValue', 'audioValue',
+          'speechLanguage', 'options', 'correctValue', 'acceptedAnswers', 'translation',
+          'imageUrl', 'imageAlt', 'feedbackCorrect', 'feedbackIncorrect', 'explanation',
+          'version', 'publishedAt'
+        ])
+        && validAdminExerciseIdentity(data, exerciseId)
+        && data.lessonId.size() >= 1 && data.dayId.size() >= 1
+        && data.version is int && data.version >= 1
+        && data.publishedAt is timestamp
+        && data.instruction is string && data.instruction.size() >= 1 && data.instruction.size() <= 10000
+        && data.displayValue is string && data.displayValue.size() <= 10000
+        && data.audioValue is string && data.audioValue.size() <= 10000
+        && data.speechLanguage in ['en', 'en-US', 'pt', 'pt-BR', 'es', 'es-ES', 'el', 'el-GR', 'he', 'he-IL']
+        && validExerciseOptions(data.options, false)
+        && data.correctValue is string && data.correctValue.size() >= 1 && data.correctValue.size() <= 10000
+        && data.correctValue in data.options
+        && data.acceptedAnswers is list && data.acceptedAnswers.size() <= 100
+        && data.translation is string && data.translation.size() <= 10000
+        && data.imageUrl is string && data.imageUrl.size() <= 2048
+        && (data.imageUrl == '' || data.imageUrl.matches('https://[^@/]+/?.*'))
+        && data.imageAlt is string && data.imageAlt.size() <= 500
+        && data.feedbackCorrect is string && data.feedbackCorrect.size() <= 10000
+        && data.feedbackIncorrect is string && data.feedbackIncorrect.size() <= 10000
+        && data.explanation is string && data.explanation.size() <= 10000;
+    }
+
     function liveClassDoc(classId) {
       return get(/databases/$(database)/documents/liveClasses/$(classId));
     }
@@ -247,9 +548,109 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    match /publishedExerciseOverrides/{exerciseId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin() && validPublicExerciseOverride(request.resource.data, exerciseId)
+        && (!exists(/databases/$(database)/documents/publishedExerciseOverrides/$(exerciseId))
+          || request.resource.data.exerciseId == resource.data.exerciseId);
+      allow delete: if isAdmin();
+    }
+
+    match /exerciseDrafts/{exerciseId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin() && validEditorialExercise(request.resource.data, exerciseId)
+        && request.resource.data.status == 'draft';
+    }
+
+    match /exerciseOverrides/{exerciseId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin() && validEditorialExercise(request.resource.data, exerciseId)
+        && request.resource.data.status in ['published', 'disabled', 'archived']
+        && (!exists(/databases/$(database)/documents/exerciseOverrides/$(exerciseId))
+          || request.resource.data.exerciseId == resource.data.exerciseId);
+
+      match /versions/{versionId} {
+        allow read: if isAdmin();
+        allow create: if isAdmin() && validEditorialExercise(request.resource.data, exerciseId);
+        allow update, delete: if false;
+      }
+    }
+
+    match /adminExerciseDrafts/{exerciseId} {
+      allow read, delete: if isAdmin();
+      allow create: if isAdmin() && validAdminExerciseDraft(request.resource.data, exerciseId);
+      allow update: if isAdmin() && unchangedAdminExerciseIdentity()
+        && validAdminExerciseDraft(request.resource.data, exerciseId);
+    }
+
+    match /adminExercises/{exerciseId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && request.resource.data.createdBy == request.auth.uid
+        && validAdminExerciseCanonical(request.resource.data, exerciseId);
+      allow update: if isAdmin() && unchangedAdminExerciseIdentity()
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.createdBy == resource.data.createdBy
+        && validAdminExerciseCanonical(request.resource.data, exerciseId);
+      allow delete: if false;
+
+      match /versions/{versionId} {
+        allow read: if isAdmin();
+        allow create: if isAdmin() && versionId.matches('[0-9]{6}')
+          && validAdminExerciseVersion(request.resource.data, exerciseId);
+        allow update, delete: if false;
+      }
+    }
+
+    match /publishedExercises/{exerciseId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() && validPublishedAdminExercise(request.resource.data, exerciseId);
+      allow update: if isAdmin() && unchangedAdminExerciseIdentity()
+        && validPublishedAdminExercise(request.resource.data, exerciseId);
+      allow delete: if isAdmin();
+    }
+
+    match /dayExerciseSequenceDrafts/{scopeId} {
+      allow read, delete: if isAdmin();
+      allow create, update: if isAdmin() && validDaySequenceDraft(request.resource.data, scopeId);
+    }
+
+    match /dayExerciseSequences/{scopeId} {
+      allow read: if isAdmin();
+      allow create, update: if isAdmin()
+        && request.resource.data.keys().hasOnly([
+          'schemaVersion', 'scopeId', 'courseId', 'language', 'workbookId', 'lessonId', 'dayId',
+          'currentVersion', 'draftRevision', 'updatedAt', 'updatedBy'
+        ])
+        && validDaySequenceIdentity(request.resource.data, scopeId)
+        && request.resource.data.currentVersion is int && request.resource.data.currentVersion >= 0
+        && request.resource.data.draftRevision is int && request.resource.data.draftRevision >= 0
+        && request.resource.data.updatedAt is timestamp && request.resource.data.updatedBy == request.auth.uid;
+      allow delete: if false;
+
+      match /versions/{versionId} {
+        allow read: if isAdmin();
+        allow create: if isAdmin() && versionId.matches('[0-9]{6}')
+          && validDaySequenceVersion(request.resource.data, scopeId);
+        allow update, delete: if false;
+      }
+    }
+
+    match /publishedDayExerciseSequences/{scopeId} {
+      allow read: if signedIn();
+      allow create, update: if isAdmin() && validPublishedDaySequence(request.resource.data, scopeId);
+      allow delete: if isAdmin();
+    }
+
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin() || isTeacherAccount();
-      allow create, update, delete: if isOwner(uid) || isAdmin();
+      allow create: if isAdmin()
+        || (isOwner(uid)
+          && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'student'));
+      allow update: if isAdmin()
+        || (isOwner(uid)
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
+      allow delete: if isOwner(uid) || isAdmin();
 
       match /{document=**} {
         allow read, create, update, delete: if isOwner(uid) || isAdmin();
@@ -304,13 +705,18 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'status', 'priority', 'adminNote', 'updatedAt', 'reviewedBy',
           'reviewedAt', 'resolvedAt', 'dismissedAt', 'verificationResult',
-          'verificationNote', 'verifiedBy', 'verifiedAt'
+          'verificationNote', 'verifiedBy', 'verifiedAt', 'resolutionVersion',
+          'resolutionType', 'resolvedByEditorialAt', 'requiresCodeChange'
         ])
         && request.resource.data.reportId == resource.data.reportId
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.status in ['new', 'reviewing', 'resolved', 'dismissed']
         && request.resource.data.priority in ['low', 'normal', 'high', 'critical']
+        && (!request.resource.data.keys().hasAny(['resolutionVersion']) || request.resource.data.resolutionVersion is int)
+        && (!request.resource.data.keys().hasAny(['resolutionType']) || request.resource.data.resolutionType in ['editorial', 'code'])
+        && (!request.resource.data.keys().hasAny(['resolvedByEditorialAt']) || request.resource.data.resolvedByEditorialAt is timestamp)
+        && (!request.resource.data.keys().hasAny(['requiresCodeChange']) || request.resource.data.requiresCodeChange is bool)
         && (!request.resource.data.keys().hasAny(['verificationResult'])
           || request.resource.data.verificationResult in ['ready-for-verification', 'fixed', 'better-than-expected', 'not-fixed', 'needs-improvement']);
       allow delete: if false;

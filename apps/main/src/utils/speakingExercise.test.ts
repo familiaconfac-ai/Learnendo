@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { resolvePromptAudioText } from './fillInBlankAudio.ts';
-import { classifySpeakingExercise, isSpeakingResponseCorrect } from './speakingExercise.ts';
+import { classifySpeakingExercise, isSpeakingResponseCorrect, resolveAcceptedSpokenAnswers } from './speakingExercise.ts';
 
 const shadowing = {
   instruction: 'Listen and repeat exactly as you hear.',
@@ -14,6 +14,33 @@ test('shadowing repeats the question and rejects its semantic answer', () => {
   assert.equal(isSpeakingResponseCorrect(shadowing, 'What is five plus five?'), true);
   assert.equal(isSpeakingResponseCorrect(shadowing, '10'), false);
   assert.equal(isSpeakingResponseCorrect(shadowing, "It's ten"), false);
+});
+
+test('shadowing aceita o alvo publicado Good morning com normalização central', () => {
+  const published = { instruction: 'Repeat.', assessmentMode: 'shadowing' as const, audioValue: 'Good morning', correctValue: 'Good morning', acceptedAnswers: ['Morning!'] };
+  for (const answer of ['Good morning', 'Good morning.', 'good morning', '  Good   morning  ']) {
+    assert.equal(isSpeakingResponseCorrect(published, answer), true, answer);
+  }
+  assert.equal(isSpeakingResponseCorrect(published, 'Good evening'), false);
+  assert.equal(isSpeakingResponseCorrect(published, 'Morning!'), true);
+  assert.deepEqual(resolveAcceptedSpokenAnswers(published), ['Good morning', 'Morning!']);
+});
+
+test('resolver usa somente valores do exercício local, administrativo ou com override recebido', () => {
+  const local = { instruction: 'Repeat', assessmentMode: 'shadowing' as const, audioValue: 'Local target', correctValue: 'Local target' };
+  const administrative = { ...local, audioValue: 'Published target', correctValue: 'Published target' };
+  const overridden = { ...administrative, correctValue: 'Override target', acceptedAnswers: ['Published target'] };
+  assert.equal(isSpeakingResponseCorrect(local, 'Local target'), true);
+  assert.equal(isSpeakingResponseCorrect(administrative, 'Published target'), true);
+  assert.equal(isSpeakingResponseCorrect(overridden, 'Override target'), true);
+  assert.equal(resolveAcceptedSpokenAnswers(overridden).includes('Published target'), true);
+});
+
+test('repeat has an explicit mode while sharing the modeled pronunciation target', () => {
+  const repeat = { ...shadowing, instruction: 'Listen first. Then repeat.', assessmentMode: 'repeat' as const };
+  assert.equal(classifySpeakingExercise(repeat), 'repeat');
+  assert.equal(isSpeakingResponseCorrect(repeat, 'What is five plus five?'), true);
+  assert.equal(isSpeakingResponseCorrect(repeat, '10'), false);
 });
 
 test('question-and-answer accepts authored answer variants, not the question', () => {

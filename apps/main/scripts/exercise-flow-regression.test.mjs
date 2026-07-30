@@ -7,6 +7,7 @@ const exercisePracticeSource = await readFile(
   new URL('../src/components/ExercisePractice/ExercisePractice.tsx', import.meta.url),
   'utf8',
 );
+const appSource = await readFile(new URL('../src/App.tsx', import.meta.url), 'utf8');
 const lesson4Source = await readFile(new URL('../src/data/workbook1/lesson4.ts', import.meta.url), 'utf8');
 const lesson8Source = await readFile(new URL('../src/data/workbook1/lesson8.ts', import.meta.url), 'utf8');
 
@@ -28,6 +29,13 @@ test('an out-of-range exercise index renders a recovery state instead of a blank
     /if \(currentIdx >= exercises\.length\) return null;/,
     'the exercise flow still returns a blank screen when its index is out of range',
   );
+});
+
+test('selecting the already active workbook retriggers loading and exits the empty orientation', () => {
+  assert.match(appSource, /setWorkbookLoadRequest\(\(request\) => request \+ 1\)/);
+  assert.match(appSource, /\[currentWorkbookId, currentCourseId, progressLoaded, workbookLoadRequest\]/);
+  assert.match(appSource, /setWorkbookOrientationDismissed\(true\)/);
+  assert.match(appSource, /if \(!hasProgress && !workbookOrientationDismissed\)/);
 });
 
 test('practice uses one external scroll container with a compact sticky confirmation footer', () => {

@@ -13,6 +13,7 @@ const firebaseValue = (value) => {
     ? { integerValue: String(value) }
     : { doubleValue: value };
   if (value instanceof Date) return { timestampValue: value.toISOString() };
+  if (typeof value === 'object') return { mapValue: { fields: Object.fromEntries(Object.entries(value).map(([key, item]) => [key, firebaseValue(item)])) } };
   return { stringValue: String(value) };
 };
 
@@ -185,4 +186,53 @@ assert.notEqual(adminOriginalContentUpdate.status, 200, 'Admin must not alter or
 const adminDelete = await request(createUrl, { method: 'DELETE', token: admin.idToken });
 assert.notEqual(adminDelete.status, 200, 'Admin delete must fail');
 
-console.log('Firestore exerciseReports permission integration tests passed.');
+for (const status of ['dismissed', 'reviewing', 'resolved']) {
+  const transition = await request(`${createUrl}?updateMask.fieldPaths=status`, {
+    method: 'PATCH', token: admin.idToken, data: { status },
+  });
+  assert.equal(transition.status, 200, `Admin should transition a report to ${status}: ${transition.body}`);
+}
+
+const editorialIdentity = {
+  exerciseId: 'exercise-options-rules', workbookId: 1, lessonId: 'lesson1', dayId: 'day1',
+  language: 'en', exerciseType: 'multiple-choice', version: 0, changeReason: '', adminNote: '',
+  relatedReportId: reportId, baseVersion: 0, draftRevision: 1, updatedAt: now, updatedBy: admin.localId,
+};
+const draftUrl = `${documentsUrl}/exerciseDrafts/${editorialIdentity.exerciseId}`;
+const fourOptions = ['One', 'Two', 'Three', 'Four'];
+const draftFour = await request(draftUrl, {
+  method: 'PATCH', token: admin.idToken,
+  data: { ...editorialIdentity, status: 'draft', override: { options: fourOptions, correctValue: 'Four' } },
+});
+assert.equal(draftFour.status, 200, `Admin draft should accept four alternatives: ${draftFour.body}`);
+
+const draftOne = await request(draftUrl, {
+  method: 'PATCH', token: admin.idToken,
+  data: { ...editorialIdentity, draftRevision: 2, status: 'draft', override: { options: ['Incomplete'] } },
+});
+assert.equal(draftOne.status, 200, `Incomplete drafts may retain one alternative: ${draftOne.body}`);
+
+const draftEleven = await request(draftUrl, {
+  method: 'PATCH', token: admin.idToken,
+  data: { ...editorialIdentity, draftRevision: 3, status: 'draft', override: { options: Array.from({ length: 11 }, (_, index) => `Option ${index + 1}`) } },
+});
+assert.notEqual(draftEleven.status, 200, 'Draft must reject more than ten alternatives');
+
+const publicUrl = `${documentsUrl}/publishedExerciseOverrides/${editorialIdentity.exerciseId}`;
+const publicBase = {
+  exerciseId: editorialIdentity.exerciseId, workbookId: 1, lessonId: 'lesson1', dayId: 'day1',
+  language: 'en', exerciseType: 'multiple-choice', status: 'published', version: 1, publishedAt: now,
+};
+const publishFour = await request(publicUrl, {
+  method: 'PATCH', token: admin.idToken,
+  data: { ...publicBase, override: { options: fourOptions, correctValue: 'Four' } },
+});
+assert.equal(publishFour.status, 200, `Published override should accept four alternatives: ${publishFour.body}`);
+
+const publishOne = await request(publicUrl, {
+  method: 'PATCH', token: admin.idToken,
+  data: { ...publicBase, version: 2, override: { options: ['Incomplete'], correctValue: 'Incomplete' } },
+});
+assert.notEqual(publishOne.status, 200, 'Published override must require at least two alternatives');
+
+console.log('Firestore exerciseReports and editorial option permission integration tests passed.');

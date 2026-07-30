@@ -376,6 +376,8 @@ const App: React.FC = () => {
   const [currentLessonId, setCurrentLessonId] = useState<string | null>(() => initialTabContextRef.current.lessonId ?? null);
   const [currentWorkbook, setCurrentWorkbook] = useState<any>(null);
   const [isWorkbookLoading, setIsWorkbookLoading] = useState(false);
+  const [workbookLoadRequest, setWorkbookLoadRequest] = useState(0);
+  const [workbookOrientationDismissed, setWorkbookOrientationDismissed] = useState(false);
   const [contentLoadError, setContentLoadError] = useState<string | null>(null);
   const [currentDay, setCurrentDay] = useState<Day | null>(null);
   const [pendingLiveLessonRef, setPendingLiveLessonRef] = useState<{ workbookId: number; lessonRef: string | null } | null>(null);
@@ -393,6 +395,10 @@ const App: React.FC = () => {
   const [progressLoaded, setProgressLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [weekCompletionResult, setWeekCompletionResult] = useState<WeekCompletionResult | null>(null);
+
+  useEffect(() => {
+    setWorkbookOrientationDismissed(false);
+  }, [user?.uid]);
   const [showConversionModal, setShowConversionModal] = useState(false);
   const [showResultAnimation, setShowResultAnimation] = useState(false);
   const [resultAnimationMeta, setResultAnimationMeta] = useState<{
@@ -1358,7 +1364,7 @@ const App: React.FC = () => {
 
     loadWorkbook();
     return () => { cancelled = true; };
-  }, [currentWorkbookId, currentCourseId, progressLoaded]);
+  }, [currentWorkbookId, currentCourseId, progressLoaded, workbookLoadRequest]);
 
   useEffect(() => {
     if (!pendingLiveLessonRef || !currentWorkbook || currentWorkbookId !== pendingLiveLessonRef.workbookId) return;
@@ -1508,6 +1514,8 @@ const App: React.FC = () => {
     setCurrentDay(null);
     setContentLoadError(null);
     setIsWorkbookLoading(true);
+    setWorkbookOrientationDismissed(true);
+    setWorkbookLoadRequest((request) => request + 1);
     setCurrentWorkbookId(workbookId);
     // Stamp user-action time so the race-condition guard suppresses any
     // concurrent Firestore snapshot from reverting courseId/language.
@@ -2854,7 +2862,7 @@ const App: React.FC = () => {
           );
         }
         // Workbook loaded but student has no completed days or activities — show orientation
-        if (!hasProgress) {
+        if (!hasProgress && !workbookOrientationDismissed) {
           const title =
             uiLanguage === 'pt' ? 'Você ainda não iniciou este curso.'
             : uiLanguage === 'es' ? 'Aún no has iniciado este curso.'
@@ -3057,6 +3065,8 @@ const App: React.FC = () => {
             day={currentDay}
             lessonId={currentLessonId || ''}
             currentLanguage={language}
+            courseId={currentCourseId ?? DEFAULT_COURSE_ID}
+            interfaceLocale={uiLanguage}
             progress={progress}
             userId={user?.uid ?? 'anonymous'}
             workbookId={activePracticeWorkbookId}

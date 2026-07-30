@@ -1,3 +1,5 @@
+import { createTtsPlaybackSession, type TtsPlaybackResult, type TtsPlaybackState } from './ttsPlaybackLifecycle.ts';
+
 /**
  * ttsService.ts
  *
@@ -43,7 +45,7 @@ export function appLangToTts(lang: string | undefined): string {
 // ─────────────────────────────────────────────────────────────
 // Debug flag — set to false to silence all [TTS] console output
 // ─────────────────────────────────────────────────────────────
-const TTS_DEBUG = true;
+const TTS_DEBUG = Boolean(import.meta.env?.DEV || import.meta.env?.VITE_DEBUG_TTS === 'true');
 
 // ─────────────────────────────────────────────────────────────
 // Voice cache + initialisation
@@ -53,6 +55,7 @@ let _voices: SpeechSynthesisVoice[] = [];
 let _activeRemoteAudio: HTMLAudioElement | null = null;
 let _activeRemoteAudioUrl: string | null = null;
 let _remoteTtsAbortController: AbortController | null = null;
+let _activePlayback: { session: ReturnType<typeof createTtsPlaybackSession>; utterance: SpeechSynthesisUtterance | null } | null = null;
 
 function cleanupRemoteAudio(): void {
   if (_activeRemoteAudio) {
@@ -77,35 +80,41 @@ function canUseRemoteTts(langCode: string): boolean {
   return lower.startsWith('en') || lower.startsWith('es') || lower.startsWith('pt') || lower.startsWith('el') || lower.startsWith('he');
 }
 
-async function playRemoteTts(
-  text: string,
-  langCode: string,
-  options: SpeakOptions,
-): Promise<void> {
+async function playRemoteTts(text: string, langCode: string, options: SpeakOptions, session: ReturnType<typeof createTtsPlaybackSession>): Promise<void> {
   stopRemoteAudio();
+  session.transition('loading', 'remote');
 
   const controller = new AbortController();
   _remoteTtsAbortController = controller;
-
-  const response = await fetch('/api/tts', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      text,
-      langCode,
-      rate: options.rate ?? 1,
-    }),
-    signal: controller.signal,
-  });
+  let requestTimedOut = false;
+  const requestTimeout = setTimeout(() => { requestTimedOut = true; controller.abort(); }, 10000);
+  let response: Response;
+  try {
+    response = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text, langCode, rate: options.rate ?? 1 }),
+      signal: controller.signal,
+    });
+  } catch (cause) {
+    if (requestTimedOut) {
+      const timeout = new Error('Remote TTS request timed out') as Error & { code?: string };
+      timeout.code = 'remote-timeout';
+      throw timeout;
+    }
+    throw cause;
+  } finally {
+    clearTimeout(requestTimeout);
+  }
 
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     const message = typeof payload?.error === 'string'
       ? payload.error
       : `Remote TTS failed with status ${response.status}`;
-    throw new Error(message);
+    const error = new Error(message) as Error & { code?: string };
+    error.code = `remote-http-${response.status}`;
+    throw error;
   }
 
   const audioBlob = await response.blob();
@@ -118,21 +127,31 @@ async function playRemoteTts(
   audio.volume = options.volume ?? 1;
   _activeRemoteAudio = audio;
   _activeRemoteAudioUrl = audioUrl;
+  const playbackTimeout = setTimeout(() => {
+    if (_activeRemoteAudio === audio && !session.settled) {
+      cleanupRemoteAudio();
+      session.fail('remote-playback-timeout', 'remote');
+    }
+  }, Math.max(15000, Math.min(120000, text.split(/\s+/).length * 1500)));
+
+  audio.onplay = () => session.transition('playing', 'remote');
 
   audio.onended = () => {
+    clearTimeout(playbackTimeout);
     if (_activeRemoteAudio === audio) {
       cleanupRemoteAudio();
       _remoteTtsAbortController = null;
     }
-    options.onEnd?.();
+    session.complete('remote');
   };
 
   audio.onerror = () => {
+    clearTimeout(playbackTimeout);
     if (_activeRemoteAudio === audio) {
       cleanupRemoteAudio();
       _remoteTtsAbortController = null;
     }
-    options.onError?.();
+    session.fail('remote-audio-error', 'remote');
   };
 
   await audio.play();
@@ -349,10 +368,39 @@ export interface SpeakOptions {
    * Falls back gracefully if only one gender is available.
    */
   voicePreference?: 'male' | 'female';
+  onStart?: () => void;
+  onStateChange?: (state: TtsPlaybackState) => void;
   /** Called when the utterance finishes normally */
   onEnd?: () => void;
   /** Called when synthesis fails */
-  onError?: () => void;
+  onError?: (errorCode?: string) => void;
+  diagnostics?: { exerciseType?: string; speechLanguage?: string };
+}
+
+export interface TtsPlaybackHandle {
+  readonly promise: Promise<TtsPlaybackResult>;
+  readonly state: TtsPlaybackState;
+  cancel: () => void;
+}
+
+function summarizedErrorCode(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'code' in error && typeof (error as { code?: unknown }).code === 'string') return (error as { code: string }).code;
+  if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
+  if (typeof error === 'object' && error !== null && 'name' in error && (error as { name?: string }).name === 'AbortError') return 'cancelled';
+  return 'remote-unavailable';
+}
+
+function stopActivePlayback(reason = 'cancelled'): void {
+  const active = _activePlayback;
+  if (!active) return;
+  active.session.cancel(reason);
+  _activePlayback = null;
+  stopRemoteAudio();
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+}
+
+export function cancelSpeechPlayback(): void {
+  stopActivePlayback('component-unmounted');
 }
 
 /**
@@ -363,67 +411,98 @@ export interface SpeakOptions {
  *                  OR a full BCP-47 string ('en-US', 'pt-BR', …).  Both accepted.
  * @param options   Optional rate / pitch / volume / lifecycle callbacks
  */
-export function speak(
-  text: string,
-  langCode: string = 'en',
-  options: SpeakOptions = {},
-): void {
-  if (!text) return;
-  if (!('speechSynthesis' in window)) {
-    options.onError?.();
-    return;
-  }
-
-  stopRemoteAudio();
-  window.speechSynthesis.cancel();
-  // Some browsers (Chrome mobile) pause synthesis after device inactivity.
-  if (window.speechSynthesis.paused) window.speechSynthesis.resume();
-
+export function speak(text: string, langCode = 'en', options: SpeakOptions = {}): TtsPlaybackHandle {
+  stopActivePlayback('superseded');
   const bcp47 = appLangToTts(langCode);
-  const genderReq = options.voicePreference ?? 'any';
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = bcp47;
-  u.rate   = options.rate   ?? 1;
-  u.pitch  = options.pitch  ?? 1;
-  u.volume = options.volume ?? 1;
-
-  const voice = pickVoice(bcp47, genderReq);
-  if (voice) u.voice = voice;
-
-  if (TTS_DEBUG) {
-    console.log(
-      `[TTS] SPEAK | lang=${langCode}→${bcp47} | gender=${genderReq} | rate=${u.rate}` +
-      ` | voice=${voice ? `"${voice.name}" (${voice.lang}, ${detectVoiceGender(voice)})` : 'NULL→browser default'}` +
-      ` | text="${text.slice(0, 60)}${text.length > 60 ? '…' : ''}"`
-    );
+  const session = createTtsPlaybackSession({
+    onStateChange: (state) => {
+      options.onStateChange?.(state);
+      if (state === 'playing') options.onStart?.();
+      if (TTS_DEBUG) console.info('[TTS lifecycle]', JSON.stringify({ type: options.diagnostics?.exerciseType ?? 'unspecified', speechLanguage: options.diagnostics?.speechLanguage ?? langCode, locale: bcp47, state }));
+    },
+    onEnd: options.onEnd,
+    onError: options.onError,
+  });
+  const handle: TtsPlaybackHandle = {
+    promise: session.promise,
+    get state() { return session.state; },
+    cancel: () => {
+      if (_activePlayback?.session === session) stopActivePlayback('cancelled');
+      else session.cancel('cancelled');
+    },
+  };
+  if (!text.trim()) {
+    session.fail('empty-text', 'none');
+    return handle;
   }
-
-  if (!voice && canUseRemoteTts(bcp47)) {
-    if (TTS_DEBUG) {
-      console.warn(`[TTS] REMOTE fallback for ${bcp47}`);
+  _activePlayback = { session, utterance: null };
+  void session.promise.then((result) => {
+    if (TTS_DEBUG) console.info('[TTS terminal]', JSON.stringify({ type: options.diagnostics?.exerciseType ?? 'unspecified', speechLanguage: options.diagnostics?.speechLanguage ?? langCode, locale: bcp47, mechanism: result.mechanism, errorCode: result.errorCode, state: result.state }));
+    if (_activePlayback?.session === session) {
+      _activePlayback = null;
+      stopRemoteAudio();
     }
-    void playRemoteTts(text, bcp47, options).catch((error) => {
-      if (
-        (error instanceof DOMException && error.name === 'AbortError')
-        || (typeof error === 'object' && error !== null && 'name' in error && (error as { name?: string }).name === 'AbortError')
-      ) {
-        if (TTS_DEBUG) {
-          console.log('[TTS] Remote fallback aborted by a newer speak call');
-        }
-        return;
-      }
-      console.warn('[TTS] Remote fallback failed, using browser default voice', error);
-      if (options.onEnd) u.onend = options.onEnd;
-      if (options.onError) u.onerror = options.onError;
-      window.speechSynthesis.speak(u);
+  });
+
+  let browserPlaybackTimeout: ReturnType<typeof setTimeout> | null = null;
+  const startRemote = () => {
+    if (browserPlaybackTimeout) { clearTimeout(browserPlaybackTimeout); browserPlaybackTimeout = null; }
+    if (session.settled || !canUseRemoteTts(bcp47)) {
+      if (!session.settled) session.fail('browser-voice-error', 'browser');
+      return;
+    }
+    void playRemoteTts(text, bcp47, options, session).catch((error) => {
+      const code = summarizedErrorCode(error);
+      if (code === 'cancelled') session.cancel('cancelled');
+      else session.fail(code, 'remote');
     });
-    return;
+  };
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    startRemote();
+    return handle;
   }
 
-  if (options.onEnd) u.onend = options.onEnd;
-  if (options.onError) u.onerror = options.onError;
-
-  window.speechSynthesis.speak(u);
+  session.transition('loading', 'browser');
+  if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+  const utterance = new SpeechSynthesisUtterance(text);
+  if (_activePlayback?.session === session) _activePlayback.utterance = utterance;
+  utterance.lang = bcp47;
+  utterance.rate = options.rate ?? 1;
+  utterance.pitch = options.pitch ?? 1;
+  utterance.volume = options.volume ?? 1;
+  const voice = pickVoice(bcp47, options.voicePreference ?? 'any');
+  if (voice) utterance.voice = voice;
+  utterance.onstart = () => {
+    session.transition('playing', 'browser');
+    browserPlaybackTimeout = setTimeout(() => {
+      if (session.state !== 'playing') return;
+      utterance.onstart = null;
+      utterance.onend = null;
+      utterance.onerror = null;
+      window.speechSynthesis.cancel();
+      startRemote();
+    }, Math.max(15000, Math.min(120000, text.split(/\s+/).length * 1500)));
+  };
+  utterance.onend = () => session.complete('browser');
+  utterance.onerror = (event) => {
+    const code = event.error || 'browser-voice-error';
+    if (code === 'canceled' || code === 'interrupted') session.cancel(code);
+    else startRemote();
+  };
+  window.speechSynthesis.speak(utterance);
+  const browserStartTimeout = setTimeout(() => {
+    if (session.state !== 'loading') return;
+    utterance.onstart = null;
+    utterance.onend = null;
+    utterance.onerror = null;
+    window.speechSynthesis.cancel();
+    startRemote();
+  }, 3000);
+  void session.promise.then(() => {
+    clearTimeout(browserStartTimeout);
+    if (browserPlaybackTimeout) clearTimeout(browserPlaybackTimeout);
+  });
+  return handle;
 }
 
 /**

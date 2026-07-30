@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Exercise } from '../../types';
 import type { ExerciseReport } from '../../services/exerciseReportsService';
 import type { ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
@@ -6,42 +6,44 @@ import {
   getExerciseEditorialState, listExerciseVersions, publishExerciseOverride,
   removePublishedExerciseOverride, restoreExerciseVersion, saveExerciseDraft,
 } from '../../services/exerciseOverrideService';
-import { applyExerciseOverride, type ExerciseEditorialDocument, type ExerciseIdentity, type ExerciseOverrideFields } from '../../models/exerciseOverride';
+import {
+  applyExerciseOverride, EXERCISE_OPTION_LIMITS, normalizeExerciseWorkbookId, parseExerciseOptions,
+  validateExerciseOverride, type ExerciseEditorialDocument, type ExerciseIdentity, type ExerciseOverrideFields,
+} from '../../models/exerciseOverride';
 import { normalizeExerciseChangeReason, validateExerciseChangeReason } from '../../models/exerciseChangeReason';
 import { normalizeAnswer } from '../../utils/answerNormalization';
+import { describeExerciseSpeechLocale, resolveExerciseSpeechLocale } from '../../utils/exerciseSpeechLocale';
+import { speak as speakExerciseText } from '../../services/ttsService';
 import { isActiveExerciseReport, listRelatedExerciseReports } from '../../services/exerciseReportsService';
-import { readEditorialAdminDiagnostic, type EditorialAdminDiagnostic } from '../../services/editorialAccessService';
-import { describeEditorialFirebaseError, firebaseErrorCode, logEditorialFirebaseError } from '../../services/editorialFirebaseError';
+import { describeEditorialFirebaseError, logEditorialFirebaseError } from '../../services/editorialFirebaseError';
 
 interface Props {
   report?: ExerciseReport | null;
   location: ReportExerciseLocation;
   language: string;
   reviewer: { uid: string; name: string };
-  showAuthorizationDiagnostics?: boolean;
   onClose: () => void;
+  onDraftSaved?: (reopened: boolean) => Promise<void> | void;
   onPublished?: (version: number, resolveReports: false | 'current' | 'all') => Promise<void> | void;
 }
 
 const arrayText = (items?: string[]) => (items ?? []).join('\n');
-const toArray = (value: string) => value.split('\n').map((item) => item.trim()).filter(Boolean);
+const toArray = (value: string) => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+const REPORT_STATUS_LABELS = { new: 'Nova', reviewing: 'Em análise', resolved: 'Resolvida', dismissed: 'Descartada' } as const;
+const REPORT_STATUS_STYLE = {
+  new: 'bg-blue-100 text-blue-800', reviewing: 'bg-amber-100 text-amber-800',
+  resolved: 'bg-emerald-100 text-emerald-800', dismissed: 'bg-slate-200 text-slate-700',
+} as const;
 const stamp = (value: any) => value?.toDate?.().toLocaleString('pt-BR') ?? '—';
-interface PermissionDeniedDiagnostic {
-  operation: string;
-  targetPath: string;
-  code: string;
-}
 
-const exactValue = (value: unknown): string => value === undefined ? 'undefined' : JSON.stringify(value) ?? String(value);
-const isPermissionDenied = (cause: unknown): boolean => ['permission-denied', 'storage/unauthorized'].includes(firebaseErrorCode(cause));
-
-export const ExerciseEditorModal: React.FC<Props> = ({ report, location, language, reviewer, showAuthorizationDiagnostics = false, onClose, onPublished }) => {
+export const ExerciseEditorModal: React.FC<Props> = ({ report, location, language, reviewer, onClose, onDraftSaved, onPublished }) => {
   const original = location.day.exercises[location.exerciseIndex];
   const identity: ExerciseIdentity = {
-    exerciseId: original.id, workbookId: location.workbook.id, lessonId: location.lesson.id,
+    exerciseId: original.id, workbookId: normalizeExerciseWorkbookId(location.workbook.id), lessonId: location.lesson.id,
     dayId: location.day.id, language, exerciseType: original.type,
   };
   const [fields, setFields] = useState<ExerciseOverrideFields>({});
+  const [optionsText, setOptionsText] = useState('');
   const [state, setState] = useState<{ draft: ExerciseEditorialDocument | null; published: ExerciseEditorialDocument | null }>({ draft: null, published: null });
   const [versions, setVersions] = useState<ExerciseEditorialDocument[]>([]);
   const [changeReason, setChangeReason] = useState('');
@@ -56,30 +58,9 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const [testAnswer, setTestAnswer] = useState('');
   const [testResult, setTestResult] = useState<'correct' | 'incorrect' | ''>('');
   const [actionLabel, setActionLabel] = useState('');
-  const [adminDiagnostic, setAdminDiagnostic] = useState<EditorialAdminDiagnostic | null>(null);
-  const [permissionDeniedDiagnostic, setPermissionDeniedDiagnostic] = useState<PermissionDeniedDiagnostic | null>(null);
   const [relatedReports, setRelatedReports] = useState<ExerciseReport[]>([]);
   const changeReasonRef = useRef<HTMLTextAreaElement | null>(null);
   const controlsBusy = saving;
-
-  const refreshAdminDiagnostic = useCallback(async () => {
-    const diagnostic = await readEditorialAdminDiagnostic(reviewer.uid);
-    setAdminDiagnostic(diagnostic);
-    if (diagnostic.readErrorCode && ['permission-denied', 'storage/unauthorized'].includes(diagnostic.readErrorCode)) {
-      setPermissionDeniedDiagnostic({
-        operation: 'leitura do documento do usuário',
-        targetPath: diagnostic.userDocumentPath,
-        code: diagnostic.readErrorCode,
-      });
-    }
-    return diagnostic;
-  }, [reviewer.uid]);
-
-  const recordPermissionDenied = (operation: string, targetPath: string, cause: unknown) => {
-    if (!isPermissionDenied(cause)) return;
-    setPermissionDeniedDiagnostic({ operation, targetPath, code: firebaseErrorCode(cause) });
-    void refreshAdminDiagnostic();
-  };
 
   const hydrate = async (preserveMessages = false) => {
     setLoading(true);
@@ -91,19 +72,18 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       const activePublished = next.published?.status === 'published' || next.published?.status === 'disabled' ? next.published : null;
       const preferred = next.draft ?? activePublished;
       setFields(preferred?.override ?? {});
+      setOptionsText(arrayText(preferred?.override.options ?? original.options));
       setChangeReason(next.draft?.changeReason ?? '');
       setChangeReasonError('');
       setAdminNote(preferred?.adminNote ?? '');
       setDirty(false);
     } catch (cause) {
-      recordPermissionDenied('leitura do estado editorial', `exerciseDrafts/${original.id}; exerciseOverrides/${original.id}; exerciseOverrides/${original.id}/versions`, cause);
       logEditorialFirebaseError('Falha ao carregar editor', cause);
       setError(describeEditorialFirebaseError(cause, 'load'));
     }
     finally { setLoading(false); }
   };
   useEffect(() => { void hydrate(); }, [original.id]);
-  useEffect(() => { if (showAuthorizationDiagnostics) void refreshAdminDiagnostic(); }, [refreshAdminDiagnostic, showAuthorizationDiagnostics]);
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
     window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload);
@@ -115,6 +95,7 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const viewSource = (documentValue: ExerciseEditorialDocument | null) => {
     if (dirty && !window.confirm('Descartar as alterações não salvas e trocar a versão visualizada?')) return;
     setFields(documentValue?.override ?? {});
+    setOptionsText(arrayText(documentValue?.override.options ?? original.options));
     setChangeReason(documentValue?.status === 'draft' ? documentValue.changeReason : '');
     setChangeReasonError('');
     setAdminNote(documentValue?.adminNote ?? ''); setPreview(true); setDirty(false);
@@ -122,6 +103,8 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const effective = useMemo(() => applyExerciseOverride(original, {
     ...identity, status: 'published', version: state.published?.version ?? 0, override: fields,
   }), [original, fields, state.published?.version]);
+  const speechLocale = resolveExerciseSpeechLocale(effective, identity.language, typeof navigator === 'undefined' ? undefined : navigator.language);
+  const speechLocaleDescription = describeExerciseSpeechLocale(speechLocale);
   const baseVersion = state.published?.version ?? 0;
 
   const requireValidChangeReason = (status: 'published' | 'disabled'): string | null => {
@@ -142,12 +125,29 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   };
 
   const saveDraft = async () => {
+    const reopening = report?.status === 'dismissed';
+    if (reopening && !window.confirm('Esta denúncia está descartada. Deseja reabri-la e salvar o exercício como rascunho?')) return;
     setSaving(true); setActionLabel('Salvando rascunho…'); setError(''); setNotice('');
     try {
-      await saveExerciseDraft({ original, identity, fields, changeReason, adminNote, updatedBy: reviewer.uid, baseVersion, relatedReportId: report?.reportId, expectedDraftRevision: state.draft?.draftRevision ?? 0 });
-      setNotice('Rascunho salvo com sucesso. Ele não será exibido aos alunos.'); setDirty(false); await hydrate(true);
+      const draftWarnings = validateExerciseOverride(original, identity, fields);
+      const draftAdminNote = reopening
+        ? [adminNote.trim(), `[${new Date().toLocaleString('pt-BR')}] Denúncia reaberta para edição em rascunho.`].filter(Boolean).join('\n')
+        : adminNote;
+      await saveExerciseDraft({ original, identity, fields, changeReason, adminNote: draftAdminNote, updatedBy: reviewer.uid, baseVersion, relatedReportId: report?.reportId, expectedDraftRevision: state.draft?.draftRevision ?? 0 });
+      try {
+        await onDraftSaved?.(reopening);
+      } catch (cause) {
+        logEditorialFirebaseError('Rascunho salvo, mas atualização da denúncia falhou', cause);
+        setError(`O rascunho foi salvo, mas o status da denúncia não foi atualizado. ${describeEditorialFirebaseError(cause, 'resolve')}`);
+        setDirty(false);
+        await hydrate(true);
+        return;
+      }
+      setNotice(draftWarnings.length
+        ? `Rascunho salvo, mas ainda não pode ser publicado:\n${draftWarnings.join('\n')}`
+        : 'Rascunho salvo com sucesso. Ele não será exibido aos alunos.');
+      setDirty(false); await hydrate(true);
     } catch (cause) {
-      recordPermissionDenied('gravação do rascunho', `exerciseDrafts/${identity.exerciseId}`, cause);
       logEditorialFirebaseError('Falha ao salvar rascunho', cause);
       setError(describeEditorialFirebaseError(cause, 'draft'));
     } finally { setSaving(false); setActionLabel(''); }
@@ -163,21 +163,22 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       setDirty(false);
       setNotice(status === 'disabled' ? `Exercício desativado com sucesso na versão ${version}.` : `Correção publicada com sucesso na versão ${version}.`);
     } catch (cause) {
-      recordPermissionDenied('publicação', `exerciseOverrides/${identity.exerciseId}; exerciseOverrides/${identity.exerciseId}/versions/{versão}; publishedExerciseOverrides/${identity.exerciseId}`, cause);
       logEditorialFirebaseError('Falha ao publicar correção', cause);
       setError(describeEditorialFirebaseError(cause, 'publish'));
       setSaving(false); setActionLabel('');
       return;
     }
 
-    if (resolveReports) {
-      setActionLabel('Correção publicada. Resolvendo relatório…');
+    if (onPublished) {
+      setActionLabel(resolveReports ? 'Correção publicada. Resolvendo relatório…' : 'Correção publicada. Atualizando relatório…');
       try {
-        await onPublished?.(version, resolveReports);
-        setNotice(`Correção publicada com sucesso na versão ${version} e relatório(s) resolvido(s).`);
+        await onPublished(version, resolveReports);
+        setNotice(resolveReports
+          ? `Correção publicada com sucesso na versão ${version} e relatório(s) resolvido(s).`
+          : `Correção publicada com sucesso na versão ${version}. A denúncia permanece em análise.`);
       } catch (cause) {
         logEditorialFirebaseError('Publicação concluída, mas resolução do relatório falhou', cause);
-        setError(`A correção foi publicada com sucesso na versão ${version}, mas o relatório não foi resolvido. ${describeEditorialFirebaseError(cause, 'resolve')}`);
+        setError(`A correção foi publicada com sucesso na versão ${version}, mas o status da denúncia não foi atualizado. ${describeEditorialFirebaseError(cause, 'resolve')}`);
       }
     }
     await hydrate(true);
@@ -200,37 +201,16 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       </header>
       <main className="grid gap-5 p-4 pb-40 lg:grid-cols-[minmax(0,1fr)_360px] sm:p-6 sm:pb-32">
         <div className="space-y-5">
-          <div className="flex flex-wrap gap-2 text-xs font-black"><span className="rounded-full bg-slate-200 px-3 py-1">Conteúdo original</span>{state.draft && <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-800">Rascunho não publicado</span>}{state.published && <span className={`rounded-full px-3 py-1 ${state.published.status === 'disabled' ? 'bg-red-100 text-red-800' : state.published.status === 'archived' ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-800'}`}>{state.published.status === 'disabled' ? 'Exercício desativado' : state.published.status === 'archived' ? 'Override arquivado · usando original' : `Versão publicada ${state.published.version}`}</span>}</div>
+          <div className="flex flex-wrap gap-2 text-xs font-black">{report && <span className={`rounded-full px-3 py-1 ${REPORT_STATUS_STYLE[report.status]}`}>Denúncia: {REPORT_STATUS_LABELS[report.status]}</span>}<span className={`rounded-full px-3 py-1 ${state.draft ? 'bg-amber-100 text-amber-800' : state.published?.status === 'disabled' ? 'bg-red-100 text-red-800' : state.published?.status === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>Status editorial: {state.draft ? 'Rascunho' : state.published?.status === 'disabled' ? 'Desativado' : state.published?.status === 'published' ? 'Publicado' : 'Conteúdo original'}</span></div>
           <div className="flex flex-wrap gap-2"><button onClick={() => viewSource(null)} className="rounded-xl border px-3 py-2 text-xs font-black">Visualizar exercício original</button>{state.published && state.published.status !== 'archived' && <button onClick={() => viewSource(state.published)} className="rounded-xl border px-3 py-2 text-xs font-black">Visualizar versão publicada</button>}{state.draft && <button onClick={() => viewSource(state.draft)} className="rounded-xl border px-3 py-2 text-xs font-black">Visualizar rascunho</button>}</div>
           {error && <p role="alert" className="whitespace-pre-line rounded-xl bg-red-100 p-3 font-bold text-red-800">{error}</p>}{notice && <p role="status" className="rounded-xl bg-emerald-100 p-3 font-bold text-emerald-800">{notice}</p>}
-          {showAuthorizationDiagnostics && <Section title="Diagnóstico temporário de autorização administrativa">
-            <p className="rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-900">Temporário para teste. Remover UID, e-mail e detalhes de autorização antes do deploy final. Este painel não concede acesso; as regras Firebase continuam sendo a autoridade.</p>
-            {!adminDiagnostic ? <p className="text-sm text-slate-500">Consultando autorização…</p> : <dl className="grid gap-2 text-xs sm:grid-cols-[210px_minmax(0,1fr)]">
-              <DiagnosticRow label="Firebase Auth UID atual" value={adminDiagnostic.authUid ?? 'null'} />
-              <DiagnosticRow label="E-mail autenticado" value={adminDiagnostic.authEmail ?? 'null'} />
-              <DiagnosticRow label="Firebase projectId" value={adminDiagnostic.projectId || 'não informado'} />
-              <DiagnosticRow label="Firebase storageBucket" value={adminDiagnostic.storageBucket || 'não informado'} />
-              <DiagnosticRow label="Caminho consultado" value={adminDiagnostic.userDocumentPath} />
-              <DiagnosticRow label="Documento existe" value={adminDiagnostic.userDocumentExists === null ? 'não foi possível consultar' : String(adminDiagnostic.userDocumentExists)} />
-              <DiagnosticRow label="Valor exato de role" value={exactValue(adminDiagnostic.role)} />
-              <DiagnosticRow label="Tipo de role" value={adminDiagnostic.roleType} />
-              <DiagnosticRow label={'role === "admin"'} value={String(adminDiagnostic.isExactAdminRole)} />
-              <DiagnosticRow label="UID do editor = Auth UID" value={String(adminDiagnostic.expectedUidMatchesAuth)} />
-              <DiagnosticRow label="Erro ao ler usuário" value={adminDiagnostic.readErrorCode ? `${adminDiagnostic.readErrorCode}: ${adminDiagnostic.readErrorMessage ?? ''}` : 'nenhum'} />
-              <DiagnosticRow label="Operação com permission-denied" value={permissionDeniedDiagnostic?.operation ?? 'nenhuma observada nesta sessão'} />
-              <DiagnosticRow label="Coleção/caminho envolvido" value={permissionDeniedDiagnostic?.targetPath ?? '—'} />
-              <DiagnosticRow label="Código recebido" value={permissionDeniedDiagnostic?.code ?? '—'} />
-              <DiagnosticRow label="Upload de imagens" value="desabilitado temporariamente" />
-            </dl>}
-            <button type="button" onClick={() => void refreshAdminDiagnostic()} className="rounded-xl border px-3 py-2 text-xs font-black">Atualizar diagnóstico</button>
-          </Section>}
           <Section title="1 — Identificação"><div className="grid gap-3 sm:grid-cols-2">{Object.entries({ Livro: identity.workbookId, Lição: identity.lessonId, Dia: identity.dayId, Idioma: identity.language, Tipo: identity.exerciseType, ID: identity.exerciseId }).map(([label, content]) => <label key={label} className="text-xs font-bold text-slate-500">{label}<input readOnly value={content} className="mt-1 w-full rounded-xl border bg-slate-100 p-3 text-slate-700" /></label>)}</div></Section>
           <Section title="2 — Conteúdo">
             <Field label="Instrução" value={fields.instruction ?? original.instruction} onChange={(value) => update('instruction', value)} />
             {original.type !== 'speaking' && <Field label="Texto exibido / pergunta" value={fields.displayValue ?? original.displayValue ?? ''} onChange={(value) => update('displayValue', value)} />}
             <Field label={original.type === 'speaking' ? 'Resposta de referência' : 'Resposta principal'} value={fields.correctValue ?? original.correctValue} onChange={(value) => update('correctValue', value)} />
             <Field label="Respostas alternativas aceitas (uma por linha)" area value={arrayText(fields.acceptedAnswers ?? original.acceptedAnswers)} onChange={(value) => update('acceptedAnswers', toArray(value))} />
-            {original.type === 'multiple-choice' && <Field label="Alternativas (uma por linha)" area value={arrayText(fields.options ?? original.options)} onChange={(value) => update('options', toArray(value))} />}
+            {original.type === 'multiple-choice' && <label className="block text-sm font-bold text-slate-700">Alternativas (uma por linha)<textarea aria-label="Alternativas (uma por linha)" value={optionsText} onChange={(event) => { const value = event.target.value; setOptionsText(value); update('options', parseExerciseOptions(value)); }} className="mt-1 min-h-32 max-h-80 w-full resize-y rounded-xl border p-3 font-normal" /><span className="mt-1 block text-xs font-normal text-slate-500">De {EXERCISE_OPTION_LIMITS.min} a {EXERCISE_OPTION_LIMITS.max} alternativas; uma por linha.</span></label>}
             <Field label="Tradução / explicação" area value={fields.translation ?? original.translation ?? ''} onChange={(value) => update('translation', value)} />
             <div className="grid gap-3 sm:grid-cols-2"><Field label="Feedback correto" value={fields.feedbackCorrect ?? original.feedbackCorrect ?? ''} onChange={(value) => update('feedbackCorrect', value)} /><Field label="Feedback incorreto" value={fields.feedbackIncorrect ?? original.feedbackIncorrect ?? ''} onChange={(value) => update('feedbackIncorrect', value)} /></div>
             <p className="rounded-xl bg-blue-50 p-3 text-xs text-blue-900">Normalizações globais preservadas: maiúsculas/minúsculas, espaços, pontuação terminal e apóstrofos são tratados pelo validador central atual.</p>
@@ -239,8 +219,9 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
             {effective.imageUrl && <img src={effective.imageUrl} alt={effective.imageAlt || ''} className="mx-auto max-h-[260px] w-full max-w-full rounded-xl object-contain sm:max-h-[360px]" />}
             <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><p className="font-black">Envio de novas imagens temporariamente indisponível.</p><p className="mt-1 text-xs">O restante do exercício pode ser editado, salvo e publicado normalmente.</p></div>
             <Field label="Texto alternativo da imagem" value={fields.imageAlt ?? original.imageAlt ?? ''} onChange={(value) => update('imageAlt', value)} />
-            <Field label="Chave / referência de áudio" value={fields.audioValue ?? original.audioValue} onChange={(value) => update('audioValue', value)} />
-            <div className="flex gap-2"><button disabled={!effective.audioValue} onClick={() => speechSynthesis.speak(new SpeechSynthesisUtterance(effective.audioValue))} className="rounded-xl border px-4 py-2 font-bold disabled:opacity-40">▶ Reproduzir áudio</button>{effective.audioValue && <button onClick={() => update('audioValue', '')} className="rounded-xl border px-4 py-2 font-bold">Remover referência</button>}</div>
+            <Field label="Texto do áudio / TTS" value={fields.audioValue ?? original.audioValue} onChange={(value) => update('audioValue', value)} />
+            <p className="rounded-xl bg-blue-50 p-3 text-sm font-bold text-blue-900">Idioma da voz: {speechLocaleDescription}</p>
+            <div className="flex gap-2"><button disabled={!effective.audioValue} onClick={() => speakExerciseText(effective.audioValue, speechLocale)} className="rounded-xl border px-4 py-2 font-bold disabled:opacity-40">▶ Reproduzir áudio</button>{effective.audioValue && <button onClick={() => update('audioValue', '')} className="rounded-xl border px-4 py-2 font-bold">Remover texto do áudio</button>}</div>
           </Section>
           <Section title="4 — Administração">
             <label className="block scroll-mt-28 text-sm font-bold text-slate-700">
@@ -263,13 +244,13 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
             {changeReasonError && <p id="change-reason-error" role="alert" className="rounded-lg bg-red-100 p-2 text-sm font-bold text-red-800">{changeReasonError}</p>}
             {report?.studentComment?.trim() && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950"><p className="font-black">Relatório relacionado:</p><p className="mt-1 whitespace-pre-line">“{report.studentComment.trim()}”</p><button type="button" onClick={() => { setChangeReason(report.studentComment.trim()); setChangeReasonError(''); setDirty(true); }} className="mt-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-black text-blue-800">Usar descrição do relatório como motivo</button></div>}
             <Field label="Observação administrativa (opcional)" area value={adminNote} onChange={(value) => { setAdminNote(value); setDirty(true); }} />
-            <p className="text-sm text-slate-500">Status atual: {state.published?.status ?? 'conteúdo original'} · versão base: {baseVersion} · última atualização: {stamp(state.published?.updatedAt)} · administrador responsável: {state.published?.updatedBy || '—'}</p>
+            <p className="text-sm text-slate-500">Status atual: {state.published?.status ?? 'conteúdo original'} · versão base: {baseVersion} · última atualização: {stamp(state.published?.updatedAt)}</p>
           </Section>
         </div>
         <aside className="space-y-5">
-          <Section title="Relatórios relacionados"><p className="text-sm text-slate-600">{relatedReports.length} relatório(s), {relatedReports.filter(isActiveExerciseReport).length} aberto(s).</p>{relatedReports.slice(0, 8).map((item) => <p key={item.reportId} className="rounded-lg bg-slate-50 p-2 text-xs"><span className="font-black">{item.status}</span> · {item.problemCategory} · {item.studentComment || 'sem comentário'}</p>)}</Section>
+          <Section title="Relatórios relacionados"><p className="text-sm text-slate-600">{relatedReports.length} relatório(s), {relatedReports.filter(isActiveExerciseReport).length} aberto(s).</p>{relatedReports.slice(0, 8).map((item) => <p key={item.reportId} className="rounded-lg bg-slate-50 p-2 text-xs"><span className={`mr-1 rounded-full px-2 py-1 font-black ${REPORT_STATUS_STYLE[item.status]}`}>{REPORT_STATUS_LABELS[item.status]}</span> {item.problemCategory} · {item.studentComment || 'sem comentário'}</p>)}</Section>
           <Section title="Pré-visualização e teste"><button onClick={() => setPreview((value) => !value)} className="w-full rounded-xl bg-violet-600 p-3 font-black text-white">{preview ? 'Ocultar prévia' : 'Pré-visualizar'}</button>{preview && <div className="mt-3 rounded-2xl bg-slate-900 p-4 text-white"><p className="text-sm font-bold text-cyan-300">{effective.instruction}</p>{effective.imageUrl && <img src={effective.imageUrl} alt={effective.imageAlt || ''} className="my-3 max-h-48 w-full object-contain" />}<p className="my-4 text-lg font-black">{effective.displayValue}</p>{effective.options?.map((option) => <div key={option} className="my-2 rounded-xl bg-slate-700 p-3">{option}</div>)}</div>}<div className="mt-3 flex gap-2"><input aria-label="Resposta de teste" value={testAnswer} onChange={(event) => setTestAnswer(event.target.value)} className="min-w-0 flex-1 rounded-xl border p-3" /><button onClick={test} className="rounded-xl bg-blue-600 px-4 font-black text-white">Testar</button></div>{testResult && <p className={`mt-2 rounded-xl p-3 font-black ${testResult === 'correct' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'}`}>{testResult === 'correct' ? effective.feedbackCorrect || 'Resposta correta.' : effective.feedbackIncorrect || 'Resposta incorreta.'}</p>}</Section>
-          <Section title="Histórico">{versions.length === 0 ? <p className="text-sm text-slate-500">Nenhuma versão publicada.</p> : versions.map((version) => <div key={version.version} className="mb-2 rounded-xl border p-3 text-sm"><p className="font-black">Versão {version.version} · {version.status}</p><p className="text-slate-500">{version.changeReason} · {version.updatedBy}</p><button disabled={saving} onClick={async () => { if (!window.confirm(`Restaurar a versão ${version.version} como uma nova publicação?`)) return; setSaving(true); try { await restoreExerciseVersion(original, version, reviewer.uid); await hydrate(); setNotice('Versão restaurada como nova publicação.'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao restaurar.'); } finally { setSaving(false); } }} className="mt-2 font-bold text-blue-700">Restaurar</button></div>)}</Section>
+          <Section title="Histórico">{versions.length === 0 ? <p className="text-sm text-slate-500">Nenhuma versão publicada.</p> : versions.map((version) => <div key={version.version} className="mb-2 rounded-xl border p-3 text-sm"><p className="font-black">Versão {version.version} · {version.status}</p><p className="text-slate-500">{version.changeReason}</p><button disabled={saving} onClick={async () => { if (!window.confirm(`Restaurar a versão ${version.version} como uma nova publicação?`)) return; setSaving(true); try { await restoreExerciseVersion(original, version, reviewer.uid); await hydrate(); setNotice('Versão restaurada como nova publicação.'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao restaurar.'); } finally { setSaving(false); } }} className="mt-2 font-bold text-blue-700">Restaurar</button></div>)}</Section>
           {state.published && state.published.status !== 'archived' && <button disabled={saving} onClick={async () => { if (!window.confirm('Remover a correção publicada e voltar ao exercício original? O histórico será preservado.')) return; const why = window.prompt('Motivo da restauração do original (mínimo 5 caracteres):')?.trim(); if (!why || why.length < 5) { setError('Informe um motivo com pelo menos 5 caracteres para voltar ao conteúdo original.'); return; } setSaving(true); try { await removePublishedExerciseOverride(original.id, reviewer.uid, why); await hydrate(); setNotice('Override removido. O conteúdo local voltou a ser usado.'); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Falha ao remover override.'); } finally { setSaving(false); } }} className="w-full rounded-xl border border-red-300 p-3 font-black text-red-700">Voltar ao exercício original</button>}
         </aside>
       </main>
@@ -287,5 +268,4 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
 };
 
 const Section: React.FC<React.PropsWithChildren<{ title: string }>> = ({ title, children }) => <section className="rounded-2xl bg-white p-4 shadow-sm"><h3 className="mb-4 font-black text-slate-900">{title}</h3><div className="space-y-3">{children}</div></section>;
-const DiagnosticRow: React.FC<{ label: string; value: string }> = ({ label, value }) => <><dt className="font-black text-slate-600">{label}</dt><dd className="break-all rounded bg-slate-100 px-2 py-1 font-mono text-slate-900">{value}</dd></>;
 const Field: React.FC<{ label: string; value: string; area?: boolean; onChange: (value: string) => void }> = ({ label, value, area, onChange }) => <label className="block text-sm font-bold text-slate-700">{label}{area ? <textarea value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 min-h-24 w-full rounded-xl border p-3 font-normal" /> : <input value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-xl border p-3 font-normal" />}</label>;

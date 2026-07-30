@@ -19,9 +19,10 @@ test('closing a report removes it from an active local list', () => {
   assert.deepEqual(closed.filter(isActiveExerciseReport).map((report) => report.reportId), ['two']);
 });
 
-test('resolved reports leave the operational dashboard queue', () => {
+test('closed reports remain queryable through explicit filters', () => {
   assert.equal(isVisibleExerciseReport({ status: 'new' }), true);
   assert.equal(isVisibleExerciseReport({ status: 'reviewing' }), true);
   assert.equal(isVisibleExerciseReport({ status: 'dismissed' }), true);
-  assert.equal(isVisibleExerciseReport({ status: 'resolved' }), false);
+  assert.equal(isVisibleExerciseReport({ status: 'resolved' }), true);
+  assert.equal(isVisibleExerciseReport({ status: 'invalid' }), false);
 });

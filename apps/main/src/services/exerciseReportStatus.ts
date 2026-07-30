@@ -7,5 +7,5 @@ export function isActiveExerciseReport(report: { status: string }): boolean {
 }
 
 export function isVisibleExerciseReport(report: { status: string }): boolean {
-  return report.status !== 'resolved';
+  return ['new', 'reviewing', 'resolved', 'dismissed'].includes(report.status);
 }

@@ -15,7 +15,7 @@ export interface FinalTestSkillMetric {
 export function finalTestSkillForExercise(exercise: Exercise): FinalTestSkill[] {
   if (exercise.assessmentMode === 'listening-writing') return ['listening', 'writing'];
   if (exercise.type === 'speaking') {
-    return [classifySpeakingExercise(exercise) === 'shadowing' ? 'shadowing' : 'speaking'];
+    return [classifySpeakingExercise(exercise) === 'question-and-answer' ? 'speaking' : 'shadowing'];
   }
   if (exercise.type === 'writing') return ['writing'];
   return [];

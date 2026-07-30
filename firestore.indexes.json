@@ -33,6 +33,16 @@
         { "fieldPath": "priority", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "publishedExerciseOverrides",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "workbookId", "order": "ASCENDING" },
+        { "fieldPath": "lessonId", "order": "ASCENDING" },
+        { "fieldPath": "dayId", "order": "ASCENDING" },
+        { "fieldPath": "language", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

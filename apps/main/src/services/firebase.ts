@@ -13,8 +13,9 @@ import {
   linkWithCredential,
   EmailAuthProvider,
   sendPasswordResetEmail,
+  connectAuthEmulator,
 } from "firebase/auth";
-import { getFirestore, initializeFirestore } from "firebase/firestore";
+import { connectFirestoreEmulator, getFirestore, initializeFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getStorage } from "firebase/storage";
 
@@ -47,6 +48,19 @@ const db = (() => {
     return getFirestore(app);
   }
 })();
+
+const useFirebaseEmulators = import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true';
+if (useFirebaseEmulators) {
+  const authHost = import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_HOST || '127.0.0.1';
+  const authPort = Number(import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_PORT || 9099);
+  const firestoreHost = import.meta.env.VITE_FIRESTORE_EMULATOR_HOST || '127.0.0.1';
+  const firestorePort = Number(import.meta.env.VITE_FIRESTORE_EMULATOR_PORT || 8080);
+  try { connectAuthEmulator(auth, `http://${authHost}:${authPort}`, { disableWarnings: true }); }
+  catch (error) { console.warn('[Firebase] Auth emulator already configured or unavailable:', error); }
+  try { connectFirestoreEmulator(db, firestoreHost, firestorePort); }
+  catch (error) { console.warn('[Firebase] Firestore emulator already configured or unavailable:', error); }
+  console.info('[Firebase] Local Auth and Firestore emulators enabled.');
+}
 
 async function initializeAuthPersistence() {
   const persistenceOptions = [

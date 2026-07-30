@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { speak as ttsSpeakImpl, appLangToTts, exerciseVoices, getVoiceCount, onVoicesReady } from '../services/ttsService';
+import { speak as ttsSpeakImpl, exerciseVoices, getVoiceCount, onVoicesReady, type TtsPlaybackHandle } from '../services/ttsService';
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '../types';
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
@@ -7,6 +7,8 @@ import { isFillInBlankExercise, resolveFullSentenceAfterAnswer, resolvePromptAud
 import { isWritingPromptResponseCorrect } from '../utils/writingPrompt';
 import { classifySpeakingExercise, speakingTargets } from '../utils/speakingExercise';
 import { isDictationWritingExercise, resolveSpokenOptionText } from '../utils/exerciseAudio';
+import { resolveExerciseSpeechLocale } from '../utils/exerciseSpeechLocale';
+import { reduceRepeatPlayback, repeatMicAvailable, type RepeatPlaybackState } from '../models/repeatPlaybackState';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import {
   isAnswerMatch,
@@ -375,6 +377,7 @@ const PRACTICE_LABELS = {
     badgeReading: 'Reading',
     badgeWriting: 'Writing',
     badgeShadowing: 'Shadowing',
+    badgeRepeat: 'Repeat',
     badgeSpeaking: 'Speaking',
     badgeListening: 'Listening',
     answerFullSentence: 'Answer in a Full Sentence',
@@ -382,6 +385,7 @@ const PRACTICE_LABELS = {
     chooseCorrect: 'Choose the Correct Response',
     listenAndAnswer: 'Listen and answer',
     listenAndRepeat: 'Listen and repeat what you hear.',
+    repeatInstruction: 'Listen first. When the audio finishes, repeat it.',
     whatColor: 'What color is it?',
   },
   pt: {
@@ -405,6 +409,7 @@ const PRACTICE_LABELS = {
     badgeReading: 'Leitura',
     badgeWriting: 'Escrita',
     badgeShadowing: 'Repetição',
+    badgeRepeat: 'Repetir',
     badgeSpeaking: 'Fala',
     badgeListening: 'Escuta',
     answerFullSentence: 'Responda em uma frase completa',
@@ -412,6 +417,7 @@ const PRACTICE_LABELS = {
     chooseCorrect: 'Escolha a resposta correta',
     listenAndAnswer: 'Ouça e responda',
     listenAndRepeat: 'Ouça e repita o que você ouviu.',
+    repeatInstruction: 'Ouça primeiro. Quando o áudio terminar, repita.',
     whatColor: 'Qual é a cor?',
   },
   es: {
@@ -435,6 +441,7 @@ const PRACTICE_LABELS = {
     badgeReading: 'Lectura',
     badgeWriting: 'Escritura',
     badgeShadowing: 'Repetición',
+    badgeRepeat: 'Repetir',
     badgeSpeaking: 'Habla',
     badgeListening: 'Escucha',
     answerFullSentence: 'Responde con una oración completa',
@@ -442,6 +449,7 @@ const PRACTICE_LABELS = {
     chooseCorrect: 'Elige la respuesta correcta',
     listenAndAnswer: 'Escucha y responde',
     listenAndRepeat: 'Escucha y repite lo que oyes.',
+    repeatInstruction: 'Escucha primero. Cuando termine el audio, repite.',
     whatColor: '¿De qué color es?',
   },
 } as const;
@@ -474,6 +482,7 @@ export const PracticeSection: React.FC<{
     retryReleaseVersion?: number;
     autoPlayAudio?: boolean;
     fullScreen?: boolean;
+    embedded?: boolean;
     viewportTopOffset?: number;
     uiLanguage?: string;
   clickTranslatorMode?: boolean;
@@ -507,6 +516,7 @@ export const PracticeSection: React.FC<{
       retryReleaseVersion = 0,
       autoPlayAudio = true,
       fullScreen = false,
+      embedded = false,
       viewportTopOffset = 0,
       uiLanguage,
       clickTranslatorMode = false,
@@ -522,6 +532,7 @@ export const PracticeSection: React.FC<{
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const PL = getPL(copyLanguage || currentLanguage || uiLanguage);
+    const exerciseSpeechLocale = resolveExerciseSpeechLocale(item, currentLanguage, uiLanguage);
     const instructionAudioText = item.instruction.trim();
     // Deterministic voice pair for this exercise: odd #→ female prompt, even #→ male prompt
     const { prompt: promptVoice, feedback: feedbackVoice } = exerciseVoices(currentIdx);
@@ -535,6 +546,7 @@ export const PracticeSection: React.FC<{
     // Writing exercises reveal the audio hint only after the first wrong attempt.
     const [hasWrongAttempt, setHasWrongAttempt] = useState(false);
     const [audioStatus, setAudioStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+    const [repeatPhase, setRepeatPhase] = useState<RepeatPlaybackState>('idle');
 
     // Dictation exercises: audio should be visible from the start; digits rejected
     // Catches English "you hear", Portuguese "ouvir", and Spanish "oyes" phrasings
@@ -548,6 +560,8 @@ export const PracticeSection: React.FC<{
     const exerciseActionLocked = actionLocked || (isDictationWriting && audioStatus === 'loading');
     const speakingMode = item.type === 'speaking' ? classifySpeakingExercise(item) : null;
     const isShadowing = speakingMode === 'shadowing';
+    const isRepeat = speakingMode === 'repeat';
+    const isModeledSpeaking = isShadowing || isRepeat;
     const isInformalEnglish = item.pedagogicalTopic === 'informal-aint-recognition';
     const informalDialogueTitle = isInformalEnglish && item.displayValue?.startsWith('Dialogue 18')
       ? item.displayValue.split('\n')[0]
@@ -593,6 +607,7 @@ export const PracticeSection: React.FC<{
 
     // Refs for STT lifecycle — prevents stale callbacks from bleeding across exercises
     const recRef = useRef<any>(null);
+    const promptPlaybackRef = useRef<TtsPlaybackHandle | null>(null);
     const currentItemIdRef = useRef<string>(item.id);
     // Stores the onResult action prepared at CHECK time so Continue never reads stale state
     const pendingOnResultRef = useRef<(() => void) | null>(null);
@@ -621,6 +636,9 @@ export const PracticeSection: React.FC<{
       setHasWrongAttempt(false);
       setLocalWrongFooterLocked(false);
       setAudioStatus(promptAudioText ? 'loading' : 'ready');
+      promptPlaybackRef.current?.cancel();
+      promptPlaybackRef.current = null;
+      setRepeatPhase('idle');
 
       if (item.options && item.options.length > 0) {
         setShuffledOptions(shuffle(item.options));
@@ -681,7 +699,11 @@ export const PracticeSection: React.FC<{
           inputRef.current?.focus();
         }
       }, 200);
-      return () => _cleanups.forEach(c => c());
+      return () => {
+        _cleanups.forEach(c => c());
+        promptPlaybackRef.current?.cancel();
+        promptPlaybackRef.current = null;
+      };
     }, [item.id]);  // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
@@ -724,37 +746,49 @@ export const PracticeSection: React.FC<{
       }
     };
 
-    // Thin wrapper so existing call sites don't need changing.
-    // Language comes from the currentLanguage prop set by ExercisePractice.
+    // Voice language is pedagogical: explicit exercise locale, then course language.
+    // uiLanguage is intentionally never allowed to override exercise content.
     // voicePref allows callers to request a specific gender; falls back safely.
     function speak(
       text: string,
       rate = 1,
       voicePref?: 'male' | 'female',
       origin = 'interaction',
-      lifecycle: { onEnd?: () => void; onError?: () => void } = {},
+      lifecycle: { onStart?: () => void; onEnd?: () => void; onError?: (errorCode?: string) => void } = {},
     ) {
       const vc = getVoiceCount();
       console.log(
-        `[EXERCISE SPEAK] ex#${currentIdx} lang=${currentLanguage}` +
+        `[EXERCISE SPEAK] ex#${currentIdx} lang=${exerciseSpeechLocale}` +
         ` | voicePair=(prompt:${promptVoice}, feedback:${feedbackVoice})` +
         ` | requested=${voicePref ?? 'any'} | rate=${rate}` +
         ` | voiceCount=${vc} | origin=${origin}` +
         ` | text="${text.slice(0, 50)}${text.length > 50 ? '\u2026' : ''}"`
       );
-      return ttsSpeakImpl(text, currentLanguage, { rate, voicePreference: voicePref, ...lifecycle });
+      return ttsSpeakImpl(text, exerciseSpeechLocale, {
+        rate, voicePreference: voicePref, ...lifecycle,
+        diagnostics: { exerciseType: item.assessmentMode ?? item.type, speechLanguage: item.speechLanguage },
+      });
     }
 
     function playPrompt(text: string, rate: number, voicePref: 'male' | 'female', origin = 'interaction') {
-      setAudioStatus('ready');
-      speak(text, rate, voicePref, origin, {
-        onEnd: () => setAudioStatus('ready'),
-        onError: () => setAudioStatus('error'),
+      promptPlaybackRef.current?.cancel();
+      if (isRepeat) setRepeatPhase('idle');
+      setAudioStatus('loading');
+      const playback = speak(text, rate, voicePref, origin, {
+        onStart: () => { setAudioStatus('ready'); if (isRepeat) setRepeatPhase((state) => reduceRepeatPlayback(state, 'playStarted')); },
+        onEnd: () => { setAudioStatus('ready'); if (isRepeat) setRepeatPhase((state) => reduceRepeatPlayback(state, 'playCompleted')); },
+        onError: () => { setAudioStatus('error'); if (isRepeat) setRepeatPhase((state) => reduceRepeatPlayback(state, 'playFailed')); },
+      });
+      promptPlaybackRef.current = playback;
+      void playback.promise.then((result) => {
+        if (promptPlaybackRef.current !== playback) return;
+        if (result.state === 'cancelled' && isRepeat) setRepeatPhase('playbackError');
       });
     }
 
     const handleSTT = () => {
       if (exerciseActionLocked) return;
+      if (isRepeat && !repeatMicAvailable(repeatPhase)) return;
       const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
       if (!SpeechRecognition) return alert("Mic not supported");
 
@@ -766,13 +800,14 @@ export const PracticeSection: React.FC<{
       const capturedItemId = item.id; // capture for stale-closure guard below
       const rec = new SpeechRecognition();
       recRef.current = rec;
-      rec.lang = appLangToTts(currentLanguage);
-      rec.onstart = () => setIsListening(true);
+      rec.lang = exerciseSpeechLocale;
+      rec.onstart = () => { setIsListening(true); if (isRepeat) setRepeatPhase((state) => reduceRepeatPlayback(state, 'recordStarted')); };
 
       rec.onresult = (e: any) => {
         if (currentItemIdRef.current !== capturedItemId) return; // stale callback
         setUserInput(e?.results?.[0]?.[0]?.transcript ?? "");
         setIsListening(false);
+        if (isRepeat) setRepeatPhase((state) => reduceRepeatPlayback(state, 'recordCompleted'));
       };
 
       rec.onend = () => {
@@ -790,12 +825,14 @@ export const PracticeSection: React.FC<{
 
     const handleCheck = (answerOverride?: string) => {
       if (exerciseActionLocked) return;
+      if (isRepeat && !repeatMicAvailable(repeatPhase)) return;
       // Dismiss keyboard immediately so the footer is at its final position
       // before the CONTINUE button renders — prevents the "double-tap" ghost click.
       inputRef.current?.blur();
       textareaRef.current?.blur();
 
       const rawInput = answerOverride ?? (userInput || selectedOption || '');
+      if (isRepeat) setRepeatPhase('evaluating');
       if (!rawInput.trim() && allowContinueWithoutAnswer) {
         onContinue?.({
           answer: '',
@@ -805,7 +842,7 @@ export const PracticeSection: React.FC<{
         return;
       }
       const acceptedAnswers = getAcceptedAnswers(item);
-      const acceptedSpeakingTargets = isShadowing ? speakingTargets(item) : acceptedAnswers;
+      const acceptedSpeakingTargets = isModeledSpeaking ? speakingTargets(item) : acceptedAnswers;
       const nextAttemptNumber = (lastAttemptMetaRef.current?.attemptNumber ?? 0) + 1;
       const reportAttempt = (answer: string, isCorrect: boolean) => {
         const payload = { answer, isCorrect, attemptNumber: nextAttemptNumber };
@@ -896,7 +933,7 @@ export const PracticeSection: React.FC<{
       const isCorrect = item.type === 'speaking'
         ? (
             isSpeakingMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage)
-            || (!isShadowing && isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage))
+            || (!isModeledSpeaking && isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage))
           )
         : item.type === 'writing' && item.promptMode
           ? isWritingPromptResponseCorrect(item, rawInput, currentLanguage)
@@ -905,6 +942,7 @@ export const PracticeSection: React.FC<{
       reportAttempt(rawInput, isCorrect);
       setFeedback(isCorrect ? 'correct' : 'wrong');
       setShowFooter(true);
+      if (isRepeat) setRepeatPhase('feedback');
 
       if (isCorrect) {
         prepareCorrectAction(rawInput);
@@ -1172,7 +1210,7 @@ export const PracticeSection: React.FC<{
     return (
       <div
         data-practice-shell="true"
-        className={`${fullScreen ? 'fixed inset-x-0 bottom-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} no-scrollbar bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-y-auto overscroll-y-contain outline-none`}
+        className={`${embedded ? 'relative h-[min(72vh,720px)]' : fullScreen ? 'fixed inset-x-0 bottom-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} no-scrollbar bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-y-auto overscroll-y-contain outline-none`}
         style={fullScreen ? { top: viewportTopOffset } : undefined}
       >
         <div className={`sticky top-0 z-20 w-full ${practiceWidthClass} max-sm:px-4 px-6 ${isShortViewport ? 'pt-1' : 'pt-2'} bg-slate-900/95 backdrop-blur-sm`}>
@@ -1243,6 +1281,13 @@ export const PracticeSection: React.FC<{
                   {...selectionGestureProps}
                 >
                   {renderInteractiveText(item.instruction)}
+                </h2>
+              </div>
+            ) : item.type === 'speaking' && isRepeat ? (
+              <div className="flex flex-col items-center gap-2">
+                <span className="inline-block rounded-full border border-cyan-600 bg-cyan-950/70 px-3 py-1 text-sm font-black uppercase tracking-widest text-cyan-200">{PL.badgeRepeat}</span>
+                <h2 className="max-w-full text-center text-lg font-semibold leading-snug text-white sm:text-xl" {...selectionGestureProps}>
+                  {renderInteractiveText(PL.repeatInstruction)}
                 </h2>
               </div>
             ) : item.type === 'speaking' && isShadowing ? (
@@ -1415,7 +1460,7 @@ export const PracticeSection: React.FC<{
                   <img src={turtleIcon} className="w-6 h-6 brightness-0 invert" alt="Slow" />
                 </button>
               )}
-              {item.type === 'speaking' && (
+              {item.type === 'speaking' && (!isRepeat || repeatMicAvailable(repeatPhase)) && (
                 <button 
                   onClick={handleSTT}
                   disabled={exerciseActionLocked || (showFooter && feedback === 'correct')}
@@ -1426,6 +1471,14 @@ export const PracticeSection: React.FC<{
                 </button>
               )}
             </div>
+            {isRepeat && (repeatPhase === 'idle' || repeatPhase === 'playingPrompt') && (
+              <p role="status" className="text-center text-xs font-bold text-cyan-200">{PL.repeatInstruction}</p>
+            )}
+            {isRepeat && repeatPhase === 'playbackError' && (
+              <button type="button" onClick={() => { setRepeatPhase((state) => reduceRepeatPlayback(state, 'retry')); playPrompt(promptAudioText, 1, promptVoice, 'retry'); }} className="rounded-xl border border-red-300 bg-red-950/40 px-4 py-2 text-sm font-black text-red-100">
+                Tentar ouvir novamente
+              </button>
+            )}
             {isDictationWriting && audioStatus === 'loading' && (
               <p role="status" className="text-xs font-bold text-blue-300">Preparing audio...</p>
             )}
@@ -1439,7 +1492,7 @@ export const PracticeSection: React.FC<{
             {item.imageUrl && (
               <img src={item.imageUrl} alt={item.imageAlt || ''} className="max-h-[min(34dvh,20rem)] w-full rounded-2xl object-contain" />
             )}
-            {item.displayValue && !isShadowing && !isDictationWriting && (
+            {item.displayValue && !isModeledSpeaking && !isDictationWriting && (
               <div className="w-full" {...selectionGestureProps}>
                 {renderDisplay()}
               </div>
@@ -1536,7 +1589,7 @@ export const PracticeSection: React.FC<{
                 {/* Auto-growing textarea for speaking exercises - moved below buttons */}
                 <textarea
                   ref={textareaRef}
-                  disabled={exerciseActionLocked || wrongFooterLocked || (showFooter && feedback === 'correct')}
+                  disabled={exerciseActionLocked || wrongFooterLocked || (isRepeat && !repeatMicAvailable(repeatPhase)) || (showFooter && feedback === 'correct')}
                   rows={1}
                   className={`block w-full max-w-full min-w-0 box-border overflow-x-hidden overflow-y-hidden whitespace-pre-wrap break-words px-3 py-2 border-2 rounded-2xl text-center text-lg leading-6 font-black focus:border-blue-500 outline-none transition-[border-color,height] resize-none min-h-[44px] max-h-32 [overflow-wrap:anywhere] ${feedback === 'wrong' ? 'bg-slate-800 border-red-500 text-red-400' : 'bg-slate-800 border-slate-600 text-white shadow-sm'}`}
                   value={userInput}
@@ -1612,12 +1665,7 @@ export const PracticeSection: React.FC<{
                     )}
                     <button
                       disabled={footerActionLocked}
-                        onClick={performFooterAction}
-                        onPointerDown={(e) => {
-                          if (footerActionLocked) return;
-                          e.preventDefault();
-                          performFooterAction();
-                        }}
+                      onClick={performFooterAction}
                       className={`max-w-[8.5rem] px-3 py-2.5 sm:px-5 sm:py-3 ${feedback === 'correct' ? 'bg-blue-600' : 'bg-slate-800'} text-[11px] sm:text-sm text-white rounded-xl sm:rounded-2xl font-black uppercase shadow-[0_3px_0_0_rgba(0,0,0,0.2)] active:translate-y-1 transition-all [touch-action:manipulation] disabled:opacity-40 disabled:shadow-none disabled:translate-y-0`}
                     >
                       {feedback === 'correct' || validateChoiceOnSelect ? PL.continueBtn : PL.gotItBtn}

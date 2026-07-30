@@ -1,7 +1,7 @@
 type AudioExerciseSource = {
   type: string;
   instruction: string;
-  assessmentMode?: 'listening-writing' | 'shadowing' | 'speaking';
+  assessmentMode?: 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
 };
 
 export function isDictationWritingExercise(source: AudioExerciseSource): boolean {

@@ -1,17 +1,57 @@
 export type FirebaseLikeError = Error & { code?: string; serverResponse?: string };
 
+export interface EditorialOperationDiagnostic {
+  action: string;
+  collection: string;
+  targetPath: string;
+  operationType: 'create' | 'update' | 'delete' | 'transaction';
+  stage: string;
+  confirmationState: 'before-confirmation' | 'after-confirmation' | 'not-applicable';
+  completedOperations: string[];
+  payload?: unknown;
+}
+
+type DiagnosableError = FirebaseLikeError & { editorialDiagnostic?: EditorialOperationDiagnostic };
+
+export function attachEditorialOperationDiagnostic(
+  error: unknown,
+  diagnostic: EditorialOperationDiagnostic,
+): Error {
+  const result = error instanceof Error ? error as DiagnosableError : new Error(String(error)) as DiagnosableError;
+  result.editorialDiagnostic = diagnostic;
+  return result;
+}
+
+export function getEditorialOperationDiagnostic(error: unknown): EditorialOperationDiagnostic | null {
+  return (error as DiagnosableError | null)?.editorialDiagnostic ?? null;
+}
+
 export function firebaseErrorCode(error: unknown): string {
   const candidate = error as FirebaseLikeError | null;
   return String(candidate?.code ?? '').trim().toLowerCase();
 }
 
-export function describeEditorialFirebaseError(error: unknown, operation: 'upload' | 'draft' | 'publish' | 'resolve' | 'load'): string {
+export function describeEditorialFirebaseError(
+  error: unknown,
+  operation: 'upload' | 'draft' | 'publish' | 'resolve' | 'load',
+  authorization?: { userDocumentExists: boolean | null; roleType: string; isExactAdminRole: boolean } | null,
+): string {
   const code = firebaseErrorCode(error);
   const detail = error instanceof Error ? error.message : String(error ?? 'Erro desconhecido');
   const suffix = code ? ` (${code})` : '';
 
   if (code === 'storage/unauthorized' || code === 'permission-denied') {
-    return `O Firebase negou a operação para esta conta. Confirme se users/{uid}.role é "admin" e publique as regras editoriais no projeto learnendo-6f4d3.${suffix}`;
+    if (authorization && (!authorization.userDocumentExists || authorization.roleType !== 'string' || !authorization.isExactAdminRole)) {
+      return `A autorização administrativa foi negada: confirme se users/{uid} existe e se role é uma string exatamente igual a "admin".${suffix}`;
+    }
+    const diagnostic = getEditorialOperationDiagnostic(error);
+    if (diagnostic) {
+      const authorized = authorization?.isExactAdminRole
+        ? ' A conta está autenticada como admin; os dados enviados ou as regras publicadas não aceitaram a operação.'
+        : '';
+      return `Não foi possível ${operation === 'draft' ? 'salvar o rascunho' : operation === 'publish' ? 'publicar' : operation === 'resolve' ? 'resolver o relatório' : 'concluir a operação'}. A operação ${diagnostic.operationType} em ${diagnostic.targetPath} foi negada.${authorized}${suffix}`;
+    }
+    return `O Firebase negou a operação, mas a resposta não identifica uma regra específica. Verifique o painel de diagnóstico e a versão publicada das regras.${suffix}`;
   }
   if (code === 'storage/canceled') return `Upload cancelado. Nenhuma referência de imagem foi salva.${suffix}`;
   if (code === 'storage/upload-stalled' || code === 'storage/retry-limit-exceeded') {

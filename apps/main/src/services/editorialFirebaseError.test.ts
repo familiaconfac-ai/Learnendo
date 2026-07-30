@@ -1,13 +1,32 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { describeEditorialFirebaseError } from './editorialFirebaseError.ts';
+import { attachEditorialOperationDiagnostic, describeEditorialFirebaseError, getEditorialOperationDiagnostic } from './editorialFirebaseError.ts';
 
 const codedError = (code: string, message = code) => Object.assign(new Error(message), { code });
 
-test('explains permission mismatch without hiding the Firebase code', () => {
+test('does not blame role when Firestore only reports permission denied', () => {
   const message = describeEditorialFirebaseError(codedError('storage/unauthorized'), 'upload');
-  assert.match(message, /role.*admin/i);
+  assert.doesNotMatch(message, /role.*admin/i);
   assert.match(message, /storage\/unauthorized/);
+});
+
+test('reports role only when the real profile diagnostic is incompatible', () => {
+  const message = describeEditorialFirebaseError(codedError('permission-denied'), 'draft', {
+    userDocumentExists: true, roleType: 'string', isExactAdminRole: false,
+  });
+  assert.match(message, /role.*admin/i);
+});
+
+test('preserves the exact denied operation and payload diagnostic', () => {
+  const error = attachEditorialOperationDiagnostic(codedError('permission-denied'), {
+    action: 'salvar rascunho', collection: 'exerciseDrafts', targetPath: 'exerciseDrafts/ex1',
+    operationType: 'create', stage: 'gravação isolada do rascunho',
+    confirmationState: 'not-applicable', completedOperations: [], payload: { status: 'draft' },
+  });
+  assert.equal(getEditorialOperationDiagnostic(error)?.targetPath, 'exerciseDrafts/ex1');
+  assert.match(describeEditorialFirebaseError(error, 'draft', {
+    userDocumentExists: true, roleType: 'string', isExactAdminRole: true,
+  }), /exerciseDrafts\/ex1.*autenticada como admin/);
 });
 
 test('distinguishes cancellation, stalled upload and unavailable Firestore', () => {

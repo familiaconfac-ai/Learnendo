@@ -17,6 +17,7 @@ import {
   type QueryConstraint,
   type Unsubscribe,
 } from 'firebase/firestore';
+import { attachEditorialOperationDiagnostic } from './editorialFirebaseError';
 import { db } from './firebase';
 import { ACTIVE_EXERCISE_REPORT_STATUSES, isActiveExerciseReport, isVisibleExerciseReport } from './exerciseReportStatus';
 
@@ -99,7 +100,7 @@ export type CreateExerciseReportInput = Omit<ExerciseReport,
   'resolutionVersion' | 'resolutionType' | 'resolvedByEditorialAt' | 'requiresCodeChange'>;
 
 export interface ExerciseReportFilters {
-  status?: ExerciseReportStatus | 'all';
+  status?: ExerciseReportStatus | 'all' | 'active';
   priority?: ExerciseReportPriority | 'all';
   workbookId?: number | null;
   lessonId?: string;
@@ -186,7 +187,8 @@ export function filterAndSortExerciseReports(reports: ExerciseReport[], filters:
   const text = filters.text?.trim().toLowerCase();
   const filtered = reports.filter((report) => {
     if (!isVisibleExerciseReport(report)) return false;
-    if (filters.status && filters.status !== 'all' && report.status !== filters.status) return false;
+    if (filters.status === 'active' && !isActiveExerciseReport(report)) return false;
+    if (filters.status && filters.status !== 'all' && filters.status !== 'active' && report.status !== filters.status) return false;
     if (filters.priority && filters.priority !== 'all' && report.priority !== filters.priority) return false;
     if (filters.workbookId && report.workbookId !== filters.workbookId) return false;
     if (filters.lessonId && report.lessonId !== filters.lessonId) return false;
@@ -217,7 +219,10 @@ export async function listExerciseReports(filters: ExerciseReportFilters, cursor
   // Keep server-side combinations aligned with the declared composite indexes.
   // Remaining filters are applied while scanning so a sparse match is not lost
   // just because it was outside the first raw Firestore page.
-  if (filters.status && filters.status !== 'all' && filters.priority && filters.priority !== 'all') {
+  if (filters.status === 'active') {
+    baseConstraints.push(where('status', 'in', [...ACTIVE_EXERCISE_REPORT_STATUSES]));
+    if (filters.priority && filters.priority !== 'all') baseConstraints.push(where('priority', '==', filters.priority));
+  } else if (filters.status && filters.status !== 'all' && filters.priority && filters.priority !== 'all') {
     baseConstraints.push(where('status', '==', filters.status), where('priority', '==', filters.priority));
   } else if (filters.status && filters.status !== 'all') {
     baseConstraints.push(where('status', '==', filters.status));
@@ -352,7 +357,16 @@ export async function updateExerciseReport(report: ExerciseReport, patch: {
     updates.verifiedAt = serverTimestamp();
   }
   if (patch.resolutionVersion) updates.resolvedByEditorialAt = serverTimestamp();
-  await updateDoc(doc(db, COLLECTION, report.reportId), updates);
+  try {
+    await updateDoc(doc(db, COLLECTION, report.reportId), updates);
+  } catch (cause) {
+    throw attachEditorialOperationDiagnostic(cause, {
+      action: 'atualizar relatório relacionado', collection: COLLECTION,
+      targetPath: `${COLLECTION}/${report.reportId}`, operationType: 'update',
+      stage: 'resolução posterior à publicação', confirmationState: 'after-confirmation',
+      completedOperations: ['publicação editorial'], payload: { ...updates, updatedAt: '[serverTimestamp]' },
+    });
+  }
   window.dispatchEvent(new CustomEvent('learnendo:exercise-reports-changed'));
 }
 

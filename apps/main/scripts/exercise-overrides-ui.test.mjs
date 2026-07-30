@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const root = new URL('../../../', import.meta.url);
-const [rules, storageRules, service, editor, practice, dashboard, imageService, accessService, errorService, userRoles, app, dbService, reasonModel] = await Promise.all([
+const [rules, storageRules, service, editor, practice, dashboard, imageService, accessService, errorService, userRoles, app, dbService, reasonModel, speechLocale] = await Promise.all([
   readFile(new URL('firestore.rules', root), 'utf8'),
   readFile(new URL('storage.rules', root), 'utf8'),
   readFile(new URL('../src/services/exerciseOverrideService.ts', import.meta.url), 'utf8'),
@@ -17,6 +17,7 @@ const [rules, storageRules, service, editor, practice, dashboard, imageService, 
   readFile(new URL('../src/App.tsx', import.meta.url), 'utf8'),
   readFile(new URL('../src/services/db.ts', import.meta.url), 'utf8'),
   readFile(new URL('../src/models/exerciseChangeReason.ts', import.meta.url), 'utf8'),
+  readFile(new URL('../src/utils/exerciseSpeechLocale.ts', import.meta.url), 'utf8'),
 ]);
 
 test('student projection is separate from admin drafts and history', () => {
@@ -56,6 +57,7 @@ test('admin workflow exposes manual search, drafts, preview, publishing, restore
   assert.match(editor, /Voltar ao exercício original/);
   assert.match(service, /alterado por outro administrador/);
   assert.match(service, /transaction\.set\(doc\(canonicalRef, 'versions'/);
+  assert.match(editor, /workbookId: normalizeExerciseWorkbookId\(location\.workbook\.id\)/);
 });
 
 test('change reason has one draft-backed state and is not reused from the published version', () => {
@@ -111,7 +113,7 @@ test('reason stays in admin history and is excluded from the student projection'
 test('image upload is disabled without making the editor depend on Storage', () => {
   assert.match(editor, /Envio de novas imagens temporariamente indisponível/);
   assert.match(editor, /O restante do exercício pode ser editado, salvo e publicado normalmente/);
-  assert.match(editor, /Upload de imagens/);
+  assert.match(editor, /Envio de novas imagens/);
   assert.doesNotMatch(editor, /uploadExerciseImage/);
   assert.doesNotMatch(editor, /type="file"/);
   assert.doesNotMatch(editor, /isUploading|uploadTask|imageUpload|pendingImage|selectedImageFile/);
@@ -124,21 +126,59 @@ test('image upload is disabled without making the editor depend on Storage', () 
   assert.match(imageService, /task\.cancel\(\)/);
 });
 
-test('frontend preflight and temporary diagnostics use the same Firestore admin profile as both rule sets', () => {
+test('admin authorization stays rule-backed while sensitive diagnostics are absent from the editor', () => {
   assert.match(accessService, /users.*user\.uid/);
   assert.match(accessService, /role === 'admin'/);
   assert.match(accessService, /userDocumentPath/);
   assert.match(rules, /userDoc\(\)\.data\.role == 'admin'/);
   assert.match(storageRules, /documents\/users\/\$\(request\.auth\.uid\)/);
   assert.match(errorService, /storage\/unauthorized/);
-  assert.match(editor, /showAuthorizationDiagnostics/);
-  assert.match(editor, /Firebase Auth UID atual/);
-  assert.match(editor, /role === \"admin\"/);
-  assert.match(editor, /permission-denied/);
+  assert.doesNotMatch(editor, /showAuthorizationDiagnostics/);
+  assert.doesNotMatch(editor, /Diagnóstico temporário de autorização administrativa/);
+  assert.doesNotMatch(editor, /Firebase Auth UID atual|E-mail autenticado|storageBucket|Payload enviado/);
+  assert.doesNotMatch(editor, /version\.updatedBy|administrador responsável/);
+  assert.match(service, /attachEditorialOperationDiagnostic/);
+  assert.match(errorService, /A conta está autenticada como admin/);
+  assert.doesNotMatch(errorService, /Confirme se users\/\{uid\}\.role/);
   assert.doesNotMatch(userRoles, /if \(isReservedAdminEmail\(email\)\) return 'admin'/);
   assert.match(userRoles, /return normalizeUserRole\(storedRole\)/);
   assert.doesNotMatch(app, /promoteAdminIfNeeded/);
   assert.doesNotMatch(dbService, /ADMIN_EMAILS|promoteAdminIfNeeded/);
   assert.match(rules, /allow update: if isAdmin\(\)[\s\S]*affectedKeys\(\)\.hasAny\(\['role'\]\)/);
-  assert.match(editor, /Correção publicada com sucesso[\s\S]*relatório não foi resolvido/);
+  assert.match(editor, /Correção publicada com sucesso[\s\S]*status da denúncia não foi atualizado/);
+});
+
+test('editor and student use the same pedagogical TTS locale resolver', () => {
+  assert.match(speechLocale, /resolveExerciseSpeechLocale/);
+  assert.match(speechLocale, /exercise\?\.speechLanguage/);
+  assert.match(speechLocale, /workbookLanguage/);
+  assert.match(speechLocale, /DEFAULT_EXERCISE_SPEECH_LANGUAGE/);
+  assert.doesNotMatch(speechLocale, /_interfaceLocale\?\./);
+  assert.match(editor, /resolveExerciseSpeechLocale\(effective, identity\.language/);
+  assert.match(editor, /Texto do áudio \/ TTS/);
+  assert.match(editor, /Idioma da voz:/);
+  assert.match(editor, /speakExerciseText\(effective\.audioValue, speechLocale\)/);
+  assert.doesNotMatch(editor, /new SpeechSynthesisUtterance/);
+  assert.match(practice, /uiLanguage=\{interfaceLocale\}/);
+});
+
+test('multiple-choice textarea preserves Enter and uses configurable bounded options', () => {
+  assert.match(editor, /const \[optionsText, setOptionsText\] = useState\(''\)/);
+  assert.match(editor, /value=\{optionsText\}/);
+  assert.match(editor, /setOptionsText\(value\); update\('options', parseExerciseOptions\(value\)\)/);
+  assert.doesNotMatch(editor, /value=\{arrayText\(fields\.options/);
+  assert.match(editor, /EXERCISE_OPTION_LIMITS\.min/);
+  assert.match(editor, /EXERCISE_OPTION_LIMITS\.max/);
+  assert.match(rules, /options\.size\(\) <= 10/);
+  assert.match(rules, /validExerciseOptions\(value\.options, allowIncompleteOptions\)/);
+});
+
+test('draft and publication update report workflow without conflating statuses', () => {
+  assert.match(editor, /Esta denúncia está descartada\. Deseja reabri-la e salvar o exercício como rascunho\?/);
+  assert.match(editor, /await onDraftSaved\?\.\(reopening\)/);
+  assert.match(editor, /Status editorial:/);
+  assert.match(editor, /Denúncia:/);
+  assert.match(dashboard, /onDraftSaved=/);
+  assert.match(dashboard, /status: 'reviewing'/);
+  assert.match(dashboard, /resolveReports === 'current'/);
 });

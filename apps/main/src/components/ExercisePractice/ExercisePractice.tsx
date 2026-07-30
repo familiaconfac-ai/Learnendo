@@ -34,12 +34,20 @@ import {
   EXERCISE_REPORT_CATEGORIES,
   type ExerciseReportCategory,
 } from '../../services/exerciseReportsService';
-import { loadPublishedDayOverrides, readCachedDayOverrides, resolveDayExercises } from '../../services/exerciseOverrideService';
+import { loadPublishedDayOverrides, readCachedDayOverrides } from '../../services/exerciseOverrideService';
+import {
+  loadPublishedDaySequence, readCachedDaySequence, resolveAuthoredDayExercises,
+} from '../../services/dayExerciseAuthoringService';
+import { settleEditorialSequenceLoad, type EditorialSequenceLoadStatus } from '../../models/editorialSequenceLoading';
+
+const debugEditorialSequence = import.meta.env.DEV && import.meta.env.VITE_DEBUG_EDITORIAL_SEQUENCE === 'true';
 
 interface ExercisePracticeProps {
   day: Day;
   lessonId: string;
   currentLanguage?: LessonLanguageCode;
+  courseId?: string;
+  interfaceLocale?: string;
   progress: UserProgress;
   onComplete: (
     dayId: string,
@@ -82,6 +90,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   day,
   lessonId,
   currentLanguage = 'en',
+  courseId,
+  interfaceLocale,
   progress,
   onComplete,
   onBack,
@@ -105,6 +115,13 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   onRepeatLesson,
   onLessonProgressChange,
 }) => {
+  const editorialCourseId = courseId ?? (currentLanguage === 'es' ? 'spanish'
+    : currentLanguage === 'el' ? 'greek_koine'
+      : currentLanguage === 'he' ? 'hebrew_biblical'
+        : currentLanguage === 'pt' ? 'portuguese_foreigners' : 'english');
+  const daySequenceIdentity = {
+    courseId: editorialCourseId, language: currentLanguage, workbookId, lessonId, dayId: day.id,
+  };
   const [currentIdx, setCurrentIdx] = useState(0);
   const [phase, setPhase] = useState<'exercise' | 'summary'>('exercise');
   const [storageWarning, setStorageWarning] = useState(false);
@@ -126,25 +143,60 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const masteryRef = useRef(mastery);
   const isCompletedRef = useRef(false);
   const completionPromiseRef = useRef<Promise<void> | null>(null);
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
   const [resolvedExercises, setResolvedExercises] = useState(() => {
     const cached = readCachedDayOverrides(workbookId, lessonId, day.id, currentLanguage);
-    return resolveDayExercises(day.exercises, cached).filter((exercise) => !exercise.editorialDisabled);
+    const sequence = readCachedDaySequence(daySequenceIdentity);
+    return resolveAuthoredDayExercises(day.exercises, cached, sequence).filter((exercise) => !exercise.editorialDisabled);
   });
+  const [editorialLoadStatus, setEditorialLoadStatus] = useState<EditorialSequenceLoadStatus>('loading');
   const exercises = resolvedExercises;
 
   useEffect(() => {
+    window.history?.pushState?.({ learnendoExercise: true }, '');
+    const onPopState = () => onBackRef.current();
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('popstate', onPopState);
+      if (window.history?.state?.learnendoExercise) window.history.replaceState(null, '');
+    };
+  }, []);
+
+  const leaveExercise = () => {
+    if (window.history?.state?.learnendoExercise) window.history.replaceState(null, '');
+    onBackRef.current();
+  };
+
+  useEffect(() => {
     const cached = readCachedDayOverrides(workbookId, lessonId, day.id, currentLanguage);
-    const immediate = resolveDayExercises(day.exercises, cached).filter((exercise) => !exercise.editorialDisabled);
+    const immediate = resolveAuthoredDayExercises(day.exercises, cached, readCachedDaySequence(daySequenceIdentity)).filter((exercise) => !exercise.editorialDisabled);
     setResolvedExercises(immediate);
+    setEditorialLoadStatus('loading');
+    if (debugEditorialSequence) console.info('[EDITORIAL_SEQUENCE] load:start', { ...daySequenceIdentity, localCount: day.exercises.length });
     let cancelled = false;
-    void loadPublishedDayOverrides(workbookId, lessonId, day.id, currentLanguage).then((overrides) => {
+    void Promise.all([
+      loadPublishedDayOverrides(workbookId, lessonId, day.id, currentLanguage),
+      loadPublishedDaySequence(daySequenceIdentity),
+    ]).then(([overrides, sequence]) => {
       if (cancelled) return;
-      const next = resolveDayExercises(day.exercises, overrides).filter((exercise) => !exercise.editorialDisabled);
+      const outcome = settleEditorialSequenceLoad(day.exercises, sequence?.exercises ?? null);
+      const compatibleSequence = outcome.status === 'published' ? sequence : null;
+      const next = resolveAuthoredDayExercises(day.exercises, overrides, compatibleSequence).filter((exercise) => !exercise.editorialDisabled);
       setResolvedExercises(next);
+      setEditorialLoadStatus(outcome.status);
       setCurrentIdx((index) => Math.min(index, Math.max(0, next.length - 1)));
+      if (debugEditorialSequence) console.info('[EDITORIAL_SEQUENCE] load:complete', { ...daySequenceIdentity, version: sequence?.version ?? null, publishedCount: sequence?.exercises?.length ?? 0, resolvedCount: next.length, status: outcome.status, diagnostic: outcome.diagnostic });
+    }).catch((error) => {
+      if (cancelled) return;
+      const outcome = settleEditorialSequenceLoad(day.exercises, null, error);
+      setResolvedExercises(outcome.exercises);
+      setEditorialLoadStatus(outcome.status);
+      console.error('[ExercisePractice] authored day load failed; local curriculum retained:', error);
+      if (debugEditorialSequence) console.info('[EDITORIAL_SEQUENCE] load:complete', { ...daySequenceIdentity, resolvedCount: outcome.exercises.length, status: outcome.status, diagnostic: outcome.diagnostic });
     });
     return () => { cancelled = true; };
-  }, [currentLanguage, day.id, day.exercises, lessonId, workbookId]);
+  }, [currentLanguage, day.id, day.exercises, editorialCourseId, lessonId, workbookId]);
 
   useEffect(() => {
     // Report context belongs only to the exercise currently on screen. Without
@@ -172,6 +224,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   };
 
   useEffect(() => {
+    if (editorialLoadStatus === 'loading') return;
     const storage = typeof window === 'undefined' ? null : window.localStorage;
     const completedDayIds = new Set([
       ...(progress.completedActivities ?? []),
@@ -182,10 +235,10 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     const legacyMerged = workbook ? mergeLegacyCompletedDays(loaded, workbook, completedDayIds) : loaded;
     const restored = workbook ? migrateMovedExerciseProgress(legacyMerged, workbook) : legacyMerged;
     if (restored !== loaded) saveExerciseProgress(storage, userId, restored);
-    const firstIncomplete = day.exercises.findIndex((exercise) =>
+    const firstIncomplete = exercises.findIndex((exercise) =>
       !restored.records[exerciseCompletionKey(workbookId, lessonId, day.id, exercise.id)]
     );
-    const start = resolvePracticeStart(day.exercises.length, firstIncomplete, initialExerciseIndex);
+    const start = resolvePracticeStart(exercises.length, firstIncomplete, initialExerciseIndex);
     const historicallyComplete = start.isReplay;
     let nextRunId = '';
     try {
@@ -201,10 +254,10 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       nextRunId = createRunId();
       try { window.localStorage.setItem(activeRunStorageKey, nextRunId); } catch { /* non-blocking */ }
     }
-    const firstUnfinishedInActiveRun = day.exercises.findIndex((exercise) =>
+    const firstUnfinishedInActiveRun = exercises.findIndex((exercise) =>
       !restored.runs[`${nextRunId}::${exerciseCompletionKey(workbookId, lessonId, day.id, exercise.id)}`]
     );
-    const hasActiveRunProgress = day.exercises.some((exercise) =>
+    const hasActiveRunProgress = exercises.some((exercise) =>
       Boolean(restored.runs[`${nextRunId}::${exerciseCompletionKey(workbookId, lessonId, day.id, exercise.id)}`])
     );
     setExerciseProgress(restored);
@@ -212,20 +265,20 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     setRunId(nextRunId);
     setIsReplay(historicallyComplete || completedDayIds.has(day.id));
     setCurrentIdx(hasActiveRunProgress
-      ? (firstUnfinishedInActiveRun === -1 ? Math.max(0, day.exercises.length - 1) : firstUnfinishedInActiveRun)
+      ? (firstUnfinishedInActiveRun === -1 ? Math.max(0, exercises.length - 1) : firstUnfinishedInActiveRun)
       : start.index);
-    setRunEndExclusive(initialExerciseIndex == null ? day.exercises.length : start.index + 1);
+    setRunEndExclusive(initialExerciseIndex == null ? exercises.length : start.index + 1);
     setPhase(hasActiveRunProgress && firstUnfinishedInActiveRun === -1 ? 'summary' : 'exercise');
     const masteryStartIndex = hasActiveRunProgress && firstUnfinishedInActiveRun >= 0 ? firstUnfinishedInActiveRun : start.index;
-    const targetExerciseIds = day.exercises
-      .slice(masteryStartIndex, initialExerciseIndex == null ? day.exercises.length : masteryStartIndex + 1)
+    const targetExerciseIds = exercises
+      .slice(masteryStartIndex, initialExerciseIndex == null ? exercises.length : masteryStartIndex + 1)
       .map((exercise) => exercise.id);
     let nextMastery = createMasterySession(targetExerciseIds);
     try {
       const cachedRaw = window.localStorage.getItem(masteryStorageKey(nextRunId))
         ?? window.sessionStorage.getItem(masteryStorageKey(nextRunId));
       const cached = JSON.parse(cachedRaw ?? 'null') as MasterySessionState | null;
-      const currentDayIds = new Set(day.exercises.map((exercise) => exercise.id));
+      const currentDayIds = new Set(exercises.map((exercise) => exercise.id));
       if (cached && cached.exerciseIds?.length && cached.exerciseIds.every((id) => currentDayIds.has(id)) && cached.items) {
         nextMastery = restoreMasterySession(cached);
         window.localStorage.setItem(masteryStorageKey(nextRunId), JSON.stringify(nextMastery));
@@ -235,7 +288,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     masteryRef.current = nextMastery;
     setMastery(nextMastery);
     if (nextMastery.currentExerciseId) {
-      const restoredMasteryIndex = day.exercises.findIndex((exercise) => exercise.id === nextMastery.currentExerciseId);
+      const restoredMasteryIndex = exercises.findIndex((exercise) => exercise.id === nextMastery.currentExerciseId);
       if (restoredMasteryIndex >= 0) setCurrentIdx(restoredMasteryIndex);
       setPhase('exercise');
     } else if (nextMastery.phase === 'complete' || nextMastery.phase === 'blocked') {
@@ -250,7 +303,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     setLastAttemptCount(0);
     isCompletedRef.current = false;
     completionPromiseRef.current = null;
-  }, [day.id, day.exercises, lessonId, userId, workbookId, initialExerciseIndex, workbook, isDayCompleted]);
+  }, [day.id, editorialLoadStatus, exercises, lessonId, userId, workbookId, initialExerciseIndex, workbook, isDayCompleted]);
 
   const dayNumber = (() => {
     const match = day.id.match(/d(\d+)/);
@@ -331,9 +384,13 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     return (
       <div className="p-4 text-center text-white">
         <p>No exercises available for this day.</p>
-        <button onClick={onBack} className="mt-4 text-blue-400">← Back</button>
+        <button onClick={leaveExercise} className="mt-4 text-blue-400">← Back</button>
       </div>
     );
+  }
+
+  if (debugEditorialSequence && editorialLoadStatus === 'error') {
+    console.warn('[EDITORIAL_SEQUENCE] recoverable empty state', { ...daySequenceIdentity });
   }
 
   if (currentIdx < 0 || currentIdx >= exercises.length) {
@@ -343,7 +400,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
           <div className="text-4xl">⚠️</div>
           <p className="mt-4 text-lg font-black text-white">Exercise unavailable</p>
           <p className="mt-2 text-sm text-slate-300">Your progress is safe. Return to the lesson and resume.</p>
-          <button onClick={onBack} className="mt-6 rounded-2xl bg-blue-600 px-6 py-3 font-black text-white">Back to lesson</button>
+          <button onClick={leaveExercise} className="mt-6 rounded-2xl bg-blue-600 px-6 py-3 font-black text-white">Back to lesson</button>
         </div>
       </div>
     );
@@ -402,12 +459,12 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const handleDayContinue = (destination?: () => void) => {
     if (isReplay) {
       clearActiveRunStorage(runId);
-      (destination ?? onBack)();
+      (destination ?? leaveExercise)();
       return;
     }
     void persistDayCompletion().then(() => {
       clearActiveRunStorage(runId);
-      (destination ?? onBack)();
+      (destination ?? leaveExercise)();
     }).catch(() => { /* the summary remains visible so the student can retry */ });
   };
 
@@ -515,7 +572,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   };
 
   const backToTrail = () => {
-    onBack();
+    leaveExercise();
   };
 
   return (
@@ -539,12 +596,13 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         totalItems={exercises.length}
         lessonId={lessonNumber}
         unitNumber={unitNumber}
-        onBack={onBack}
+        onBack={leaveExercise}
         onGrammar={onGrammar}
         onContextHelp={() => setContextualHelpOpen(true)}
         dayNumber={dayNumber}
         totalDays={totalDays}
         currentLanguage={currentLanguage}
+        uiLanguage={interfaceLocale}
         onAttempt={handleAttempt}
         validateChoiceOnSelect
       />
@@ -630,7 +688,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
               {mastery.phase === 'complete' && !isLastDayOfLesson && onContinueToNextDay && <button onClick={() => handleDayContinue(onContinueToNextDay)} className="w-full rounded-2xl bg-blue-600 px-6 py-4 font-black uppercase text-white">Continue to next day</button>}
               <button onClick={() => startNewRun()} className="w-full rounded-2xl bg-emerald-600 px-6 py-3 font-black uppercase text-white">Repeat this day</button>
               {isLastDayOfLesson && onRepeatLesson && <button onClick={() => handleDayContinue(onRepeatLesson)} className="w-full rounded-2xl border border-cyan-700 px-6 py-3 font-black uppercase text-cyan-100">Repeat this lesson</button>}
-              <button onClick={isReplay ? backToTrail : () => handleDayContinue(onBack)} className="w-full rounded-2xl border border-slate-600 px-6 py-3 font-black uppercase text-slate-100">Back to trail</button>
+              <button onClick={isReplay ? backToTrail : () => handleDayContinue(leaveExercise)} className="w-full rounded-2xl border border-slate-600 px-6 py-3 font-black uppercase text-slate-100">Back to trail</button>
             </div>
           </div>
         </div>

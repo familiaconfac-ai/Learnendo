@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyExerciseOverride, diffExerciseOverride, validateExerciseOverride, type ExerciseIdentity } from './exerciseOverride.ts';
+import {
+  applyExerciseOverride, diffExerciseOverride, EXERCISE_OPTION_LIMITS, getExerciseEditorialStatus,
+  normalizeExerciseWorkbookId, parseExerciseOptions, validateExerciseOverride, type ExerciseIdentity,
+} from './exerciseOverride.ts';
 import type { Exercise } from '../types.ts';
 
 const original: Exercise = {
@@ -17,11 +20,58 @@ test('applies only safe content while preserving id and type', () => {
 
 test('rejects mismatched identity and an invalid multiple-choice answer', () => {
   assert.deepEqual(applyExerciseOverride(original, { ...identity, exerciseId: 'other', status: 'published', version: 1, override: { instruction: 'Unsafe' } }), original);
-  assert.ok(validateExerciseOverride(original, identity, { correctValue: 'Three' }).includes('A resposta correta não está entre as alternativas.'));
+  assert.ok(validateExerciseOverride(original, identity, { correctValue: 'Three' }).includes('A resposta principal precisa estar entre as alternativas.'));
+});
+
+test('parses two through ten ordered alternatives while ignoring blank lines', () => {
+  assert.deepEqual(parseExerciseOptions('Hello!\n\n Good night! \r\nGoodbye!\nGood morning!\n'), [
+    'Hello!', 'Good night!', 'Goodbye!', 'Good morning!',
+  ]);
+  assert.equal(EXERCISE_OPTION_LIMITS.min, 2);
+  assert.equal(EXERCISE_OPTION_LIMITS.max, 10);
+  assert.equal(parseExerciseOptions(Array.from({ length: 10 }, (_, index) => `Option ${index + 1}`).join('\n')).length, 10);
+});
+
+test('validates minimum, maximum, duplicates, membership and character limit', () => {
+  assert.ok(validateExerciseOverride(original, identity, { options: ['Only'], correctValue: 'Only' }).includes('Informe pelo menos 2 alternativas.'));
+  assert.ok(validateExerciseOverride(original, identity, {
+    options: Array.from({ length: 11 }, (_, index) => `Option ${index + 1}`), correctValue: 'Option 1',
+  }).includes('Informe no máximo 10 alternativas.'));
+  assert.ok(validateExerciseOverride(original, identity, { options: [' One ', 'one'], correctValue: 'One' }).includes('Existem alternativas repetidas.'));
+  assert.ok(validateExerciseOverride(original, identity, { options: ['One', 'Two'], correctValue: 'Three' }).includes('A resposta principal precisa estar entre as alternativas.'));
+  assert.ok(validateExerciseOverride(original, identity, { options: ['One', 'x'.repeat(501)], correctValue: 'One' }).some((error) => error.includes('500 caracteres')));
+});
+
+test('preserves four and five alternatives in diffs and student projection', () => {
+  const options = ['One', 'Two', 'Three', 'Four', 'Five'];
+  const override = diffExerciseOverride(original, { options, correctValue: 'Four' });
+  assert.deepEqual(override.options, options);
+  const student = applyExerciseOverride(original, { ...identity, status: 'published', version: 5, override });
+  assert.deepEqual(student.options, options);
+  assert.equal(student.correctValue, 'Four');
+});
+
+test('derives editorial status without mixing it with report status', () => {
+  assert.equal(getExerciseEditorialStatus({}), 'original');
+  assert.equal(getExerciseEditorialStatus({ published: { ...identity, status: 'published', version: 1, override: {}, changeReason: 'valid reason', adminNote: '', baseVersion: 1, updatedBy: 'admin' } }), 'published');
+  assert.equal(getExerciseEditorialStatus({ published: { ...identity, status: 'disabled', version: 2, override: {}, changeReason: 'valid reason', adminNote: '', baseVersion: 2, updatedBy: 'admin' } }), 'disabled');
+  assert.equal(getExerciseEditorialStatus({ draft: { ...identity, status: 'draft', version: 2, override: {}, changeReason: '', adminNote: '', baseVersion: 2, updatedBy: 'admin' } }), 'draft');
 });
 
 test('stores only fields changed from local content', () => {
   assert.deepEqual(diffExerciseOverride(original, { instruction: 'Choose.', displayValue: 'Changed' }), { displayValue: 'Changed' });
+});
+
+test('normalizes curriculum workbook ids to the integer required by Firestore rules', () => {
+  assert.equal(normalizeExerciseWorkbookId('wb1'), 1);
+  assert.equal(normalizeExerciseWorkbookId('9'), 9);
+  assert.equal(normalizeExerciseWorkbookId(3), 3);
+  assert.ok(Number.isNaN(normalizeExerciseWorkbookId('workbook-one')));
+});
+
+test('rejects a runtime string workbook id before contacting Firestore', () => {
+  const invalidIdentity = { ...identity, workbookId: 'wb1' as unknown as number };
+  assert.match(validateExerciseOverride(original, invalidIdentity, {}).join(' '), /livro.*número inteiro/i);
 });
 
 test('never accepts a local blob preview as published content', () => {

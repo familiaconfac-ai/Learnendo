@@ -1,7 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { ExerciseReport, ExerciseReportStatus } from '../../services/exerciseReportsService';
 import type { ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
 import { PracticeSection } from '../UI';
+import { applyExerciseOverride, type PublishedExerciseOverride } from '../../models/exerciseOverride';
+import { getExerciseEditorialState } from '../../services/exerciseOverrideService';
+import type { Exercise } from '../../types';
 
 export type VerificationVerdict = 'fixed' | 'better-than-expected' | 'not-fixed' | 'needs-improvement';
 
@@ -33,7 +36,19 @@ export const AdminExerciseVerification: React.FC<AdminExerciseVerificationProps>
   const [dialogOpen, setDialogOpen] = useState(false);
   const [verdict, setVerdict] = useState<VerificationVerdict>('fixed');
   const [note, setNote] = useState('');
-  const exercise = location.day.exercises[location.exerciseIndex];
+  const originalExercise = location.day.exercises[location.exerciseIndex];
+  const [exercise, setExercise] = useState<Exercise>(originalExercise);
+  useEffect(() => {
+    let cancelled = false;
+    setExercise(originalExercise);
+    void getExerciseEditorialState(originalExercise.id).then((state) => {
+      const published = state.published?.status === 'published' || state.published?.status === 'disabled'
+        ? state.published as PublishedExerciseOverride
+        : undefined;
+      if (!cancelled) setExercise(applyExerciseOverride(originalExercise, published));
+    }).catch((cause) => console.warn('[AdminExerciseVerification] Published content could not be resolved.', cause));
+    return () => { cancelled = true; };
+  }, [originalExercise]);
   const selectedVerdict = VERDICTS.find((item) => item.value === verdict) ?? VERDICTS[0];
 
   return (

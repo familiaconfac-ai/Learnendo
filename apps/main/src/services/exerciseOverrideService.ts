@@ -1,16 +1,17 @@
 import {
-  collection, doc, getDoc, getDocs, query, runTransaction,
+  collection, deleteDoc, doc, getDoc, getDocs, query, runTransaction,
   serverTimestamp, where,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import type { Exercise } from '../types';
 import {
-  applyExerciseOverride, diffExerciseOverride, sanitizeExerciseOverride, validateExerciseOverride,
+  applyExerciseOverride, diffExerciseOverride, getExerciseEditorialStatus, sanitizeExerciseOverride, validateExerciseOverride,
   type ExerciseEditorialDocument, type ExerciseIdentity, type ExerciseOverrideFields,
-  type PublishedExerciseOverride,
+  type ExerciseEditorialStatus, type PublishedExerciseOverride,
 } from '../models/exerciseOverride';
 import { assertEditorialAdminAccess } from './editorialAccessService';
 import { normalizeExerciseChangeReason, validateExerciseChangeReason } from '../models/exerciseChangeReason';
+import { attachEditorialOperationDiagnostic } from './editorialFirebaseError';
 
 export const EXERCISE_OVERRIDE_COLLECTION = 'exerciseOverrides';
 export const EXERCISE_DRAFT_COLLECTION = 'exerciseDrafts';
@@ -81,6 +82,20 @@ export async function getExerciseEditorialState(exerciseId: string) {
   };
 }
 
+export async function getExerciseEditorialStatuses(exerciseIds: string[]): Promise<Record<string, ExerciseEditorialStatus>> {
+  const uniqueIds = [...new Set(exerciseIds.filter(Boolean))];
+  const entries = await Promise.all(uniqueIds.map(async (exerciseId) => {
+    const state = await getExerciseEditorialState(exerciseId);
+    return [exerciseId, getExerciseEditorialStatus(state)] as const;
+  }));
+  return Object.fromEntries(entries);
+}
+
+export async function deleteExerciseDraft(exerciseId: string, updatedBy: string): Promise<void> {
+  await assertEditorialAdminAccess(updatedBy);
+  await deleteDoc(doc(db, EXERCISE_DRAFT_COLLECTION, exerciseId));
+}
+
 export async function listExerciseVersions(exerciseId: string): Promise<ExerciseEditorialDocument[]> {
   const snapshot = await getDocs(collection(db, EXERCISE_OVERRIDE_COLLECTION, exerciseId, 'versions'));
   return snapshot.docs.map((item) => item.data() as ExerciseEditorialDocument)
@@ -97,17 +112,29 @@ export async function saveExerciseDraft(input: {
   const errors = validateExerciseOverride(input.original, input.identity, override);
   if (errors.some((error) => error.includes('ID') || error.includes('tipo') || error.includes('Idioma'))) throw new Error(errors.join('\n'));
   const ref = doc(db, EXERCISE_DRAFT_COLLECTION, input.identity.exerciseId);
-  await runTransaction(db, async (transaction) => {
-    const current = await transaction.get(ref);
-    if (current.exists() && (Number(current.data().baseVersion ?? 0) !== input.baseVersion
-      || Number(current.data().draftRevision ?? 0) !== (input.expectedDraftRevision ?? 0))) {
-      throw new Error('Este exercício foi alterado por outro administrador. Recarregue ou compare as versões antes de salvar.');
-    }
-    transaction.set(ref, { ...identityValue(input.identity), status: 'draft', version: input.baseVersion, override,
-      changeReason: input.changeReason.trim(), adminNote: input.adminNote.trim(), relatedReportId: input.relatedReportId ?? null,
-      baseVersion: input.baseVersion, draftRevision: (input.expectedDraftRevision ?? 0) + 1,
-      updatedAt: serverTimestamp(), updatedBy: input.updatedBy });
-  });
+  const payload = { ...identityValue(input.identity), status: 'draft' as const, version: input.baseVersion, override,
+    changeReason: input.changeReason.trim(), adminNote: input.adminNote.trim(), relatedReportId: input.relatedReportId ?? null,
+    baseVersion: input.baseVersion, draftRevision: (input.expectedDraftRevision ?? 0) + 1,
+    updatedAt: serverTimestamp(), updatedBy: input.updatedBy };
+  let operationType: 'create' | 'update' = 'create';
+  try {
+    await runTransaction(db, async (transaction) => {
+      const current = await transaction.get(ref);
+      operationType = current.exists() ? 'update' : 'create';
+      if (current.exists() && (Number(current.data().baseVersion ?? 0) !== input.baseVersion
+        || Number(current.data().draftRevision ?? 0) !== (input.expectedDraftRevision ?? 0))) {
+        throw new Error('Este exercício foi alterado por outro administrador. Recarregue ou compare as versões antes de salvar.');
+      }
+      transaction.set(ref, payload);
+    });
+  } catch (cause) {
+    throw attachEditorialOperationDiagnostic(cause, {
+      action: 'salvar rascunho', collection: EXERCISE_DRAFT_COLLECTION,
+      targetPath: `${EXERCISE_DRAFT_COLLECTION}/${input.identity.exerciseId}`, operationType,
+      stage: 'gravação isolada do rascunho', confirmationState: 'not-applicable', completedOperations: [],
+      payload: { ...payload, updatedAt: '[serverTimestamp]' },
+    });
+  }
 }
 
 export async function publishExerciseOverride(input: {
@@ -126,7 +153,10 @@ export async function publishExerciseOverride(input: {
   const canonicalRef = doc(db, EXERCISE_OVERRIDE_COLLECTION, input.identity.exerciseId);
   const publicRef = doc(db, PUBLISHED_EXERCISE_OVERRIDE_COLLECTION, input.identity.exerciseId);
   const draftRef = doc(db, EXERCISE_DRAFT_COLLECTION, input.identity.exerciseId);
-  const version = await runTransaction(db, async (transaction) => {
+  let diagnosticPayload: unknown;
+  let version: number;
+  try {
+    version = await runTransaction(db, async (transaction) => {
     const [current, currentDraft] = await Promise.all([transaction.get(canonicalRef), transaction.get(draftRef)]);
     const currentVersion = current.exists() ? Number(current.data().version ?? 0) : 0;
     if (currentVersion !== input.baseVersion) throw new Error('Este exercício foi alterado por outro administrador. Recarregue ou compare as versões antes de publicar.');
@@ -140,12 +170,27 @@ export async function publishExerciseOverride(input: {
       adminNote: input.adminNote.trim(), relatedReportId: input.relatedReportId ?? null, baseVersion: version,
       updatedAt: serverTimestamp(), updatedBy: input.updatedBy, publishedAt: serverTimestamp(), publishedBy: input.updatedBy };
     const publicValue = { ...safeIdentity, status, version, override: sanitizeExerciseOverride(override), publishedAt: serverTimestamp() };
+    diagnosticPayload = {
+      canonical: { path: `${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}`, value: { ...adminValue, updatedAt: '[serverTimestamp]', publishedAt: '[serverTimestamp]' } },
+      history: { path: `${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}/versions/${String(version).padStart(6, '0')}`, value: { ...adminValue, updatedAt: '[serverTimestamp]', publishedAt: '[serverTimestamp]' } },
+      publicProjection: { path: `${PUBLISHED_EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}`, value: { ...publicValue, publishedAt: '[serverTimestamp]' } },
+      draftDelete: `${EXERCISE_DRAFT_COLLECTION}/${input.identity.exerciseId}`,
+    };
     transaction.set(canonicalRef, adminValue);
     transaction.set(doc(canonicalRef, 'versions', String(version).padStart(6, '0')), adminValue);
     transaction.set(publicRef, publicValue);
     transaction.delete(draftRef);
     return version;
-  });
+    });
+  } catch (cause) {
+    throw attachEditorialOperationDiagnostic(cause, {
+      action: 'publicar correção',
+      collection: `${EXERCISE_OVERRIDE_COLLECTION}; ${PUBLISHED_EXERCISE_OVERRIDE_COLLECTION}; ${EXERCISE_DRAFT_COLLECTION}`,
+      targetPath: `${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}; ${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}/versions/{version}; ${PUBLISHED_EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}; ${EXERCISE_DRAFT_COLLECTION}/${input.identity.exerciseId}`,
+      operationType: 'transaction', stage: 'transação atômica de publicação',
+      confirmationState: 'after-confirmation', completedOperations: [], payload: diagnosticPayload,
+    });
+  }
   invalidateDayOverrideCache(input.identity);
   return version;
 }

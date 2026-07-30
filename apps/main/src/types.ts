@@ -14,6 +14,8 @@ export interface Exercise {
   instruction: string;
   displayValue?: string;
   audioValue: string;
+  /** Optional exercise-specific language/locale for TTS; course language is the normal fallback. */
+  speechLanguage?: string;
   audioValueBeforeAnswer?: string;
   fullSentenceAfterAnswer?: string;
   options?: string[];
@@ -24,7 +26,7 @@ export interface Exercise {
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
   promptMode?: 'answer-question' | 'write-question';
-  assessmentMode?: 'listening-writing' | 'shadowing' | 'speaking';
+  assessmentMode?: 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
   coverageObjective?: string;
   sourceExerciseId?: string;
   contentOrigin?: string;
@@ -461,6 +463,7 @@ export interface PracticeItem {
   instruction: string;
   displayValue?: string;
   audioValue: string;
+  speechLanguage?: string;
   audioValueBeforeAnswer?: string;
   fullSentenceAfterAnswer?: string;
   options?: string[];
@@ -479,7 +482,7 @@ export interface PracticeItem {
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
   promptMode?: 'answer-question' | 'write-question';
-  assessmentMode?: 'listening-writing' | 'shadowing' | 'speaking';
+  assessmentMode?: 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
   coverageObjective?: string;
   sourceExerciseId?: string;
   contentOrigin?: string;
