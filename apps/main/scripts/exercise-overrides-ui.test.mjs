@@ -90,22 +90,22 @@ test('publishing, disabling and restoring the original require a trimmed specifi
   assert.match(service, /Restauração da versão/);
 });
 
-test('missing publication reason is visible, focused and scrolled into view without clearing fields', () => {
+test('an invalid explicit publication reason is visible, focused and does not clear fields', () => {
   assert.match(editor, /ref=\{changeReasonRef\}/);
   assert.match(editor, /scrollIntoView\(\{ behavior: 'smooth', block: 'center' \}\)/);
   assert.match(editor, /focus\(\{ preventScroll: true \}\)/);
   assert.match(editor, /aria-invalid=\{Boolean\(changeReasonError\)\}/);
-  assert.match(reasonModel, /Informe o motivo da alteração antes de publicar\./);
+  assert.match(reasonModel, /Descreva o motivo da alteração com pelo menos 5 caracteres\./);
   assert.doesNotMatch(editor, /requireValidChangeReason[\s\S]{0,900}setFields\(/);
 });
 
-test('change reason UI is multiline, responsive, near the footer and can copy a report description explicitly', () => {
+test('change reason UI is multiline, responsive, and explains the automatic report fallback', () => {
   assert.match(editor, /Motivo da alteração\s*<span/);
   assert.match(editor, /Explique brevemente o que foi corrigido e por quê\./);
   assert.match(editor, /textarea[\s\S]*min-h-28 w-full/);
   assert.match(editor, /pb-40[^"\n]*sm:pb-32/);
-  assert.match(editor, /Usar descrição do relatório como motivo/);
-  assert.match(editor, /onClick=\{\(\) => \{ setChangeReason\(report\.studentComment\.trim\(\)\)/);
+  assert.doesNotMatch(editor, /Usar descrição do relatório como motivo/);
+  assert.match(editor, /esta descrição será usada automaticamente/);
 });
 
 test('reason stays in admin history and is excluded from the student projection', () => {
@@ -194,7 +194,62 @@ test('draft and publication update report workflow without conflating statuses',
   assert.doesNotMatch(editor, /Resposta de teste/);
   assert.doesNotMatch(editor, />Testar<\/button>/);
   assert.match(editor, /Salvar rascunho e fechar/);
-  assert.match(editor, /report \? 'Publicar e resolver relatório' : 'Publicar correção'/);
+  assert.match(editor, /activeReport \? 'Publicar e resolver relatório' : 'Publicar correção'/);
   assert.doesNotMatch(editor, /Publicar e resolver atual/);
   assert.match(editor, /setDirty\(false\);\s*onClose\(\)/);
+});
+
+test('one publication click selects a reason and publishes without a normal-flow confirmation', () => {
+  assert.match(editor, /onClick=\{\(\) => void publish\(activeReport \? 'current' : false\)\}/);
+  assert.match(editor, /resolveExercisePublicationReason\(\{/);
+  assert.match(editor, /Correção do relatório: \$\{report\.problemCategory\}/);
+  assert.doesNotMatch(editor, /Publicar esta correção agora\?/);
+  assert.doesNotMatch(editor, /Usar este motivo/);
+  assert.match(editor, /status === 'disabled' && !window\.confirm/);
+});
+
+test('publication and current report resolution share the same Firestore transaction', () => {
+  assert.match(service, /reportToResolve/);
+  assert.match(service, /transaction\.get\(reportRef\)/);
+  assert.match(service, /transaction\.set\(canonicalRef, adminValue\)[\s\S]*transaction\.update\(reportRef, \{/);
+  assert.match(service, /status: 'resolved'/);
+  assert.match(service, /resolutionVersion: version/);
+  assert.match(service, /resolvedByEditorialAt: serverTimestamp\(\)/);
+  assert.doesNotMatch(dashboard, /resolveReports === 'current'[\s\S]{0,500}await updateExerciseReport\(editor\.report/);
+});
+
+test('resolved report disappears immediately, editor closes, and success is shown', () => {
+  assert.match(dashboard, /setReports\(\(current\) => current\.filter\(\(item\) => item\.reportId !== editor\.report\?\.reportId\)\)/);
+  assert.match(dashboard, /pending: Math\.max\(0, current\.pending - 1\)/);
+  assert.match(dashboard, /setStatusNotice\(`Correção \$\{version\} publicada e relatório resolvido\.`\)/);
+  assert.match(editor, /await onPublished\(version, resolveReports\)[\s\S]*onClose\(\)/);
+});
+
+test('validation and publication failures keep editor data open and leave report unresolved', () => {
+  const validationIndex = service.indexOf("if (errors.length) throw new Error(errors.join('\\n'))");
+  const reportWriteIndex = service.indexOf('transaction.update(reportRef');
+  assert.ok(validationIndex >= 0 && reportWriteIndex > validationIndex);
+  assert.match(editor, /catch \(cause\) \{[\s\S]{0,300}setError\(describeEditorialFirebaseError\(cause, 'publish'\)\)[\s\S]{0,200}return;/);
+  assert.doesNotMatch(editor, /catch \(cause\) \{[\s\S]{0,300}setFields\(/);
+});
+
+test('duplicate publication clicks are guarded before a version can be created', () => {
+  assert.match(editor, /const publishInFlightRef = useRef\(false\)/);
+  assert.match(editor, /if \(saving \|\| publishInFlightRef\.current\) return/);
+  assert.match(editor, /publishInFlightRef\.current = true/);
+  assert.match(service, /if \(currentVersion !== input\.baseVersion\) throw new Error/);
+});
+
+test('direct publication has a safe nonempty reason and never resolves a nonexistent report', () => {
+  assert.match(reasonModel, /DEFAULT_EXERCISE_CHANGE_REASON = 'Correção publicada a partir de relatório administrativo\.'/);
+  assert.match(reasonModel, /return DEFAULT_EXERCISE_CHANGE_REASON/);
+  assert.match(editor, /reportToResolve: activeReport && resolveReports === 'current'/);
+  assert.match(editor, /publish\(activeReport \? 'current' : false\)/);
+});
+
+test('saving a draft remains isolated from publication and report resolution', () => {
+  assert.match(editor, /const saveDraft = async \(\) =>/);
+  assert.match(editor, /await saveExerciseDraft/);
+  assert.doesNotMatch(editor, /const saveDraft = async \(\) => \{[\s\S]{0,1800}publishExerciseOverride/);
+  assert.doesNotMatch(editor, /const saveDraft = async \(\) => \{[\s\S]{0,1800}reportToResolve/);
 });

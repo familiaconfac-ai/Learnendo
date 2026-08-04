@@ -72,6 +72,7 @@ export interface ExerciseReport {
   attemptCount: number;
   problemCategory: ExerciseReportCategory;
   studentComment: string;
+  suggestedChangeReason?: string | null;
   route: string;
   appVersion: string;
   browser: string;
@@ -118,7 +119,8 @@ export interface ExerciseReportPage {
   hasMore: boolean;
 }
 
-const COLLECTION = 'exerciseReports';
+export const EXERCISE_REPORT_COLLECTION = 'exerciseReports';
+const COLLECTION = EXERCISE_REPORT_COLLECTION;
 const PAGE_SIZE = 25;
 const recentSubmissions = new Map<string, { reportId: string; at: number }>();
 

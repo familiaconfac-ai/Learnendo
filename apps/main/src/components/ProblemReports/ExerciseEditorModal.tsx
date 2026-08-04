@@ -10,7 +10,7 @@ import {
   applyExerciseOverride, EXERCISE_OPTION_LIMITS, normalizeExerciseWorkbookId, parseExerciseOptions,
   validateExerciseOverride, type ExerciseEditorialDocument, type ExerciseIdentity, type ExerciseOverrideFields,
 } from '../../models/exerciseOverride';
-import { normalizeExerciseChangeReason, validateExerciseChangeReason } from '../../models/exerciseChangeReason';
+import { resolveExercisePublicationReason, validateExerciseChangeReason } from '../../models/exerciseChangeReason';
 import { describeExerciseSpeechLocale, resolveExerciseSpeechLocale } from '../../utils/exerciseSpeechLocale';
 import { speak as speakExerciseText } from '../../services/ttsService';
 import { isActiveExerciseReport, listRelatedExerciseReports } from '../../services/exerciseReportsService';
@@ -73,6 +73,7 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const [actionLabel, setActionLabel] = useState('');
   const [relatedReports, setRelatedReports] = useState<ExerciseReport[]>([]);
   const changeReasonRef = useRef<HTMLTextAreaElement | null>(null);
+  const publishInFlightRef = useRef(false);
   const controlsBusy = saving;
 
   const hydrate = async (preserveMessages = false) => {
@@ -119,10 +120,16 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const speechLocale = resolveExerciseSpeechLocale(effective, identity.language, typeof navigator === 'undefined' ? undefined : navigator.language);
   const speechLocaleDescription = describeExerciseSpeechLocale(speechLocale);
   const baseVersion = state.published?.version ?? 0;
+  const activeReport = report && isActiveExerciseReport(report) ? report : null;
 
   const requireValidChangeReason = (status: 'published' | 'disabled'): string | null => {
-    const trimmed = normalizeExerciseChangeReason(changeReason);
-    const message = validateExerciseChangeReason(trimmed, status === 'disabled' ? 'disable' : 'publish');
+    const resolved = resolveExercisePublicationReason({
+      editorialReason: changeReason,
+      suggestedReportReason: report?.suggestedChangeReason
+        ?? (report?.problemCategory ? `Correção do relatório: ${report.problemCategory}.` : undefined),
+      reportDescription: report?.studentComment,
+    });
+    const message = validateExerciseChangeReason(resolved, status === 'disabled' ? 'disable' : 'publish');
     if (message) {
       setChangeReasonError(message);
       setError(message);
@@ -132,9 +139,9 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       });
       return null;
     }
-    setChangeReason(trimmed);
+    setChangeReason(resolved);
     setChangeReasonError('');
-    return trimmed;
+    return resolved;
   };
 
   const saveDraft = async () => {
@@ -167,18 +174,28 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
     } finally { setSaving(false); setActionLabel(''); }
   };
   const publish = async (resolveReports: false | 'current' | 'all', status: 'published' | 'disabled' = 'published') => {
+    if (saving || publishInFlightRef.current) return;
     const validatedChangeReason = requireValidChangeReason(status);
     if (!validatedChangeReason) return;
-    if (!window.confirm(status === 'disabled' ? 'Desativar este exercício para os alunos?' : 'Publicar esta correção agora?')) return;
+    if (status === 'disabled' && !window.confirm('Desativar este exercício para os alunos?')) return;
+    publishInFlightRef.current = true;
     setSaving(true); setActionLabel(status === 'disabled' ? 'Desativando exercício…' : 'Publicando correção…'); setError(''); setNotice('');
     let version: number;
     try {
-      version = await publishExerciseOverride({ original, identity, fields, changeReason: validatedChangeReason, adminNote, updatedBy: reviewer.uid, baseVersion, relatedReportId: report?.reportId, status, expectedDraftRevision: state.draft?.draftRevision ?? 0 });
+      version = await publishExerciseOverride({
+        original, identity, fields, changeReason: validatedChangeReason, adminNote, updatedBy: reviewer.uid,
+        baseVersion, relatedReportId: report?.reportId, status,
+        expectedDraftRevision: state.draft?.draftRevision ?? 0,
+        reportToResolve: activeReport && resolveReports === 'current' && (activeReport.status === 'new' || activeReport.status === 'reviewing')
+          ? { reportId: activeReport.reportId, exerciseId: activeReport.exerciseId, status: activeReport.status, adminNote: activeReport.adminNote }
+          : undefined,
+      });
       setDirty(false);
       setNotice(status === 'disabled' ? `Exercício desativado com sucesso na versão ${version}.` : `Correção publicada com sucesso na versão ${version}.`);
     } catch (cause) {
       logEditorialFirebaseError('Falha ao publicar correção', cause);
       setError(describeEditorialFirebaseError(cause, 'publish'));
+      publishInFlightRef.current = false;
       setSaving(false); setActionLabel('');
       return;
     }
@@ -197,7 +214,7 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
         return;
       }
     }
-    if (report && (!onPublished || resolveReports !== 'current')) {
+    if (activeReport && (!onPublished || resolveReports !== 'current')) {
       setError('A publicação foi concluída, mas o relatório não foi resolvido. O editor permanecerá aberto.');
       setSaving(false); setActionLabel('');
       return;
@@ -262,7 +279,7 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
             </label>
             <p id="change-reason-help" className="text-xs text-slate-500">Explique brevemente o que foi corrigido e por quê. Obrigatório ao publicar, desativar ou reativar; opcional no rascunho.</p>
             {changeReasonError && <p id="change-reason-error" role="alert" className="rounded-lg bg-red-100 p-2 text-sm font-bold text-red-800">{changeReasonError}</p>}
-            {report?.studentComment?.trim() && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950"><p className="font-black">Relatório relacionado:</p><p className="mt-1 whitespace-pre-line">“{report.studentComment.trim()}”</p><button type="button" onClick={() => { setChangeReason(report.studentComment.trim()); setChangeReasonError(''); setDirty(true); }} className="mt-2 rounded-lg border border-blue-300 bg-white px-3 py-2 text-xs font-black text-blue-800">Usar descrição do relatório como motivo</button></div>}
+            {report?.studentComment?.trim() && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-950"><p className="font-black">Relatório relacionado:</p><p className="mt-1 whitespace-pre-line">“{report.studentComment.trim()}”</p><p className="mt-2 text-xs font-bold">Se o motivo editorial ficar vazio, esta descrição será usada automaticamente.</p></div>}
             <Field label="Observação administrativa (opcional)" area value={adminNote} onChange={(value) => { setAdminNote(value); setDirty(true); }} />
             <p className="text-sm text-slate-500">Status atual: {state.published?.status ?? 'conteúdo original'} · versão base: {baseVersion} · última atualização: {stamp(state.published?.updatedAt)}</p>
           </Section>
@@ -278,7 +295,7 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
         {(error || notice || actionLabel) && <div className={`mb-1 w-full rounded-xl p-3 text-sm font-bold ${error ? 'bg-red-100 text-red-800' : notice ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'}`} role={error ? 'alert' : 'status'}>{error || notice || actionLabel}</div>}
         <button type="button" onClick={() => setSandboxOpen(true)} disabled={controlsBusy} className="rounded-xl border border-violet-500 px-4 py-3 font-black text-violet-800 disabled:opacity-40">Visualizar exercício</button>
         <button type="button" onClick={saveDraft} disabled={controlsBusy} className="rounded-xl bg-amber-500 px-4 py-3 font-black text-white disabled:opacity-40">{saving && actionLabel.includes('rascunho') ? 'Salvando...' : 'Salvar rascunho e fechar'}</button>
-        <button type="button" onClick={() => void publish(report ? 'current' : false)} disabled={controlsBusy} className={`${report ? 'bg-blue-700' : 'bg-emerald-600'} rounded-xl px-4 py-3 font-black text-white disabled:opacity-40`}>{saving && actionLabel.includes('Publicando') ? 'Publicando...' : report ? 'Publicar e resolver relatório' : 'Publicar correção'}</button>
+        <button type="button" onClick={() => void publish(activeReport ? 'current' : false)} disabled={controlsBusy} className={`${activeReport ? 'bg-blue-700' : 'bg-emerald-600'} rounded-xl px-4 py-3 font-black text-white disabled:opacity-40`}>{saving && actionLabel.includes('Publicando') ? 'Publicando...' : activeReport ? 'Publicar e resolver relatório' : 'Publicar correção'}</button>
       </footer>
       {sandboxOpen && <ExerciseSandbox exercise={effective} language={identity.language} onClose={() => setSandboxOpen(false)} />}
     </div>

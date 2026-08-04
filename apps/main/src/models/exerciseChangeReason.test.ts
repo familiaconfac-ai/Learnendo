@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  DEFAULT_EXERCISE_CHANGE_REASON,
   MIN_EXERCISE_CHANGE_REASON_LENGTH,
   normalizeExerciseChangeReason,
+  resolveExercisePublicationReason,
   validateExerciseChangeReason,
 } from './exerciseChangeReason.ts';
 
@@ -27,4 +29,18 @@ test('rejects a non-empty reason shorter than the minimum', () => {
 test('accepts a reason at the minimum length and a longer reason', () => {
   assert.equal(validateExerciseChangeReason('abcde'), null);
   assert.equal(validateExerciseChangeReason('Corrige o gabarito da questão.'), null);
+});
+
+test('selects the publication reason in editorial, suggestion, description and fallback priority', () => {
+  assert.equal(resolveExercisePublicationReason({
+    editorialReason: '  Motivo digitado  ', suggestedReportReason: 'Motivo sugerido', reportDescription: 'Descrição',
+  }), 'Motivo digitado');
+  assert.equal(resolveExercisePublicationReason({
+    editorialReason: ' ', suggestedReportReason: '  Motivo sugerido  ', reportDescription: 'Descrição',
+  }), 'Motivo sugerido');
+  assert.equal(resolveExercisePublicationReason({
+    editorialReason: '', suggestedReportReason: null, reportDescription: '  Descrição original  ',
+  }), 'Descrição original');
+  assert.equal(resolveExercisePublicationReason({}), DEFAULT_EXERCISE_CHANGE_REASON);
+  assert.equal(validateExerciseChangeReason(resolveExercisePublicationReason({})), null);
 });

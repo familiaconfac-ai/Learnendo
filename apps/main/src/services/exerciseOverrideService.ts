@@ -12,6 +12,7 @@ import {
 import { assertEditorialAdminAccess } from './editorialAccessService';
 import { normalizeExerciseChangeReason, validateExerciseChangeReason } from '../models/exerciseChangeReason';
 import { attachEditorialOperationDiagnostic } from './editorialFirebaseError';
+import { EXERCISE_REPORT_COLLECTION } from './exerciseReportsService';
 
 export const EXERCISE_OVERRIDE_COLLECTION = 'exerciseOverrides';
 export const EXERCISE_DRAFT_COLLECTION = 'exerciseDrafts';
@@ -148,6 +149,12 @@ export async function publishExerciseOverride(input: {
   changeReason: string; adminNote: string; updatedBy: string; baseVersion: number; relatedReportId?: string | null;
   status?: 'published' | 'disabled';
   expectedDraftRevision?: number;
+  reportToResolve?: {
+    reportId: string;
+    exerciseId: string;
+    status: 'new' | 'reviewing';
+    adminNote?: string | null;
+  };
 }): Promise<number> {
   await assertEditorialAdminAccess(input.updatedBy);
   const override = diffExerciseOverride(input.original, input.fields);
@@ -159,15 +166,32 @@ export async function publishExerciseOverride(input: {
   const canonicalRef = doc(db, EXERCISE_OVERRIDE_COLLECTION, input.identity.exerciseId);
   const publicRef = doc(db, PUBLISHED_EXERCISE_OVERRIDE_COLLECTION, input.identity.exerciseId);
   const draftRef = doc(db, EXERCISE_DRAFT_COLLECTION, input.identity.exerciseId);
+  const reportRef = input.reportToResolve
+    ? doc(db, EXERCISE_REPORT_COLLECTION, input.reportToResolve.reportId)
+    : null;
   let diagnosticPayload: unknown;
   let version: number;
   try {
     version = await runTransaction(db, async (transaction) => {
-    const [current, currentDraft] = await Promise.all([transaction.get(canonicalRef), transaction.get(draftRef)]);
+    const [current, currentDraft, currentReport] = await Promise.all([
+      transaction.get(canonicalRef),
+      transaction.get(draftRef),
+      reportRef ? transaction.get(reportRef) : Promise.resolve(null),
+    ]);
     const currentVersion = current.exists() ? Number(current.data().version ?? 0) : 0;
     if (currentVersion !== input.baseVersion) throw new Error('Este exercício foi alterado por outro administrador. Recarregue ou compare as versões antes de publicar.');
     if (currentDraft.exists() && Number(currentDraft.data().draftRevision ?? 0) !== (input.expectedDraftRevision ?? 0)) {
       throw new Error('Este exercício foi alterado por outro administrador. Recarregue ou compare as versões antes de publicar.');
+    }
+    if (input.reportToResolve) {
+      if (!currentReport?.exists()) throw new Error('O relatório relacionado não existe mais. A publicação não foi realizada.');
+      const reportData = currentReport.data();
+      if (reportData.exerciseId !== input.reportToResolve.exerciseId || reportData.exerciseId !== input.identity.exerciseId) {
+        throw new Error('O relatório relacionado pertence a outro exercício. A publicação não foi realizada.');
+      }
+      if (reportData.status !== 'new' && reportData.status !== 'reviewing') {
+        throw new Error('O relatório relacionado já foi encerrado. Recarregue a lista antes de publicar.');
+      }
     }
     const version = currentVersion + 1;
     const status = input.status ?? 'published';
@@ -181,20 +205,32 @@ export async function publishExerciseOverride(input: {
       history: { path: `${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}/versions/${String(version).padStart(6, '0')}`, value: { ...adminValue, updatedAt: '[serverTimestamp]', publishedAt: '[serverTimestamp]' } },
       publicProjection: { path: `${PUBLISHED_EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}`, value: { ...publicValue, publishedAt: '[serverTimestamp]' } },
       draftDelete: `${EXERCISE_DRAFT_COLLECTION}/${input.identity.exerciseId}`,
+      reportResolution: reportRef ? `${EXERCISE_REPORT_COLLECTION}/${input.reportToResolve?.reportId}` : null,
     };
     transaction.set(canonicalRef, adminValue);
     transaction.set(doc(canonicalRef, 'versions', String(version).padStart(6, '0')), adminValue);
     transaction.set(publicRef, publicValue);
     transaction.delete(draftRef);
+    if (reportRef && input.reportToResolve) {
+      transaction.update(reportRef, {
+        status: 'resolved',
+        resolutionVersion: version,
+        resolutionType: 'editorial',
+        adminNote: [input.reportToResolve.adminNote, `Resolvido pela versão editorial ${version}.`].filter(Boolean).join('\n'),
+        resolvedAt: serverTimestamp(),
+        resolvedByEditorialAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
     return version;
     });
   } catch (cause) {
     throw attachEditorialOperationDiagnostic(cause, {
       action: 'publicar correção',
-      collection: `${EXERCISE_OVERRIDE_COLLECTION}; ${PUBLISHED_EXERCISE_OVERRIDE_COLLECTION}; ${EXERCISE_DRAFT_COLLECTION}`,
-      targetPath: `${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}; ${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}/versions/{version}; ${PUBLISHED_EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}; ${EXERCISE_DRAFT_COLLECTION}/${input.identity.exerciseId}`,
+      collection: `${EXERCISE_OVERRIDE_COLLECTION}; ${PUBLISHED_EXERCISE_OVERRIDE_COLLECTION}; ${EXERCISE_DRAFT_COLLECTION}${input.reportToResolve ? `; ${EXERCISE_REPORT_COLLECTION}` : ''}`,
+      targetPath: `${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}; ${EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}/versions/{version}; ${PUBLISHED_EXERCISE_OVERRIDE_COLLECTION}/${input.identity.exerciseId}; ${EXERCISE_DRAFT_COLLECTION}/${input.identity.exerciseId}${input.reportToResolve ? `; ${EXERCISE_REPORT_COLLECTION}/${input.reportToResolve.reportId}` : ''}`,
       operationType: 'transaction', stage: 'transação atômica de publicação',
-      confirmationState: 'after-confirmation', completedOperations: [], payload: diagnosticPayload,
+      confirmationState: 'not-applicable', completedOperations: [], payload: diagnosticPayload,
     });
   }
   invalidateDayOverrideCache(input.identity);

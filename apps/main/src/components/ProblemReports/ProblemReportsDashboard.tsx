@@ -569,17 +569,25 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
           if (resolveReports === 'all') {
             const count = await resolveOpenExerciseReports(editor.location.day.exercises[editor.location.exerciseIndex].id, version, reviewer);
             setStatusNotice(`Correção ${version} publicada e ${count} relatório(s) resolvido(s).`);
-          } else if (editor.report) {
+          } else if (editor.report && isActiveExerciseReport(editor.report)) {
             if (resolveReports === 'current') {
-              await updateExerciseReport(editor.report, {
-                status: 'resolved', resolutionVersion: version, resolutionType: 'editorial',
-                adminNote: [editor.report.adminNote, `Resolvido pela versão editorial ${version}.`].filter(Boolean).join('\n'),
-              }, reviewer);
+              const resolvedReport = { ...editor.report, status: 'resolved' as const, resolutionVersion: version, resolutionType: 'editorial' as const };
+              setReports((current) => current.filter((item) => item.reportId !== editor.report?.reportId));
+              setCounts((current) => ({
+                ...current,
+                [editor.report!.status]: Math.max(0, current[editor.report!.status] - 1),
+                resolved: current.resolved + 1,
+                pending: Math.max(0, current.pending - 1),
+              }));
+              setEditorialStatuses((current) => ({ ...current, [editor.report!.exerciseId]: 'published' }));
+              setSelected((current) => current?.reportId === resolvedReport.reportId ? null : current);
               setStatusNotice(`Correção ${version} publicada e relatório resolvido.`);
             } else if (editor.report.status !== 'reviewing') {
               await updateExerciseReport(editor.report, { status: 'reviewing' }, reviewer);
               setStatusNotice(`Correção ${version} publicada; denúncia mantida em análise.`);
             }
+          } else {
+            setStatusNotice(`Correção ${version} publicada com sucesso.`);
           }
           await load(currentStart);
         }}
