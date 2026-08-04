@@ -1,4 +1,5 @@
 type FillInBlankSource = {
+  instruction?: string;
   displayValue?: string;
   audioValue?: string;
   audioValueBeforeAnswer?: string;
@@ -39,11 +40,14 @@ export function isFillInBlankExercise(source: FillInBlankSource): boolean {
 }
 
 export function resolvePromptAudioText(source: FillInBlankSource): string {
-  let prompt = '';
-  if (source.audioValueBeforeAnswer?.trim()) prompt = normalizeSpacing(source.audioValueBeforeAnswer);
-  else if (hasBlankPlaceholder(source.displayValue)) prompt = buildBlankAudioText(source.displayValue!);
-  else if (hasBlankPlaceholder(source.audioValue)) prompt = buildBlankAudioText(source.audioValue!);
-  else prompt = normalizeSpacing(source.audioValue ?? source.displayValue ?? '');
+  const explicitTtsText = source.audioValue?.trim();
+  const legacyAudioText = source.audioValueBeforeAnswer?.trim();
+  const displayedText = source.displayValue?.trim();
+  const instruction = source.instruction?.trim();
+  const selectedText = explicitTtsText || legacyAudioText || displayedText || instruction || '';
+  const prompt = hasBlankPlaceholder(selectedText)
+    ? buildBlankAudioText(selectedText)
+    : normalizeSpacing(selectedText);
   return /^[a-z]$/i.test(prompt) ? `This is the letter ${prompt.toUpperCase()}.` : prompt;
 }
 
