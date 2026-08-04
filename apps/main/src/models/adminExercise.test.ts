@@ -82,3 +82,12 @@ test('IDs de histórico têm ordenação lexical estável', () => {
   assert.equal(versionDocumentId(1), '000001');
   assert.equal(versionDocumentId(42), '000042');
 });
+
+test('publica resposta principal equivalente a uma alternativa sem reescrever o texto', () => {
+  const content = { ...emptyAdminExerciseContent('en-US'), instruction: 'Choose',
+    options: ['Good night!', 'Hello!', 'Goodbye!', 'GOOD AFTERNOON!'],
+    correctValue: 'Good afternoon!' };
+  assert.deepEqual(validateAdminExerciseForPublication({ identity, content, changeReason: 'Corrige validação' }), []);
+  assert.equal(content.correctValue, 'Good afternoon!');
+  assert.equal(content.options[3], 'GOOD AFTERNOON!');
+});

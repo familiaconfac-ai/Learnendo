@@ -1,4 +1,5 @@
 import type { Exercise } from '../types';
+import { hasDuplicateAlternatives, hasMatchingAlternative } from '../utils/multipleChoiceAnswer.ts';
 
 export const EXERCISE_OVERRIDE_LANGUAGES = ['en', 'pt', 'es', 'el', 'he'] as const;
 export const EXERCISE_OVERRIDE_STATUSES = ['draft', 'published', 'archived', 'disabled'] as const;
@@ -107,9 +108,8 @@ export function validateExerciseOverride(
     if (options.length < EXERCISE_OPTION_LIMITS.min) errors.push(`Informe pelo menos ${EXERCISE_OPTION_LIMITS.min} alternativas.`);
     if (options.length > EXERCISE_OPTION_LIMITS.max) errors.push(`Informe no máximo ${EXERCISE_OPTION_LIMITS.max} alternativas.`);
     if (options.some((item) => item.length > EXERCISE_OPTION_LIMITS.maxCharacters)) errors.push(`Cada alternativa deve ter no máximo ${EXERCISE_OPTION_LIMITS.maxCharacters} caracteres.`);
-    if (typeof answer === 'string' && !options.includes(answer.trim())) errors.push('A resposta principal precisa estar entre as alternativas.');
-    const normalizedOptions = options.map((item) => item.toLocaleLowerCase());
-    if (new Set(normalizedOptions).size !== normalizedOptions.length) errors.push('Existem alternativas repetidas.');
+    if (typeof answer === 'string' && !hasMatchingAlternative(options, answer)) errors.push('A resposta principal precisa estar entre as alternativas.');
+    if (hasDuplicateAlternatives(options)) errors.push('Existem alternativas repetidas.');
   }
   if ((fields.acceptedAnswers?.length ?? 0) > 100) errors.push('A lista de respostas aceitas excede o limite de 100 itens.');
   if (fields.imageUrl?.startsWith('blob:')) errors.push('A prévia local da imagem não pode ser publicada. Aguarde o upload para o Firebase Storage.');

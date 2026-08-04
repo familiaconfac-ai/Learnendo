@@ -1,4 +1,5 @@
 import type { Exercise } from '../types';
+import { hasDuplicateAlternatives, hasMatchingAlternative } from '../utils/multipleChoiceAnswer.ts';
 
 export const ADMIN_EXERCISE_SCHEMA_VERSION = 1 as const;
 export const ADMIN_EXERCISE_COLLECTION = 'adminExercises';
@@ -167,9 +168,8 @@ export function validateAdminExerciseForPublication(input: {
   if (options.length > ADMIN_EXERCISE_OPTION_LIMITS.max) errors.push('Informe no máximo dez alternativas.');
   if (options.some((item) => !item)) errors.push('Todas as alternativas devem estar preenchidas.');
   if (options.some((item) => item.length > ADMIN_EXERCISE_OPTION_LIMITS.maxCharacters)) errors.push('Cada alternativa deve ter no máximo 500 caracteres.');
-  const normalizedOptions = options.map((item) => item.toLocaleLowerCase());
-  if (new Set(normalizedOptions).size !== normalizedOptions.length) errors.push('Existem alternativas duplicadas.');
-  if (!options.includes(content.correctValue.trim())) errors.push('A resposta correta precisa estar entre as alternativas.');
+  if (hasDuplicateAlternatives(options)) errors.push('Existem alternativas duplicadas.');
+  if (!hasMatchingAlternative(options, content.correctValue)) errors.push('A resposta correta precisa estar entre as alternativas.');
   if (!ADMIN_EXERCISE_SPEECH_LANGUAGES.includes(content.speechLanguage as typeof ADMIN_EXERCISE_SPEECH_LANGUAGES[number])) errors.push('Idioma da voz inválido.');
   const imageError = validateExternalImageUrl(content.imageUrl);
   if (imageError) errors.push(imageError);

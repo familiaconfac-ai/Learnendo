@@ -161,3 +161,14 @@ test('gera prompt copiável com destino, distribuição, schema e validações',
   assert.match(prompt, /speechText/);
   assert.match(prompt, /3 multiple-choice/);
 });
+
+test('autoria usa a mesma normalização de múltipla escolha sem remover pontuação', () => {
+  assert.deepEqual(validateCanonicalExercise({
+    type: 'multiple-choice', instruction: 'Choose', correctAnswer: ' Good   afternoon! ',
+    alternatives: ['GOOD AFTERNOON!', 'Good night!'],
+  }), []);
+  assert.ok(validateCanonicalExercise({
+    type: 'multiple-choice', instruction: 'Choose', correctAnswer: 'Good afternoon!',
+    alternatives: ['Good afternoon?', 'Good night!'],
+  }).some((error) => error.includes('alternativas')));
+});

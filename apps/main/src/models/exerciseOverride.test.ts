@@ -122,3 +122,13 @@ test('an existing valid editorial HTTPS image remains supported', () => {
   assert.equal(resolved.imageUrl, imageUrl);
   assert.equal(resolved.imageAlt, 'Existing editorial image');
 });
+
+test('validates the reported greeting against options with comparison-only normalization', () => {
+  const fields = {
+    correctValue: 'Good afternoon!',
+    options: ['Good night!', 'Hello!', 'Goodbye!', 'GOOD AFTERNOON!'],
+  };
+  assert.equal(validateExerciseOverride(original, identity, fields).includes('A resposta principal precisa estar entre as alternativas.'), false);
+  assert.equal(fields.correctValue, 'Good afternoon!');
+  assert.equal(fields.options[3], 'GOOD AFTERNOON!');
+});

@@ -4,6 +4,7 @@ import type { Workbook } from '../../types';
 import { PracticeSection } from '../UI';
 import { normalizeReportedWorkbookId, resolveWorkbookModule } from '../../utils/exerciseReportCurriculum';
 import { resolveExerciseSpeechLocale } from '../../utils/exerciseSpeechLocale';
+import { findMatchingAlternativeIndex, hasDuplicateAlternatives } from '../../utils/multipleChoiceAnswer.ts';
 import { ExerciseAuthoringWorkspace } from './ExerciseAuthoringWorkspace';
 import type { ExerciseReport } from '../../services/exerciseReportsService';
 import type { ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
@@ -116,9 +117,9 @@ const OptionsEditor: React.FC<{
   options: string[]; correctValue: string; onChange: (options: string[], correctValue: string) => void;
 }> = ({ options, correctValue, onChange }) => {
   const [paste, setPaste] = useState('');
-  const duplicates = options.map((item) => item.trim().toLocaleLowerCase())
-    .filter((item, index, all) => item && all.indexOf(item) !== index);
-  const update = (next: string[]) => onChange(next, next.includes(correctValue) ? correctValue : '');
+  const hasDuplicates = hasDuplicateAlternatives(options);
+  const correctIndex = findMatchingAlternativeIndex(options, correctValue);
+  const update = (next: string[]) => onChange(next, findMatchingAlternativeIndex(next, correctValue) >= 0 ? correctValue : '');
   const move = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= options.length) return;
@@ -126,10 +127,10 @@ const OptionsEditor: React.FC<{
   };
   return <div className="space-y-2">
     {options.map((option, index) => <div key={index} className="flex items-center gap-2">
-      <input aria-label={`Alternativa correta ${index + 1}`} type="radio" checked={correctValue === option && !!option} onChange={() => onChange(options, option)} />
+      <input aria-label={`Alternativa correta ${index + 1}`} type="radio" checked={correctIndex === index && !!option} onChange={() => onChange(options, option)} />
       <input aria-label={`Alternativa ${index + 1}`} value={option} maxLength={500} onChange={(event) => {
         const next = [...options]; next[index] = event.target.value;
-        onChange(next, correctValue === option ? event.target.value : correctValue);
+        onChange(next, correctIndex === index ? event.target.value : correctValue);
       }} className="min-w-0 flex-1 rounded-lg border p-2" />
       <button type="button" aria-label="Mover para cima" onClick={() => move(index, -1)} className="rounded border px-2 py-1">↑</button>
       <button type="button" aria-label="Mover para baixo" onClick={() => move(index, 1)} className="rounded border px-2 py-1">↓</button>
@@ -140,7 +141,7 @@ const OptionsEditor: React.FC<{
       <textarea aria-label="Colar lista de alternativas" value={paste} onChange={(event) => setPaste(event.target.value)} placeholder="Cole uma alternativa por linha" className="min-h-20 rounded-lg border p-2" />
       <button type="button" onClick={() => { update(parseAdminExerciseOptions(paste)); setPaste(''); }} className="rounded-lg bg-slate-700 px-3 py-2 font-bold text-white">Aplicar lista</button>
     </div>
-    {duplicates.length > 0 && <p className="text-sm font-bold text-red-700">Aviso: existem alternativas duplicadas.</p>}
+    {hasDuplicates && <p className="text-sm font-bold text-red-700">Aviso: existem alternativas duplicadas.</p>}
     <p className="text-xs text-slate-500">{options.length}/10 alternativas. Selecione a correta pelo botão circular.</p>
   </div>;
 };

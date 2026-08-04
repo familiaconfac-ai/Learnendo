@@ -1,4 +1,5 @@
 import type { Exercise } from '../types';
+import { hasDuplicateAlternatives, hasMatchingAlternative } from '../utils/multipleChoiceAnswer.ts';
 
 export const AUTHORING_SCHEMA_VERSION = 1 as const;
 export const AUTHORING_TYPES = ['multiple-choice', 'identification', 'writing', 'listening', 'speaking', 'shadowing', 'repeat'] as const;
@@ -110,8 +111,8 @@ export function validateCanonicalExercise(input: CanonicalExerciseInput): string
   if (input.type === 'multiple-choice' || input.type === 'identification') {
     if (alternatives.length < 2) errors.push('Informe pelo menos duas alternativas.');
     if (!correct) errors.push('Informe a resposta correta.');
-    if (correct && !alternatives.includes(correct)) errors.push('A resposta correta deve constar nas alternativas.');
-    if (new Set(alternatives.map((item) => item.toLocaleLowerCase())).size !== alternatives.length) errors.push('Existem alternativas duplicadas.');
+    if (correct && !hasMatchingAlternative(alternatives, correct)) errors.push('A resposta correta deve constar nas alternativas.');
+    if (hasDuplicateAlternatives(alternatives)) errors.push('Existem alternativas duplicadas.');
   }
   if (input.type === 'writing' && !correct && stringList(input.acceptedAnswers).length === 0) errors.push('Informe uma resposta correta ou aceita.');
   if (input.type === 'listening' && !text(input.speechText ?? input.targetText)) errors.push('Listening exige texto para síntese de voz.');
