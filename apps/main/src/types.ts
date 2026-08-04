@@ -28,7 +28,7 @@ export interface Exercise {
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
   promptMode?: 'answer-question' | 'write-question';
-  assessmentMode?: 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
+  assessmentMode?: 'listening' | 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
   coverageObjective?: string;
   sourceExerciseId?: string;
   contentOrigin?: string;
@@ -487,7 +487,7 @@ export interface PracticeItem {
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
   promptMode?: 'answer-question' | 'write-question';
-  assessmentMode?: 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
+  assessmentMode?: 'listening' | 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
   coverageObjective?: string;
   sourceExerciseId?: string;
   contentOrigin?: string;

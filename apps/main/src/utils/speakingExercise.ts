@@ -7,7 +7,7 @@ type SpeakingSource = {
   audioValue?: string;
   correctValue: string;
   acceptedAnswers?: string[];
-  assessmentMode?: 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
+  assessmentMode?: 'listening' | 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
 };
 
 export function classifySpeakingExercise(source: SpeakingSource): SpeakingMode {

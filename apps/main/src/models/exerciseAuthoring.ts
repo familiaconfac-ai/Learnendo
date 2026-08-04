@@ -127,6 +127,8 @@ export function exerciseFromCanonical(input: CanonicalExerciseInput, previous?: 
   const correctValue = text(input.correctAnswer) || text(input.targetText);
   const oral = input.type === 'speaking' || input.type === 'shadowing' || input.type === 'repeat';
   const listening = input.type === 'listening';
+  const choice = input.type === 'multiple-choice' || input.type === 'identification';
+  const choiceListening = choice && text(input.categoryLabel).toLocaleUpperCase('en-US') === 'LISTENING';
   const exerciseType: Exercise['type'] = oral ? 'speaking' : listening ? 'writing'
     : input.type as 'multiple-choice' | 'identification' | 'writing';
   const audioValue = oral || listening
@@ -138,7 +140,7 @@ export function exerciseFromCanonical(input: CanonicalExerciseInput, previous?: 
     instruction: text(input.instruction),
     audioValue,
     correctValue: input.correctAnswer !== undefined || input.targetText !== undefined ? correctValue : (previous?.correctValue ?? ''),
-    assessmentMode: listening ? 'listening-writing' : oral
+    assessmentMode: listening ? 'listening-writing' : choiceListening ? 'listening' : oral
       ? (input.type === 'speaking' ? 'speaking' : input.type === 'repeat' ? 'repeat' : 'shadowing')
       : previous?.assessmentMode,
   };
@@ -152,16 +154,22 @@ export function exerciseFromCanonical(input: CanonicalExerciseInput, previous?: 
   if (input.explanation !== undefined) next.explanation = text(input.explanation);
   if (input.translation !== undefined) next.translation = text(input.translation);
   if (input.responsePlaceholder !== undefined) next.responsePlaceholder = text(input.responsePlaceholder);
-  if (exerciseType !== 'multiple-choice' && exerciseType !== 'identification') delete next.options;
+  if (!choice) delete next.options;
   if (!next.imageUrl) delete next.imageUrl;
   if (!next.explanation) delete next.explanation;
   if (!next.translation) delete next.translation;
   if (!next.categoryLabel) delete next.categoryLabel;
   if (!next.responsePlaceholder) delete next.responsePlaceholder;
   if (next.contentOrder === 'instruction-first') delete next.contentOrder;
-  if (!next.acceptedAnswers?.length) delete next.acceptedAnswers;
+  if (!next.acceptedAnswers?.length || choice) delete next.acceptedAnswers;
   if (!next.speechLanguage) delete next.speechLanguage;
-  if (exerciseType !== 'speaking' && !listening) delete next.assessmentMode;
+  if (choice || oral) {
+    delete next.acceptedQuestions;
+    delete next.promptMode;
+    delete next.audioValueBeforeAnswer;
+    delete next.fullSentenceAfterAnswer;
+  }
+  if (!oral && !listening && !choiceListening) delete next.assessmentMode;
   return next;
 }
 

@@ -23,6 +23,7 @@ import { deleteExerciseDraft, getExerciseEditorialStatuses } from '../../service
 import type { ExerciseEditorialStatus } from '../../models/exerciseOverride';
 import { AdminExerciseBuilderPage } from '../AdminExercises/AdminExerciseBuilderPage';
 import { ReportExerciseLocationPicker } from './ReportExerciseLocationPicker';
+import { getDaySequenceState } from '../../services/dayExerciseAuthoringService';
 
 interface ProblemReportsDashboardProps {
   isAdmin: boolean;
@@ -271,6 +272,67 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
       }
     }
     return null;
+  };
+
+  const resolveSelectedFromPublishedSequence = async () => {
+    if (!selected || actionInFlightRef.current) return;
+    actionInFlightRef.current = true;
+    setSaving(true);
+    setError('');
+    try {
+      const resolved = await resolveReportedLocation(selected);
+      if (!resolved) throw new Error('Não foi possível localizar o exercício relatado.');
+      const courseCandidates = [...new Set([
+        resolved.courseId,
+        courseIdForReportLanguage(selected.language, currentCourseId),
+        currentCourseId,
+        'english',
+      ])];
+      const lessonCandidates = [...new Set([selected.lessonId.trim(), resolved.location.lesson.id.trim()].filter(Boolean))];
+      const dayCandidates = [...new Set([selected.dayId.trim(), resolved.location.day.id.trim()].filter(Boolean))];
+      let publishedState: Awaited<ReturnType<typeof getDaySequenceState>> | null = null;
+      for (const courseId of courseCandidates) {
+        const workbookIds = reportedWorkbookCandidates(selected, Object.keys(COURSE_WORKBOOKS[courseId] ?? {}).map(Number));
+        for (const workbookId of workbookIds) {
+          for (const lessonId of lessonCandidates) {
+            for (const dayId of dayCandidates) {
+              const candidate = await getDaySequenceState({ courseId, language: languageForCourse(courseId), workbookId, lessonId, dayId });
+              if (candidate.published?.exercises.some((exercise) => exercise.id.trim() === selected.exerciseId.trim())) {
+                publishedState = candidate;
+                break;
+              }
+            }
+            if (publishedState) break;
+          }
+          if (publishedState) break;
+        }
+        if (publishedState) break;
+      }
+      if (!publishedState?.published) {
+        throw new Error('Não existe uma sequência editorial publicada contendo este exercício.');
+      }
+      await updateExerciseReport(selected, {
+        status: 'resolved',
+        resolutionVersion: publishedState.published.version,
+        resolutionType: 'editorial',
+        adminNote: [selected.adminNote, `Resolvido pela sequência editorial publicada v${publishedState.published.version}.`].filter(Boolean).join('\n'),
+      }, reviewer);
+      setReports((current) => current.filter((item) => item.reportId !== selected.reportId));
+      setCounts((current) => ({
+        ...current,
+        [selected.status]: Math.max(0, current[selected.status] - 1),
+        resolved: current.resolved + 1,
+        pending: Math.max(0, current.pending - 1),
+      }));
+      setEditorialStatuses((current) => ({ ...current, [selected.exerciseId]: 'published' }));
+      setSelected(null);
+      setStatusNotice(`Relatório resolvido pela sequência editorial v${publishedState.published.version}.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível vincular o relatório à sequência publicada.');
+    } finally {
+      actionInFlightRef.current = false;
+      setSaving(false);
+    }
   };
 
   const openExerciseVerification = async (report: ExerciseReport) => {
@@ -530,6 +592,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
               {selected.status === 'new' && <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing' }, true)} className="rounded-xl bg-amber-500 p-3 font-black text-white">Marcar em análise</button>}
               {selected.status === 'reviewing' && <button disabled={saving} onClick={() => void patchSelected({ status: 'new' }, true)} className="rounded-xl border border-blue-400 bg-white p-3 font-black text-blue-700">Retirar de análise</button>}
               {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void resolveSelectedWithoutPublishing()} className="rounded-xl bg-emerald-600 p-3 font-black text-white">Resolver sem publicar</button>}
+              {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void resolveSelectedFromPublishedSequence()} className="rounded-xl bg-blue-700 p-3 font-black text-white">Resolver pela sequência publicada</button>}
               {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void dismissSelected()} className="rounded-xl bg-slate-600 p-3 font-black text-white">Descartar denúncia</button>}
               {isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'reviewing', requiresCodeChange: true, resolutionType: 'code', adminNote: [selected.adminNote, 'Requer alteração de código.'].filter(Boolean).join('\n') }, true)} className="rounded-xl border border-orange-400 bg-white p-3 font-black text-orange-800 sm:col-span-2">Requer alteração de código</button>}
               {!isActiveExerciseReport(selected) && <button disabled={saving} onClick={() => void patchSelected({ status: 'new' }, true)} className="rounded-xl bg-blue-600 p-3 font-black text-white">Reabrir como novo</button>}

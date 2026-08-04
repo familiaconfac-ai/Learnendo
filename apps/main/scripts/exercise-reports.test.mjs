@@ -55,6 +55,9 @@ assert.match(dashboard, /O relatório foi removido da lista/, 'successful verifi
 assert.match(dashboard, /COURSE_WORKBOOKS/, 'workbook filters must use the complete course catalog');
 assert.match(dashboard, /lessonOptions\.map/, 'lesson filters must list catalog lessons');
 assert.match(dashboard, /Abrir exercício para verificar/, 'admin must be able to open the exact reported exercise');
+assert.match(dashboard, /Resolver pela sequência publicada/, 'a report must be linkable to an already published day sequence');
+assert.match(dashboard, /resolutionVersion: publishedState\.published\.version/, 'day-sequence resolution must retain the published version link');
+assert.match(dashboard, /reportedWorkbookCandidates\(selected/, 'day-sequence resolution must tolerate legacy workbook identifiers');
 assert.match(dashboard, /reportedWorkbookCandidates/, 'verification must recover from an incorrectly recorded workbook number');
 assert.match(dashboard, /Editar exercício existente/, 'report correction must expose the local override editor');
 assert.match(dashboard, /Novo exercício/, 'report correction must expose separate administrative creation');

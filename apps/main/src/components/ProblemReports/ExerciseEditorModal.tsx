@@ -14,6 +14,7 @@ import { resolveExercisePublicationReason, validateExerciseChangeReason } from '
 import { describeExerciseSpeechLocale, resolveExerciseSpeechLocale } from '../../utils/exerciseSpeechLocale';
 import { speak as speakExerciseText } from '../../services/ttsService';
 import { isActiveExerciseReport, listRelatedExerciseReports } from '../../services/exerciseReportsService';
+import { exactExerciseReportProblemKey, isExactExerciseReportDuplicate } from '../../services/exerciseReportStatus';
 import { describeEditorialFirebaseError, logEditorialFirebaseError } from '../../services/editorialFirebaseError';
 import { PracticeSection } from '../UI';
 
@@ -187,7 +188,14 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
         baseVersion, relatedReportId: report?.reportId, status,
         expectedDraftRevision: state.draft?.draftRevision ?? 0,
         reportToResolve: activeReport && resolveReports === 'current' && (activeReport.status === 'new' || activeReport.status === 'reviewing')
-          ? { reportId: activeReport.reportId, exerciseId: activeReport.exerciseId, status: activeReport.status, adminNote: activeReport.adminNote }
+          ? {
+            reportId: activeReport.reportId, exerciseId: activeReport.exerciseId, status: activeReport.status,
+            adminNote: activeReport.adminNote, duplicateKey: exactExerciseReportProblemKey(activeReport),
+            exactDuplicates: relatedReports.filter((candidate) => isExactExerciseReportDuplicate(activeReport, candidate)).map((candidate) => ({
+              reportId: candidate.reportId, exerciseId: candidate.exerciseId,
+              status: candidate.status as 'new' | 'reviewing', adminNote: candidate.adminNote,
+            })),
+          }
           : undefined,
       });
       setDirty(false);

@@ -13,6 +13,7 @@ import { assertEditorialAdminAccess } from './editorialAccessService';
 import { normalizeExerciseChangeReason, validateExerciseChangeReason } from '../models/exerciseChangeReason';
 import { attachEditorialOperationDiagnostic } from './editorialFirebaseError';
 import { EXERCISE_REPORT_COLLECTION } from './exerciseReportsService';
+import { exactExerciseReportProblemKey } from './exerciseReportStatus';
 
 export const EXERCISE_OVERRIDE_COLLECTION = 'exerciseOverrides';
 export const EXERCISE_DRAFT_COLLECTION = 'exerciseDrafts';
@@ -154,6 +155,13 @@ export async function publishExerciseOverride(input: {
     exerciseId: string;
     status: 'new' | 'reviewing';
     adminNote?: string | null;
+    duplicateKey: string;
+    exactDuplicates: Array<{
+      reportId: string;
+      exerciseId: string;
+      status: 'new' | 'reviewing';
+      adminNote?: string | null;
+    }>;
   };
 }): Promise<number> {
   await assertEditorialAdminAccess(input.updatedBy);
@@ -169,14 +177,19 @@ export async function publishExerciseOverride(input: {
   const reportRef = input.reportToResolve
     ? doc(db, EXERCISE_REPORT_COLLECTION, input.reportToResolve.reportId)
     : null;
+  const duplicateReportRefs = (input.reportToResolve?.exactDuplicates ?? []).map((report) => ({
+    report,
+    ref: doc(db, EXERCISE_REPORT_COLLECTION, report.reportId),
+  }));
   let diagnosticPayload: unknown;
   let version: number;
   try {
     version = await runTransaction(db, async (transaction) => {
-    const [current, currentDraft, currentReport] = await Promise.all([
+    const [current, currentDraft, currentReport, ...currentDuplicates] = await Promise.all([
       transaction.get(canonicalRef),
       transaction.get(draftRef),
       reportRef ? transaction.get(reportRef) : Promise.resolve(null),
+      ...duplicateReportRefs.map(({ ref }) => transaction.get(ref)),
     ]);
     const currentVersion = current.exists() ? Number(current.data().version ?? 0) : 0;
     if (currentVersion !== input.baseVersion) throw new Error('Este exercício foi alterado por outro administrador. Recarregue ou compare as versões antes de publicar.');
@@ -192,6 +205,18 @@ export async function publishExerciseOverride(input: {
       if (reportData.status !== 'new' && reportData.status !== 'reviewing') {
         throw new Error('O relatório relacionado já foi encerrado. Recarregue a lista antes de publicar.');
       }
+      if (exactExerciseReportProblemKey({ reportId: input.reportToResolve.reportId, ...reportData } as never) !== input.reportToResolve.duplicateKey) {
+        throw new Error('O conteúdo do relatório relacionado mudou. Recarregue a lista antes de publicar.');
+      }
+      currentDuplicates.forEach((snapshot, index) => {
+        const expected = duplicateReportRefs[index].report;
+        if (!snapshot.exists()) throw new Error('Uma denúncia duplicada deixou de existir. Recarregue a lista antes de publicar.');
+        const data = snapshot.data();
+        if (data.exerciseId !== input.identity.exerciseId || (data.status !== 'new' && data.status !== 'reviewing')
+          || exactExerciseReportProblemKey({ reportId: expected.reportId, ...data } as never) !== input.reportToResolve!.duplicateKey) {
+          throw new Error('Uma denúncia relacionada deixou de ser uma duplicata exata. Recarregue a lista antes de publicar.');
+        }
+      });
     }
     const version = currentVersion + 1;
     const status = input.status ?? 'published';
@@ -221,6 +246,15 @@ export async function publishExerciseOverride(input: {
         resolvedByEditorialAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+      duplicateReportRefs.forEach(({ ref, report }) => transaction.update(ref, {
+        status: 'resolved',
+        resolutionVersion: version,
+        resolutionType: 'editorial',
+        adminNote: [report.adminNote, `Resolvido como duplicata exata pela versão editorial ${version}.`].filter(Boolean).join('\n'),
+        resolvedAt: serverTimestamp(),
+        resolvedByEditorialAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      }));
     }
     return version;
     });

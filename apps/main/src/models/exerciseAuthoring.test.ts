@@ -172,3 +172,49 @@ test('autoria usa a mesma normalização de múltipla escolha sem remover pontua
     alternatives: ['Good afternoon?', 'Good night!'],
   }).some((error) => error.includes('alternativas')));
 });
+
+test('type changes remove incompatible legacy response fields without changing the id', () => {
+  const legacy = {
+    id: 'oral-legacy', type: 'speaking', instruction: 'Answer.', audioValue: 'Old question?',
+    audioValueBeforeAnswer: 'Older question?', fullSentenceAfterAnswer: 'Old sentence.',
+    correctValue: 'a', acceptedAnswers: ['a'], acceptedQuestions: ['Old question?'],
+    promptMode: 'answer-question', assessmentMode: 'speaking',
+  } as Exercise;
+  const grammar = exerciseFromCanonical({
+    type: 'multiple-choice', categoryLabel: 'GRAMMAR', instruction: 'Choose.', displayValue: 'It is ___ kite.',
+    speechText: '', speechLanguage: '', alternatives: ['a', 'an', 'am', 'are'], correctAnswer: 'a', acceptedAnswers: [],
+  }, legacy);
+  assert.equal(grammar.id, legacy.id);
+  assert.equal(grammar.audioValue, '');
+  assert.equal(grammar.assessmentMode, undefined);
+  assert.equal(grammar.acceptedAnswers, undefined);
+  assert.equal(grammar.acceptedQuestions, undefined);
+  assert.equal(grammar.promptMode, undefined);
+  assert.equal(grammar.audioValueBeforeAnswer, undefined);
+  assert.equal(grammar.fullSentenceAfterAnswer, undefined);
+
+  const listeningChoice = exerciseFromCanonical({
+    type: 'multiple-choice', categoryLabel: 'LISTENING', instruction: 'Listen and choose.',
+    displayValue: 'Choose the correct sentence.', speechText: 'I eat an apple.', speechLanguage: 'en-US',
+    alternatives: ['I eat an apple.', 'I eat a apple.'], correctAnswer: 'I eat an apple.',
+  }, legacy);
+  assert.equal(listeningChoice.assessmentMode, 'listening');
+  assert.equal(listeningChoice.audioValue, 'I eat an apple.');
+});
+
+test('shadowing keeps only the currently authored accepted answers', () => {
+  const legacy = {
+    id: 'shadow-legacy', type: 'speaking', instruction: 'Answer.', audioValue: 'Old question?',
+    correctValue: 'a', acceptedAnswers: ['a', 'rock'], acceptedQuestions: ['Old question?'],
+    promptMode: 'answer-question', assessmentMode: 'speaking', options: ['a', 'rock'],
+  } as Exercise;
+  const shadowing = exerciseFromCanonical({
+    type: 'shadowing', categoryLabel: 'SHADOWING', instruction: 'Listen and repeat.',
+    displayValue: 'I sit on a rock.', speechText: 'I sit on a rock.', targetText: 'I sit on a rock.',
+    correctAnswer: 'I sit on a rock.', acceptedAnswers: ['I sit on a rock.'], alternatives: [], speechLanguage: 'en-US',
+  }, legacy);
+  assert.equal(shadowing.assessmentMode, 'shadowing');
+  assert.deepEqual(shadowing.acceptedAnswers, ['I sit on a rock.']);
+  assert.equal(shadowing.acceptedQuestions, undefined);
+  assert.equal(shadowing.options, undefined);
+});
