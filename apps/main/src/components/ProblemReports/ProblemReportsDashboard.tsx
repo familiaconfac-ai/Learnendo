@@ -16,14 +16,14 @@ import {
 } from '../../services/exerciseReportsService';
 import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
 import type { Workbook } from '../../types';
-import { courseIdForReportLanguage, findReportedExercise, reportedWorkbookCandidates, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
+import { courseIdForReportLanguage, findReportedExercise, loadReportedExerciseFromPublishedSequence, reportedWorkbookCandidates, resolveWorkbookModule, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
 import { AdminExerciseVerification, type VerificationVerdict } from './AdminExerciseVerification';
 import { ExerciseEditorModal } from './ExerciseEditorModal';
 import { deleteExerciseDraft, getExerciseEditorialStatuses } from '../../services/exerciseOverrideService';
 import type { ExerciseEditorialStatus } from '../../models/exerciseOverride';
 import { AdminExerciseBuilderPage } from '../AdminExercises/AdminExerciseBuilderPage';
 import { ReportExerciseLocationPicker } from './ReportExerciseLocationPicker';
-import { getDaySequenceState } from '../../services/dayExerciseAuthoringService';
+import { daySequenceScopeId, getDaySequenceState, loadPublishedDaySequence } from '../../services/dayExerciseAuthoringService';
 
 interface ProblemReportsDashboardProps {
   isAdmin: boolean;
@@ -260,6 +260,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
   const resolveReportedLocation = async (report: ExerciseReport): Promise<{ location: ReportExerciseLocation; courseId: string } | null> => {
     const inferredCourse = courseIdForReportLanguage(report.language, currentCourseId);
     const courseCandidates = [...new Set([inferredCourse, currentCourseId, 'english'])];
+    let packagedFallback: { location: ReportExerciseLocation; courseId: string } | null = null;
     for (const courseId of courseCandidates) {
       const registry = COURSE_WORKBOOKS[courseId] ?? {};
       for (const workbookId of reportedWorkbookCandidates(report, Object.keys(registry).map(Number))) {
@@ -267,11 +268,24 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
         if (!loader) continue;
         const workbook = resolveWorkbookModule(await loader() as Record<string, unknown>, workbookId);
         if (!workbook) continue;
+        const lessonId = report.lessonId.trim();
+        const dayId = report.dayId.trim();
+        const exerciseId = report.exerciseId.trim();
+        if (workbook.lessons.some((lesson) => lesson.id === lessonId && lesson.days.some((day) => day.id === dayId))
+          && exerciseId && exerciseId !== 'not-informed') {
+          const identity = { courseId, language: languageForCourse(courseId), workbookId, lessonId, dayId };
+          const sourcePath = `publishedDayExerciseSequences/${daySequenceScopeId(identity)}`;
+          const publishedLocation = await loadReportedExerciseFromPublishedSequence({
+            workbook, report, sourcePath,
+            loadPublished: () => loadPublishedDaySequence(identity),
+          });
+          if (publishedLocation) return { location: publishedLocation, courseId };
+        }
         const location = findReportedExercise(workbook, report);
-        if (location) return { location, courseId };
+        if (location && !packagedFallback) packagedFallback = { location, courseId };
       }
     }
-    return null;
+    return packagedFallback;
   };
 
   const resolveSelectedFromPublishedSequence = async () => {
@@ -566,10 +580,11 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
               ['Data e hora', formatDate(selected.createdAt)], ['Status da denúncia', STATUS_LABELS[selected.status]], ['Status editorial', EDITORIAL_STATUS_LABELS[editorialStatuses[selected.exerciseId] ?? 'original']], ['Prioridade', PRIORITY_LABELS[selected.priority]], ['Usuário', selected.userName || selected.userEmail || selected.userId],
               ['Livro', `${selected.workbookTitle} (${selected.workbookId})`], ['Lição', `${selected.lessonTitle} (${selected.lessonId})`], ['Dia', `${selected.dayNumber ?? ''} (${selected.dayId})`], ['Exercício', selected.exerciseId], ['Tipo', selected.exerciseType], ['Modo', selected.exerciseMode], ['Fase', selected.sessionPhase],
             ]} />
-            <DetailSection title="Exercício relacionado" rows={[
+            <DetailSection title="Conteúdo no momento da denúncia (snapshot histórico)" rows={[
               ['Instrução', selected.instruction], ['Texto exibido', selected.displayedText], ['Texto do áudio', selected.audioText], ['Fonte do áudio', selected.audioSource], ['Alternativas', selected.options.join(' · ')],
               ['Resposta esperada', selected.expectedAnswer], ['Respostas aceitas', selected.acceptedAnswers.join(' · ')], ['Resposta do aluno', selected.studentAnswer], ['Tentativas', selected.attemptCount], ['Categoria', selected.problemCategory], ['Comentário', selected.studentComment],
             ]} />
+            <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Este snapshot é imutável e pode ser diferente do conteúdo atual, do rascunho ou da versão publicada. O editor mostra essas fontes separadamente.</p>
             <DetailSection title="Contexto técnico" rows={[
               ['Rota', selected.route], ['Versão', selected.appVersion], ['Navegador', selected.browser], ['Sistema operacional', selected.operatingSystem], ['Dispositivo', selected.deviceType], ['Tela', selected.screenSize],
             ]} />
@@ -612,7 +627,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
         }}
         onVerdict={saveVerificationVerdict}
       />}
-      {editor && <ExerciseEditorModal
+      {editor && <ExerciseEditorModal key={`${editor.report?.reportId ?? 'catalog'}:${editor.location.day.exercises[editor.location.exerciseIndex]?.id ?? 'missing'}:${editor.location.publicationVersion ?? 'local'}`}
         report={editor.report}
         location={editor.location}
         language={editor.language}

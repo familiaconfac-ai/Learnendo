@@ -36,6 +36,11 @@ const REPORT_STATUS_STYLE = {
   resolved: 'bg-emerald-100 text-emerald-800', dismissed: 'bg-slate-200 text-slate-700',
 } as const;
 const stamp = (value: any) => value?.toDate?.().toLocaleString('pt-BR') ?? '—';
+const reportSnapshotRows = (report: ExerciseReport) => [
+  ['Instrução', report.instruction], ['Texto exibido', report.displayedText],
+  ['Texto do áudio / TTS', report.audioText], ['Resposta esperada', report.expectedAnswer],
+  ['Respostas aceitas', report.acceptedAnswers.join(' · ')], ['Alternativas', report.options.join(' · ')],
+] as const;
 
 const ExerciseSandbox: React.FC<{ exercise: Exercise; language: string; onClose: () => void }> = ({ exercise, language, onClose }) => {
   useEffect(() => {
@@ -45,7 +50,7 @@ const ExerciseSandbox: React.FC<{ exercise: Exercise; language: string; onClose:
   }, [onClose]);
   return <div role="dialog" aria-modal="true" aria-label="Sandbox do exercício" className="fixed inset-0 z-[1300] overflow-y-auto bg-slate-950/80 p-2 sm:p-6">
     <div className="mx-auto max-w-4xl rounded-2xl bg-white p-4 shadow-2xl">
-      <div className="sticky top-0 z-30 mb-3 flex items-center justify-between gap-3 rounded-xl bg-white p-2 shadow"><div><h2 className="text-xl font-black">Sandbox do exercício</h2><p className="text-xs text-slate-500">Sem gravação de progresso, domínio, mastery ou conclusão.</p></div><div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2 font-black">Voltar ao editor</button><button type="button" aria-label="Fechar sandbox" onClick={onClose} className="rounded-xl bg-slate-900 px-3 py-2 text-xl font-black text-white">×</button></div></div>
+      <div className="sticky top-0 z-30 mb-3 flex items-center justify-between gap-3 rounded-xl bg-white p-2 shadow"><div><h2 className="text-xl font-black">Sandbox do exercício</h2><p className="break-all font-mono text-xs text-slate-600">{exercise.id}</p><p className="text-xs text-slate-500">Renderiza exatamente o conteúdo efetivo aberto no editor, sem gravar progresso.</p></div><div className="flex items-center gap-2"><button type="button" onClick={onClose} className="rounded-xl border px-4 py-2 font-black">Voltar ao editor</button><button type="button" aria-label="Fechar sandbox" onClick={onClose} className="rounded-xl bg-slate-900 px-3 py-2 text-xl font-black text-white">×</button></div></div>
       <div className="overflow-hidden rounded-xl border"><PracticeSection item={{ ...exercise, moduleType: 'override-sandbox', lessonId: 1 }} onResult={() => undefined} currentIdx={0} totalItems={1} lessonId={1} currentLanguage={language} embedded autoPlayAudio={false} /></div>
     </div>
   </div>;
@@ -75,13 +80,16 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const [relatedReports, setRelatedReports] = useState<ExerciseReport[]>([]);
   const changeReasonRef = useRef<HTMLTextAreaElement | null>(null);
   const publishInFlightRef = useRef(false);
+  const hydrateRequestRef = useRef(0);
   const controlsBusy = saving;
 
   const hydrate = async (preserveMessages = false) => {
+    const requestId = ++hydrateRequestRef.current;
     setLoading(true);
     if (!preserveMessages) setError('');
     try {
       const [next, history, related] = await Promise.all([getExerciseEditorialState(original.id), listExerciseVersions(original.id), listRelatedExerciseReports(original.id)]);
+      if (requestId !== hydrateRequestRef.current) return;
       setState(next); setVersions(history);
       setRelatedReports(related);
       const activePublished = next.published?.status === 'published' || next.published?.status === 'disabled' ? next.published : null;
@@ -93,12 +101,19 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
       setAdminNote(preferred?.adminNote ?? '');
       setDirty(false);
     } catch (cause) {
+      if (requestId !== hydrateRequestRef.current) return;
       logEditorialFirebaseError('Falha ao carregar editor', cause);
       setError(describeEditorialFirebaseError(cause, 'load'));
     }
-    finally { setLoading(false); }
+    finally { if (requestId === hydrateRequestRef.current) setLoading(false); }
   };
-  useEffect(() => { void hydrate(); }, [original.id]);
+  useEffect(() => {
+    setSandboxOpen(false); setPreview(false); setFields({}); setOptionsText('');
+    setState({ draft: null, published: null }); setVersions([]); setRelatedReports([]);
+    setChangeReason(''); setAdminNote(''); setDirty(false); setNotice(''); setError('');
+    void hydrate();
+    return () => { hydrateRequestRef.current += 1; };
+  }, [original.id]);
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => { if (dirty) event.preventDefault(); };
     window.addEventListener('beforeunload', beforeUnload); return () => window.removeEventListener('beforeunload', beforeUnload);
@@ -118,6 +133,19 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
   const effective = useMemo(() => applyExerciseOverride(original, {
     ...identity, status: 'published', version: state.published?.version ?? 0, override: fields,
   }), [original, fields, state.published?.version]);
+  const overrideDisplayIsPresent = Object.prototype.hasOwnProperty.call(fields, 'displayValue');
+  const inheritedDisplayConflict = Boolean(
+    !overrideDisplayIsPresent
+    && effective.displayValue?.trim()
+    && effective.audioValue?.trim()
+    && effective.displayValue.trim() !== effective.audioValue.trim(),
+  );
+  const compositionRows = [
+    ['Instrução', original.instruction, fields.instruction, effective.instruction],
+    ['Display', original.displayValue, fields.displayValue, effective.displayValue],
+    ['Áudio / TTS', original.audioValue, fields.audioValue, effective.audioValue],
+    ['Resposta esperada', original.correctValue, fields.correctValue, effective.correctValue],
+  ] as const;
   const speechLocale = resolveExerciseSpeechLocale(effective, identity.language, typeof navigator === 'undefined' ? undefined : navigator.language);
   const speechLocaleDescription = describeExerciseSpeechLocale(speechLocale);
   const baseVersion = state.published?.version ?? 0;
@@ -244,6 +272,9 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
         <div className="space-y-5">
           <div className="flex flex-wrap gap-2 text-xs font-black">{report && <span className={`rounded-full px-3 py-1 ${REPORT_STATUS_STYLE[report.status]}`}>Denúncia: {REPORT_STATUS_LABELS[report.status]}</span>}<span className={`rounded-full px-3 py-1 ${state.draft ? 'bg-amber-100 text-amber-800' : state.published?.status === 'disabled' ? 'bg-red-100 text-red-800' : state.published?.status === 'published' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-700'}`}>Status editorial: {state.draft ? 'Rascunho' : state.published?.status === 'disabled' ? 'Desativado' : state.published?.status === 'published' ? 'Publicado' : 'Conteúdo original'}</span></div>
           <div className="flex flex-wrap gap-2"><button onClick={() => viewSource(null)} className="rounded-xl border px-3 py-2 text-xs font-black">Visualizar exercício original</button>{state.published && state.published.status !== 'archived' && <button onClick={() => viewSource(state.published)} className="rounded-xl border px-3 py-2 text-xs font-black">Visualizar versão publicada</button>}{state.draft && <button onClick={() => viewSource(state.draft)} className="rounded-xl border px-3 py-2 text-xs font-black">Visualizar rascunho</button>}</div>
+          {report && <Section title="Conteúdo no momento da denúncia (snapshot histórico)"><div className="grid gap-2">{reportSnapshotRows(report).map(([label, content]) => <p key={label} className="text-sm"><strong>{label}:</strong> {content || '—'}</p>)}</div></Section>}
+          <p className="rounded-xl bg-blue-50 p-3 text-sm text-blue-950"><strong>Fonte atual carregada:</strong> {location.sourceCollection ?? 'packaged-curriculum'}{location.documentPath ? ` · ${location.documentPath}` : ''}{location.publicationVersion ? ` · versão ${location.publicationVersion}` : ''}. ID solicitado e retornado: <span className="font-mono">{report?.exerciseId ?? original.id}</span> → <span className="font-mono">{original.id}</span>.</p>
+          {!loading && <Section title="Composição da base publicada com o override"><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-xs"><thead><tr className="border-b text-slate-500"><th className="p-2">Campo</th><th className="p-2">Base publicada</th><th className="p-2">Override carregado</th><th className="p-2">Estado efetivo</th></tr></thead><tbody>{compositionRows.map(([label, base, override, merged]) => <tr key={label} className="border-b align-top"><th className="p-2">{label}</th><td className="whitespace-pre-wrap p-2">{base || '—'}</td><td className="whitespace-pre-wrap p-2">{Object.prototype.hasOwnProperty.call(fields, label === 'Instrução' ? 'instruction' : label === 'Display' ? 'displayValue' : label === 'Áudio / TTS' ? 'audioValue' : 'correctValue') ? (override || 'vazio explícito') : 'ausente — herda a base'}</td><td className="whitespace-pre-wrap p-2 font-bold">{merged || '—'}</td></tr>)}</tbody></table></div>{inheritedDisplayConflict && <p role="alert" className="mt-3 rounded-xl bg-amber-100 p-3 text-sm font-bold text-amber-950">Atenção: o display está ausente no override e foi herdado da base publicada, mas difere do áudio/TTS efetivo. O aluno pode ver um texto e ouvir outro.</p>}</Section>}
           {error && <p role="alert" className="whitespace-pre-line rounded-xl bg-red-100 p-3 font-bold text-red-800">{error}</p>}{notice && <p role="status" className="rounded-xl bg-emerald-100 p-3 font-bold text-emerald-800">{notice}</p>}
           <Section title="1 — Identificação"><div className="grid gap-3 sm:grid-cols-2">{Object.entries({ Livro: identity.workbookId, Lição: identity.lessonId, Dia: identity.dayId, Idioma: identity.language, Tipo: identity.exerciseType, ID: identity.exerciseId }).map(([label, content]) => <label key={label} className="text-xs font-bold text-slate-500">{label}<input readOnly value={content} className="mt-1 w-full rounded-xl border bg-slate-100 p-3 text-slate-700" /></label>)}</div></Section>
           <Section title="2 — Conteúdo">
@@ -305,7 +336,7 @@ export const ExerciseEditorModal: React.FC<Props> = ({ report, location, languag
         <button type="button" onClick={saveDraft} disabled={controlsBusy} className="rounded-xl bg-amber-500 px-4 py-3 font-black text-white disabled:opacity-40">{saving && actionLabel.includes('rascunho') ? 'Salvando...' : 'Salvar rascunho e fechar'}</button>
         <button type="button" onClick={() => void publish(activeReport ? 'current' : false)} disabled={controlsBusy} className={`${activeReport ? 'bg-blue-700' : 'bg-emerald-600'} rounded-xl px-4 py-3 font-black text-white disabled:opacity-40`}>{saving && actionLabel.includes('Publicando') ? 'Publicando...' : activeReport ? 'Publicar e resolver relatório' : 'Publicar correção'}</button>
       </footer>
-      {sandboxOpen && <ExerciseSandbox exercise={effective} language={identity.language} onClose={() => setSandboxOpen(false)} />}
+      {sandboxOpen && <ExerciseSandbox key={`${effective.id}:${effective.instruction}:${effective.audioValue}:${effective.correctValue}`} exercise={effective} language={identity.language} onClose={() => setSandboxOpen(false)} />}
     </div>
   </div>;
 };

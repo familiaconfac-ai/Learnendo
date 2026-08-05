@@ -72,6 +72,40 @@ test('speaking keeps its real displayed dialogue editable through an override', 
   assert.deepEqual(reloaded.acceptedAnswers, ['I am very well']);
 });
 
+test('a partial speaking override inherits an absent display field from the published base', () => {
+  const speaking: Exercise = {
+    id: 'wb1_l2_final_v2_speak_3', type: 'speaking', instruction: 'Listen and repeat.',
+    displayValue: 'I sit on a rock.', audioValue: 'I sit on a rock.',
+    correctValue: 'I sit on a rock.', acceptedAnswers: ['I sit on a rock.'], assessmentMode: 'shadowing',
+  };
+  const speakingIdentity: ExerciseIdentity = {
+    ...identity, exerciseId: speaking.id, lessonId: 'wb1_l2', dayId: 'wb1_l2_d7', exerciseType: 'speaking',
+  };
+  const resolved = applyExerciseOverride(speaking, {
+    ...speakingIdentity, status: 'published', version: 1,
+    override: {
+      instruction: 'Listen and repeat.', audioValue: 'I sit on a chair.',
+      correctValue: 'I sit on a chair.', acceptedAnswers: ['I sit on a chair'],
+    },
+  });
+  assert.equal(resolved.displayValue, 'I sit on a rock.');
+  assert.equal(resolved.audioValue, 'I sit on a chair.');
+  assert.equal(resolved.correctValue, 'I sit on a chair.');
+  assert.deepEqual(resolved.acceptedAnswers, ['I sit on a chair']);
+});
+
+test('an explicit empty display override clears the published base display', () => {
+  const speaking: Exercise = {
+    id: 'wb1_l2_final_v2_speak_3', type: 'speaking', instruction: 'Listen and repeat.',
+    displayValue: 'I sit on a rock.', audioValue: 'I sit on a rock.', correctValue: 'I sit on a rock.',
+  };
+  const speakingIdentity: ExerciseIdentity = { ...identity, exerciseId: speaking.id, exerciseType: 'speaking' };
+  const resolved = applyExerciseOverride(speaking, {
+    ...speakingIdentity, status: 'published', version: 2, override: { displayValue: '' },
+  });
+  assert.equal(resolved.displayValue, '');
+});
+
 test('normalizes curriculum workbook ids to the integer required by Firestore rules', () => {
   assert.equal(normalizeExerciseWorkbookId('wb1'), 1);
   assert.equal(normalizeExerciseWorkbookId('9'), 9);

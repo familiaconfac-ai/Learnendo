@@ -1,4 +1,4 @@
-import type { Day, Lesson, Workbook } from '../types.ts';
+import type { Day, Exercise, Lesson, Workbook } from '../types.ts';
 import type { ExerciseReport } from '../services/exerciseReportsService.ts';
 import { normalizeExerciseWorkbookId } from '../models/exerciseOverride.ts';
 
@@ -7,7 +7,70 @@ export type ReportExerciseLocation = {
   lesson: Lesson;
   day: Day;
   exerciseIndex: number;
+  sourceCollection?: 'packaged-curriculum' | 'publishedDayExerciseSequences' | 'legacy-index-fallback';
+  documentPath?: string;
+  publicationVersion?: number | null;
+  resolutionKind?: 'exact-id' | 'legacy-index';
 };
+
+type PublishedReportSequence = {
+  version: number;
+  exercises: Exercise[];
+};
+
+export class PublishedSequenceSourceError extends Error {
+  readonly sourcePath: string;
+
+  constructor(sourcePath: string, message: string, options?: ErrorOptions) {
+    super(`${message} Fonte: ${sourcePath}.`, options);
+    this.name = 'PublishedSequenceSourceError';
+    this.sourcePath = sourcePath;
+  }
+}
+
+export async function loadReportedExerciseFromPublishedSequence(input: {
+  workbook: Workbook;
+  report: Pick<ExerciseReport, 'lessonId' | 'dayId' | 'exerciseId'>;
+  sourcePath: string;
+  loadPublished: () => Promise<PublishedReportSequence | null>;
+}): Promise<ReportExerciseLocation | null> {
+  const lessonId = normalizeReportedLocationId(input.report.lessonId);
+  const dayId = normalizeReportedLocationId(input.report.dayId);
+  const exerciseId = normalizeReportedLocationId(input.report.exerciseId);
+  const lesson = input.workbook.lessons.find((candidate) => candidate.id === lessonId);
+  const day = lesson?.days.find((candidate) => candidate.id === dayId);
+  if (!lesson || !day || !exerciseId || exerciseId === 'not-informed') return null;
+
+  let published: PublishedReportSequence | null;
+  try {
+    published = await input.loadPublished();
+  } catch (cause) {
+    throw new PublishedSequenceSourceError(
+      input.sourcePath,
+      'Não foi possível carregar a sequência publicada. O currículo empacotado não será usado como substituto.',
+      { cause },
+    );
+  }
+  if (!published) return null;
+
+  const exerciseIndex = published.exercises.findIndex((exercise) => exercise.id.trim() === exerciseId);
+  if (exerciseIndex < 0) {
+    throw new PublishedSequenceSourceError(
+      input.sourcePath,
+      `A sequência publicada existe, mas não contém o exercício solicitado ${exerciseId}.`,
+    );
+  }
+  return {
+    workbook: input.workbook,
+    lesson,
+    day: { ...day, exercises: published.exercises },
+    exerciseIndex,
+    sourceCollection: 'publishedDayExerciseSequences',
+    documentPath: input.sourcePath,
+    publicationVersion: published.version,
+    resolutionKind: 'exact-id',
+  };
+}
 
 export function resolveWorkbookModule(module: Record<string, unknown>, workbookId: number): Workbook | null {
   const candidate = module[`workbook${workbookId}`]
@@ -75,7 +138,12 @@ export function findReportedExercise(workbook: Workbook, report: Pick<ExerciseRe
   if (!day) return null;
 
   const exactIndex = day.exercises.findIndex((exercise) => exercise.id === exerciseId);
-  const fallbackIndex = Number.isInteger(report.currentExerciseIndex)
+  // A recorded ID is an identity, not a hint. Falling back to an old array
+  // position when a non-empty ID disappeared can silently open another item
+  // after an editorial reorder. Only reports that predate exercise IDs may use
+  // the explicitly labelled legacy fallback.
+  const allowsLegacyIndex = !exerciseId || exerciseId === 'not-informed';
+  const fallbackIndex = allowsLegacyIndex && Number.isInteger(report.currentExerciseIndex)
     && report.currentExerciseIndex >= 0
     && report.currentExerciseIndex < day.exercises.length
       ? report.currentExerciseIndex
@@ -83,5 +151,11 @@ export function findReportedExercise(workbook: Workbook, report: Pick<ExerciseRe
   const exerciseIndex = exactIndex >= 0 ? exactIndex : fallbackIndex;
   if (exerciseIndex < 0) return null;
 
-  return { workbook, lesson, day, exerciseIndex };
+  return {
+    workbook, lesson, day, exerciseIndex,
+    sourceCollection: exactIndex >= 0 ? 'packaged-curriculum' : 'legacy-index-fallback',
+    documentPath: exactIndex >= 0 ? 'apps/main/src/courses/courseRegistry.ts' : undefined,
+    publicationVersion: null,
+    resolutionKind: exactIndex >= 0 ? 'exact-id' : 'legacy-index',
+  };
 }
