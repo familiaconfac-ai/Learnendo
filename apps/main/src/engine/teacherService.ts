@@ -14,6 +14,7 @@ import { rankStudents, RankedStudent, computeScore } from './rankingService';
 import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
+import { deriveDashboardAnswerMetrics, getUniqueCompletedActivityCount } from './dashboardMetrics';
 
 // ─────────────────────────────────────────────────────────────
 // Re-exports so callers only need one import
@@ -321,6 +322,7 @@ export function subscribeToTeacherData(
       const progressData = progressDocs.get(uid) ?? {};
       const userData = userDocs.get(uid) ?? {};
       const placement = getPlacementRecord(progressData);
+      const { totalAttempts, totalErrors, avgAccuracy } = deriveDashboardAnswerMetrics(progressData);
 
       return {
         uid,
@@ -332,18 +334,19 @@ export function subscribeToTeacherData(
         totalIce: progressData.totalIce ?? 0,
         totalDiamonds: progressData.totalDiamonds ?? 0,
         lessonsStarted: progressData.lessonsStarted ?? 0,
-        daysCompleted: progressData.daysCompleted ?? 0,
+        daysCompleted: getUniqueCompletedActivityCount(progressData),
         totalTimeSpent: progressData.totalTimeSpent ?? 0,
         timeSpentToday: progressData.timeSpentToday ?? 0,
-        totalErrors: progressData.totalErrors ?? 0,
-        totalAttempts: progressData.totalAttempts ?? 0,
-        avgAccuracy: progressData.avgAccuracy ?? 0,
+        totalErrors,
+        totalAttempts,
+        avgAccuracy,
         currentWorkbook: progressData.currentWorkbook ?? 1,
         currentLesson: progressData.currentLesson ?? 1,
         currentDay: progressData.currentDay ?? 1,
         lastLessonId: progressData.lastLesson ?? undefined,
         lastActivity:
           progressData.lastActivity ??
+          progressData.lastActive ??
           userData.lastActive ??
           userData.lastLoginAt ??
           userData.createdAt ??

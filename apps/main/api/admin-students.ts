@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb, requireAdmin } from '../server/firebaseAdmin';
+import { deleteStudentData } from '../server/studentDeletion';
 
 type RequestLike = IncomingMessage & { method?: string; body?: unknown };
 type ResponseLike = ServerResponse<IncomingMessage> & {
@@ -8,7 +9,7 @@ type ResponseLike = ServerResponse<IncomingMessage> & {
   json?: (body: unknown) => void;
 };
 
-type AdminAction = 'details' | 'create' | 'update' | 'setPassword';
+type AdminAction = 'details' | 'create' | 'update' | 'setPassword' | 'delete';
 interface Body {
   action?: AdminAction;
   uid?: string;
@@ -74,13 +75,22 @@ function publicAccount(user: Awaited<ReturnType<typeof adminAuth.getUser>>) {
 export default async function handler(req: RequestLike, res: ResponseLike) {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'Method not allowed.' });
 
+  let action: AdminAction | undefined;
   try {
     const admin = await requireAdmin(req.headers.authorization);
     const body = await readBody(req);
+    action = body.action;
 
     if (body.action === 'details') {
       if (!body.uid) return sendJson(res, 400, { error: 'Student UID is required.' });
-      return sendJson(res, 200, { account: publicAccount(await adminAuth.getUser(body.uid)) });
+      try {
+        return sendJson(res, 200, { account: publicAccount(await adminAuth.getUser(body.uid)), authStatus: 'found' });
+      } catch (reason) {
+        if ((reason as { code?: string }).code === 'auth/user-not-found') {
+          return sendJson(res, 200, { account: null, authStatus: 'not-found' });
+        }
+        throw reason;
+      }
     }
 
     if (body.action === 'create') {
@@ -112,6 +122,17 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     }
 
     if (!body.uid) return sendJson(res, 400, { error: 'Student UID is required.' });
+
+    if (body.action === 'delete') {
+      if (body.uid === admin.uid) return sendJson(res, 409, { error: 'You cannot delete your own administrator account.' });
+      const profile = await adminDb.doc(`users/${body.uid}`).get();
+      const role = profile.data()?.role;
+      if (role === 'admin' || role === 'teacher') {
+        return sendJson(res, 409, { error: `This account is a ${role}, not a student, and was not deleted.` });
+      }
+      const deletion = await deleteStudentData(body.uid);
+      return sendJson(res, 200, { ok: deletion.completed, deletion });
+    }
 
     if (body.action === 'setPassword') {
       if (!body.password || body.password.length < 6) {
@@ -151,13 +172,22 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   } catch (error) {
     const status = Number((error as { statusCode?: number }).statusCode) || 500;
     const code = (error as { code?: string }).code;
+    const fallbackByAction: Record<AdminAction, string> = {
+      details: 'Failed to load authentication information.',
+      create: 'Failed to create student.',
+      update: 'Failed to update student.',
+      setPassword: 'Failed to set password.',
+      delete: 'Failed to delete student.',
+    };
     const safeMessage = code === 'auth/email-already-exists'
       ? 'This email is already used by another account.'
       : code === 'auth/user-not-found'
-        ? 'Student account not found.'
+        ? 'Student account not found in Authentication.'
         : status < 500
           ? (error as Error).message
-          : 'The administrative operation could not be completed.';
+          : action
+            ? fallbackByAction[action]
+            : 'The administrative operation could not be completed.';
     console.error('[admin-students]', code ?? error);
     return sendJson(res, status, { error: safeMessage, code: code ?? null });
   }

@@ -2,6 +2,34 @@
 @tailwind components;
 @tailwind utilities;
 
+@media print {
+  body.class-report-printing * {
+    visibility: hidden !important;
+  }
+
+  body.class-report-printing .class-report-print-root,
+  body.class-report-printing .class-report-print-root * {
+    visibility: visible !important;
+  }
+
+  body.class-report-printing .class-report-print-root {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  body.class-report-printing .class-report-print-hide {
+    display: none !important;
+  }
+
+  body.class-report-printing article {
+    padding: 8mm !important;
+  }
+}
+
 @keyframes splashEnter {
   from { transform: scale(0.6); opacity: 0; }
   to   { transform: scale(1);   opacity: 1; }

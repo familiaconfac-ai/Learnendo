@@ -5,10 +5,12 @@ import type { TeacherStudentRow } from '../../engine/teacherService';
 import { sendPasswordReset } from '../../services/firebase';
 import {
   createAdminStudent,
+  deleteAdminStudent,
   generateTemporaryPassword,
   getAdminStudentDetails,
   setAdminStudentPassword,
   updateAdminStudent,
+  type StudentDeletionResult,
 } from '../../services/adminStudents';
 import { createLiveClassGroup, updateLiveClassGroup } from '../../services/liveClassesService';
 
@@ -37,9 +39,10 @@ interface StudentAdminPanelProps {
   student: TeacherStudentRow | null;
   groups: LiveClassGroup[];
   onClose: () => void;
+  onDeleted?: (uid: string, result: StudentDeletionResult) => void;
 }
 
-export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, student, groups, onClose }) => {
+export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, student, groups, onClose, onDeleted }) => {
   const isNew = !student;
   const currentGroup = student ? findStudentGroup(groups, student.uid) : null;
   const [name, setName] = useState(student?.displayName ?? '');
@@ -48,29 +51,65 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
   const [disabled, setDisabled] = useState(false);
   const [password, setPassword] = useState(isNew ? generateTemporaryPassword() : '');
   const [details, setDetails] = useState<{ creationTime: string; lastSignInTime: string | null; emailVerified: boolean; providerIds: string[] } | null>(null);
+  const [authStatus, setAuthStatus] = useState<'loading' | 'found' | 'not-found'>(isNew ? 'found' : 'loading');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const clearAllErrors = () => {
+    setDetailsError(null);
+    setSaveError(null);
+    setPasswordError(null);
+    setResetError(null);
+    setDeleteError(null);
+  };
 
   useEffect(() => {
-    if (!student) return;
+    let active = true;
+    setName(student?.displayName ?? '');
+    setEmail(student?.email ?? '');
+    setGroupId(student ? (findStudentGroup(groups, student.uid)?.id ?? '') : '');
+    setDisabled(false);
+    setPassword(student ? '' : generateTemporaryPassword());
+    setDetails(null);
+    setAuthStatus(student ? 'loading' : 'found');
+    setMessage(null);
+    setDetailsError(null);
+    setSaveError(null);
+    setPasswordError(null);
+    setResetError(null);
+    setDeleteError(null);
+    setShowDeleteConfirm(false);
+    if (!student) return () => { active = false; };
     setBusy(true);
     getAdminStudentDetails(admin, student.uid)
-      .then((account) => {
+      .then(({ account, authStatus: nextAuthStatus }) => {
+        if (!active) return;
+        setAuthStatus(nextAuthStatus);
+        if (!account) return;
         setName(account.displayName || student.displayName || '');
         setEmail(account.email || student.email || '');
         setDisabled(account.disabled);
         setDetails(account);
       })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Unable to load account details.'))
-      .finally(() => setBusy(false));
-  }, [admin, student]);
+      .catch((reason) => {
+        if (!active) return;
+        setDetailsError(reason instanceof Error ? reason.message : 'Failed to load authentication information.');
+      })
+      .finally(() => { if (active) setBusy(false); });
+    return () => { active = false; };
+  }, [admin, groups, student]);
 
   const handleSave = async () => {
-    setError(null);
+    clearAllErrors();
     setMessage(null);
-    if (!name.trim() || !email.trim()) return setError('Name and email are required.');
-    if (isNew && password.length < 6) return setError('The initial password must contain at least 6 characters.');
+    if (!name.trim() || !email.trim()) return setSaveError('Name and email are required.');
+    if (isNew && password.length < 6) return setSaveError('The initial password must contain at least 6 characters.');
     setBusy(true);
     try {
       if (student) {
@@ -81,35 +120,60 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
         setMessage('Student created. Copy the initial password before closing.');
       }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to save this student.');
+      setSaveError(reason instanceof Error ? reason.message : 'Failed to update student.');
     } finally {
       setBusy(false);
     }
   };
 
   const handlePassword = async () => {
-    if (!student || password.length < 6) return setError('The temporary password must contain at least 6 characters.');
+    clearAllErrors();
+    setMessage(null);
+    if (!student || password.length < 6) return setPasswordError('The temporary password must contain at least 6 characters.');
     setBusy(true);
-    setError(null);
     try {
       await setAdminStudentPassword(admin, student.uid, password);
       setMessage('Temporary password defined. It is shown only in this form so you can copy it.');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to update the password.');
+      setPasswordError(reason instanceof Error ? reason.message : 'Failed to set password.');
     } finally {
       setBusy(false);
     }
   };
 
   const handleResetEmail = async () => {
-    if (!email.trim()) return setError('The student has no email address.');
+    clearAllErrors();
+    setMessage(null);
+    if (!email.trim()) return setResetError('The student has no email address.');
     setBusy(true);
-    setError(null);
     try {
       await sendPasswordReset(email.trim());
       setMessage(`Password reset sent to ${email.trim()}.`);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Unable to send the password reset email.');
+      setResetError(reason instanceof Error ? reason.message : 'Failed to send password reset.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!student) return;
+    clearAllErrors();
+    setMessage(null);
+    setBusy(true);
+    try {
+      const result = await deleteAdminStudent(admin, student.uid);
+      if (!result.completed) {
+        const detail = result.issues.map((issue) => `${issue.scope}: ${issue.message}`).join(' ');
+        setDeleteError(`Failed to delete student completely.${detail ? ` ${detail}` : ''}`);
+        setShowDeleteConfirm(false);
+        return;
+      }
+      onDeleted?.(student.uid, result);
+      onClose();
+    } catch (reason) {
+      setDeleteError(reason instanceof Error ? reason.message : 'Failed to delete student.');
+      setShowDeleteConfirm(false);
     } finally {
       setBusy(false);
     }
@@ -118,7 +182,6 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
   return (
     <ModalShell title={isNew ? 'New student' : 'Manage student'} onClose={onClose}>
       <div className="space-y-5">
-        {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
         {message && <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{message}</div>}
 
         <section className="grid gap-4 sm:grid-cols-2">
@@ -135,7 +198,7 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
             </select>
           </label>
           <label className="flex items-center gap-3 self-end rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
-            <input type="checkbox" checked={!disabled} onChange={(event) => setDisabled(!event.target.checked)} disabled={busy} /> Active account
+            <input type="checkbox" checked={!disabled} onChange={(event) => setDisabled(!event.target.checked)} disabled={busy || (!isNew && authStatus !== 'found')} /> Active account
           </label>
         </section>
 
@@ -153,6 +216,12 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
           <>
             <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
               <h3 className="font-black text-slate-800">Account</h3>
+              {authStatus === 'not-found' && (
+                <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-800">
+                  No matching Firebase Authentication account exists. This Firestore-only student can still be deleted safely.
+                </p>
+              )}
+              {detailsError && <p className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-semibold text-red-700">{detailsError}</p>}
               <div className="mt-2 grid gap-1 sm:grid-cols-2">
                 <span>UID: <code className="text-xs">{student.uid}</code></span>
                 <span>Email verified: {details?.emailVerified ? 'Yes' : 'No'}</span>
@@ -168,18 +237,41 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
                 <button type="button" onClick={() => navigator.clipboard.writeText(password)} disabled={!password} className="rounded-xl border border-amber-300 bg-white px-3 py-2 text-sm font-bold text-amber-800 disabled:opacity-50">Copy</button>
               </div>
               <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" onClick={() => void handlePassword()} disabled={busy} className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Set temporary password</button>
-                <button type="button" onClick={() => void handleResetEmail()} disabled={busy} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-50">Send password reset</button>
+                <button type="button" onClick={() => void handlePassword()} disabled={busy || authStatus !== 'found'} className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Set temporary password</button>
+                <button type="button" onClick={() => void handleResetEmail()} disabled={busy || authStatus !== 'found'} className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-50">Send password reset</button>
               </div>
+              {passwordError && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{passwordError}</p>}
+              {resetError && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{resetError}</p>}
             </section>
           </>
         )}
 
+        {saveError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{saveError}</div>}
         <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700">Close</button>
           <button type="button" onClick={() => void handleSave()} disabled={busy} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : isNew ? 'Create student' : 'Save changes'}</button>
         </div>
+        {!isNew && student && (
+          <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
+            <h3 className="font-black text-red-900">Danger zone</h3>
+            <p className="mt-1 text-sm text-red-700">Permanently delete this student account and its student-owned administrative data.</p>
+            {deleteError && <p className="mt-3 rounded-xl border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700">{deleteError}</p>}
+            <button type="button" onClick={() => { clearAllErrors(); setMessage(null); setShowDeleteConfirm(true); }} disabled={busy} className="mt-3 rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-800 disabled:opacity-50">Delete student</button>
+          </section>
+        )}
       </div>
+      {showDeleteConfirm && student && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/65 p-4" role="alertdialog" aria-modal="true" aria-label="Confirm student deletion">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <h3 className="text-lg font-black text-slate-900">Are you sure you want to delete {student.displayName || student.email || student.uid}?</h3>
+            <p className="mt-3 text-sm leading-6 text-slate-600">This removes the student's account and linked administrative data. Shared curriculum, exercises, books, lessons, and sequences are preserved. This action cannot be undone.</p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setShowDeleteConfirm(false)} disabled={busy} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700 disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={() => void handleDelete()} disabled={busy} className="rounded-xl bg-red-700 px-4 py-2 text-sm font-bold text-white hover:bg-red-800 disabled:opacity-50">{busy ? 'Deleting…' : 'Delete student'}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </ModalShell>
   );
 };

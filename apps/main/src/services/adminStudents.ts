@@ -11,36 +11,65 @@ export interface AdminStudentAccount {
   providerIds: string[];
 }
 
-type AdminStudentPayload = Record<string, unknown> & { action: 'details' | 'create' | 'update' | 'setPassword' };
+export interface StudentDeletionResult {
+  uid: string;
+  completed: boolean;
+  auth: 'deleted' | 'not-found' | 'failed';
+  deletedDocuments: number;
+  updatedSharedDocuments: number;
+  cleanup: Record<string, number>;
+  issues: Array<{ scope: string; message: string }>;
+}
 
-async function callAdminStudents(user: User, payload: AdminStudentPayload) {
+export interface AdminStudentDetails {
+  account: AdminStudentAccount | null;
+  authStatus: 'found' | 'not-found';
+}
+
+type AdminStudentPayload = Record<string, unknown> & { action: 'details' | 'create' | 'update' | 'setPassword' | 'delete' };
+
+async function callAdminStudents(user: User, payload: AdminStudentPayload, fallbackMessage: string) {
   const token = await user.getIdToken();
   const response = await fetch('/api/admin-students', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
   });
-  const result = await response.json().catch(() => ({})) as { error?: string; account?: AdminStudentAccount; ok?: boolean };
-  if (!response.ok) throw new Error(result.error || 'Administrative operation failed.');
+  const result = await response.json().catch(() => ({})) as {
+    error?: string;
+    account?: AdminStudentAccount | null;
+    authStatus?: 'found' | 'not-found';
+    deletion?: StudentDeletionResult;
+    ok?: boolean;
+  };
+  if (!response.ok) throw new Error(result.error || fallbackMessage);
   return result;
 }
 
 export async function getAdminStudentDetails(user: User, uid: string) {
-  const result = await callAdminStudents(user, { action: 'details', uid });
-  if (!result.account) throw new Error('Student account details were not returned.');
-  return result.account;
+  const result = await callAdminStudents(user, { action: 'details', uid }, 'Failed to load authentication information.');
+  return {
+    account: result.account ?? null,
+    authStatus: result.authStatus ?? (result.account ? 'found' : 'not-found'),
+  } satisfies AdminStudentDetails;
 }
 
 export async function createAdminStudent(user: User, input: { name: string; email: string; password: string; disabled: boolean; groupId: string | null }) {
-  return callAdminStudents(user, { action: 'create', ...input });
+  return callAdminStudents(user, { action: 'create', ...input }, 'Failed to create student.');
 }
 
 export async function updateAdminStudent(user: User, input: { uid: string; name: string; email: string; disabled?: boolean; groupId?: string | null }) {
-  return callAdminStudents(user, { action: 'update', ...input });
+  return callAdminStudents(user, { action: 'update', ...input }, 'Failed to update student.');
 }
 
 export async function setAdminStudentPassword(user: User, uid: string, password: string) {
-  return callAdminStudents(user, { action: 'setPassword', uid, password });
+  return callAdminStudents(user, { action: 'setPassword', uid, password }, 'Failed to set password.');
+}
+
+export async function deleteAdminStudent(user: User, uid: string) {
+  const result = await callAdminStudents(user, { action: 'delete', uid }, 'Failed to delete student.');
+  if (!result.deletion) throw new Error('The deletion result was not returned.');
+  return result.deletion;
 }
 
 export function generateTemporaryPassword() {
