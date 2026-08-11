@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDashboardAnswerMetrics, getLastPedagogicalActivity, getUniqueCompletedActivityCount } from './dashboardMetrics.ts';
+import { deriveDashboardAnswerMetrics, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount } from './dashboardMetrics.ts';
 
 assert.equal(getUniqueCompletedActivityCount({
   daysCompleted: 99,
@@ -36,5 +36,20 @@ assert.equal(getLastPedagogicalActivity({
   },
   courses: { english: { lastActivityAt: '2026-08-09T10:00:00Z' } },
 }), '2026-08-09T10:00:00Z', 'latest pedagogical marker must win');
+
+const responseActivity = getLatestResponseActivityByStudent([
+  { userId: 'ryan', answer: 'first answer', createdAt: '2026-08-04T20:00:00Z' },
+  { userId: 'ryan', answer: 'recent answer', createdAt: '2026-08-05T22:42:00Z' },
+  { userId: 'aquilles', answer: 'answer', createdAt: '2026-08-06T21:10:00Z' },
+  { userId: 'ignored-empty', answer: ' ', createdAt: '2026-08-10T20:00:00Z' },
+  { userId: 'ignored-no-time', answer: 'answer' },
+]);
+assert.equal(responseActivity.get('ryan'), '2026-08-05T22:42:00Z');
+assert.equal(responseActivity.get('aquilles'), '2026-08-06T21:10:00Z');
+assert.equal(responseActivity.has('ignored-empty'), false);
+assert.equal(getLastPedagogicalActivity(
+  { lastActive: '2026-07-14T10:00:00Z' },
+  [responseActivity.get('ryan')],
+), '2026-08-05T22:42:00Z', 'a durable answer event must supersede an older completion');
 
 console.log('dashboard metrics tests passed');

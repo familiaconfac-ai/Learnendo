@@ -15,6 +15,7 @@ import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
 import { deriveDashboardAnswerMetrics, getLastPedagogicalActivity, getUniqueCompletedActivityCount } from './dashboardMetrics';
+import { subscribeToLivePedagogicalActivity, type LiveActivityScope } from '../services/livePedagogicalActivity';
 
 // ─────────────────────────────────────────────────────────────
 // Re-exports so callers only need one import
@@ -294,6 +295,7 @@ export function subscribeToTeacherData(
   cb: (rows: TeacherStudentRow[]) => void,
   courseId?: string | null,
   teacherUid?: string | null,
+  liveActivityScope?: LiveActivityScope,
 ): () => void {
   if (!db) {
     cb([]);
@@ -304,6 +306,7 @@ export function subscribeToTeacherData(
   const usersQuery = collection(db, 'users');
   let progressDocs = new Map<string, DashboardSource>();
   let userDocs = new Map<string, DashboardSource>();
+  let liveActivityByStudent = new Map<string, unknown>();
 
   const buildRows = () => {
     const allUids = new Set<string>([
@@ -347,7 +350,10 @@ export function subscribeToTeacherData(
         currentLesson: progressData.currentLesson ?? 1,
         currentDay: progressData.currentDay ?? 1,
         lastLessonId: progressData.lastLesson ?? undefined,
-        lastActivity: getLastPedagogicalActivity(progressData) ?? undefined,
+        lastActivity: getLastPedagogicalActivity(
+          progressData,
+          [liveActivityByStudent.get(uid)],
+        ) ?? undefined,
         courseId: progressData.courseId ?? userData.courseId ?? undefined,
         languageCode:
           progressData.language ??
@@ -423,8 +429,20 @@ export function subscribeToTeacherData(
     },
   );
 
+  const unsubLiveActivity = liveActivityScope
+    ? subscribeToLivePedagogicalActivity(
+        liveActivityScope,
+        (activityByStudent) => {
+          liveActivityByStudent = activityByStudent;
+          buildRows();
+        },
+        (err) => console.error('[TeacherService] live activity subscription error:', err),
+      )
+    : () => {};
+
   return () => {
     unsubProgress();
     unsubUsers();
+    unsubLiveActivity();
   };
 }

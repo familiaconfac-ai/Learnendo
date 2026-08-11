@@ -14,13 +14,54 @@ function timestampMillis(value: unknown): number | null {
   return Number.isFinite(millis) ? millis : null;
 }
 
+export function getLatestTimestamp(values: Iterable<unknown>): unknown | null {
+  let latest: { value: unknown; millis: number } | null = null;
+  for (const value of values) {
+    const millis = timestampMillis(value);
+    if (millis !== null && (!latest || millis > latest.millis)) latest = { value, millis };
+  }
+  return latest?.value ?? null;
+}
+
+type PedagogicalResponseEvent = {
+  userId?: unknown;
+  answer?: unknown;
+  createdAt?: unknown;
+};
+
+/**
+ * Resolves the latest durable Live answer event for each student. A response
+ * counts only when it has an owner, a non-empty answer and its own timestamp;
+ * class/session update timestamps are intentionally ignored.
+ */
+export function getLatestResponseActivityByStudent(
+  responses: Iterable<PedagogicalResponseEvent>,
+): Map<string, unknown> {
+  const candidates = new Map<string, unknown[]>();
+  for (const response of responses) {
+    const userId = typeof response.userId === 'string' ? response.userId.trim() : '';
+    const answer = typeof response.answer === 'string' ? response.answer.trim() : '';
+    if (!userId || !answer || timestampMillis(response.createdAt) === null) continue;
+    const values = candidates.get(userId) ?? [];
+    values.push(response.createdAt);
+    candidates.set(userId, values);
+  }
+
+  return new Map(
+    Array.from(candidates, ([userId, values]) => [userId, getLatestTimestamp(values)]),
+  );
+}
+
 /**
  * Returns only timestamps written by learning events. `progress.lastActivity`
  * is intentionally excluded because older app versions stamped it on login.
  */
-export function getLastPedagogicalActivity(raw?: DashboardProgress): unknown | null {
+export function getLastPedagogicalActivity(
+  raw?: DashboardProgress,
+  additionalCandidates: Iterable<unknown> = [],
+): unknown | null {
   if (!raw) return null;
-  const candidates: unknown[] = [];
+  const candidates: unknown[] = [...additionalCandidates];
   if (raw.lastActive) candidates.push(raw.lastActive); // trackLessonCompletion
 
   if (raw.lessons && typeof raw.lessons === 'object') {
@@ -39,12 +80,7 @@ export function getLastPedagogicalActivity(raw?: DashboardProgress): unknown | n
     });
   }
 
-  let latest: { value: unknown; millis: number } | null = null;
-  candidates.forEach((value) => {
-    const millis = timestampMillis(value);
-    if (millis !== null && (!latest || millis > latest.millis)) latest = { value, millis };
-  });
-  return latest?.value ?? null;
+  return getLatestTimestamp(candidates);
 }
 
 export function getUniqueCompletedActivityCount(raw?: DashboardProgress): number {

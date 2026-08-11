@@ -516,10 +516,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
     const unsub = subscribeToTeacherData((data) => {
       setRows(data);
       setLoading(false);
-    }, null, canManageUsers ? null : teacherUid);
+    }, null, canManageUsers ? null : teacherUid, {
+      actorUid: user.uid,
+      canManageAllClasses: canManageUsers,
+    });
 
     return unsub;
-  }, [canManageUsers, refreshKey, teacherUid]);
+  }, [canManageUsers, refreshKey, teacherUid, user.uid]);
 
   useEffect(() => {
     return subscribeLiveClassGroups(
