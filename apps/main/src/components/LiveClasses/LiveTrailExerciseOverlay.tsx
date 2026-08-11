@@ -10,11 +10,14 @@ import {
   LiveExerciseAnswerVerdict,
   LiveExerciseBlock,
   LiveExerciseBlockStatus,
+  LiveTrailCompletion,
   PracticeItem,
   Workbook,
 } from '../../types';
 import {
   clearExerciseBlockStudentResponse,
+  claimLiveTrailCompletionStatus,
+  completeLiveTrailForDecision,
   saveExerciseSession,
   seedExerciseSessionFromLessonTrails,
   setExerciseBlockStudentLock,
@@ -26,6 +29,7 @@ import {
   updateExerciseBlockResponse,
   updateLiveSession,
 } from '../../services/liveSessionService';
+import { buildLiveTrailCompletion } from '../../services/liveTrailTransition';
 import {
   loadWorkbookForWhiteboard,
   resolveLessonForWhiteboard,
@@ -55,7 +59,10 @@ interface LiveTrailExerciseOverlayProps {
   allowSoloAdvance?: boolean;
   onReturnToWorkspace?: () => void | Promise<void>;
   onOpenSessionPanel?: () => void;
-  onOpenBattleTemplate?: (template: SavedBattleTemplate) => void;
+  onStartTrailBattle?: (
+    template: SavedBattleTemplate,
+    completion: LiveTrailCompletion,
+  ) => void | Promise<void>;
 }
 
 type TrailUiLanguage = NonNullable<LiveTrailExerciseOverlayProps['uiLanguage']>;
@@ -70,7 +77,11 @@ const TRAIL_COPY = {
     panel: 'Panel',
     previous: 'Previous',
     next: 'Next',
-    generateBattle: 'Generate battle',
+    startBattle: 'Start Battle',
+    skipBattle: 'Skip Battle',
+    battleDecisionBody: 'Would you like to start a Battle for this trail?',
+    waitingBattleDecision: 'Waiting for the teacher to choose the next step...',
+    resumingTrail: 'Resuming the trail flow...',
     grammar: 'Grammar',
     clickTranslator: 'Click translator',
     question: 'Question',
@@ -119,7 +130,11 @@ const TRAIL_COPY = {
     panel: 'Painel',
     previous: 'Anterior',
     next: 'Próxima',
-    generateBattle: 'Gerar batalha',
+    startBattle: 'Iniciar Battle',
+    skipBattle: 'Pular Battle',
+    battleDecisionBody: 'Deseja iniciar um Battle desta trilha?',
+    waitingBattleDecision: 'Aguardando o professor escolher a proxima etapa...',
+    resumingTrail: 'Retomando o fluxo da trilha...',
     grammar: 'Gramática',
     clickTranslator: 'Tradutor por clique',
     question: 'Questão',
@@ -168,7 +183,11 @@ const TRAIL_COPY = {
     panel: 'Panel',
     previous: 'Anterior',
     next: 'Siguiente',
-    generateBattle: 'Generar batalla',
+    startBattle: 'Iniciar Battle',
+    skipBattle: 'Omitir Battle',
+    battleDecisionBody: 'Quieres iniciar un Battle de esta ruta?',
+    waitingBattleDecision: 'Esperando que el profesor elija el siguiente paso...',
+    resumingTrail: 'Reanudando el flujo de la ruta...',
     grammar: 'Gramática',
     clickTranslator: 'Traductor por clic',
     question: 'Pregunta',
@@ -942,7 +961,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   allowSoloAdvance = false,
   onReturnToWorkspace,
   onOpenSessionPanel,
-  onOpenBattleTemplate,
+  onStartTrailBattle,
 }) => {
   const [blocks, setBlocks] = useState<LiveExerciseBlock[]>([]);
   const [blocksError, setBlocksError] = useState<string | null>(null);
@@ -958,6 +977,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [releasingRetry, setReleasingRetry] = useState(false);
   const [liveResponses, setLiveResponses] = useState<LiveClassResponse[]>([]);
   const [retryReleaseVersion, setRetryReleaseVersion] = useState(0);
+  const [transitionBusy, setTransitionBusy] = useState(false);
   const [practiceViewportTopOffset, setPracticeViewportTopOffset] = useState(LIVE_TRAIL_VIEWPORT_TOP_OFFSET);
   const previousStudentBlockStateRef = useRef<{
     blockId: string | null;
@@ -969,6 +989,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const grammarModalScrollRef = useRef<HTMLDivElement>(null);
   const applyingRemoteGrammarScrollRef = useRef(false);
   const grammarScrollSyncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resumedTransitionRef = useRef<string | null>(null);
 
   const actorName = getActorName(user);
   const courseId = defaultCourseId ?? 'english';
@@ -1211,8 +1232,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     () => getGrammarGuideForLesson(lessonNumber),
     [lessonNumber],
   );
-  const canGenerateBattleFromTrail = isTeacher && currentBlockIndex >= blocks.length - 1 && blocks.length > 0;
-
   const canEdit = currentBlock
     ? session.sessionStatus === 'active' &&
       !isStudentLocked(currentBlock, user.uid) &&
@@ -1423,17 +1442,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     );
   };
 
-  const handleGenerateBattle = () => {
-    if (!onOpenBattleTemplate || blocks.length === 0) return;
-    const trailIds = Array.from(
-      new Set(
-        [
-          ...(session.activeTrailIds ?? []),
-          ...blocks.map((block) => block.sourceTrailId).filter((value): value is string => Boolean(value)),
-        ],
-      ),
-    );
+  const buildTrailBattleTemplate = (completion: LiveTrailCompletion) => {
+    if (blocks.length === 0) return null;
+    const trailIds = [completion.completedTrailId];
     const questions = blocks
+      .filter((block) => block.sourceTrailId === completion.completedTrailId)
       .map((block) => mapLiveBlockToBattleQuestion(block, {
         workbookId,
         trailIds,
@@ -1442,7 +1455,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
 
     if (questions.length === 0) {
       setSaveError(copy.loadError);
-      return;
+      return null;
     }
 
     const config: BattleConfig = {
@@ -1458,8 +1471,122 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       trailIds,
     };
 
-    const templateTitle = `${lesson?.title || session.activeTrailLabel || copy.liveTrail} • Battle`;
-    onOpenBattleTemplate(buildSavedBattleTemplate(config, questions, templateTitle));
+    const templateTitle = `${lesson?.title || completion.completedTrailLabel || copy.liveTrail} • Battle`;
+    return buildSavedBattleTemplate(config, questions, templateTitle);
+  };
+
+  const advanceAfterTrailCompletion = async (completion: LiveTrailCompletion) => {
+    if (completion.nextTrailId) {
+      const seeded = await seedExerciseSessionFromLessonTrails({
+        classId,
+        courseId,
+        workbookId,
+        lessonId: completion.lessonId,
+        trailIds: [completion.nextTrailId],
+        updatedByUid: user.uid,
+        updatedByName: actorName,
+      });
+
+      await updateLiveSession(
+        classId,
+        {
+          sessionStatus: 'active',
+          activeWorkbookId: workbookId,
+          activeLessonId: completion.lessonId,
+          activeExerciseId: seeded.trailIds[0] ?? null,
+          activeTrailIds: seeded.trailIds,
+          activeTrailLabel: seeded.trailLabel,
+          trailCompletion: null,
+          mainStageMode: 'trail',
+        },
+        user.uid,
+      );
+      return;
+    }
+
+    await updateLiveSession(
+      classId,
+      { trailCompletion: null, mainStageMode: 'trail' },
+      user.uid,
+    );
+  };
+
+  const performSkipBattle = async (completion: LiveTrailCompletion) => {
+    resumedTransitionRef.current = `${completion.id}:advancing`;
+    try {
+      setTransitionBusy(true);
+      setSaveError(null);
+      await advanceAfterTrailCompletion(completion);
+    } catch {
+      await claimLiveTrailCompletionStatus({
+        classId,
+        completionId: completion.id,
+        from: ['advancing'],
+        to: 'awaiting-decision',
+        updatedByUid: user.uid,
+      }).catch(() => null);
+      setSaveError(copy.finishAnswerError);
+    } finally {
+      setTransitionBusy(false);
+    }
+  };
+
+  const handleSkipBattle = async () => {
+    const completion = session.trailCompletion;
+    if (!isTeacher || !completion || completion.status !== 'awaiting-decision') return;
+    const claimed = await claimLiveTrailCompletionStatus({
+      classId,
+      completionId: completion.id,
+      from: ['awaiting-decision'],
+      to: 'advancing',
+      updatedByUid: user.uid,
+    });
+    if (claimed) await performSkipBattle(claimed);
+  };
+
+  const performStartBattle = async (completion: LiveTrailCompletion) => {
+    resumedTransitionRef.current = `${completion.id}:starting-battle`;
+    const template = buildTrailBattleTemplate(completion);
+    if (!template || !onStartTrailBattle) {
+      await claimLiveTrailCompletionStatus({
+        classId,
+        completionId: completion.id,
+        from: ['starting-battle'],
+        to: 'awaiting-decision',
+        updatedByUid: user.uid,
+      }).catch(() => null);
+      setSaveError(copy.loadError);
+      return;
+    }
+    try {
+      setTransitionBusy(true);
+      setSaveError(null);
+      await onStartTrailBattle(template, completion);
+    } catch {
+      await claimLiveTrailCompletionStatus({
+        classId,
+        completionId: completion.id,
+        from: ['starting-battle'],
+        to: 'awaiting-decision',
+        updatedByUid: user.uid,
+      }).catch(() => null);
+      setSaveError(copy.finishAnswerError);
+    } finally {
+      setTransitionBusy(false);
+    }
+  };
+
+  const handleStartBattle = async () => {
+    const completion = session.trailCompletion;
+    if (!isTeacher || !completion || completion.status !== 'awaiting-decision') return;
+    const claimed = await claimLiveTrailCompletionStatus({
+      classId,
+      completionId: completion.id,
+      from: ['awaiting-decision'],
+      to: 'starting-battle',
+      updatedByUid: user.uid,
+    });
+    if (claimed) await performStartBattle(claimed);
   };
 
   const handleAttempt = async (payload: {
@@ -1594,40 +1721,21 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
 
       if (isTeacher) {
         const nextBlock = blocks[currentBlockIndex + 1] ?? null;
-        if (nextBlock) {
+        if (nextBlock && nextBlock.sourceTrailId === currentBlock.sourceTrailId) {
           await setSharedCurrentBlock(nextBlock.id);
         } else if (lesson) {
           const currentTrailId = currentBlock.sourceTrailId ?? session.activeTrailIds?.[session.activeTrailIds.length - 1] ?? null;
-          const currentTrailIndex = lesson.days.findIndex((day) => day.id === currentTrailId);
-          const nextTrail = currentTrailIndex >= 0 ? lesson.days[currentTrailIndex + 1] ?? null : null;
-
-          if (nextTrail) {
-            const seeded = await seedExerciseSessionFromLessonTrails({
-              classId,
-              courseId,
-              workbookId,
-              lessonId: lesson.id,
-              trailIds: [nextTrail.id],
-              updatedByUid: user.uid,
-              updatedByName: actorName,
-            });
-
-            await updateLiveSession(
-              classId,
-              {
-                sessionStatus: 'active',
-                activeWorkbookId: workbookId,
-                activeLessonId: lesson.id,
-                activeExerciseId: seeded.trailIds[0] ?? null,
-                activeTrailIds: seeded.trailIds,
-                activeTrailLabel: seeded.trailLabel,
-                mainStageMode: 'trail',
-              },
-              user.uid,
-            );
-          } else {
+          if (!currentTrailId) {
             await setSharedCurrentBlock(LIVE_TRAIL_COMPLETE_BLOCK_ID);
+            return;
           }
+          const completion = buildLiveTrailCompletion({
+            lessonId: lesson.id,
+            currentTrailId,
+            currentTrailLabel: session.activeTrailLabel || currentTrailId,
+            lessonDays: lesson.days,
+          });
+          await completeLiveTrailForDecision(classId, completion, user.uid, actorName);
         } else {
           await setSharedCurrentBlock(LIVE_TRAIL_COMPLETE_BLOCK_ID);
         }
@@ -1636,6 +1744,23 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       setSaveError(copy.finishAnswerError);
     }
   };
+
+  useEffect(() => {
+    if (!isTeacher || !session.trailCompletion) return;
+    const completion = session.trailCompletion;
+    if (completion.status !== 'advancing' && completion.status !== 'starting-battle') {
+      resumedTransitionRef.current = null;
+      return;
+    }
+    const resumeKey = `${completion.id}:${completion.status}`;
+    if (resumedTransitionRef.current === resumeKey) return;
+    resumedTransitionRef.current = resumeKey;
+    if (completion.status === 'advancing') {
+      void performSkipBattle(completion);
+    } else {
+      void performStartBattle(completion);
+    }
+  }, [isTeacher, session.trailCompletion]);
 
   if (blocksError) {
     return (
@@ -1659,14 +1784,50 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     );
   }
 
-  if (!currentBlock && !isTeacher) {
+  if (!currentBlock && session.trailCompletion) {
+    const completion = session.trailCompletion;
+    const awaitingDecision = completion.status === 'awaiting-decision';
+    return (
+      <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 px-4">
+        <div className="w-full max-w-md rounded-3xl border border-emerald-500/30 bg-slate-900 p-6 text-center shadow-2xl">
+          <p className="text-lg font-black text-emerald-300">{copy.trailComplete}</p>
+          <p className="mt-2 text-sm text-slate-200">
+            {isTeacher
+              ? awaitingDecision ? copy.battleDecisionBody : copy.resumingTrail
+              : copy.waitingBattleDecision}
+          </p>
+          {isTeacher && awaitingDecision ? (
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void handleStartBattle()}
+                disabled={transitionBusy || !onStartTrailBattle}
+                className="rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 px-5 py-3 text-sm font-black text-white disabled:opacity-50"
+              >
+                {copy.startBattle}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSkipBattle()}
+                disabled={transitionBusy}
+                className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100 disabled:opacity-50"
+              >
+                {copy.skipBattle}
+              </button>
+            </div>
+          ) : null}
+          {saveError ? <p className="mt-4 text-xs font-semibold text-rose-200">{saveError}</p> : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentBlock) {
     return (
       <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950 px-4">
         <div className="max-w-md rounded-3xl border border-emerald-500/30 bg-slate-900 p-6 text-center shadow-2xl">
           <p className="text-lg font-black text-emerald-300">{copy.trailComplete}</p>
-          <p className="mt-2 text-sm text-slate-200">
-            {copy.trailCompleteBody}
-          </p>
+          <p className="mt-2 text-sm text-slate-200">{copy.trailCompleteBody}</p>
         </div>
       </div>
     );
@@ -1697,15 +1858,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
           >
             {copy.panel}
-          </button>
-        ) : null}
-        {canGenerateBattleFromTrail && onOpenBattleTemplate ? (
-          <button
-            type="button"
-            onClick={handleGenerateBattle}
-            className="rounded-2xl border border-orange-400/50 bg-orange-500/20 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-orange-100 shadow-2xl backdrop-blur-sm"
-          >
-            {copy.generateBattle}
           </button>
         ) : null}
         {isTeacher ? (
@@ -1905,15 +2057,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
                 >
                   {copy.panel}
-                </button>
-              ) : null}
-              {canGenerateBattleFromTrail && onOpenBattleTemplate ? (
-                <button
-                  type="button"
-                  onClick={handleGenerateBattle}
-                  className="rounded-2xl border border-orange-400/50 bg-orange-500/20 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-orange-100 shadow-2xl backdrop-blur-sm"
-                >
-                  {copy.generateBattle}
                 </button>
               ) : null}
               {isTeacher ? (

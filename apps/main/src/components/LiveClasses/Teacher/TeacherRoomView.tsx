@@ -22,7 +22,7 @@ import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../../services/live
 import { getLiveClassMeetLink } from '../../../services/liveClassesService';
 import { sanitizeMainStageMode } from '../../../services/liveClassStage';
 import type { SavedBattleTemplate } from '../Battle/battleTypes';
-import type { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
+import type { LiveClass, LiveClassPresence, LiveClassSession, LiveTrailCompletion } from '../../../types';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
 
 function openExternalLink(rawUrl: string) {
@@ -61,6 +61,7 @@ interface TeacherRoomViewProps {
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
   onOpenBattleHub: () => void;
   onOpenBattleTemplate: (template: SavedBattleTemplate) => void;
+  onStartTrailBattle: (template: SavedBattleTemplate, completion: LiveTrailCompletion) => void | Promise<void>;
   onOpenPreviewTab: (role: 'teacher' | 'student') => void;
   onOpenTrackTab: () => void;
   onExit: () => void;
@@ -80,6 +81,7 @@ const TeacherStage: React.FC<{
   setShowExerciseSession: (show: boolean) => void;
   onOpenBattleHub: () => void;
   onOpenBattleTemplate: (template: SavedBattleTemplate) => void;
+  onStartTrailBattle: (template: SavedBattleTemplate, completion: LiveTrailCompletion) => void | Promise<void>;
   onOpenPreviewTab: (role: 'teacher' | 'student') => void;
   onOpenTrackTab: () => void;
   onExit: () => void;
@@ -98,6 +100,7 @@ const TeacherStage: React.FC<{
   setShowExerciseSession,
   onOpenBattleHub,
   onOpenBattleTemplate,
+  onStartTrailBattle,
   onOpenPreviewTab,
   onOpenTrackTab,
   onExit,
@@ -882,7 +885,7 @@ const TeacherStage: React.FC<{
                 void handleUpdateSession({ mainStageMode: 'workspace' as LiveClassSession['mainStageMode'] });
               }}
               onOpenSessionPanel={() => setShowExerciseSession(true)}
-              onOpenBattleTemplate={onOpenBattleTemplate}
+              onStartTrailBattle={onStartTrailBattle}
             />
           ) : null}
           {showExerciseSession ? (
@@ -919,7 +922,7 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onOpenPreviewTab, onOpenTrackTab, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
+  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onStartTrailBattle, onOpenPreviewTab, onOpenTrackTab, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [liveKitError, setLiveKitError] = useState<string | null>(null);
@@ -1197,6 +1200,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
           setShowExerciseSession={setShowExerciseSession}
           onOpenBattleHub={onOpenBattleHub}
           onOpenBattleTemplate={onOpenBattleTemplate}
+          onStartTrailBattle={onStartTrailBattle}
           onOpenPreviewTab={onOpenPreviewTab}
           onOpenTrackTab={onOpenTrackTab}
           onExit={onExit}

@@ -7,6 +7,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   writeBatch,
@@ -22,6 +23,8 @@ import {
   LiveExerciseAnswerVerdict,
   LiveExerciseBlockStatus,
   LiveExerciseSession,
+  LiveTrailCompletion,
+  LiveTrailCompletionStatus,
   LiveWhiteboardState,
 } from '../types';
 import type { Day, Exercise, Lesson } from '../types';
@@ -35,6 +38,38 @@ const LIVE_WHITEBOARD_DOC = 'whiteboard';
 const LIVE_EXERCISE_SESSION_DOC = 'exerciseSession';
 const LIVE_EXERCISE_BLOCKS_COLLECTION = 'exerciseBlocks';
 const LIVE_PRESENCE_STALE_MS = 75_000;
+const LIVE_TRAIL_COMPLETE_BLOCK_ID = '__complete__';
+
+const LIVE_TRAIL_COMPLETION_STATUSES: readonly LiveTrailCompletionStatus[] = [
+  'awaiting-decision',
+  'starting-battle',
+  'battle',
+  'advancing',
+];
+
+function normalizeLiveTrailCompletion(value: unknown): LiveTrailCompletion | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const data = value as Record<string, unknown>;
+  const status = data.status as LiveTrailCompletionStatus;
+  if (
+    typeof data.id !== 'string'
+    || !LIVE_TRAIL_COMPLETION_STATUSES.includes(status)
+    || typeof data.lessonId !== 'string'
+    || typeof data.completedTrailId !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    id: data.id,
+    status,
+    lessonId: data.lessonId,
+    completedTrailId: data.completedTrailId,
+    completedTrailLabel: typeof data.completedTrailLabel === 'string' ? data.completedTrailLabel : '',
+    nextTrailId: typeof data.nextTrailId === 'string' ? data.nextTrailId : null,
+    isLessonComplete: Boolean(data.isLessonComplete),
+  };
+}
 
 function normalizeAssignedIdentifier(value: string | null | undefined) {
   return (value ?? '').trim();
@@ -113,6 +148,7 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   activeExerciseId: data?.activeExerciseId ?? null,
   activeTrailIds: Array.isArray(data?.activeTrailIds) ? data.activeTrailIds.filter((value: unknown): value is string => typeof value === 'string') : [],
   activeTrailLabel: data?.activeTrailLabel ?? null,
+  trailCompletion: normalizeLiveTrailCompletion(data?.trailCompletion),
   sharedGrammarOpen: Boolean(data?.sharedGrammarOpen),
   sharedGrammarLessonNumber:
     Number.isFinite(data?.sharedGrammarLessonNumber) ? Number(data.sharedGrammarLessonNumber) : null,
@@ -410,6 +446,7 @@ export async function updateLiveSession(
   if ('activeExerciseId' in patch) payload.activeExerciseId = patch.activeExerciseId ?? null;
   if ('activeTrailIds' in patch) payload.activeTrailIds = Array.isArray(patch.activeTrailIds) ? patch.activeTrailIds : [];
   if ('activeTrailLabel' in patch) payload.activeTrailLabel = patch.activeTrailLabel ?? null;
+  if ('trailCompletion' in patch) payload.trailCompletion = patch.trailCompletion ?? null;
   if ('sharedGrammarOpen' in patch) payload.sharedGrammarOpen = Boolean(patch.sharedGrammarOpen);
   if ('sharedGrammarLessonNumber' in patch) payload.sharedGrammarLessonNumber = patch.sharedGrammarLessonNumber ?? null;
   if ('sharedGrammarScrollRatio' in patch) payload.sharedGrammarScrollRatio = patch.sharedGrammarScrollRatio ?? null;
@@ -437,6 +474,74 @@ export async function updateLiveSession(
     payload,
     { merge: true },
   );
+}
+
+export async function completeLiveTrailForDecision(
+  classId: string,
+  completion: LiveTrailCompletion,
+  updatedByUid: string,
+  updatedByName: string,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId) return;
+
+  const batch = writeBatch(db);
+  batch.set(
+    getExerciseSessionRef(classId),
+    {
+      currentBlockId: LIVE_TRAIL_COMPLETE_BLOCK_ID,
+      updatedAt: serverTimestamp(),
+      updatedBy: buildExerciseActor(updatedByUid, updatedByName),
+    },
+    { merge: true },
+  );
+  batch.set(
+    getSessionStateRef(classId),
+    {
+      trailCompletion: completion,
+      mainStageMode: 'trail',
+      lastUpdatedBy: updatedByUid,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true },
+  );
+  await batch.commit();
+}
+
+export async function claimLiveTrailCompletionStatus(params: {
+  classId: string;
+  completionId: string;
+  from: LiveTrailCompletionStatus[];
+  to: LiveTrailCompletionStatus;
+  updatedByUid: string;
+}): Promise<LiveTrailCompletion | null> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!params.classId) return null;
+
+  const sessionRef = getSessionStateRef(params.classId);
+  return runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(sessionRef);
+    const completion = normalizeLiveTrailCompletion(snapshot.data()?.trailCompletion);
+    if (
+      !completion
+      || completion.id !== params.completionId
+      || !params.from.includes(completion.status)
+    ) {
+      return null;
+    }
+
+    const claimed: LiveTrailCompletion = { ...completion, status: params.to };
+    transaction.set(
+      sessionRef,
+      {
+        trailCompletion: claimed,
+        lastUpdatedBy: params.updatedByUid,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true },
+    );
+    return claimed;
+  });
 }
 
 export async function submitLiveResponse(

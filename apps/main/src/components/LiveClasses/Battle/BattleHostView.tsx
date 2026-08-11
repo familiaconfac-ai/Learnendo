@@ -45,6 +45,7 @@ interface BattleHostViewProps {
   onClose: () => void;
   onNewBattle: () => void;
   uiLanguage?: 'en' | 'pt' | 'es';
+  resultActionLabel?: string;
 }
 
 const HOST_COPY = {
@@ -189,6 +190,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   onClose,
   onNewBattle,
   uiLanguage = 'en',
+  resultActionLabel,
 }) => {
   const copy = HOST_COPY[uiLanguage] ?? HOST_COPY.en;
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
@@ -1286,11 +1288,12 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         scores={session.scores ?? {}}
         myUid={teacherUid}
         totalQuestions={session.questions.length}
-        onNewBattle={onNewBattle}
+        onNewBattle={resultActionLabel ? undefined : onNewBattle}
         onClose={onClose}
         isTeacher={true}
         validParticipantIds={finalParticipantIds}
         uiLanguage={uiLanguage}
+        closeLabel={resultActionLabel}
       />
     );
   }

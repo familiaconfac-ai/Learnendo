@@ -1,11 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
-import { LiveClass, LiveClassPresence, LiveClassSession, SectionType } from '../../types';
+import { LiveClass, LiveClassPresence, LiveClassSession, LiveTrailCompletion, SectionType } from '../../types';
 import {
+  claimLiveTrailCompletionStatus,
   isLivePresenceActive,
   markLivePresenceOffline,
   subscribeLivePresence,
   subscribeLiveSession,
+  seedExerciseSessionFromLessonTrails,
   updateLiveSession,
   upsertLivePresence,
 } from '../../services/liveSessionService';
@@ -13,7 +15,7 @@ import { getDefaultMainStageMode } from '../../services/liveClassStage';
 import { learnendoLogo } from '../../assets/branding';
 import { BattleHubPage } from '../BattleHub/BattleHubPage';
 import type { SavedBattleTemplate } from './Battle/battleTypes';
-import { deleteBattleSession } from './Battle/battleService';
+import { createBattleSession, deleteBattleSession } from './Battle/battleService';
 import { LiveClassRoomShell } from './Shared/LiveClassRoomShell';
 import { WorkspaceCanvas } from './Workspace/WorkspaceCanvas';
 import { StudentRoomView } from './Student/StudentRoomView';
@@ -454,10 +456,86 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       });
   }, [handleUpdateSession, isPreview, liveClass.id]);
 
+  const handleStartTrailBattle = useCallback(async (
+    template: SavedBattleTemplate,
+    completion: LiveTrailCompletion,
+  ) => {
+    if (isPreview) return;
+    await deleteBattleSession(liveClass.id);
+    await createBattleSession(
+      liveClass.id,
+      template.config,
+      user.uid,
+      user.displayName || user.email || 'Professor',
+      template.questions,
+      battleOnlineParticipants.map((participant) => ({
+        ...participant,
+        joinedAt: Date.now(),
+      })),
+    );
+    await handleUpdateSession({
+      mainStageMode: 'battle',
+      trailCompletion: { ...completion, status: 'battle' },
+    });
+  }, [battleOnlineParticipants, handleUpdateSession, isPreview, liveClass.id, user.displayName, user.email, user.uid]);
+
   const handleReturnToWorkspace = useCallback(() => {
     if (isPreview) return;
     void handleUpdateSession({ mainStageMode: 'workspace' });
   }, [handleUpdateSession, isPreview]);
+
+  const handleContinueAfterTrailBattle = useCallback(async () => {
+    if (isPreview) return;
+    const completion = session.trailCompletion;
+    if (!completion || completion.status !== 'battle') {
+      await handleUpdateSession({ mainStageMode: 'workspace' });
+      return;
+    }
+
+    const claimed = await claimLiveTrailCompletionStatus({
+      classId: liveClass.id,
+      completionId: completion.id,
+      from: ['battle'],
+      to: 'advancing',
+      updatedByUid: user.uid,
+    });
+    if (!claimed) return;
+
+    try {
+      if (claimed.nextTrailId) {
+        const seeded = await seedExerciseSessionFromLessonTrails({
+          classId: liveClass.id,
+          courseId: liveClass.courseId ?? 'english',
+          workbookId: session.activeWorkbookId ?? liveClass.workbookId ?? 1,
+          lessonId: claimed.lessonId,
+          trailIds: [claimed.nextTrailId],
+          updatedByUid: user.uid,
+          updatedByName: user.displayName || user.email || 'Professor',
+        });
+        await handleUpdateSession({
+          sessionStatus: 'active',
+          activeLessonId: claimed.lessonId,
+          activeExerciseId: seeded.trailIds[0] ?? null,
+          activeTrailIds: seeded.trailIds,
+          activeTrailLabel: seeded.trailLabel,
+          trailCompletion: null,
+          mainStageMode: 'trail',
+        });
+      } else {
+        await handleUpdateSession({ trailCompletion: null, mainStageMode: 'trail' });
+      }
+    } catch (error) {
+      await claimLiveTrailCompletionStatus({
+        classId: liveClass.id,
+        completionId: claimed.id,
+        from: ['advancing'],
+        to: 'awaiting-decision',
+        updatedByUid: user.uid,
+      }).catch(() => null);
+      await handleUpdateSession({ mainStageMode: 'trail' }).catch(() => undefined);
+      console.warn('[LiveClass] failed to continue after trail battle:', error);
+    }
+  }, [handleUpdateSession, isPreview, liveClass.courseId, liveClass.id, liveClass.workbookId, session.activeWorkbookId, session.trailCompletion, user.displayName, user.email, user.uid]);
 
   const handleOpenPreviewTab = useCallback((nextRole: LiveClassPreviewRole) => {
     if (typeof window === 'undefined') return;
@@ -553,6 +631,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
             handleUpdateSession={handleUpdateSession}
             onOpenBattleHub={handleOpenBattleHub}
             onOpenBattleTemplate={handleOpenSavedBattleTemplate}
+            onStartTrailBattle={handleStartTrailBattle}
             onOpenPreviewTab={handleOpenPreviewTab}
             onOpenTrackTab={handleOpenTrackTab}
             onExit={onExit}
@@ -573,7 +652,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
               stars={0}
               onlineParticipants={battleOnlineParticipants}
               onOpenLiveClasses={handleReturnToWorkspace}
-              onDismiss={handleReturnToWorkspace}
+              onDismiss={session.trailCompletion?.status === 'battle' ? handleContinueAfterTrailBattle : handleReturnToWorkspace}
+              resultActionLabel={session.trailCompletion?.status === 'battle' ? 'Continue' : undefined}
               initialSetupTemplate={pendingBattleTemplate}
             />
           ) : null}

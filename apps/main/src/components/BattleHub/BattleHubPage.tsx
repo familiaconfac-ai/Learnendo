@@ -47,6 +47,7 @@ interface Props {
   onlineParticipants?: Array<{ uid: string; name: string }>;
   onDismiss?: () => void;
   initialSetupTemplate?: SavedBattleTemplate | null;
+  resultActionLabel?: string;
 }
 
 const COPY: Record<UILang, {
@@ -300,6 +301,7 @@ export const BattleHubPage: React.FC<Props> = ({
   onlineParticipants,
   onDismiss,
   initialSetupTemplate = null,
+  resultActionLabel,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
   const supportedBattleUiLanguage = getSupportedBattleUiLanguage(uiLanguage);
@@ -441,6 +443,10 @@ export const BattleHubPage: React.FC<Props> = ({
     setSetupTemplate(initialSetupTemplate);
     setShowSetup(true);
   }, [initialSetupTemplate]);
+
+  useEffect(() => {
+    if (liveSession) setShowSetup(false);
+  }, [liveSession]);
 
   useEffect(() => {
     if (!activeLiveClass?.id) {
@@ -910,6 +916,7 @@ export const BattleHubPage: React.FC<Props> = ({
               teacherUid={uid}
               activeParticipants={liveParticipants}
               uiLanguage={supportedBattleUiLanguage}
+              resultActionLabel={resultActionLabel}
               onClose={() => {
                 void deleteBattleSession(activeLiveClass.id).finally(() => {
                   setLiveSession(null);

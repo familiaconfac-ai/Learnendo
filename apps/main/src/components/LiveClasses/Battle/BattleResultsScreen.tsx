@@ -16,6 +16,7 @@ interface Props {
   hiddenUids?: string[];
   validParticipantIds?: string[];
   uiLanguage?: BattleUiLanguage;
+  closeLabel?: string;
 }
 
 const MEDALS = ['1', '2', '3'];
@@ -80,6 +81,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
   hiddenUids = [],
   validParticipantIds,
   uiLanguage = 'en',
+  closeLabel,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
   const audioRef = useRef<ManagedBattleAudio | null>(null);
@@ -222,7 +224,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
             onClick={onClose}
             className="flex-1 rounded-xl border border-slate-600 py-2.5 text-sm font-semibold text-slate-300 transition hover:border-slate-400"
           >
-            {isTeacher ? copy.close : copy.ok}
+            {closeLabel || (isTeacher ? copy.close : copy.ok)}
           </button>
         </div>
       </div>

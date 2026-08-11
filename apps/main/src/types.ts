@@ -276,6 +276,7 @@ export interface LiveClassSession {
   activeExerciseId?: string | null;
   activeTrailIds?: string[];
   activeTrailLabel?: string | null;
+  trailCompletion?: LiveTrailCompletion | null;
   sharedGrammarOpen?: boolean;
   sharedGrammarLessonNumber?: number | null;
   sharedGrammarScrollRatio?: number | null;
@@ -335,6 +336,22 @@ export interface LiveExerciseSession {
   endedAt?: string;
   updatedAt?: string;
   updatedBy?: LiveExerciseActor;
+}
+
+export type LiveTrailCompletionStatus =
+  | 'awaiting-decision'
+  | 'starting-battle'
+  | 'battle'
+  | 'advancing';
+
+export interface LiveTrailCompletion {
+  id: string;
+  status: LiveTrailCompletionStatus;
+  lessonId: string;
+  completedTrailId: string;
+  completedTrailLabel: string;
+  nextTrailId: string | null;
+  isLessonComplete: boolean;
 }
 
 export type LiveExerciseAnswerVerdict = 'correct' | 'wrong' | 'correct_second_try';
