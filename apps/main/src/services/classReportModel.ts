@@ -84,6 +84,9 @@ export function buildClassPerformanceReport(
   generatedAt = new Date(),
 ): ClassPerformanceReport {
   const ordered = rows
+    // Membership alone is not a student role. Filter before ranking and every
+    // aggregate so teachers/admins cannot affect positions, totals or averages.
+    .filter((student) => student.role === 'student')
     .map((student) => ({ student, score: computeScore(student) }))
     .sort((left, right) => right.score - left.score ||
       (left.student.displayName || '').localeCompare(right.student.displayName || ''));

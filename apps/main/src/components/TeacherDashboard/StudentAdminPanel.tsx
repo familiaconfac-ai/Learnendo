@@ -14,6 +14,7 @@ import {
 } from '../../services/adminStudents';
 import { buildClassPerformanceReport } from '../../services/classReportModel';
 import { getClassMemberRows } from '../../services/classMembership';
+import { buildStudentUpdateChanges } from '../../services/studentUpdateChanges';
 import { ClassReportModal } from './ClassReportModal';
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
@@ -63,6 +64,12 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
   const [resetError, setResetError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [baseline, setBaseline] = useState({
+    name: student?.displayName?.trim() ?? '',
+    email: student?.email?.trim().toLowerCase() ?? '',
+    groupId: currentGroup?.id ?? '',
+    disabled: null as boolean | null,
+  });
 
   const clearAllErrors = () => {
     setDetailsError(null);
@@ -89,6 +96,12 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
     setResetError(null);
     setDeleteError(null);
     setShowDeleteConfirm(false);
+    setBaseline({
+      name: student?.displayName?.trim() ?? '',
+      email: student?.email?.trim().toLowerCase() ?? '',
+      groupId: student ? (findStudentGroup(groups, student.uid)?.id ?? '') : '',
+      disabled: null,
+    });
     if (!student) return () => { active = false; };
     setBusy(true);
     getAdminStudentDetails(admin, student.uid)
@@ -96,10 +109,16 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
         if (!active) return;
         setAuthStatus(nextAuthStatus);
         if (!account) return;
-        setName(account.displayName || student.displayName || '');
+        // Firestore drives the name shown by the dashboard; Auth is only a
+        // secondary synchronized copy and must not replace that visible source.
         setEmail(account.email || student.email || '');
         setDisabled(account.disabled);
         setDetails(account);
+        setBaseline((current) => ({
+          ...current,
+          email: (account.email || student.email || '').trim().toLowerCase(),
+          disabled: account.disabled,
+        }));
       })
       .catch((reason) => {
         if (!active) return;
@@ -118,12 +137,39 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
     setSaveState('saving');
     try {
       if (student) {
-        const persisted = await updateAdminStudent(admin, { uid: student.uid, name: name.trim(), email: email.trim(), disabled, groupId: groupId || null });
+        const changes = buildStudentUpdateChanges(student.uid, baseline, { name, email, groupId, disabled });
+        if (Object.keys(changes).length === 1) {
+          setSaveState('saved');
+          setMessage('No changes to save.');
+          return;
+        }
+
+        const persisted = await updateAdminStudent(admin, changes);
         setName(persisted.profile.displayName);
         setEmail(persisted.profile.email);
-        setDisabled(persisted.account.disabled);
-        setSaveState('saved');
-        setMessage('Saved and verified in Authentication and Firestore.');
+        if (persisted.account) setDisabled(persisted.account.disabled);
+        setBaseline((current) => ({
+          name: persisted.fields.name === 'failed' ? current.name : persisted.profile.displayName,
+          email: persisted.fields.email === 'failed' ? current.email : persisted.profile.email.toLowerCase(),
+          groupId: persisted.fields.class === 'failed' ? current.groupId : groupId,
+          disabled: persisted.fields.disabled === 'failed' ? current.disabled : (persisted.account?.disabled ?? current.disabled),
+        }));
+
+        const savedFields = Object.entries(persisted.fields)
+          .filter(([, status]) => status === 'saved')
+          .map(([field]) => field);
+        if (persisted.errors.length > 0) {
+          setSaveState('failed');
+          const failed = persisted.errors.map((issue) => `${issue.field} [${issue.stage}] ${issue.code}: ${issue.message}`).join(' ');
+          if (savedFields.length > 0) setMessage(`Saved: ${savedFields.join(', ')}.`);
+          setSaveError(`Some changes failed: ${failed}`);
+        } else {
+          setSaveState('saved');
+          const warning = persisted.warnings.map((issue) => `${issue.stage}: ${issue.code}`).join(', ');
+          setMessage(warning
+            ? `Saved in the app source of truth. Secondary synchronization warning: ${warning}.`
+            : 'Saved and verified in the relevant source of truth.');
+        }
       } else {
         await createAdminStudent(admin, { name: name.trim(), email: email.trim(), password, disabled, groupId: groupId || null });
         setSaveState('saved');
@@ -203,13 +249,13 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
             <input type="email" className={`${fieldClass} mt-1`} value={email} onChange={(event) => { setEmail(event.target.value); setSaveState('idle'); }} disabled={busy} />
           </label>
           <label className="text-sm font-semibold text-slate-700">Class
-            <select className={`${fieldClass} mt-1`} value={groupId} onChange={(event) => setGroupId(event.target.value)} disabled={busy}>
+            <select className={`${fieldClass} mt-1`} value={groupId} onChange={(event) => { setGroupId(event.target.value); setSaveState('idle'); }} disabled={busy}>
               <option value="">No class</option>
               {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
             </select>
           </label>
           <label className="flex items-center gap-3 self-end rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700">
-            <input type="checkbox" checked={!disabled} onChange={(event) => setDisabled(!event.target.checked)} disabled={busy || (!isNew && authStatus !== 'found')} /> Active account
+            <input type="checkbox" checked={!disabled} onChange={(event) => { setDisabled(!event.target.checked); setSaveState('idle'); }} disabled={busy || (!isNew && authStatus !== 'found')} /> Active account
           </label>
         </section>
 
@@ -239,6 +285,7 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
                 <span>Created: {details?.creationTime ? new Date(details.creationTime).toLocaleString() : '—'}</span>
                 <span>Last login: {details?.lastSignInTime ? new Date(details.lastSignInTime).toLocaleString() : 'Never'}</span>
               </div>
+              <p className="mt-2 text-xs text-slate-500">Email verification is informational in Learnendo today: it does not block login or learning access. Password reset is a separate process.</p>
             </section>
             <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
               <h3 className="font-black text-slate-800">Password and access</h3>

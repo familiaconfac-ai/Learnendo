@@ -1,8 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { FieldValue } from 'firebase-admin/firestore';
-import { adminAuth, adminDb, requireAdmin } from '../server/firebaseAdmin';
-import { deleteStudentData } from '../server/studentDeletion';
-import { matchesPersistedStudentProfile } from '../server/studentProfileVerification';
+import { adminAuth, adminDb, requireAdmin } from '../server/firebaseAdmin.js';
+import { deleteStudentData } from '../server/studentDeletion.js';
 
 type RequestLike = IncomingMessage & { method?: string; body?: unknown };
 type ResponseLike = ServerResponse<IncomingMessage> & {
@@ -38,6 +37,30 @@ async function readBody(req: RequestLike): Promise<Body> {
 
 function cleanEmail(value?: string) {
   return (value ?? '').trim().toLowerCase();
+}
+
+function hasOwn(body: Body, field: keyof Body) {
+  return Object.prototype.hasOwnProperty.call(body, field);
+}
+
+function errorInfo(reason: unknown) {
+  const error = reason as { code?: string; message?: string };
+  return {
+    code: error.code ?? 'unknown',
+    message: error.message ?? 'Unknown administrative error.',
+  };
+}
+
+function logStageFailure(action: AdminAction, stage: string, uid: string | undefined, reason: unknown) {
+  const info = errorInfo(reason);
+  console.error('[admin-students]', {
+    action,
+    stage,
+    targetUidSuffix: uid?.slice(-6) ?? null,
+    code: info.code,
+    message: info.message,
+  });
+  return info;
 }
 
 async function assignGroup(uid: string, name: string, targetGroupId?: string | null) {
@@ -150,59 +173,151 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     }
 
     if (body.action === 'update') {
-      const name = body.name?.trim() ?? '';
-      const email = cleanEmail(body.email);
-      if (!name || !email) return sendJson(res, 400, { error: 'Name and email are required.' });
-      await adminAuth.updateUser(body.uid, {
-        displayName: name,
-        email,
-        ...(typeof body.disabled === 'boolean' ? { disabled: body.disabled } : {}),
-      });
-      const userRef = adminDb.doc(`users/${body.uid}`);
-      const progressRef = adminDb.doc(`progress/${body.uid}`);
-      const profileBatch = adminDb.batch();
-      profileBatch.set(userRef, {
-        name,
-        displayName: name,
-        email,
-        profileUpdatedAt: FieldValue.serverTimestamp(),
-        profileUpdatedBy: admin.uid,
-      }, { merge: true });
-      profileBatch.set(progressRef, {
-        displayName: name,
-        email,
-        lastUpdated: new Date().toISOString(),
-      }, { merge: true });
-      await profileBatch.commit();
-      if (Object.prototype.hasOwnProperty.call(body, 'groupId')) {
-        await assignGroup(body.uid, name, body.groupId);
+      const requested = {
+        name: hasOwn(body, 'name'),
+        email: hasOwn(body, 'email'),
+        disabled: hasOwn(body, 'disabled'),
+        class: hasOwn(body, 'groupId'),
+      };
+      if (!Object.values(requested).some(Boolean)) {
+        return sendJson(res, 400, { error: 'No changed fields were provided.' });
       }
 
-      // Do not acknowledge the save until every identity source used by the app
-      // can be read back with the exact persisted values.
-      const [account, userSnapshot, progressSnapshot] = await Promise.all([
-        adminAuth.getUser(body.uid),
+      const name = body.name?.trim() ?? '';
+      const email = cleanEmail(body.email);
+      if (requested.name && !name) return sendJson(res, 400, { error: 'Name cannot be empty.' });
+      if (requested.email && !email) return sendJson(res, 400, { error: 'Email cannot be empty.' });
+      if (requested.disabled && typeof body.disabled !== 'boolean') {
+        return sendJson(res, 400, { error: 'Active status must be a boolean.' });
+      }
+
+      const userRef = adminDb.doc(`users/${body.uid}`);
+      const progressRef = adminDb.doc(`progress/${body.uid}`);
+      const [initialAccount, initialUserSnapshot, initialProgressSnapshot] = await Promise.all([
+        adminAuth.getUser(body.uid).catch((reason) => {
+          if ((reason as { code?: string }).code === 'auth/user-not-found') return null;
+          throw reason;
+        }),
         userRef.get(),
         progressRef.get(),
       ]);
-      const userProfile = userSnapshot.data() ?? {};
-      const progressProfile = progressSnapshot.data() ?? {};
-      const persisted = matchesPersistedStudentProfile(
-        { name, email },
-        account,
-        userProfile,
-        progressProfile,
-      );
-      if (!persisted) {
-        const verificationError = new Error('The profile write could not be verified. Please try again.');
-        (verificationError as Error & { statusCode: number }).statusCode = 500;
-        throw verificationError;
+
+      const initialUser = initialUserSnapshot.data() ?? {};
+      const initialProgress = initialProgressSnapshot.data() ?? {};
+      const effectiveName = name || String(initialProgress.displayName ?? initialUser.displayName ?? initialUser.name ?? initialAccount?.displayName ?? body.uid);
+      const fields: Record<'name' | 'email' | 'disabled' | 'class', 'not-requested' | 'saved' | 'unchanged' | 'failed'> = {
+        name: requested.name ? 'unchanged' : 'not-requested',
+        email: requested.email ? 'unchanged' : 'not-requested',
+        disabled: requested.disabled ? 'unchanged' : 'not-requested',
+        class: requested.class ? 'unchanged' : 'not-requested',
+      };
+      const errors: Array<{ field: string; stage: string; code: string; message: string }> = [];
+      const warnings: Array<{ field: string; stage: string; code: string; message: string }> = [];
+
+      if (requested.name) {
+        const firestoreNameChanged = initialUser.name !== name || initialUser.displayName !== name || initialProgress.displayName !== name;
+        if (firestoreNameChanged) {
+          try {
+            const profileBatch = adminDb.batch();
+            profileBatch.set(userRef, {
+              name,
+              displayName: name,
+              profileUpdatedAt: FieldValue.serverTimestamp(),
+              profileUpdatedBy: admin.uid,
+            }, { merge: true });
+            profileBatch.set(progressRef, {
+              displayName: name,
+              lastUpdated: new Date().toISOString(),
+            }, { merge: true });
+            await profileBatch.commit();
+            fields.name = 'saved';
+          } catch (reason) {
+            fields.name = 'failed';
+            errors.push({ field: 'name', stage: 'firestore-profile', ...logStageFailure('update', 'firestore-profile', body.uid, reason) });
+          }
+        }
+
+        // The dashboard's visible source of truth is Firestore. Auth displayName is
+        // synchronized independently and can never invalidate a successful name save.
+        if (fields.name !== 'failed' && initialAccount?.displayName !== name) {
+          try {
+            if (!initialAccount) throw Object.assign(new Error('Student account not found in Authentication.'), { code: 'auth/user-not-found' });
+            await adminAuth.updateUser(body.uid, { displayName: name });
+            if (fields.name === 'unchanged') fields.name = 'saved';
+          } catch (reason) {
+            warnings.push({ field: 'name', stage: 'auth-display-name', ...logStageFailure('update', 'auth-display-name', body.uid, reason) });
+          }
+        }
       }
 
+      if (requested.email && initialAccount?.email !== email) {
+        let emailStage = 'auth-email';
+        try {
+          if (!initialAccount) throw Object.assign(new Error('Student account not found in Authentication.'), { code: 'auth/user-not-found' });
+          await adminAuth.updateUser(body.uid, { email });
+          emailStage = 'firestore-email';
+          const emailBatch = adminDb.batch();
+          emailBatch.set(userRef, { email, profileUpdatedAt: FieldValue.serverTimestamp(), profileUpdatedBy: admin.uid }, { merge: true });
+          emailBatch.set(progressRef, { email, lastUpdated: new Date().toISOString() }, { merge: true });
+          await emailBatch.commit();
+          fields.email = 'saved';
+        } catch (reason) {
+          fields.email = 'failed';
+          errors.push({ field: 'email', stage: emailStage, ...logStageFailure('update', emailStage, body.uid, reason) });
+        }
+      }
+
+      if (requested.disabled && initialAccount?.disabled !== body.disabled) {
+        try {
+          if (!initialAccount) throw Object.assign(new Error('Student account not found in Authentication.'), { code: 'auth/user-not-found' });
+          await adminAuth.updateUser(body.uid, { disabled: body.disabled });
+          fields.disabled = 'saved';
+        } catch (reason) {
+          fields.disabled = 'failed';
+          errors.push({ field: 'disabled', stage: 'auth-disabled', ...logStageFailure('update', 'auth-disabled', body.uid, reason) });
+        }
+      }
+
+      if (requested.class) {
+        try {
+          await assignGroup(body.uid, effectiveName, body.groupId);
+          fields.class = 'saved';
+        } catch (reason) {
+          fields.class = 'failed';
+          errors.push({ field: 'class', stage: 'firestore-class', ...logStageFailure('update', 'firestore-class', body.uid, reason) });
+        }
+      } else if (requested.name && fields.name !== 'failed') {
+        // Keep the denormalized roster label aligned without changing membership.
+        try {
+          const groups = await adminDb.collection('liveClassGroups').get();
+          const current = groups.docs.find((doc) => (doc.data().assignedStudentIds ?? []).includes(body.uid));
+          if (current) await assignGroup(body.uid, effectiveName, current.id);
+        } catch (reason) {
+          warnings.push({ field: 'name', stage: 'class-roster-label', ...logStageFailure('update', 'class-roster-label', body.uid, reason) });
+        }
+      }
+
+      const [account, userSnapshot, progressSnapshot] = await Promise.all([
+        adminAuth.getUser(body.uid).catch(() => null),
+        userRef.get(),
+        progressRef.get(),
+      ]);
+      const persistedUser = userSnapshot.data() ?? {};
+      const persistedProgress = progressSnapshot.data() ?? {};
+
       return sendJson(res, 200, {
-        ok: true,
-        account: publicAccount(account),
-        profile: { uid: body.uid, name, displayName: name, email },
+        ok: errors.length === 0,
+        partial: errors.length > 0 && Object.values(fields).some((status) => status === 'saved'),
+        fields,
+        errors,
+        warnings,
+        account: account ? publicAccount(account) : null,
+        profile: {
+          uid: body.uid,
+          name: String(persistedUser.name ?? persistedProgress.displayName ?? effectiveName),
+          displayName: String(persistedProgress.displayName ?? persistedUser.displayName ?? persistedUser.name ?? effectiveName),
+          email: String(account?.email ?? persistedUser.email ?? persistedProgress.email ?? ''),
+        },
       });
     }
 
@@ -226,7 +341,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
           : action
             ? fallbackByAction[action]
             : 'The administrative operation could not be completed.';
-    console.error('[admin-students]', code ?? error);
-    return sendJson(res, status, { error: safeMessage, code: code ?? null });
+    const technical = logStageFailure(action ?? 'details', 'request', undefined, error);
+    return sendJson(res, status, { error: safeMessage, code: code ?? null, technical });
   }
 }

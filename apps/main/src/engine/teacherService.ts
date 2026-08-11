@@ -326,6 +326,9 @@ export function subscribeToTeacherData(
 
       return {
         uid,
+        role: userData.role === 'student' || userData.role === 'teacher' || userData.role === 'admin'
+          ? userData.role
+          : undefined,
         displayName: progressData.displayName ?? userData.displayName ?? userData.name ?? undefined,
         email: progressData.email ?? userData.email ?? undefined,
         group: progressData.group ?? userData.group ?? undefined,

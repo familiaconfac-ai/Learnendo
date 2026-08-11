@@ -4,11 +4,11 @@ import { buildClassPerformanceReport } from './classReportModel.ts';
 import type { TeacherStudentRow } from '../engine/teacherService.ts';
 
 const students = [
-  { uid: 'marcio', displayName: 'Márcio Martins' },
-  { uid: 'ryan', displayName: 'Ryan Miranda' },
-  { uid: 'aquilles', displayName: 'Aquilles Toledo Donadon' },
-  { uid: 'grego', displayName: 'gregosetelip' },
-  { uid: 'conceicao', displayName: 'Conceição Martins' },
+  { uid: 'marcio', displayName: 'Márcio Martins', role: 'admin' as const },
+  { uid: 'ryan', displayName: 'Ryan Miranda', role: 'student' as const },
+  { uid: 'aquilles', displayName: 'Aquilles Toledo Donadon', role: 'student' as const },
+  { uid: 'grego', displayName: 'gregosetelip', role: 'student' as const },
+  { uid: 'conceicao', displayName: 'Conceição Martins', role: 'teacher' as const },
 ].map((student) => ({
   ...student,
   email: `${student.uid}@example.com`,
@@ -30,8 +30,8 @@ assert.equal(kids.some((student) => student.uid === 'grego'), false);
 assert.equal(kids.some((student) => student.uid === 'conceicao'), false);
 assert.deepEqual(
   buildClassPerformanceReport('Learnendo Kids', kids).students.map((student) => student.name).sort(),
-  ['Aquilles Toledo Donadon', 'Márcio Martins', 'Ryan Miranda'].sort(),
-  'the report must receive exactly the visible class members',
+  ['Aquilles Toledo Donadon', 'Ryan Miranda'].sort(),
+  'the report must filter real teacher/admin roles before ranking and metrics',
 );
 
 const other = getClassMemberRows({ assignedStudentIds: ['grego'] }, students);

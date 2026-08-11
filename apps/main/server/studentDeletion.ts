@@ -1,6 +1,6 @@
 import { FieldValue, type Query } from 'firebase-admin/firestore';
-import { adminAuth, adminDb } from './firebaseAdmin';
-import { canDeleteOwnedBattleTemplate, removeStudentFromRoster, removeUidFromRecord, USER_OWNED_SUBCOLLECTIONS } from './studentDeletionSchema';
+import { adminAuth, adminDb } from './firebaseAdmin.js';
+import { canDeleteOwnedBattleTemplate, removeStudentFromRoster, removeUidFromRecord, USER_OWNED_SUBCOLLECTIONS } from './studentDeletionSchema.js';
 
 export interface StudentDeletionIssue {
   scope: string;

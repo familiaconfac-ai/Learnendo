@@ -576,6 +576,8 @@ export function canStartLesson(group: GroupConfig): boolean {
 
 export interface UserProgressSummary {
   uid: string;
+  /** Real account role read from users/{uid}; never inferred from class membership. */
+  role?: 'student' | 'teacher' | 'admin';
   displayName?: string;
   email?: string;
   group?: GroupId;
@@ -821,6 +823,9 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
 
         return {
           uid,
+          role: userData.role === 'student' || userData.role === 'teacher' || userData.role === 'admin'
+            ? userData.role
+            : undefined,
           displayName: flatProgress.displayName ?? userData.displayName ?? userData.name,
           email: flatProgress.email ?? userData.email,
           group: metaGroup,

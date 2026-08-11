@@ -33,6 +33,30 @@ export interface PersistedAdminStudentProfile {
   email: string;
 }
 
+export type AdminStudentUpdateField = 'name' | 'email' | 'disabled' | 'class';
+export interface AdminStudentUpdateIssue {
+  field: AdminStudentUpdateField;
+  stage: string;
+  code: string;
+  message: string;
+}
+export interface AdminStudentUpdateResult {
+  ok: boolean;
+  partial: boolean;
+  fields: Record<AdminStudentUpdateField, 'not-requested' | 'saved' | 'unchanged' | 'failed'>;
+  errors: AdminStudentUpdateIssue[];
+  warnings: AdminStudentUpdateIssue[];
+  account: AdminStudentAccount | null;
+  profile: PersistedAdminStudentProfile;
+}
+
+export class AdminStudentApiError extends Error {
+  constructor(message: string, readonly code?: string | null, readonly technical?: { code?: string; message?: string }) {
+    super(message);
+    this.name = 'AdminStudentApiError';
+  }
+}
+
 type AdminStudentPayload = Record<string, unknown> & { action: 'details' | 'create' | 'update' | 'setPassword' | 'delete' };
 
 async function callAdminStudents(user: User, payload: AdminStudentPayload, fallbackMessage: string) {
@@ -50,6 +74,12 @@ async function callAdminStudents(user: User, payload: AdminStudentPayload, fallb
     deletion?: StudentDeletionResult;
     profile?: PersistedAdminStudentProfile;
     ok?: boolean;
+    partial?: boolean;
+    fields?: AdminStudentUpdateResult['fields'];
+    errors?: AdminStudentUpdateIssue[];
+    warnings?: AdminStudentUpdateIssue[];
+    code?: string | null;
+    technical?: { code?: string; message?: string };
   };
   try {
     result = JSON.parse(rawResponse) as typeof result;
@@ -58,7 +88,12 @@ async function callAdminStudents(user: User, payload: AdminStudentPayload, fallb
       ? 'The admin endpoint returned an invalid response and did not confirm persistence.'
       : fallbackMessage);
   }
-  if (!response.ok) throw new Error(result.error || fallbackMessage);
+  if (!response.ok) {
+    const diagnostic = result.technical?.message
+      ? `${result.error || fallbackMessage} (${result.technical.code ?? result.code ?? 'unknown'}: ${result.technical.message})`
+      : result.error || fallbackMessage;
+    throw new AdminStudentApiError(diagnostic, result.code, result.technical);
+  }
   return result;
 }
 
@@ -74,12 +109,20 @@ export async function createAdminStudent(user: User, input: { name: string; emai
   return callAdminStudents(user, { action: 'create', ...input }, 'Failed to create student.');
 }
 
-export async function updateAdminStudent(user: User, input: { uid: string; name: string; email: string; disabled?: boolean; groupId?: string | null }) {
+export async function updateAdminStudent(user: User, input: { uid: string; name?: string; email?: string; disabled?: boolean; groupId?: string | null }) {
   const result = await callAdminStudents(user, { action: 'update', ...input }, 'Failed to update student.');
-  if (!result.ok || !result.account || !result.profile) {
-    throw new Error('The server did not confirm the persisted student profile.');
+  if (!result.fields || !result.profile) {
+    throw new Error('The server did not return field-level persistence confirmation.');
   }
-  return { account: result.account, profile: result.profile };
+  return {
+    ok: result.ok === true,
+    partial: result.partial === true,
+    fields: result.fields,
+    errors: result.errors ?? [],
+    warnings: result.warnings ?? [],
+    account: result.account ?? null,
+    profile: result.profile,
+  } satisfies AdminStudentUpdateResult;
 }
 
 export async function setAdminStudentPassword(user: User, uid: string, password: string) {
