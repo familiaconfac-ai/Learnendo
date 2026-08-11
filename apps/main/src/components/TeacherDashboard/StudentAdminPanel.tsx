@@ -15,6 +15,7 @@ import {
 import { buildClassPerformanceReport } from '../../services/classReportModel';
 import { getClassMemberRows } from '../../services/classMembership';
 import { buildStudentUpdateChanges } from '../../services/studentUpdateChanges';
+import { updateStudentDisplayName } from '../../services/userRoles';
 import { ClassReportModal } from './ClassReportModal';
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
@@ -141,6 +142,16 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
         if (Object.keys(changes).length === 1) {
           setSaveState('saved');
           setMessage('No changes to save.');
+          return;
+        }
+
+        const changedFields = Object.keys(changes).filter((field) => field !== 'uid');
+        if (changedFields.length === 1 && changes.name) {
+          const persistedName = await updateStudentDisplayName(student.uid, changes.name, admin.uid);
+          setName(persistedName);
+          setBaseline((current) => ({ ...current, name: persistedName }));
+          setSaveState('saved');
+          setMessage('Saved and verified in Firestore.');
           return;
         }
 

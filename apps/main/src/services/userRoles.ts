@@ -2,10 +2,12 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDocFromServer,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -244,6 +246,49 @@ export async function updateUserAccountProfileDetails(
     },
     { merge: true },
   );
+}
+
+/**
+ * Updates only the display name used by the teacher dashboard.
+ * The authenticated administrator writes through Firestore security rules, so
+ * this operation does not depend on server-side Google service credentials.
+ */
+export async function updateStudentDisplayName(
+  uid: string,
+  name: string,
+  updatedByUid: string,
+): Promise<string> {
+  if (!db) throw new Error('Firestore is not initialized');
+
+  const trimmedName = name.trim();
+  if (!uid || !trimmedName) throw new Error('Student UID and name are required.');
+
+  const userRef = doc(db, 'users', uid);
+  const progressRef = doc(db, 'progress', uid);
+  const batch = writeBatch(db);
+  batch.set(userRef, {
+    name: trimmedName,
+    displayName: trimmedName,
+    profileUpdatedAt: serverTimestamp(),
+    profileUpdatedBy: updatedByUid,
+  }, { merge: true });
+  batch.set(progressRef, {
+    displayName: trimmedName,
+    lastUpdated: new Date().toISOString(),
+  }, { merge: true });
+  await batch.commit();
+
+  const [userSnapshot, progressSnapshot] = await Promise.all([
+    getDocFromServer(userRef),
+    getDocFromServer(progressRef),
+  ]);
+  const userData = userSnapshot.data();
+  const progressData = progressSnapshot.data();
+  if (userData?.name !== trimmedName || userData?.displayName !== trimmedName || progressData?.displayName !== trimmedName) {
+    throw new Error('Firestore name write could not be verified.');
+  }
+
+  return trimmedName;
 }
 
 export async function deleteUserAccountRecord(
