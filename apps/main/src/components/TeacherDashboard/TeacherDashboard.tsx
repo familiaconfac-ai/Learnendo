@@ -176,31 +176,31 @@ const StudentsTab: React.FC<{
           onChange={e => setSearch(e.target.value)}
           className="w-full lg:max-w-sm px-4 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
         />
-        {canManageUsers && (
-          <select
-            value={selectedGroupId}
-            onChange={(event) => onSelectedGroupIdChange(event.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 lg:max-w-xs"
-            aria-label="Filter by class"
-          >
-            <option value="all">All students</option>
-            {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-            <option value="ungrouped">No class</option>
-          </select>
-        )}
+        <select
+          value={selectedGroupId}
+          onChange={(event) => onSelectedGroupIdChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 lg:max-w-xs"
+          aria-label="Filter by class"
+        >
+          <option value="all">All students</option>
+          {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+          {canManageUsers && <option value="ungrouped">No class</option>}
+        </select>
         <span className="text-sm text-slate-500 whitespace-nowrap">
           {visible.length} of {rows.length} student{rows.length !== 1 ? 's' : ''}
         </span>
-        {canManageUsers && (
-          <div className="flex gap-2 lg:ml-auto">
+        <div className="flex flex-wrap gap-2 lg:ml-auto">
+          {canManageUsers && (
             <button type="button" onClick={() => setShowClassManager(true)} className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50">Classes</button>
-            {selectedGroup && <button type="button" onClick={() => setShowClassReport(true)} className="rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50">Class report / PDF</button>}
+          )}
+          {selectedGroup && <button type="button" onClick={() => setShowClassReport(true)} className="rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50">Class report / PDF</button>}
+          {canManageUsers && (
             <button type="button" onClick={() => setManagedStudent(null)} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">+ New student</button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {canManageUsers && selectedGroupId !== 'all' && (
+      {selectedGroupId !== 'all' && (
         <div className="mb-4 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
           <div className="mb-3"><h2 className="font-black text-slate-800">Class: {selectedGroup?.name ?? 'No class'}</h2><p className="text-sm text-slate-500">{rows.length} student{rows.length !== 1 ? 's' : ''}</p></div>
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
@@ -328,7 +328,7 @@ const StudentsTab: React.FC<{
         </div>
       )}
       {managedStudent !== undefined && <StudentAdminPanel admin={user} student={managedStudent} groups={groups} onClose={() => setManagedStudent(undefined)} onDeleted={onStudentDeleted} />}
-      {showClassManager && <ClassManagementModal admin={user} groups={groups} students={allRows} onClose={() => setShowClassManager(false)} />}
+      {showClassManager && <ClassManagementModal groups={groups} students={allRows} onClose={() => setShowClassManager(false)} />}
       {showClassReport && classReport && <ClassReportModal report={classReport} onClose={() => setShowClassReport(false)} />}
     </div>
   );
@@ -522,13 +522,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
   }, [canManageUsers, refreshKey, teacherUid]);
 
   useEffect(() => {
-    if (!canManageUsers) {
-      setGroups([]);
-      setSelectedGroupId('all');
-      return () => {};
-    }
     return subscribeLiveClassGroups(
-      { uid: user.uid, role: 'admin' },
+      { uid: user.uid, role: canManageUsers ? 'admin' : 'teacher' },
       setGroups,
       (reason) => console.warn('[TeacherDashboard] class subscription failed:', reason),
     );

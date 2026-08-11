@@ -12,7 +12,9 @@ import {
   updateAdminStudent,
   type StudentDeletionResult,
 } from '../../services/adminStudents';
-import { createLiveClassGroup, updateLiveClassGroup } from '../../services/liveClassesService';
+import { getLiveClassGroupFromServer, updateLiveClassGroup } from '../../services/liveClassesService';
+import { buildClassPerformanceReport } from '../../services/classReportModel';
+import { ClassReportModal } from './ClassReportModal';
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
 
@@ -53,6 +55,7 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
   const [details, setDetails] = useState<{ creationTime: string; lastSignInTime: string | null; emailVerified: boolean; providerIds: string[] } | null>(null);
   const [authStatus, setAuthStatus] = useState<'loading' | 'found' | 'not-found'>(isNew ? 'found' : 'loading');
   const [busy, setBusy] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -79,6 +82,7 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
     setDetails(null);
     setAuthStatus(student ? 'loading' : 'found');
     setMessage(null);
+    setSaveState('idle');
     setDetailsError(null);
     setSaveError(null);
     setPasswordError(null);
@@ -111,16 +115,23 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
     if (!name.trim() || !email.trim()) return setSaveError('Name and email are required.');
     if (isNew && password.length < 6) return setSaveError('The initial password must contain at least 6 characters.');
     setBusy(true);
+    setSaveState('saving');
     try {
       if (student) {
-        await updateAdminStudent(admin, { uid: student.uid, name: name.trim(), email: email.trim(), disabled, groupId: groupId || null });
-        setMessage('Student account saved in Authentication and Firestore.');
+        const persisted = await updateAdminStudent(admin, { uid: student.uid, name: name.trim(), email: email.trim(), disabled, groupId: groupId || null });
+        setName(persisted.profile.displayName);
+        setEmail(persisted.profile.email);
+        setDisabled(persisted.account.disabled);
+        setSaveState('saved');
+        setMessage('Saved and verified in Authentication and Firestore.');
       } else {
         await createAdminStudent(admin, { name: name.trim(), email: email.trim(), password, disabled, groupId: groupId || null });
+        setSaveState('saved');
         setMessage('Student created. Copy the initial password before closing.');
       }
     } catch (reason) {
-      setSaveError(reason instanceof Error ? reason.message : 'Failed to update student.');
+      setSaveState('failed');
+      setSaveError(reason instanceof Error ? `Save failed: ${reason.message}` : 'Save failed: unable to update student.');
     } finally {
       setBusy(false);
     }
@@ -186,10 +197,10 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
 
         <section className="grid gap-4 sm:grid-cols-2">
           <label className="text-sm font-semibold text-slate-700">Name
-            <input className={`${fieldClass} mt-1`} value={name} onChange={(event) => setName(event.target.value)} disabled={busy} />
+            <input className={`${fieldClass} mt-1`} value={name} onChange={(event) => { setName(event.target.value); setSaveState('idle'); }} disabled={busy} />
           </label>
           <label className="text-sm font-semibold text-slate-700">Email / login
-            <input type="email" className={`${fieldClass} mt-1`} value={email} onChange={(event) => setEmail(event.target.value)} disabled={busy} />
+            <input type="email" className={`${fieldClass} mt-1`} value={email} onChange={(event) => { setEmail(event.target.value); setSaveState('idle'); }} disabled={busy} />
           </label>
           <label className="text-sm font-semibold text-slate-700">Class
             <select className={`${fieldClass} mt-1`} value={groupId} onChange={(event) => setGroupId(event.target.value)} disabled={busy}>
@@ -249,7 +260,7 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
         {saveError && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{saveError}</div>}
         <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold text-slate-700">Close</button>
-          <button type="button" onClick={() => void handleSave()} disabled={busy} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : isNew ? 'Create student' : 'Save changes'}</button>
+          <button type="button" onClick={() => void handleSave()} disabled={busy} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : saveState === 'failed' ? 'Save failed' : isNew ? 'Create student' : 'Save'}</button>
         </div>
         {!isNew && student && (
           <section className="rounded-2xl border border-red-200 bg-red-50 p-4">
@@ -276,34 +287,46 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
   );
 };
 
-export const ClassManagementModal: React.FC<{ admin: User; groups: LiveClassGroup[]; students: TeacherStudentRow[]; onClose: () => void }> = ({ admin, groups, students, onClose }) => {
-  const [selectedId, setSelectedId] = useState(groups[0]?.id ?? 'new');
+export const ClassManagementModal: React.FC<{ groups: LiveClassGroup[]; students: TeacherStudentRow[]; onClose: () => void }> = ({ groups, students, onClose }) => {
+  const [selectedId, setSelectedId] = useState(groups[0]?.id ?? '');
   const selected = groups.find((group) => group.id === selectedId) ?? null;
-  const [name, setName] = useState(selected?.name ?? '');
   const [memberIds, setMemberIds] = useState<string[]>(selected?.assignedStudentIds ?? []);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
-    setName(selected?.name ?? '');
     setMemberIds(selected?.assignedStudentIds ?? []);
-    setMessage(null);
+    setSaveState('idle');
+    setError(null);
   }, [selectedId, selected]);
 
+  const reportRows = useMemo(
+    () => students.filter((student) => memberIds.includes(student.uid)),
+    [memberIds, students],
+  );
+  const classReport = useMemo(
+    () => selected ? buildClassPerformanceReport(selected.name, reportRows) : null,
+    [reportRows, selected],
+  );
+
   const save = async () => {
-    if (!name.trim()) return setMessage('Enter a class name.');
+    if (!selected) return;
     setBusy(true);
+    setSaveState('saving');
+    setError(null);
     const assigned = students.filter((student) => memberIds.includes(student.uid));
     const input = {
-      name: name.trim(),
+      name: selected.name,
       description: selected?.description ?? '',
       whatsappLink: selected?.whatsappLink ?? '',
       assignedStudentIds: assigned.map((student) => student.uid),
       assignedStudentNames: assigned.map((student) => student.displayName || student.email || student.uid),
     };
     try {
-      const targetId = selected ? selected.id : await createLiveClassGroup(admin.uid, input);
-      if (selected) await updateLiveClassGroup(selected.id, input);
+      const targetId = selected.id;
+      await updateLiveClassGroup(selected.id, input);
       await Promise.all(groups
         .filter((group) => group.id !== targetId && group.assignedStudentIds.some((uid) => memberIds.includes(uid)))
         .map((group) => {
@@ -318,10 +341,17 @@ export const ClassManagementModal: React.FC<{ admin: User; groups: LiveClassGrou
             assignedStudentNames: kept.map((member) => member.name),
           });
         }));
-      if (!selected) setSelectedId(targetId);
-      setMessage('Class saved.');
+      const persisted = await getLiveClassGroupFromServer(targetId);
+      const expectedIds = [...input.assignedStudentIds].sort();
+      const persistedIds = [...persisted.assignedStudentIds].sort();
+      if (expectedIds.length !== persistedIds.length || expectedIds.some((uid, index) => uid !== persistedIds[index])) {
+        throw new Error('Firestore returned a different class membership after saving.');
+      }
+      setMemberIds(persisted.assignedStudentIds);
+      setSaveState('saved');
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : 'Unable to save the class.');
+      setSaveState('failed');
+      setError(reason instanceof Error ? `Save failed: ${reason.message}` : 'Save failed: unable to save the class.');
     } finally {
       setBusy(false);
     }
@@ -330,32 +360,37 @@ export const ClassManagementModal: React.FC<{ admin: User; groups: LiveClassGrou
   return (
     <ModalShell title="Manage classes" onClose={onClose}>
       <div className="space-y-4">
-        <div className="flex gap-2">
-          <select className={fieldClass} value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
-            <option value="new">+ New class</option>
+        <div>
+          <select className={fieldClass} value={selectedId} onChange={(event) => setSelectedId(event.target.value)} aria-label="Select class">
+            {groups.length === 0 && <option value="">No classes available</option>}
             {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
           </select>
         </div>
-        <label className="text-sm font-semibold text-slate-700">Class name
-          <input className={`${fieldClass} mt-1`} value={name} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <div>
-          <p className="mb-2 text-sm font-semibold text-slate-700">Students ({memberIds.length})</p>
+        {selected && <div className="rounded-xl bg-slate-50 px-4 py-3">
+          <h3 className="font-black text-slate-800">{selected.name}</h3>
+          <p className="text-sm text-slate-500">{memberIds.length} student{memberIds.length !== 1 ? 's' : ''}</p>
+        </div>}
+        {selected && <div>
+          <p className="mb-2 text-sm font-semibold text-slate-700">Students</p>
           <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
             {students.map((student) => (
               <label key={student.uid} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50">
-                <input type="checkbox" checked={memberIds.includes(student.uid)} onChange={(event) => setMemberIds((current) => event.target.checked ? [...current, student.uid] : current.filter((uid) => uid !== student.uid))} />
+                <input type="checkbox" checked={memberIds.includes(student.uid)} disabled={busy} onChange={(event) => { setSaveState('idle'); setError(null); setMemberIds((current) => event.target.checked ? [...current, student.uid] : current.filter((uid) => uid !== student.uid)); }} />
                 <span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-800">{student.displayName || student.email}</span><span className="block truncate text-xs text-slate-500">{student.email}</span></span>
               </label>
             ))}
           </div>
-        </div>
-        {message && <p className="rounded-xl bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700">{message}</p>}
-        <div className="flex justify-end gap-2">
+        </div>}
+        {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p>}
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-between">
+          <button type="button" onClick={() => setShowReport(true)} disabled={!classReport || busy} className="rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">Class report / PDF</button>
+          <div className="flex justify-end gap-2">
           <button onClick={onClose} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold">Close</button>
-          <button onClick={() => void save()} disabled={busy} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{busy ? 'Saving…' : 'Save class'}</button>
+          <button onClick={() => void save()} disabled={busy || !selected} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : saveState === 'failed' ? 'Save failed' : 'Save class'}</button>
+          </div>
         </div>
       </div>
+      {showReport && classReport && <ClassReportModal report={classReport} onClose={() => setShowReport(false)} />}
     </ModalShell>
   );
 };

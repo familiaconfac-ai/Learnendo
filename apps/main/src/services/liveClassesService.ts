@@ -5,6 +5,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   onSnapshot,
   orderBy,
@@ -608,6 +609,15 @@ export async function updateLiveClassGroup(groupId: string, input: LiveClassGrou
     ...buildLiveClassGroupPayload(input),
     updatedAt: serverTimestamp(),
   });
+}
+
+/** Read the authoritative server copy after a membership write. */
+export async function getLiveClassGroupFromServer(groupId: string): Promise<LiveClassGroup> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!groupId) throw new Error('Class ID is required');
+  const snapshot = await getDocFromServer(doc(db, LIVE_CLASS_GROUPS_COLLECTION, groupId));
+  if (!snapshot.exists()) throw new Error('The selected class no longer exists.');
+  return mapLiveClassGroup(snapshot.id, snapshot.data() as Record<string, any>);
 }
 
 export async function ensureLiveClassSession(classId: string): Promise<void> {

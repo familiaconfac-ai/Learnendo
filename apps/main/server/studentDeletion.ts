@@ -152,6 +152,21 @@ export async function deleteStudentData(uid: string): Promise<StudentDeletionRes
     issues: [],
   };
 
+  // Revoke access before touching data. If deletion later becomes partial, the
+  // account cannot sign in and recreate student-owned documents meanwhile.
+  let authExists = true;
+  try {
+    await adminAuth.updateUser(uid, { disabled: true });
+  } catch (reason) {
+    if ((reason as { code?: string }).code === 'auth/user-not-found') {
+      authExists = false;
+      result.auth = 'not-found';
+    } else {
+      result.issues.push({ scope: 'authentication.disable', message: errorMessage(reason) });
+      return result;
+    }
+  }
+
   for (const collectionName of USER_OWNED_SUBCOLLECTIONS) {
     await runCleanupStep(result, `users/${uid}/${collectionName}`, async () => {
       await deleteQuery(adminDb.doc(`users/${uid}`).collection(collectionName), `users.${collectionName}`, result);
@@ -186,15 +201,17 @@ export async function deleteStudentData(uid: string): Promise<StudentDeletionRes
   await runCleanupStep(result, 'liveClassGroups', () => cleanupGroups(uid, result));
   await runCleanupStep(result, 'liveClasses', () => cleanupLiveClasses(uid, result));
 
-  try {
-    await adminAuth.deleteUser(uid);
-    result.auth = 'deleted';
-  } catch (reason) {
-    if ((reason as { code?: string }).code === 'auth/user-not-found') {
-      result.auth = 'not-found';
-    } else {
-      result.auth = 'failed';
-      result.issues.push({ scope: 'authentication', message: errorMessage(reason) });
+  if (authExists) {
+    try {
+      await adminAuth.deleteUser(uid);
+      result.auth = 'deleted';
+    } catch (reason) {
+      if ((reason as { code?: string }).code === 'auth/user-not-found') {
+        result.auth = 'not-found';
+      } else {
+        result.auth = 'failed';
+        result.issues.push({ scope: 'authentication', message: errorMessage(reason) });
+      }
     }
   }
 

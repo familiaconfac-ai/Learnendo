@@ -26,6 +26,13 @@ export interface AdminStudentDetails {
   authStatus: 'found' | 'not-found';
 }
 
+export interface PersistedAdminStudentProfile {
+  uid: string;
+  name: string;
+  displayName: string;
+  email: string;
+}
+
 type AdminStudentPayload = Record<string, unknown> & { action: 'details' | 'create' | 'update' | 'setPassword' | 'delete' };
 
 async function callAdminStudents(user: User, payload: AdminStudentPayload, fallbackMessage: string) {
@@ -35,13 +42,22 @@ async function callAdminStudents(user: User, payload: AdminStudentPayload, fallb
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
     body: JSON.stringify(payload),
   });
-  const result = await response.json().catch(() => ({})) as {
+  const rawResponse = await response.text();
+  let result: {
     error?: string;
     account?: AdminStudentAccount | null;
     authStatus?: 'found' | 'not-found';
     deletion?: StudentDeletionResult;
+    profile?: PersistedAdminStudentProfile;
     ok?: boolean;
   };
+  try {
+    result = JSON.parse(rawResponse) as typeof result;
+  } catch {
+    throw new Error(response.ok
+      ? 'The admin endpoint returned an invalid response and did not confirm persistence.'
+      : fallbackMessage);
+  }
   if (!response.ok) throw new Error(result.error || fallbackMessage);
   return result;
 }
@@ -59,7 +75,11 @@ export async function createAdminStudent(user: User, input: { name: string; emai
 }
 
 export async function updateAdminStudent(user: User, input: { uid: string; name: string; email: string; disabled?: boolean; groupId?: string | null }) {
-  return callAdminStudents(user, { action: 'update', ...input }, 'Failed to update student.');
+  const result = await callAdminStudents(user, { action: 'update', ...input }, 'Failed to update student.');
+  if (!result.ok || !result.account || !result.profile) {
+    throw new Error('The server did not confirm the persisted student profile.');
+  }
+  return { account: result.account, profile: result.profile };
 }
 
 export async function setAdminStudentPassword(user: User, uid: string, password: string) {

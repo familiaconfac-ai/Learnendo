@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb, requireAdmin } from '../server/firebaseAdmin';
 import { deleteStudentData } from '../server/studentDeletion';
+import { matchesPersistedStudentProfile } from '../server/studentProfileVerification';
 
 type RequestLike = IncomingMessage & { method?: string; body?: unknown };
 type ResponseLike = ServerResponse<IncomingMessage> & {
@@ -125,8 +126,14 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
 
     if (body.action === 'delete') {
       if (body.uid === admin.uid) return sendJson(res, 409, { error: 'You cannot delete your own administrator account.' });
-      const profile = await adminDb.doc(`users/${body.uid}`).get();
-      const role = profile.data()?.role;
+      const [profile, targetAccount] = await Promise.all([
+        adminDb.doc(`users/${body.uid}`).get(),
+        adminAuth.getUser(body.uid).catch((reason) => {
+          if ((reason as { code?: string }).code === 'auth/user-not-found') return null;
+          throw reason;
+        }),
+      ]);
+      const role = profile.data()?.role ?? targetAccount?.customClaims?.role;
       if (role === 'admin' || role === 'teacher') {
         return sendJson(res, 409, { error: `This account is a ${role}, not a student, and was not deleted.` });
       }
@@ -146,26 +153,57 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
       const name = body.name?.trim() ?? '';
       const email = cleanEmail(body.email);
       if (!name || !email) return sendJson(res, 400, { error: 'Name and email are required.' });
-      const account = await adminAuth.updateUser(body.uid, {
+      await adminAuth.updateUser(body.uid, {
         displayName: name,
         email,
         ...(typeof body.disabled === 'boolean' ? { disabled: body.disabled } : {}),
       });
-      await adminDb.doc(`users/${body.uid}`).set({
+      const userRef = adminDb.doc(`users/${body.uid}`);
+      const progressRef = adminDb.doc(`progress/${body.uid}`);
+      const profileBatch = adminDb.batch();
+      profileBatch.set(userRef, {
         name,
         displayName: name,
         email,
         profileUpdatedAt: FieldValue.serverTimestamp(),
         profileUpdatedBy: admin.uid,
       }, { merge: true });
-      const progressRef = adminDb.doc(`progress/${body.uid}`);
-      if ((await progressRef.get()).exists) {
-        await progressRef.set({ displayName: name, email, lastUpdated: new Date().toISOString() }, { merge: true });
-      }
+      profileBatch.set(progressRef, {
+        displayName: name,
+        email,
+        lastUpdated: new Date().toISOString(),
+      }, { merge: true });
+      await profileBatch.commit();
       if (Object.prototype.hasOwnProperty.call(body, 'groupId')) {
         await assignGroup(body.uid, name, body.groupId);
       }
-      return sendJson(res, 200, { account: publicAccount(account) });
+
+      // Do not acknowledge the save until every identity source used by the app
+      // can be read back with the exact persisted values.
+      const [account, userSnapshot, progressSnapshot] = await Promise.all([
+        adminAuth.getUser(body.uid),
+        userRef.get(),
+        progressRef.get(),
+      ]);
+      const userProfile = userSnapshot.data() ?? {};
+      const progressProfile = progressSnapshot.data() ?? {};
+      const persisted = matchesPersistedStudentProfile(
+        { name, email },
+        account,
+        userProfile,
+        progressProfile,
+      );
+      if (!persisted) {
+        const verificationError = new Error('The profile write could not be verified. Please try again.');
+        (verificationError as Error & { statusCode: number }).statusCode = 500;
+        throw verificationError;
+      }
+
+      return sendJson(res, 200, {
+        ok: true,
+        account: publicAccount(account),
+        profile: { uid: body.uid, name, displayName: name, email },
+      });
     }
 
     return sendJson(res, 400, { error: 'Unknown admin action.' });

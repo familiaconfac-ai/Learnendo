@@ -29,6 +29,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingUid, setSavingUid] = useState<string | null>(null);
+  const [profileSaveStates, setProfileSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'failed'>>({});
   const [search, setSearch] = useState('');
   const [drafts, setDrafts] = useState<Record<string, { name: string; email: string }>>({});
 
@@ -100,6 +101,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
   );
 
   const updateDraft = (uid: string, field: 'name' | 'email', value: string) => {
+    setProfileSaveStates((current) => ({ ...current, [uid]: 'idle' }));
     setDrafts((current) => ({
       ...current,
       [uid]: {
@@ -111,6 +113,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
   };
 
   const resetDraft = (account: UserAccountProfile) => {
+    setProfileSaveStates((current) => ({ ...current, [account.uid]: 'idle' }));
     setDrafts((current) => ({
       ...current,
       [account.uid]: {
@@ -124,6 +127,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
     if (account.role === role) return;
 
     setSavingUid(account.uid);
+    setProfileSaveStates((current) => ({ ...current, [account.uid]: 'saving' }));
     try {
       await updateUserAccountRole(account.uid, role, user.uid);
     } catch (reason) {
@@ -163,22 +167,37 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
       setError('Name cannot be empty.');
       return;
     }
+    if (!trimmedEmail) {
+      setProfileSaveStates((current) => ({ ...current, [account.uid]: 'failed' }));
+      setError('Save failed: email cannot be empty for an Authentication account.');
+      return;
+    }
 
     setSavingUid(account.uid);
     try {
-      if (!trimmedEmail) {
-        setError('Email cannot be empty for an Authentication account.');
-        return;
-      }
-      await updateAdminStudent(user, {
+      const persisted = await updateAdminStudent(user, {
         uid: account.uid,
         name: trimmedName,
         email: trimmedEmail,
       });
+      setAccounts((current) => current.map((item) => item.uid === account.uid ? {
+        ...item,
+        name: persisted.profile.displayName,
+        email: persisted.profile.email,
+      } : item));
+      setDrafts((current) => ({
+        ...current,
+        [account.uid]: {
+          name: persisted.profile.displayName,
+          email: persisted.profile.email,
+        },
+      }));
+      setProfileSaveStates((current) => ({ ...current, [account.uid]: 'saved' }));
       setError(null);
     } catch (reason) {
       console.warn('[AdminUserAccessTab] profile update failed:', reason);
-      setError('Unable to save this user profile right now.');
+      setProfileSaveStates((current) => ({ ...current, [account.uid]: 'failed' }));
+      setError(reason instanceof Error ? `Save failed: ${reason.message}` : 'Save failed: unable to save this user profile right now.');
     } finally {
       setSavingUid(null);
     }
@@ -267,6 +286,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
                 {filteredAccounts.map((account) => {
                   const isProtected = account.roleSource === 'reserved-admin';
                   const isSaving = savingUid === account.uid;
+                  const profileSaveState = profileSaveStates[account.uid] ?? 'idle';
                   const draft = drafts[account.uid] ?? { name: account.name || '', email: account.email || '' };
                   const hasProfileChanges =
                     draft.name.trim() !== (account.name || '').trim()
@@ -334,7 +354,13 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
                             onClick={() => void handleProfileSave(account)}
                             className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
-                            {isSaving ? 'Saving...' : 'Save'}
+                            {profileSaveState === 'saving'
+                              ? 'Saving...'
+                              : profileSaveState === 'saved'
+                                ? 'Saved'
+                                : profileSaveState === 'failed'
+                                  ? 'Save failed'
+                                  : 'Save'}
                           </button>
                           <button
                             type="button"
