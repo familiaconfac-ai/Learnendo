@@ -42,6 +42,7 @@ import {
   runTransaction,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
+import { getLastPedagogicalActivity } from './dashboardMetrics';
 
 // ─────────────────────────────────────────────────────────────
 // Domain types
@@ -838,7 +839,7 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           currentLesson:   resolvedLesson,
           currentDay:      dashboardLastCompletedDay,
           lastLessonId:    typeof flatProgress.lastLesson === 'string' ? flatProgress.lastLesson : undefined,
-          lastActivity:    userData.lastActive ?? null,
+          lastActivity:    getLastPedagogicalActivity(flatProgress),
           tests:           flatProgress.tests ?? undefined,
         } as UserProgressSummary;
       })

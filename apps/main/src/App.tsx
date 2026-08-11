@@ -812,9 +812,6 @@ const App: React.FC = () => {
               displayName,
               email: authenticatedUser.email ?? null,
               courseId: currentCourseId ?? DEFAULT_COURSE_ID,
-              // Stamp lastActivity on every app open so the teacher dashboard
-              // shows "Today" even for students who logged in but didn't complete a day.
-              lastActivity: serverTimestamp(),
             },
             { merge: true },
           ).catch(e => console.warn('[App] progress profile write failed:', e));

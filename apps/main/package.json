@@ -22,6 +22,7 @@
     "test:student-deletion": "node --experimental-strip-types server/studentDeletionSchema.test.ts",
     "test:admin-persistence": "node --experimental-strip-types server/studentProfileVerification.test.ts",
     "test:class-report": "esbuild src/services/classReportModel.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/class-report-test.mjs && node node_modules/.cache/class-report-test.mjs && node --experimental-strip-types src/engine/dashboardMetrics.test.ts",
+    "test:class-management": "esbuild src/services/classMembership.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/class-membership-test.mjs && node node_modules/.cache/class-membership-test.mjs",
     "test:class-report-pdf": "esbuild src/services/classReportService.test.ts --bundle --platform=node --format=cjs --outfile=node_modules/.cache/class-report-pdf-test.cjs && node node_modules/.cache/class-report-pdf-test.cjs",
     "test:day-sequence-rules": "firebase emulators:exec --project learnendo-6f4d3 --only auth,firestore \"node scripts/firestore-day-sequences.integration.mjs\"",
     "test:editorial-rules-local": "firebase emulators:exec --project demo-learnendo-validation --only auth,firestore \"node scripts/firestore-editorial.integration.mjs\"",

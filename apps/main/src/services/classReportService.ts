@@ -83,7 +83,7 @@ function drawSummaryPage(doc: jsPDF, report: ClassPerformanceReport) {
   y += 8;
   setText(doc, 8.5, '#334155');
   doc.text(`Without recent activity: ${report.summary.withoutRecentActivity}`, MARGIN, y);
-  doc.text(`Attempts recorded: ${report.summary.attempts}`, MARGIN + 70, y);
+  doc.text(`Answer attempts recorded: ${report.summary.attempts}`, MARGIN + 70, y);
   doc.text(`Correct answers: ${report.summary.correctAnswers}`, MARGIN + 140, y);
   doc.text(`Errors recorded: ${report.summary.errors}`, MARGIN + 205, y);
   y += 8;
@@ -111,7 +111,7 @@ function drawSummaryPage(doc: jsPDF, report: ClassPerformanceReport) {
   const notes = [
     report.rankingCriterion,
     'Completed activities are unique when the saved completion map is available, preventing repeated completion from inflating rank.',
-    'Attempts and errors are aggregate counters. Attempt-by-attempt order and corrected-after-error status are not reliably stored today.',
+    'Answer attempts and errors are aggregate counters. Attempt-by-attempt order and corrected-after-error status are not reliably stored today.',
     'This shared report intentionally excludes email addresses, account IDs, login details, passwords, and administrative fields.',
   ];
   notes.forEach((note) => {
@@ -127,11 +127,11 @@ const columns = [
   { label: 'Points', width: 19 },
   { label: 'Progress', width: 20 },
   { label: 'Current position', width: 48 },
-  { label: 'Completed', width: 19 },
-  { label: 'Attempts', width: 18 },
+  { label: 'Activities', width: 19 },
+  { label: 'Answer attempts', width: 18 },
   { label: 'Correct', width: 17 },
   { label: 'Errors', width: 15 },
-  { label: 'Accuracy', width: 18 },
+  { label: 'Average accuracy', width: 18 },
   { label: 'Last activity', width: 43 },
 ] as const;
 
@@ -152,16 +152,18 @@ function studentCells(student: ClassReportStudent) {
 }
 
 function drawTableHeader(doc: jsPDF, y: number) {
+  const headerHeight = 12;
   let x = MARGIN;
   columns.forEach((column) => {
     doc.setFillColor('#1e40af');
     doc.setDrawColor('#ffffff');
-    doc.rect(x, y, column.width, 9, 'FD');
-    setText(doc, 6.7, '#ffffff', 'bold');
-    doc.text(column.label, x + 2, y + 5.8);
+    doc.rect(x, y, column.width, headerHeight, 'FD');
+    setText(doc, 6.2, '#ffffff', 'bold');
+    const label = doc.splitTextToSize(column.label, column.width - 3).slice(0, 2);
+    doc.text(label, x + 1.5, y + 4.5);
     x += column.width;
   });
-  return y + 9;
+  return y + headerHeight;
 }
 
 function drawStudentRow(doc: jsPDF, student: ClassReportStudent, y: number, alternate: boolean) {

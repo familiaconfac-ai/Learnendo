@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDashboardAnswerMetrics, getUniqueCompletedActivityCount } from './dashboardMetrics.ts';
+import { deriveDashboardAnswerMetrics, getLastPedagogicalActivity, getUniqueCompletedActivityCount } from './dashboardMetrics.ts';
 
 assert.equal(getUniqueCompletedActivityCount({
   daysCompleted: 99,
@@ -21,5 +21,20 @@ assert.deepEqual(deriveDashboardAnswerMetrics({ totalAttempts: 10, totalErrors: 
   totalErrors: 2,
   avgAccuracy: 81,
 });
+
+assert.equal(getLastPedagogicalActivity({
+  lastActivity: '2026-08-11T12:00:00Z',
+  lastUpdated: '2026-08-11T12:00:00Z',
+}), null, 'login/admin timestamps must not count as learning activity');
+
+assert.equal(getLastPedagogicalActivity({
+  lastActivity: '2026-08-11T12:00:00Z',
+  lastActive: '2026-08-08T10:00:00Z',
+  lessons: {
+    old: { completed: true, completedAt: '2026-08-07T10:00:00Z' },
+    ignored: { completed: false, completedAt: '2026-08-10T10:00:00Z' },
+  },
+  courses: { english: { lastActivityAt: '2026-08-09T10:00:00Z' } },
+}), '2026-08-09T10:00:00Z', 'latest pedagogical marker must win');
 
 console.log('dashboard metrics tests passed');

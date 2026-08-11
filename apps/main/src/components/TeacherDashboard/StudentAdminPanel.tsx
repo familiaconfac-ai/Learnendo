@@ -12,8 +12,8 @@ import {
   updateAdminStudent,
   type StudentDeletionResult,
 } from '../../services/adminStudents';
-import { getLiveClassGroupFromServer, updateLiveClassGroup } from '../../services/liveClassesService';
 import { buildClassPerformanceReport } from '../../services/classReportModel';
+import { getClassMemberRows } from '../../services/classMembership';
 import { ClassReportModal } from './ClassReportModal';
 
 const fieldClass = 'w-full rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100';
@@ -290,72 +290,20 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
 export const ClassManagementModal: React.FC<{ groups: LiveClassGroup[]; students: TeacherStudentRow[]; onClose: () => void }> = ({ groups, students, onClose }) => {
   const [selectedId, setSelectedId] = useState(groups[0]?.id ?? '');
   const selected = groups.find((group) => group.id === selectedId) ?? null;
-  const [memberIds, setMemberIds] = useState<string[]>(selected?.assignedStudentIds ?? []);
-  const [busy, setBusy] = useState(false);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle');
-  const [error, setError] = useState<string | null>(null);
   const [showReport, setShowReport] = useState(false);
 
   useEffect(() => {
-    setMemberIds(selected?.assignedStudentIds ?? []);
-    setSaveState('idle');
-    setError(null);
-  }, [selectedId, selected]);
+    if (!selected && groups[0]) setSelectedId(groups[0].id);
+  }, [groups, selected]);
 
-  const reportRows = useMemo(
-    () => students.filter((student) => memberIds.includes(student.uid)),
-    [memberIds, students],
+  const memberRows = useMemo(
+    () => getClassMemberRows(selected, students),
+    [selected, students],
   );
   const classReport = useMemo(
-    () => selected ? buildClassPerformanceReport(selected.name, reportRows) : null,
-    [reportRows, selected],
+    () => selected ? buildClassPerformanceReport(selected.name, memberRows) : null,
+    [memberRows, selected],
   );
-
-  const save = async () => {
-    if (!selected) return;
-    setBusy(true);
-    setSaveState('saving');
-    setError(null);
-    const assigned = students.filter((student) => memberIds.includes(student.uid));
-    const input = {
-      name: selected.name,
-      description: selected?.description ?? '',
-      whatsappLink: selected?.whatsappLink ?? '',
-      assignedStudentIds: assigned.map((student) => student.uid),
-      assignedStudentNames: assigned.map((student) => student.displayName || student.email || student.uid),
-    };
-    try {
-      const targetId = selected.id;
-      await updateLiveClassGroup(selected.id, input);
-      await Promise.all(groups
-        .filter((group) => group.id !== targetId && group.assignedStudentIds.some((uid) => memberIds.includes(uid)))
-        .map((group) => {
-          const kept = group.assignedStudentIds
-            .map((uid, index) => ({ uid, name: group.assignedStudentNames[index] ?? uid }))
-            .filter((member) => !memberIds.includes(member.uid));
-          return updateLiveClassGroup(group.id, {
-            name: group.name,
-            description: group.description ?? '',
-            whatsappLink: group.whatsappLink ?? '',
-            assignedStudentIds: kept.map((member) => member.uid),
-            assignedStudentNames: kept.map((member) => member.name),
-          });
-        }));
-      const persisted = await getLiveClassGroupFromServer(targetId);
-      const expectedIds = [...input.assignedStudentIds].sort();
-      const persistedIds = [...persisted.assignedStudentIds].sort();
-      if (expectedIds.length !== persistedIds.length || expectedIds.some((uid, index) => uid !== persistedIds[index])) {
-        throw new Error('Firestore returned a different class membership after saving.');
-      }
-      setMemberIds(persisted.assignedStudentIds);
-      setSaveState('saved');
-    } catch (reason) {
-      setSaveState('failed');
-      setError(reason instanceof Error ? `Save failed: ${reason.message}` : 'Save failed: unable to save the class.');
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <ModalShell title="Manage classes" onClose={onClose}>
@@ -368,26 +316,23 @@ export const ClassManagementModal: React.FC<{ groups: LiveClassGroup[]; students
         </div>
         {selected && <div className="rounded-xl bg-slate-50 px-4 py-3">
           <h3 className="font-black text-slate-800">{selected.name}</h3>
-          <p className="text-sm text-slate-500">{memberIds.length} student{memberIds.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-slate-500">{memberRows.length} student{memberRows.length !== 1 ? 's' : ''}</p>
         </div>}
         {selected && <div>
           <p className="mb-2 text-sm font-semibold text-slate-700">Students</p>
           <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
-            {students.map((student) => (
-              <label key={student.uid} className="flex items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50">
-                <input type="checkbox" checked={memberIds.includes(student.uid)} disabled={busy} onChange={(event) => { setSaveState('idle'); setError(null); setMemberIds((current) => event.target.checked ? [...current, student.uid] : current.filter((uid) => uid !== student.uid)); }} />
+            {memberRows.length === 0 ? (
+              <p className="px-3 py-5 text-center text-sm text-slate-500">No students belong to this class.</p>
+            ) : memberRows.map((student) => (
+              <div key={student.uid} className="rounded-lg px-3 py-2">
                 <span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-800">{student.displayName || student.email}</span><span className="block truncate text-xs text-slate-500">{student.email}</span></span>
-              </label>
+              </div>
             ))}
           </div>
         </div>}
-        {error && <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</p>}
         <div className="flex flex-col-reverse gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-between">
-          <button type="button" onClick={() => setShowReport(true)} disabled={!classReport || busy} className="rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">Class report / PDF</button>
-          <div className="flex justify-end gap-2">
+          <button type="button" onClick={() => setShowReport(true)} disabled={!classReport} className="rounded-xl border border-emerald-200 bg-white px-4 py-2 text-sm font-bold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50">Class report / PDF</button>
           <button onClick={onClose} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-bold">Close</button>
-          <button onClick={() => void save()} disabled={busy || !selected} className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-bold text-white disabled:opacity-50">{saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved' : saveState === 'failed' ? 'Save failed' : 'Save class'}</button>
-          </div>
         </div>
       </div>
       {showReport && classReport && <ClassReportModal report={classReport} onClose={() => setShowReport(false)} />}

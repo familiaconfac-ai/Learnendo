@@ -4,6 +4,7 @@ import { computeScore } from '../engine/rankingService';
 const MAX_WORKBOOK = 8;
 const MAX_LESSON = 12;
 const MAX_DAY = 7;
+const REPORT_TIME_ZONE = 'America/Sao_Paulo';
 
 export interface ClassReportStudent {
   name: string;
@@ -58,9 +59,20 @@ export function getCurriculumProgressPercent(student: Pick<TeacherStudentRow, 'c
   return Math.round((current / (MAX_WORKBOOK * MAX_LESSON * MAX_DAY)) * 100);
 }
 
+function calendarDayNumber(date: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: REPORT_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((item) => item.type === type)?.value ?? 0);
+  return Math.floor(Date.UTC(part('year'), part('month') - 1, part('day')) / 86_400_000);
+}
+
 function formatActivity(date: Date | null, generatedAt: Date) {
   if (!date) return { label: 'No activity recorded', days: null };
-  const days = Math.max(0, Math.floor((generatedAt.getTime() - date.getTime()) / 86_400_000));
+  const days = Math.max(0, calendarDayNumber(generatedAt) - calendarDayNumber(date));
   if (days === 0) return { label: 'Today', days };
   if (days === 1) return { label: 'Yesterday', days };
   return { label: `${days} days ago`, days };

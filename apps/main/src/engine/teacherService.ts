@@ -14,7 +14,7 @@ import { rankStudents, RankedStudent, computeScore } from './rankingService';
 import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
-import { deriveDashboardAnswerMetrics, getUniqueCompletedActivityCount } from './dashboardMetrics';
+import { deriveDashboardAnswerMetrics, getLastPedagogicalActivity, getUniqueCompletedActivityCount } from './dashboardMetrics';
 
 // ─────────────────────────────────────────────────────────────
 // Re-exports so callers only need one import
@@ -344,13 +344,7 @@ export function subscribeToTeacherData(
         currentLesson: progressData.currentLesson ?? 1,
         currentDay: progressData.currentDay ?? 1,
         lastLessonId: progressData.lastLesson ?? undefined,
-        lastActivity:
-          progressData.lastActivity ??
-          progressData.lastActive ??
-          userData.lastActive ??
-          userData.lastLoginAt ??
-          userData.createdAt ??
-          undefined,
+        lastActivity: getLastPedagogicalActivity(progressData) ?? undefined,
         courseId: progressData.courseId ?? userData.courseId ?? undefined,
         languageCode:
           progressData.language ??

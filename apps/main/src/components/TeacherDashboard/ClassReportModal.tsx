@@ -85,7 +85,7 @@ export const ClassReportModal: React.FC<ClassReportModalProps> = ({ report, onCl
             <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="w-full min-w-[1050px] text-left text-xs">
                 <thead className="bg-blue-800 text-white"><tr>
-                  {['Rank', 'Student', 'Points', 'Progress', 'Current position', 'Completed', 'Attempts', 'Correct', 'Errors', 'Accuracy', 'Last activity'].map((label) => <th key={label} className="px-3 py-3 font-bold">{label}</th>)}
+                  {['Rank', 'Student', 'Points', 'Progress', 'Current position', 'Activities', 'Answer attempts', 'Correct', 'Errors', 'Average accuracy', 'Last activity'].map((label) => <th key={label} className="px-3 py-3 font-bold">{label}</th>)}
                 </tr></thead>
                 <tbody className="divide-y divide-slate-100">
                   {report.students.map((student, index) => (
@@ -120,7 +120,7 @@ export const ClassReportModal: React.FC<ClassReportModalProps> = ({ report, onCl
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
               <h3 className="font-black text-slate-900">Data coverage</h3>
               <p className="mt-2">{report.rankingCriterion}</p>
-              <p className="mt-2">Attempts and errors are aggregate counters. Attempt-by-attempt order and corrected-after-error status are not reliably stored today.</p>
+              <p className="mt-2">Activities are unique completed course days. Answer attempts and errors are aggregate answer counters. Attempt-by-attempt order and corrected-after-error status are not reliably stored today.</p>
               <p className="mt-2">This report contains pedagogical information only.</p>
             </div>
           </section>

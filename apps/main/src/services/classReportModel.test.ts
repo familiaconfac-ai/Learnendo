@@ -55,6 +55,13 @@ assert.equal(report.summary.correctAnswers, 13);
 assert.equal(report.summary.errors, 5);
 assert.equal(report.summary.activeRecently, 1);
 assert.equal(report.students[2].lastActivity, 'No activity recorded');
+
+const timezoneReport = buildClassPerformanceReport('Timezone', [
+  student('Same Brazilian day', { lastActivity: '2026-08-10T23:30:00Z' }),
+  student('Previous Brazilian day', { lastActivity: '2026-08-10T02:30:00Z' }),
+], new Date('2026-08-11T02:00:00Z'));
+assert.equal(timezoneReport.students.find((item) => item.name === 'Same Brazilian day')?.lastActivity, 'Today');
+assert.equal(timezoneReport.students.find((item) => item.name === 'Previous Brazilian day')?.lastActivity, 'Yesterday');
 assert.equal(report.students[2].attempts, 0);
 
 const tieReport = buildClassPerformanceReport('Tie class', [
