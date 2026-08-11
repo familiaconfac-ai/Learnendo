@@ -4,11 +4,11 @@ import {
   deleteUserAccountRecord,
   subscribeUserAccounts,
   updateUserAccountRole,
-  updateUserAccountProfileDetails,
   updateUserAssignedTeacher,
   UserAccountProfile,
   UserRole,
 } from '../../services/userRoles';
+import { updateAdminStudent } from '../../services/adminStudents';
 
 interface AdminUserAccessTabProps {
   user: User;
@@ -166,14 +166,15 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
 
     setSavingUid(account.uid);
     try {
-      await updateUserAccountProfileDetails(
-        account.uid,
-        {
-          name: trimmedName,
-          email: trimmedEmail || null,
-        },
-        user.uid,
-      );
+      if (!trimmedEmail) {
+        setError('Email cannot be empty for an Authentication account.');
+        return;
+      }
+      await updateAdminStudent(user, {
+        uid: account.uid,
+        name: trimmedName,
+        email: trimmedEmail,
+      });
       setError(null);
     } catch (reason) {
       console.warn('[AdminUserAccessTab] profile update failed:', reason);

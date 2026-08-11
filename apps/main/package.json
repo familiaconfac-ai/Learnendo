@@ -31,6 +31,7 @@
     "@livekit/components-react": "^2.9.20",
     "@livekit/components-styles": "^1.2.0",
     "firebase": "^12.9.0",
+    "firebase-admin": "^14.2.0",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
     "livekit-client": "^2.18.1",

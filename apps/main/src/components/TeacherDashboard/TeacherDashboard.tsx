@@ -24,6 +24,9 @@ import { AlertType } from '../../engine/alertService';
 import { generateStudentReport } from '../../services/reportService';
 import { generatePlacementReport } from '../../services/placementReportService';
 import { AdminUserAccessTab } from './AdminUserAccessTab';
+import type { LiveClassGroup } from '../../types';
+import { subscribeLiveClassGroups } from '../../services/liveClassesService';
+import { ClassManagementModal, StudentAdminPanel } from './StudentAdminPanel';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -94,12 +97,22 @@ const SortHeader: React.FC<{
 // Students Tab
 // ─────────────────────────────────────────────────────────────
 
-const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
+const StudentsTab: React.FC<{
+  rows: TeacherStudentRow[];
+  allRows: TeacherStudentRow[];
+  user: User;
+  canManageUsers: boolean;
+  groups: LiveClassGroup[];
+  selectedGroupId: string;
+  onSelectedGroupIdChange: (value: string) => void;
+}> = ({ rows, allRows, user, canManageUsers, groups, selectedGroupId, onSelectedGroupIdChange }) => {
   const [search, setSearch]         = useState('');
   const [sortCol, setSortCol]       = useState<SortColumn>('score');
   const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
   const [generating, setGenerating]           = useState<string | null>(null);
   const [generatingPlacement, setGeneratingPlacement] = useState<string | null>(null);
+  const [managedStudent, setManagedStudent] = useState<TeacherStudentRow | null | undefined>(undefined);
+  const [showClassManager, setShowClassManager] = useState(false);
 
   const handleSort = (col: SortColumn) => {
     if (col === sortCol) {
@@ -133,21 +146,63 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
     }
   };
 
+  const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null;
+  const activeRecently = rows.filter((student) => {
+    const raw = student.lastActivity as { toDate?: () => Date } | string | number | Date | null | undefined;
+    if (!raw) return false;
+    const date = typeof raw === 'object' && 'toDate' in raw && typeof raw.toDate === 'function' ? raw.toDate() : new Date(raw as string | number | Date);
+    return !Number.isNaN(date.getTime()) && Date.now() - date.getTime() < 2 * 24 * 60 * 60 * 1000;
+  }).length;
+  const averageAccuracy = rows.length ? Math.round(rows.reduce((sum, student) => sum + student.avgAccuracy, 0) / rows.length) : 0;
+  const mostAdvanced = rows.length ? [...rows].sort((a, b) => b.score - a.score)[0] : null;
+  const needsAttention = rows.length ? [...rows].sort((a, b) => b.alerts.length - a.alerts.length || a.score - b.score)[0] : null;
+
   return (
     <div>
-      {/* Search bar */}
-      <div className="flex items-center gap-3 mb-4">
+      {/* Search, class filter and administrative actions */}
+      <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center">
         <input
           type="search"
           placeholder="Search students…"
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-sm px-4 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
+          className="w-full lg:max-w-sm px-4 py-2 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-400 text-sm"
         />
+        {canManageUsers && (
+          <select
+            value={selectedGroupId}
+            onChange={(event) => onSelectedGroupIdChange(event.target.value)}
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 lg:max-w-xs"
+            aria-label="Filter by class"
+          >
+            <option value="all">All students</option>
+            {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+            <option value="ungrouped">No class</option>
+          </select>
+        )}
         <span className="text-sm text-slate-500 whitespace-nowrap">
           {visible.length} of {rows.length} student{rows.length !== 1 ? 's' : ''}
         </span>
+        {canManageUsers && (
+          <div className="flex gap-2 lg:ml-auto">
+            <button type="button" onClick={() => setShowClassManager(true)} className="rounded-xl border border-blue-200 bg-white px-4 py-2 text-sm font-bold text-blue-700 hover:bg-blue-50">Classes</button>
+            <button type="button" onClick={() => setManagedStudent(null)} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white hover:bg-blue-700">+ New student</button>
+          </div>
+        )}
       </div>
+
+      {canManageUsers && selectedGroupId !== 'all' && (
+        <div className="mb-4 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
+          <div className="mb-3"><h2 className="font-black text-slate-800">Class: {selectedGroup?.name ?? 'No class'}</h2><p className="text-sm text-slate-500">{rows.length} student{rows.length !== 1 ? 's' : ''}</p></div>
+          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+            <div><span className="block text-xs text-slate-500">Recently active</span><b>{activeRecently}</b></div>
+            <div><span className="block text-xs text-slate-500">No recent activity</span><b>{rows.length - activeRecently}</b></div>
+            <div><span className="block text-xs text-slate-500">Average accuracy</span><b>{averageAccuracy}%</b></div>
+            <div><span className="block text-xs text-slate-500">Most advanced</span><b className="block truncate">{mostAdvanced?.displayName ?? '—'}</b></div>
+            <div><span className="block text-xs text-slate-500">Needs attention</span><b className="block truncate">{needsAttention?.alerts.length ? needsAttention.displayName : '—'}</b></div>
+          </div>
+        </div>
+      )}
 
       {visible.length === 0 ? (
         <div className="bg-white rounded-2xl p-10 text-center text-slate-500">
@@ -167,6 +222,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                   <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">PT</th>
                   <th className="px-3 py-3 text-center text-sm font-semibold text-white">PDF</th>
+                  {canManageUsers && <th className="px-3 py-3 text-center text-sm font-semibold text-white"><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -179,7 +235,7 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                       <div className="flex items-center gap-2">
                         <span className="text-base">{rankMedal(student.rank)}</span>
                         <div className="min-w-0">
-                          <div className="max-w-[150px] truncate">{student.displayName || '—'}</div>
+                          <button type="button" onClick={() => canManageUsers && setManagedStudent(student)} className={`max-w-[150px] truncate text-left ${canManageUsers ? 'hover:text-blue-700 hover:underline' : ''}`}>{student.displayName || '—'}</button>
                           <div className="text-[11px] font-medium text-slate-500">{student.selectedCourseLabel}</div>
                         </div>
                       </div>
@@ -241,6 +297,11 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
                         {generating === student.uid ? '…' : '📄 PDF'}
                       </button>
                     </td>
+                    {canManageUsers && (
+                      <td className="px-3 py-3 text-center align-top">
+                        <button type="button" onClick={() => setManagedStudent(student)} title="Manage student" aria-label={`Manage ${student.displayName || student.email || 'student'}`} className="rounded-lg px-3 py-1.5 text-xl font-bold text-slate-500 hover:bg-blue-100 hover:text-blue-700">⋮</button>
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -248,6 +309,8 @@ const StudentsTab: React.FC<{ rows: TeacherStudentRow[] }> = ({ rows }) => {
           </div>
         </div>
       )}
+      {managedStudent !== undefined && <StudentAdminPanel admin={user} student={managedStudent} groups={groups} onClose={() => setManagedStudent(undefined)} />}
+      {showClassManager && <ClassManagementModal admin={user} groups={groups} students={allRows} onClose={() => setShowClassManager(false)} />}
     </div>
   );
 };
@@ -404,6 +467,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [groups, setGroups] = useState<LiveClassGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('all');
 
   useEffect(() => {
     setLoading(true);
@@ -419,6 +484,31 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
 
     return unsub;
   }, [canManageUsers, refreshKey, teacherUid]);
+
+  useEffect(() => {
+    if (!canManageUsers) {
+      setGroups([]);
+      setSelectedGroupId('all');
+      return () => {};
+    }
+    return subscribeLiveClassGroups(
+      { uid: user.uid, role: 'admin' },
+      setGroups,
+      (reason) => console.warn('[TeacherDashboard] class subscription failed:', reason),
+    );
+  }, [canManageUsers, user.uid]);
+
+  const dashboardRows = useMemo(() => {
+    if (selectedGroupId === 'all') return rows;
+    if (selectedGroupId === 'ungrouped') {
+      const assigned = new Set(groups.flatMap((group) => group.assignedStudentIds));
+      return rows.filter((student) => !assigned.has(student.uid));
+    }
+    const group = groups.find((item) => item.id === selectedGroupId);
+    if (!group) return rows;
+    const members = new Set(group.assignedStudentIds);
+    return rows.filter((student) => members.has(student.uid));
+  }, [groups, rows, selectedGroupId]);
 
   // ── Loading state ──────────────────────────────────────────
   if (loading) {
@@ -450,10 +540,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
   }
 
   // ── Summary stats ─────────────────────────────────────────
-  const totalStudents  = rows.length;
-  const alertedCount   = rows.filter(r => r.alerts.length > 0).length;
+  const totalStudents  = dashboardRows.length;
+  const alertedCount   = dashboardRows.filter(r => r.alerts.length > 0).length;
   const avgAccuracyAll = totalStudents > 0
-    ? Math.round(rows.reduce((s, r) => s + r.avgAccuracy, 0) / totalStudents)
+    ? Math.round(dashboardRows.reduce((s, r) => s + r.avgAccuracy, 0) / totalStudents)
     : 0;
 
   return (
@@ -513,9 +603,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
 
         {/* ── Tab content ─────────────────────────────── */}
         {tab === 'students' ? (
-          <StudentsTab rows={rows} />
+          <StudentsTab rows={dashboardRows} allRows={rows} user={user} canManageUsers={canManageUsers} groups={groups} selectedGroupId={selectedGroupId} onSelectedGroupIdChange={setSelectedGroupId} />
         ) : tab === 'ranking' ? (
-          <RankingTab rows={rows} />
+          <RankingTab rows={dashboardRows} />
         ) : canManageUsers ? (
           <AdminUserAccessTab user={user} />
         ) : null}
