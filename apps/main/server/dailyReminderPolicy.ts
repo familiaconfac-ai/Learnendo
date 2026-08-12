@@ -1,4 +1,4 @@
-import { saoPauloDayKey } from './notificationPolicy';
+import { saoPauloDayKey } from './notificationPolicy.js';
 
 export const DEVICE_STALE_AFTER_DAYS = 90;
 

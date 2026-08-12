@@ -1,4 +1,4 @@
-import { classifyNotificationDevices } from './dailyReminderPolicy';
+import { classifyNotificationDevices } from './dailyReminderPolicy.js';
 
 export type AdminNotificationStatusKind = 'active' | 'disabled' | 'not-authorized' | 'no-device';
 

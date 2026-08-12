@@ -157,6 +157,16 @@ const notificationApi = fs.readFileSync(path.resolve('api/notifications.ts'), 'u
 assert.match(notificationApi, /const admin = await requireAdmin\(authorization\)/);
 assert.match(notificationApi, /body\.action === 'status'/);
 
+for (const serverModule of ['server/notifications.ts', 'server/adminNotificationStatus.ts', 'server/dailyReminderPolicy.ts']) {
+  const source = fs.readFileSync(path.resolve(serverModule), 'utf8');
+  const relativeImports = Array.from(source.matchAll(/from\s+['"](\.{1,2}\/[^'"]+)['"]/g), (match) => match[1]);
+  assert.ok(relativeImports.length > 0, `${serverModule} should keep its server dependency imports explicit.`);
+  assert.ok(
+    relativeImports.every((specifier) => specifier.endsWith('.js')),
+    `${serverModule} contains an extensionless relative import that will fail in the Vercel ESM runtime.`,
+  );
+}
+
 const dashboardSource = fs.readFileSync(path.resolve('src/components/TeacherDashboard/TeacherDashboard.tsx'), 'utf8');
 const studentPanelSource = fs.readFileSync(path.resolve('src/components/TeacherDashboard/StudentAdminPanel.tsx'), 'utf8');
 const appSource = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8');

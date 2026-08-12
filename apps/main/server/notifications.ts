@@ -1,11 +1,11 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import type { BatchResponse } from 'firebase-admin/messaging';
-import { adminDb, adminMessaging } from './firebaseAdmin';
-import { buildNotificationContent, type NotificationType } from './notificationTemplates';
-import { getLastPedagogicalActivity } from '../src/engine/dashboardMetrics';
-import { notificationEventDocumentId, NOTIFICATION_TIMEZONE, safeInternalNotificationUrl, saoPauloDayKey } from './notificationPolicy';
-import { classifyNotificationDevices, isDailyReminderEligible, resolveNotificationDeliveryStatus } from './dailyReminderPolicy';
-import { isInvalidFcmTokenError } from './notificationDevicePolicy';
+import { adminDb, adminMessaging } from './firebaseAdmin.js';
+import { buildNotificationContent, type NotificationType } from './notificationTemplates.js';
+import { getLastPedagogicalActivity } from '../src/engine/dashboardMetrics.js';
+import { notificationEventDocumentId, NOTIFICATION_TIMEZONE, safeInternalNotificationUrl, saoPauloDayKey } from './notificationPolicy.js';
+import { classifyNotificationDevices, isDailyReminderEligible, resolveNotificationDeliveryStatus } from './dailyReminderPolicy.js';
+import { isInvalidFcmTokenError } from './notificationDevicePolicy.js';
 
 type DeliveryStatus = 'sending' | 'sent' | 'partial' | 'failed' | 'disabled' | 'no-devices' | 'duplicate';
 
