@@ -30,6 +30,7 @@ import { ClassManagementModal, StudentAdminPanel } from './StudentAdminPanel';
 import type { StudentDeletionResult } from '../../services/adminStudents';
 import { buildClassPerformanceReport } from '../../services/classReportModel';
 import { ClassReportModal } from './ClassReportModal';
+import { getClassComposition } from '../../services/classMembership';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -152,9 +153,15 @@ const StudentsTab: React.FC<{
   };
 
   const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null;
+  const classComposition = useMemo(
+    () => getClassComposition(selectedGroup, allRows),
+    [allRows, selectedGroup],
+  );
   const classReport = useMemo(
-    () => selectedGroup ? buildClassPerformanceReport(selectedGroup.name, rows) : null,
-    [rows, selectedGroup],
+    () => selectedGroup
+      ? buildClassPerformanceReport(selectedGroup.name, classComposition.students, new Date(), classComposition.teacher?.displayName)
+      : null,
+    [classComposition, selectedGroup],
   );
   const activeRecently = rows.filter((student) => {
     const raw = student.lastActivity as { toDate?: () => Date } | string | number | Date | null | undefined;
@@ -540,8 +547,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
     }
     const group = groups.find((item) => item.id === selectedGroupId);
     if (!group) return rows;
-    const members = new Set(group.assignedStudentIds);
-    return rows.filter((student) => members.has(student.uid));
+    return getClassComposition(group, rows).students;
   }, [groups, rows, selectedGroupId]);
 
   // ── Loading state ──────────────────────────────────────────

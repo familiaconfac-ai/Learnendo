@@ -51,6 +51,7 @@ export const ClassReportModal: React.FC<ClassReportModalProps> = ({ report, onCl
             <h1 className="mt-1 text-3xl font-black">Class Performance Report</h1>
             <div className="mt-4 flex flex-wrap gap-x-8 gap-y-2 text-sm text-blue-50">
               <span><b>Class:</b> {report.className}</span>
+              {report.teacherName && <span><b>Teacher:</b> {report.teacherName}</span>}
               <span><b>Students:</b> {report.summary.students}</span>
               <span><b>Period:</b> up to {report.generatedAt.toLocaleDateString('en-GB')}</span>
             </div>

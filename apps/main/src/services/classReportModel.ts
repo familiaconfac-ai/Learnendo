@@ -24,6 +24,7 @@ export interface ClassReportStudent {
 
 export interface ClassPerformanceReport {
   className: string;
+  teacherName?: string;
   generatedAt: Date;
   rankingCriterion: string;
   summary: {
@@ -82,11 +83,13 @@ export function buildClassPerformanceReport(
   className: string,
   rows: TeacherStudentRow[],
   generatedAt = new Date(),
+  teacherName?: string,
 ): ClassPerformanceReport {
   const ordered = rows
-    // Membership alone is not a student role. Filter before ranking and every
-    // aggregate so teachers/admins cannot affect positions, totals or averages.
-    .filter((student) => student.role === 'student')
+    // Legacy student profiles may not have a role. Exclude only accounts that
+    // are positively identified as teacher/admin; class composition owns the
+    // membership decision before the report reaches this point.
+    .filter((student) => student.role !== 'teacher' && student.role !== 'admin')
     .map((student) => ({ student, score: computeScore(student) }))
     .sort((left, right) => right.score - left.score ||
       (left.student.displayName || '').localeCompare(right.student.displayName || ''));
@@ -126,6 +129,7 @@ export function buildClassPerformanceReport(
 
   return {
     className,
+    teacherName: teacherName?.trim() || undefined,
     generatedAt,
     rankingCriterion: 'Official Learnendo score: stars x2 + diamonds x3 + accuracy /10 + unique completed activities x0.2.',
     summary: {

@@ -20,6 +20,7 @@ const students = Array.from({ length: 80 }, (_, index) => ({
 
 const report: ClassPerformanceReport = {
   className: 'Large class',
+  teacherName: 'Márcio Martins',
   generatedAt: new Date('2026-08-11T12:00:00Z'),
   rankingCriterion: 'Official formula.',
   summary: {
@@ -41,5 +42,22 @@ const document = createClassReportPdf(report);
 assert.ok(document.getNumberOfPages() >= 6, 'a large class must paginate without truncating rows');
 const bytes = Buffer.from(document.output('arraybuffer'));
 assert.ok(bytes.length > 20_000, 'the generated PDF must contain the complete report');
+
+const learnendoStudents = ['Ryan Miranda', 'Aquilles Toledo Donadon', 'Lara Donadon']
+  .map((name, index) => ({ ...students[index], name, position: index + 1 }));
+const learnendoReport: ClassPerformanceReport = {
+  ...report,
+  className: 'Learnendo Kids',
+  teacherName: 'Márcio Martins',
+  summary: { ...report.summary, students: 3 },
+  students: learnendoStudents,
+};
+const learnendoDocument = createClassReportPdf(learnendoReport);
+const renderedPages = JSON.stringify((learnendoDocument.internal as unknown as { pages: unknown }).pages);
+assert.equal(learnendoReport.students.length, 3);
+assert.ok(renderedPages.includes('Ryan Miranda'));
+assert.ok(renderedPages.includes('Aquilles Toledo Donadon'));
+assert.ok(renderedPages.includes('Lara Donadon'));
+assert.equal(renderedPages.includes('gregosetelip'), false, 'external people must not appear in the class PDF');
 
 console.log('class report PDF tests passed');

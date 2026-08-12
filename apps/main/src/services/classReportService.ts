@@ -26,7 +26,7 @@ function header(doc: jsPDF, report: ClassPerformanceReport, subtitle: string) {
   setText(doc, 9, '#ffffff');
   doc.text(report.className, PAGE_W - MARGIN, 12, { align: 'right' });
   setText(doc, 8, '#bfdbfe');
-  doc.text(subtitle, PAGE_W - MARGIN, 21, { align: 'right' });
+  doc.text(report.teacherName ? `Teacher: ${report.teacherName} - ${subtitle}` : subtitle, PAGE_W - MARGIN, 21, { align: 'right' });
 }
 
 function sectionTitle(doc: jsPDF, title: string, y: number) {

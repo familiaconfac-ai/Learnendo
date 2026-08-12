@@ -45,11 +45,12 @@ const report = buildClassPerformanceReport('Learnendo Kids', [
   student('Ana', { totalStars: 10, totalDiamonds: 2, avgAccuracy: 80, daysCompleted: 4, totalAttempts: 10, totalErrors: 2, lastActivity: '2026-08-11T09:00:00Z' }),
   student('Bia', { totalStars: 4, avgAccuracy: 70, daysCompleted: 2, totalAttempts: 8, totalErrors: 3, lastActivity: '2026-08-08T09:00:00Z' }),
   student('Caio'),
+  student('Legacy student', { role: undefined }),
   student('Teacher', { role: 'teacher', totalStars: 999, totalAttempts: 100, totalErrors: 0 }),
   student('Admin', { role: 'admin', totalStars: 999, totalAttempts: 100, totalErrors: 0 }),
 ], generatedAt);
 
-assert.equal(report.summary.students, 3);
+assert.equal(report.summary.students, 4);
 assert.equal(report.students[0].name, 'Ana');
 assert.equal(report.students[0].score, 34.8, 'the official Learnendo score formula must be reused exactly');
 assert.equal(report.summary.completedActivities, 6);
@@ -59,6 +60,7 @@ assert.equal(report.summary.errors, 5);
 assert.equal(report.summary.activeRecently, 1);
 assert.equal(report.students[2].lastActivity, 'No activity recorded');
 assert.equal(report.students.some((entry) => entry.name === 'Teacher' || entry.name === 'Admin'), false);
+assert.equal(report.students.some((entry) => entry.name === 'Legacy student'), true);
 
 const timezoneReport = buildClassPerformanceReport('Timezone', [
   student('Same Brazilian day', { lastActivity: '2026-08-10T23:30:00Z' }),

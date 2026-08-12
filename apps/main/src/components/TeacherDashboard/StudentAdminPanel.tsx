@@ -13,7 +13,7 @@ import {
   type StudentDeletionResult,
 } from '../../services/adminStudents';
 import { buildClassPerformanceReport } from '../../services/classReportModel';
-import { getClassMemberRows } from '../../services/classMembership';
+import { getClassComposition } from '../../services/classMembership';
 import { buildStudentUpdateChanges } from '../../services/studentUpdateChanges';
 import { updateStudentDisplayName } from '../../services/userRoles';
 import { ClassReportModal } from './ClassReportModal';
@@ -354,13 +354,13 @@ export const ClassManagementModal: React.FC<{ groups: LiveClassGroup[]; students
     if (!selected && groups[0]) setSelectedId(groups[0].id);
   }, [groups, selected]);
 
-  const memberRows = useMemo(
-    () => getClassMemberRows(selected, students),
+  const composition = useMemo(
+    () => getClassComposition(selected, students),
     [selected, students],
   );
   const classReport = useMemo(
-    () => selected ? buildClassPerformanceReport(selected.name, memberRows) : null,
-    [memberRows, selected],
+    () => selected ? buildClassPerformanceReport(selected.name, composition.students, new Date(), composition.teacher?.displayName) : null,
+    [composition, selected],
   );
 
   return (
@@ -374,14 +374,21 @@ export const ClassManagementModal: React.FC<{ groups: LiveClassGroup[]; students
         </div>
         {selected && <div className="rounded-xl bg-slate-50 px-4 py-3">
           <h3 className="font-black text-slate-800">{selected.name}</h3>
-          <p className="text-sm text-slate-500">{memberRows.length} student{memberRows.length !== 1 ? 's' : ''}</p>
+          <p className="text-sm text-slate-500">{composition.students.length} student{composition.students.length !== 1 ? 's' : ''}</p>
+        </div>}
+        {selected && composition.teacher && <div>
+          <p className="mb-2 text-sm font-semibold text-slate-700">Teacher</p>
+          <div className="rounded-xl border border-blue-100 bg-blue-50 px-5 py-3">
+            <span className="block truncate text-sm font-bold text-slate-800">{composition.teacher.displayName || composition.teacher.email}</span>
+            <span className="block truncate text-xs text-slate-500">{composition.teacher.email}</span>
+          </div>
         </div>}
         {selected && <div>
-          <p className="mb-2 text-sm font-semibold text-slate-700">Students</p>
+          <p className="mb-2 text-sm font-semibold text-slate-700">Students ({composition.students.length})</p>
           <div className="max-h-72 space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
-            {memberRows.length === 0 ? (
+            {composition.students.length === 0 ? (
               <p className="px-3 py-5 text-center text-sm text-slate-500">No students belong to this class.</p>
-            ) : memberRows.map((student) => (
+            ) : composition.students.map((student) => (
               <div key={student.uid} className="rounded-lg px-3 py-2">
                 <span className="min-w-0"><span className="block truncate text-sm font-bold text-slate-800">{student.displayName || student.email}</span><span className="block truncate text-xs text-slate-500">{student.email}</span></span>
               </div>

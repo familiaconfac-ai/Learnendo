@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { getClassMemberRows } from './classMembership.ts';
+import { getClassComposition, getClassMemberRows } from './classMembership.ts';
 import { buildClassPerformanceReport } from './classReportModel.ts';
 import type { TeacherStudentRow } from '../engine/teacherService.ts';
 
 const students = [
-  { uid: 'marcio', displayName: 'Márcio Martins', role: 'admin' as const },
-  { uid: 'ryan', displayName: 'Ryan Miranda', role: 'student' as const },
-  { uid: 'aquilles', displayName: 'Aquilles Toledo Donadon', role: 'student' as const },
+  { uid: 'KoPeImR8pfhjoJX8nmELT5f3X7l1', displayName: 'Márcio Martins', role: 'admin' as const },
+  { uid: 'JOn1CpbJWbMKmVk7o08h4G6iGEm1', displayName: 'Ryan Miranda', role: undefined },
+  { uid: 'CXdWaHfHhVWg8cu75jpmUyhxWh13', displayName: 'Aquilles Toledo Donadon', role: 'student' as const },
+  { uid: 'P2WM6XcLyEe2VyYrUf8nwBhyctq1', displayName: 'Lara Donadon', role: undefined },
   { uid: 'grego', displayName: 'gregosetelip', role: 'student' as const },
   { uid: 'conceicao', displayName: 'Conceição Martins', role: 'teacher' as const },
 ].map((student) => ({
@@ -24,17 +25,43 @@ const students = [
   alerts: [],
 })) as TeacherStudentRow[];
 
-const kids = getClassMemberRows({ assignedStudentIds: ['marcio', 'ryan', 'aquilles'] }, students);
-assert.deepEqual(kids.map((student) => student.uid), ['marcio', 'ryan', 'aquilles']);
-assert.equal(kids.some((student) => student.uid === 'grego'), false);
-assert.equal(kids.some((student) => student.uid === 'conceicao'), false);
-assert.deepEqual(
-  buildClassPerformanceReport('Learnendo Kids', kids).students.map((student) => student.name).sort(),
-  ['Aquilles Toledo Donadon', 'Ryan Miranda'].sort(),
-  'the report must filter real teacher/admin roles before ranking and metrics',
-);
+const learnendoKids = {
+  createdBy: 'KoPeImR8pfhjoJX8nmELT5f3X7l1',
+  assignedStudentIds: [
+    'KoPeImR8pfhjoJX8nmELT5f3X7l1',
+    'JOn1CpbJWbMKmVk7o08h4G6iGEm1',
+    'CXdWaHfHhVWg8cu75jpmUyhxWh13',
+    'P2WM6XcLyEe2VyYrUf8nwBhyctq1',
+  ],
+};
 
-const other = getClassMemberRows({ assignedStudentIds: ['grego'] }, students);
+const composition = getClassComposition(learnendoKids, students);
+const members = getClassMemberRows(learnendoKids, students);
+assert.equal(composition.teacher?.displayName, 'Márcio Martins');
+assert.deepEqual(composition.students.map((student) => student.displayName), [
+  'Ryan Miranda',
+  'Aquilles Toledo Donadon',
+  'Lara Donadon',
+]);
+assert.equal(composition.members.length, 4);
+assert.deepEqual(members.map((student) => student.uid), learnendoKids.assignedStudentIds);
+assert.equal(members.some((student) => student.uid === 'grego'), false);
+assert.equal(members.some((student) => student.uid === 'conceicao'), false);
+
+const report = buildClassPerformanceReport(
+  'Learnendo Kids',
+  composition.students,
+  new Date(),
+  composition.teacher?.displayName,
+);
+assert.equal(report.teacherName, 'Márcio Martins');
+assert.deepEqual(report.students.map((student) => student.name).sort(), [
+  'Aquilles Toledo Donadon',
+  'Lara Donadon',
+  'Ryan Miranda',
+].sort(), 'legacy members without a role must remain in the report');
+
+const other = getClassMemberRows({ assignedStudentIds: ['grego'], createdBy: 'teacher-not-loaded' }, students);
 assert.deepEqual(other.map((student) => student.uid), ['grego']);
 assert.deepEqual(getClassMemberRows(null, students), []);
 
