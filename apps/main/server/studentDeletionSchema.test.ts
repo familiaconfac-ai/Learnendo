@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   canDeleteOwnedBattleTemplate,
+  getStudentDeletionBlockReason,
   removeStudentFromRoster,
   removeUidFromRecord,
   USER_OWNED_SUBCOLLECTIONS,
@@ -15,6 +16,11 @@ assert.equal(ownedCollections.has('exercises'), false, 'shared exercises must ne
 assert.equal(ownedCollections.has('books'), false, 'shared books must never be treated as student-owned');
 assert.equal(canDeleteOwnedBattleTemplate({ visibility: 'private' }), true);
 assert.equal(canDeleteOwnedBattleTemplate({ visibility: 'teachers' }), false, 'teacher-visible templates must be preserved as shared content');
+assert.equal(getStudentDeletionBlockReason('admin-1', '', 'student'), 'Student UID is required.');
+assert.equal(getStudentDeletionBlockReason('admin-1', 'admin-1', 'admin'), 'You cannot delete your own administrator account.');
+assert.equal(getStudentDeletionBlockReason('admin-1', 'teacher-1', 'teacher'), 'This account is a teacher, not a student, and was not deleted.');
+assert.equal(getStudentDeletionBlockReason('admin-1', 'admin-2', 'admin'), 'This account is an admin, not a student, and was not deleted.');
+assert.equal(getStudentDeletionBlockReason('admin-1', 'orphan-without-email', undefined), null, 'UID-only orphan deletion must be allowed');
 
 const enrolled = removeStudentFromRoster({
   assignedStudentIds: ['student-a', 'student-b'],

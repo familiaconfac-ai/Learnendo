@@ -14,6 +14,22 @@ export const USER_OWNED_SUBCOLLECTIONS = [
   'vocabulary',
 ] as const;
 
+export type DeletionTargetRole = 'student' | 'teacher' | 'admin' | undefined;
+
+export function getStudentDeletionBlockReason(
+  requesterUid: string,
+  targetUid: string,
+  targetRole: DeletionTargetRole,
+): string | null {
+  if (!targetUid) return 'Student UID is required.';
+  if (targetUid === requesterUid) return 'You cannot delete your own administrator account.';
+  if (targetRole === 'admin' || targetRole === 'teacher') {
+    const article = targetRole === 'admin' ? 'an' : 'a';
+    return `This account is ${article} ${targetRole}, not a student, and was not deleted.`;
+  }
+  return null;
+}
+
 export function removeUidFromRecord(value: unknown, uid: string): { value: Record<string, unknown>; changed: boolean } {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { value: {}, changed: false };
   const source = value as Record<string, unknown>;

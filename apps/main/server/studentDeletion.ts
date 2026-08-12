@@ -152,17 +152,17 @@ export async function deleteStudentData(uid: string): Promise<StudentDeletionRes
     issues: [],
   };
 
-  // Revoke access before touching data. If deletion later becomes partial, the
-  // account cannot sign in and recreate student-owned documents meanwhile.
-  let authExists = true;
+  // Authentication is deleted first so any later Firestore failure is reported
+  // honestly as a partial deletion and the account cannot recreate its data.
   try {
-    await adminAuth.updateUser(uid, { disabled: true });
+    await adminAuth.deleteUser(uid);
+    result.auth = 'deleted';
   } catch (reason) {
     if ((reason as { code?: string }).code === 'auth/user-not-found') {
-      authExists = false;
       result.auth = 'not-found';
     } else {
-      result.issues.push({ scope: 'authentication.disable', message: errorMessage(reason) });
+      result.auth = 'failed';
+      result.issues.push({ scope: 'authentication', message: errorMessage(reason) });
       return result;
     }
   }
@@ -200,20 +200,6 @@ export async function deleteStudentData(uid: string): Promise<StudentDeletionRes
   await runCleanupStep(result, 'battleTemplates', () => cleanupBattleTemplates(uid, result));
   await runCleanupStep(result, 'liveClassGroups', () => cleanupGroups(uid, result));
   await runCleanupStep(result, 'liveClasses', () => cleanupLiveClasses(uid, result));
-
-  if (authExists) {
-    try {
-      await adminAuth.deleteUser(uid);
-      result.auth = 'deleted';
-    } catch (reason) {
-      if ((reason as { code?: string }).code === 'auth/user-not-found') {
-        result.auth = 'not-found';
-      } else {
-        result.auth = 'failed';
-        result.issues.push({ scope: 'authentication', message: errorMessage(reason) });
-      }
-    }
-  }
 
   result.completed = result.issues.length === 0;
   return result;

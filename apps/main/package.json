@@ -20,6 +20,7 @@
     "test:exercise-authoring": "node --experimental-strip-types src/models/exerciseAuthoring.test.ts && node --experimental-strip-types src/models/editorialSequenceLoading.test.ts && node scripts/exercise-authoring-ui.test.mjs",
     "test:admin-exercises-rules": "firebase emulators:exec --project learnendo-6f4d3 --only auth,firestore \"node scripts/firestore-admin-exercises.integration.mjs\"",
     "test:student-deletion": "node --experimental-strip-types server/studentDeletionSchema.test.ts",
+    "test:student-deletion-integration": "esbuild server/studentDeletion.integration.test.ts --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/student-deletion-integration.mjs && firebase emulators:exec --project demo-learnendo-deletion --only auth,firestore \"node node_modules/.cache/student-deletion-integration.mjs\"",
     "test:admin-persistence": "node --experimental-strip-types server/studentProfileVerification.test.ts",
     "test:admin-student-update": "node --experimental-strip-types src/services/studentUpdateChanges.test.ts",
     "test:class-report": "esbuild src/services/classReportModel.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/class-report-test.mjs && node node_modules/.cache/class-report-test.mjs && node --experimental-strip-types src/engine/dashboardMetrics.test.ts",

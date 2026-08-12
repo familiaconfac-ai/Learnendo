@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminAuth, adminDb, requireAdmin } from '../server/firebaseAdmin.js';
 import { deleteStudentData } from '../server/studentDeletion.js';
+import { getStudentDeletionBlockReason } from '../server/studentDeletionSchema.js';
 
 type RequestLike = IncomingMessage & { method?: string; body?: unknown };
 type ResponseLike = ServerResponse<IncomingMessage> & {
@@ -148,7 +149,6 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     if (!body.uid) return sendJson(res, 400, { error: 'Student UID is required.' });
 
     if (body.action === 'delete') {
-      if (body.uid === admin.uid) return sendJson(res, 409, { error: 'You cannot delete your own administrator account.' });
       const [profile, targetAccount] = await Promise.all([
         adminDb.doc(`users/${body.uid}`).get(),
         adminAuth.getUser(body.uid).catch((reason) => {
@@ -157,9 +157,8 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
         }),
       ]);
       const role = profile.data()?.role ?? targetAccount?.customClaims?.role;
-      if (role === 'admin' || role === 'teacher') {
-        return sendJson(res, 409, { error: `This account is a ${role}, not a student, and was not deleted.` });
-      }
+      const blocked = getStudentDeletionBlockReason(admin.uid, body.uid, role);
+      if (blocked) return sendJson(res, 409, { error: blocked });
       const deletion = await deleteStudentData(body.uid);
       return sendJson(res, 200, { ok: deletion.completed, deletion });
     }
