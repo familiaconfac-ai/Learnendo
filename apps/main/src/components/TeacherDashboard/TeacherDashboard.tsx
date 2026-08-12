@@ -31,6 +31,11 @@ import type { StudentDeletionResult } from '../../services/adminStudents';
 import { buildClassPerformanceReport } from '../../services/classReportModel';
 import { ClassReportModal } from './ClassReportModal';
 import { getClassComposition } from '../../services/classMembership';
+import {
+  adminNotificationStatusLabel,
+  getAdminNotificationStatuses,
+  type AdminNotificationStatus,
+} from '../../services/adminNotifications';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -74,6 +79,22 @@ const STATUS_STYLES: Record<TeacherStudentRow['dashboardStatus'], string> = {
 };
 
 const rowBackgroundClass = (index: number) => index % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+
+const NOTIFICATION_STATUS_STYLES: Record<AdminNotificationStatus['kind'], string> = {
+  active: 'bg-emerald-100 text-emerald-700',
+  disabled: 'bg-slate-200 text-slate-700',
+  'not-authorized': 'bg-amber-100 text-amber-800',
+  'no-device': 'bg-red-100 text-red-700',
+};
+
+const NotificationStatusBadge: React.FC<{ status?: AdminNotificationStatus; loading: boolean }> = ({ status, loading }) => {
+  if (!status) return <span className="text-xs text-slate-400">{loading ? 'Carregando…' : 'Indisponível'}</span>;
+  return (
+    <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold whitespace-nowrap ${NOTIFICATION_STATUS_STYLES[status.kind]}`}>
+      {adminNotificationStatusLabel(status)}
+    </span>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────
 // Sortable column header
@@ -119,6 +140,24 @@ const StudentsTab: React.FC<{
   const [managedStudent, setManagedStudent] = useState<TeacherStudentRow | null | undefined>(undefined);
   const [showClassManager, setShowClassManager] = useState(false);
   const [showClassReport, setShowClassReport] = useState(false);
+  const [notificationStatuses, setNotificationStatuses] = useState<Record<string, AdminNotificationStatus>>({});
+  const [notificationStatusesLoading, setNotificationStatusesLoading] = useState(canManageUsers);
+
+  useEffect(() => {
+    if (!canManageUsers) return;
+    let active = true;
+    setNotificationStatusesLoading(true);
+    getAdminNotificationStatuses(user, allRows.map((student) => student.uid))
+      .then((statuses) => {
+        if (!active) return;
+        setNotificationStatuses(Object.fromEntries(statuses.map((status) => [status.uid, status])));
+      })
+      .catch((reason) => {
+        if (active) console.warn('[TeacherDashboard] notification status query failed:', reason);
+      })
+      .finally(() => { if (active) setNotificationStatusesLoading(false); });
+    return () => { active = false; };
+  }, [allRows, canManageUsers, user]);
 
   const handleSort = (col: SortColumn) => {
     if (col === sortCol) {
@@ -171,6 +210,7 @@ const StudentsTab: React.FC<{
   }).length;
   const mostAdvanced = rows.length ? [...rows].sort((a, b) => b.score - a.score)[0] : null;
   const needsAttention = rows.length ? [...rows].sort((a, b) => b.alerts.length - a.alerts.length || a.score - b.score)[0] : null;
+  const activeNotifications = rows.filter((student) => notificationStatuses[student.uid]?.kind === 'active').length;
 
   return (
     <div>
@@ -210,12 +250,13 @@ const StudentsTab: React.FC<{
       {selectedGroupId !== 'all' && (
         <div className="mb-4 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
           <div className="mb-3"><h2 className="font-black text-slate-800">Class: {selectedGroup?.name ?? 'No class'}</h2><p className="text-sm text-slate-500">{rows.length} student{rows.length !== 1 ? 's' : ''}</p></div>
-          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+          <div className={`grid grid-cols-2 gap-3 text-sm ${canManageUsers ? 'sm:grid-cols-6' : 'sm:grid-cols-5'}`}>
             <div><span className="block text-xs text-slate-500">Recently active</span><b>{activeRecently}</b></div>
             <div><span className="block text-xs text-slate-500">No recent activity</span><b>{rows.length - activeRecently}</b></div>
             <div><span className="block text-xs text-slate-500">Average progress</span><b>{classReport?.summary.averageProgress ?? 0}%</b></div>
             <div><span className="block text-xs text-slate-500">Most advanced</span><b className="block truncate">{mostAdvanced?.displayName ?? '—'}</b></div>
             <div><span className="block text-xs text-slate-500">Needs attention</span><b className="block truncate">{needsAttention?.alerts.length ? needsAttention.displayName : '—'}</b></div>
+            {canManageUsers && <div><span className="block text-xs text-slate-500">Notificações ativas</span><b>{activeNotifications} / {rows.length}</b></div>}
           </div>
           {classReport && classReport.students.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3 text-xs font-bold text-slate-700">
@@ -241,6 +282,7 @@ const StudentsTab: React.FC<{
                 <tr>
                   <SortHeader col="name"         label="Student"      activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Status</th>
+                  {canManageUsers && <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Notificações</th>}
                   <SortHeader col="path"         label="Progress"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Work</th>
                   <SortHeader col="lastActivity" label="Active"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
@@ -270,6 +312,11 @@ const StudentsTab: React.FC<{
                         {student.dashboardStatus}
                       </span>
                     </td>
+                    {canManageUsers && (
+                      <td className="px-3 py-3 whitespace-nowrap align-top">
+                        <NotificationStatusBadge status={notificationStatuses[student.uid]} loading={notificationStatusesLoading} />
+                      </td>
+                    )}
                     <td className="px-3 py-3 text-slate-700 whitespace-nowrap font-mono text-xs align-top">
                       <div>{student.pathLabel}</div>
                       <div className="mt-1 font-sans text-[11px] font-semibold text-emerald-600">
@@ -334,7 +381,7 @@ const StudentsTab: React.FC<{
           </div>
         </div>
       )}
-      {managedStudent !== undefined && <StudentAdminPanel admin={user} student={managedStudent} groups={groups} onClose={() => setManagedStudent(undefined)} onDeleted={onStudentDeleted} />}
+      {managedStudent !== undefined && <StudentAdminPanel admin={user} student={managedStudent} groups={groups} notificationStatus={managedStudent ? notificationStatuses[managedStudent.uid] : undefined} onNotificationStatusChange={(status) => setNotificationStatuses((current) => ({ ...current, [status.uid]: status }))} onClose={() => setManagedStudent(undefined)} onDeleted={onStudentDeleted} />}
       {showClassManager && <ClassManagementModal groups={groups} students={allRows} onClose={() => setShowClassManager(false)} />}
       {showClassReport && classReport && <ClassReportModal report={classReport} onClose={() => setShowClassReport(false)} />}
     </div>

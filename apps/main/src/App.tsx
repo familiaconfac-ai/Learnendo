@@ -20,6 +20,7 @@ import { GeneralProblemReportModal } from './components/ProblemReports/GeneralPr
 import { GrammarFocusModal } from './components/GrammarFocus/GrammarFocusModal';
 import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
 import { LanguageSelector } from './components/LanguageSelector';
+import { NotificationSettings } from './components/NotificationSettings';
 import { RankScreen } from './components/RankScreen';
 import { LiveClassesPage } from './components/LiveClasses/LiveClassesPage';
 import { MyVocabularyPage } from './components/MyVocabularyPage';
@@ -37,6 +38,7 @@ import { ensureLessonStarted, completeCourseDay, getCumulativeUserStats, LessonP
 import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 import { trackLessonCompletion } from './services/progressService';
+import { listenForForegroundNotifications, markNotificationDeviceSignedOut, refreshGrantedNotificationDevice } from './services/notifications';
 import { subscribePendingExerciseReportCount } from './services/exerciseReportsService';
 import { lesson1NewWords } from './data/workbook1/lesson1';
 import { subscribeLiveSession, updateLiveSession } from './services/liveSessionService';
@@ -2034,6 +2036,11 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     closeActiveSession();
+    if (user && !user.isAnonymous) {
+      await markNotificationDeviceSignedOut(user).catch((error) => {
+        console.warn('[Notifications] Could not mark this installation as signed out:', error);
+      });
+    }
     await signOut(auth);
     setMenuOpen(false);
   };
@@ -2592,6 +2599,25 @@ const App: React.FC = () => {
     }));
   }, []);
 
+  useEffect(() => {
+    if (!user || user.isAnonymous) return;
+    let active = true;
+    let unsubscribe: (() => void) | null = null;
+    void refreshGrantedNotificationDevice(user).catch((error) => {
+      console.warn('[Notifications] Device refresh skipped:', error);
+    });
+    void listenForForegroundNotifications().then((listener) => {
+      if (!active) listener?.();
+      else unsubscribe = listener;
+    }).catch((error) => {
+      console.warn('[Notifications] Foreground listener unavailable:', error);
+    });
+    return () => {
+      active = false;
+      unsubscribe?.();
+    };
+  }, [user]);
+
   const renderSection = () => {
     switch (currentSection) {
       case SectionType.COURSES:
@@ -2970,11 +2996,13 @@ const App: React.FC = () => {
         );
       }
       case SectionType.SETTINGS:
-        return (
-          <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
-            <p className="text-slate-300 font-semibold">This feature is under construction</p>
-          </div>
-        );
+        return user && !user.isAnonymous
+          ? <NotificationSettings user={user} />
+          : (
+            <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
+              <p className="text-slate-300 font-semibold">Create an account to manage notifications.</p>
+            </div>
+          );
       case SectionType.HELP:
         return (
           <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center px-6 text-center gap-6">

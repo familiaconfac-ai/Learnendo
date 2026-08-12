@@ -1,16 +1,26 @@
 import { applicationDefault, cert, getApps, initializeApp } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
+import { getMessaging } from 'firebase-admin/messaging';
 
 function getCredential() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_KEY?.trim();
-  if (!raw) return applicationDefault();
+  if (!raw) {
+    if (process.env.VERCEL) {
+      throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY is required for Firebase Admin on Vercel.');
+    }
+    return applicationDefault();
+  }
 
-  const serviceAccount = JSON.parse(raw) as {
-    project_id: string;
-    client_email: string;
-    private_key: string;
-  };
+  let serviceAccount: { project_id: string; client_email: string; private_key: string };
+  try {
+    serviceAccount = JSON.parse(raw) as typeof serviceAccount;
+  } catch {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY must contain valid service-account JSON.');
+  }
+  if (!serviceAccount.project_id || !serviceAccount.client_email || !serviceAccount.private_key) {
+    throw new Error('FIREBASE_SERVICE_ACCOUNT_KEY is missing project_id, client_email, or private_key.');
+  }
   return cert({
     projectId: serviceAccount.project_id,
     clientEmail: serviceAccount.client_email,
@@ -25,6 +35,7 @@ const adminApp = getApps()[0] ?? initializeApp({
 
 export const adminAuth = getAuth(adminApp);
 export const adminDb = getFirestore(adminApp);
+export const adminMessaging = getMessaging(adminApp);
 
 export async function requireAdmin(authorization?: string) {
   const match = authorization?.match(/^Bearer\s+(.+)$/i);
@@ -37,4 +48,3 @@ export async function requireAdmin(authorization?: string) {
   }
   return decoded;
 }
-

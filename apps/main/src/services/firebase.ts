@@ -18,16 +18,7 @@ import {
 import { connectFirestoreEmulator, getFirestore, initializeFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getStorage } from "firebase/storage";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDrZAa3AWzNRM-feVFpI1uSQEyZFY7Br0Q",
-  authDomain: "learnendo-6f4d3.firebaseapp.com",
-  projectId: "learnendo-6f4d3",
-  storageBucket: "learnendo-6f4d3.firebasestorage.app",
-  messagingSenderId: "374116570894",
-  appId: "1:374116570894:web:58b9901cbc0efc9a43295f",
-  measurementId: "G-VLJ3SNHD67"
-};
+import { firebaseConfig } from './firebaseConfig';
 
 // Initialize Firebase
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);

@@ -15,6 +15,15 @@ import {
 import { buildClassPerformanceReport } from '../../services/classReportModel';
 import { getClassComposition } from '../../services/classMembership';
 import { buildStudentUpdateChanges } from '../../services/studentUpdateChanges';
+import {
+  ADMIN_NOTIFICATION_STATUS_LABELS,
+  adminNotificationStatusLabel,
+  formatAdminNotificationDate,
+  getAdminNotificationStatuses,
+  sendAdminTestNotification,
+  type AdminNotificationResult,
+  type AdminNotificationStatus,
+} from '../../services/adminNotifications';
 import { updateStudentDisplayName } from '../../services/userRoles';
 import { ClassReportModal } from './ClassReportModal';
 
@@ -42,11 +51,13 @@ interface StudentAdminPanelProps {
   admin: User;
   student: TeacherStudentRow | null;
   groups: LiveClassGroup[];
+  notificationStatus?: AdminNotificationStatus;
+  onNotificationStatusChange?: (status: AdminNotificationStatus) => void;
   onClose: () => void;
   onDeleted?: (uid: string, result: StudentDeletionResult) => void;
 }
 
-export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, student, groups, onClose, onDeleted }) => {
+export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, student, groups, notificationStatus, onNotificationStatusChange, onClose, onDeleted }) => {
   const isNew = !student;
   const currentGroup = student ? findStudentGroup(groups, student.uid) : null;
   const [name, setName] = useState(student?.displayName ?? '');
@@ -64,6 +75,11 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [resetError, setResetError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [notificationBusy, setNotificationBusy] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+  const [notificationResult, setNotificationResult] = useState<AdminNotificationResult | null>(null);
+  const [notificationDetails, setNotificationDetails] = useState<AdminNotificationStatus | null>(notificationStatus ?? null);
+  const [notificationDetailsLoading, setNotificationDetailsLoading] = useState(Boolean(student));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [baseline, setBaseline] = useState({
     name: student?.displayName?.trim() ?? '',
@@ -78,6 +94,7 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
     setPasswordError(null);
     setResetError(null);
     setDeleteError(null);
+    setNotificationError(null);
   };
 
   useEffect(() => {
@@ -96,6 +113,10 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
     setPasswordError(null);
     setResetError(null);
     setDeleteError(null);
+    setNotificationError(null);
+    setNotificationResult(null);
+    setNotificationDetails(notificationStatus ?? null);
+    setNotificationDetailsLoading(Boolean(student));
     setShowDeleteConfirm(false);
     setBaseline({
       name: student?.displayName?.trim() ?? '',
@@ -126,6 +147,16 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
         setDetailsError(reason instanceof Error ? reason.message : 'Failed to load authentication information.');
       })
       .finally(() => { if (active) setBusy(false); });
+    getAdminNotificationStatuses(admin, [student.uid], true)
+      .then(([status]) => {
+        if (!active || !status) return;
+        setNotificationDetails(status);
+        onNotificationStatusChange?.(status);
+      })
+      .catch((reason) => {
+        if (active) setNotificationError(reason instanceof Error ? reason.message : 'Não foi possível consultar as notificações.');
+      })
+      .finally(() => { if (active) setNotificationDetailsLoading(false); });
     return () => { active = false; };
   }, [admin, groups, student]);
 
@@ -247,6 +278,26 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
     }
   };
 
+  const handleTestNotification = async () => {
+    if (!student) return;
+    setNotificationBusy(true);
+    setNotificationError(null);
+    setNotificationResult(null);
+    try {
+      const result = await sendAdminTestNotification(admin, student.uid);
+      setNotificationResult(result);
+      const [status] = await getAdminNotificationStatuses(admin, [student.uid], true);
+      if (status) {
+        setNotificationDetails(status);
+        onNotificationStatusChange?.(status);
+      }
+    } catch (reason) {
+      setNotificationError(reason instanceof Error ? reason.message : 'Unable to send the test notification.');
+    } finally {
+      setNotificationBusy(false);
+    }
+  };
+
   return (
     <ModalShell title={isNew ? 'New student' : 'Manage student'} onClose={onClose}>
       <div className="space-y-5">
@@ -311,6 +362,70 @@ export const StudentAdminPanel: React.FC<StudentAdminPanelProps> = ({ admin, stu
               </div>
               {passwordError && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{passwordError}</p>}
               {resetError && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{resetError}</p>}
+            </section>
+            <section className="rounded-2xl border border-blue-200 bg-blue-50 p-4">
+              <h3 className="font-black text-slate-800">Push notifications</h3>
+              {notificationDetailsLoading && !notificationDetails ? (
+                <p className="mt-2 text-sm text-slate-500">Consultando dispositivos…</p>
+              ) : notificationDetails ? (
+                <div className="mt-3 space-y-3 text-sm text-slate-700">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <div><span className="block text-xs text-slate-500">Status</span><b>{adminNotificationStatusLabel(notificationDetails)}</b></div>
+                    <div><span className="block text-xs text-slate-500">Dispositivos ativos</span><b>{notificationDetails.activeDeviceCount}</b></div>
+                    <div><span className="block text-xs text-slate-500">Última atividade de dispositivo</span><b>{formatAdminNotificationDate(notificationDetails.latestLastSeenAt)}</b></div>
+                    <div><span className="block text-xs text-slate-500">Permissão registrada</span><b>{notificationDetails.permission}</b></div>
+                  </div>
+                  <p className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600">
+                    {notificationDetails.kind === 'active' && `O envio alcançará ${notificationDetails.activeDeviceCount} dispositivo${notificationDetails.activeDeviceCount === 1 ? '' : 's'} ativo${notificationDetails.activeDeviceCount === 1 ? '' : 's'}.`}
+                    {notificationDetails.kind === 'disabled' && 'O aluno desativou as notificações nas preferências.'}
+                    {notificationDetails.kind === 'not-authorized' && 'O aluno ainda não ativou as notificações.'}
+                    {notificationDetails.kind === 'no-device' && 'As notificações estão habilitadas, mas não existe dispositivo ativo com token válido.'}
+                  </p>
+                  {notificationDetails.devices.length > 0 && (
+                    <div>
+                      <span className="block text-xs font-bold text-slate-500">Dispositivos registrados</span>
+                      <div className="mt-1 space-y-1">
+                        {notificationDetails.devices.map((device, index) => (
+                          <div key={`${device.platform}-${device.lastSeenAt}-${index}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-xs">
+                            <span>{device.platform ?? 'Plataforma não informada'}{device.provider ? ` · ${device.provider}` : ''}</span>
+                            <span className={device.eligible ? 'font-bold text-emerald-700' : 'font-semibold text-slate-500'}>{device.status} · {formatAdminNotificationDate(device.lastSeenAt)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div>
+                    <span className="block text-xs text-slate-500">Último push</span>
+                    <b>{notificationDetails.latestDelivery
+                      ? `${notificationDetails.latestDelivery.status} · ${notificationDetails.latestDelivery.successCount}/${notificationDetails.latestDelivery.deviceCount} aceitos pelo provedor · ${formatAdminNotificationDate(notificationDetails.latestDelivery.completedAt)}`
+                      : 'Nenhum envio registrado'}</b>
+                  </div>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void handleTestNotification()}
+                disabled={notificationBusy || authStatus !== 'found' || notificationDetails?.kind !== 'active'}
+                className="mt-3 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {notificationBusy ? 'Enviando...' : 'Enviar notificação de teste'}
+              </button>
+              {notificationResult && (
+                <p className={`mt-3 rounded-xl border px-3 py-2 text-sm font-semibold ${notificationResult.status === 'sent' ? 'border-emerald-200 bg-white text-emerald-700' : 'border-amber-200 bg-white text-amber-800'}`}>
+                  {notificationResult.status === 'sent'
+                    ? `Enviada para ${notificationResult.successCount} dispositivo${notificationResult.successCount === 1 ? '' : 's'}.`
+                    : notificationResult.status === 'partial'
+                      ? `Envio parcial: ${notificationResult.successCount} de ${notificationResult.deviceCount} dispositivos receberam; ${notificationResult.failureCount} falharam.`
+                      : notificationResult.status === 'disabled'
+                        ? `${ADMIN_NOTIFICATION_STATUS_LABELS.disabled}: o aluno desativou as notificações.`
+                        : notificationResult.status === 'no-devices'
+                          ? `${ADMIN_NOTIFICATION_STATUS_LABELS['no-device']}: não há destino elegível.`
+                          : notificationResult.status === 'duplicate'
+                            ? 'Este mesmo pedido de teste já havia sido processado.'
+                            : `Falha no envio: nenhum dos ${notificationResult.deviceCount} dispositivos recebeu o teste.`}
+                </p>
+              )}
+              {notificationError && <p className="mt-3 rounded-xl border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700">{notificationError}</p>}
             </section>
           </>
         )}

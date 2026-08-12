@@ -330,6 +330,9 @@ export default defineConfig(({ mode }) => {
         ...(mode !== 'production' ? [translateTtsDevPlugin()] : []),
         ...(mode === 'production' ? [
           VitePWA({
+            strategies: 'injectManifest',
+            srcDir: 'src',
+            filename: 'sw.ts',
             registerType: 'autoUpdate',
             injectRegister: 'auto',
             includeAssets: [
@@ -365,8 +368,7 @@ export default defineConfig(({ mode }) => {
                 }
               ]
             },
-            workbox: {
-              cleanupOutdatedCaches: true,
+            injectManifest: {
               globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
               maximumFileSizeToCacheInBytes: 5 * 1024 * 1024
             },
