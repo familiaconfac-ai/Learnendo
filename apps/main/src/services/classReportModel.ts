@@ -1,9 +1,7 @@
 import type { TeacherStudentRow } from '../engine/teacherService';
 import { computeScore } from '../engine/rankingService';
+import { resolveCurriculumProgressPercent } from '../engine/curriculumProgress';
 
-const MAX_WORKBOOK = 8;
-const MAX_LESSON = 12;
-const MAX_DAY = 7;
 const REPORT_TIME_ZONE = 'America/Sao_Paulo';
 
 export interface ClassReportStudent {
@@ -52,12 +50,10 @@ function toDate(value: unknown): Date | null {
   return Number.isNaN(resolved.getTime()) ? null : resolved;
 }
 
-export function getCurriculumProgressPercent(student: Pick<TeacherStudentRow, 'currentWorkbook' | 'currentLesson' | 'currentDay'>): number {
-  const workbook = Math.min(MAX_WORKBOOK, Math.max(1, student.currentWorkbook ?? 1));
-  const lesson = Math.min(MAX_LESSON, Math.max(1, student.currentLesson ?? 1));
-  const day = Math.min(MAX_DAY, Math.max(1, student.currentDay ?? 1));
-  const current = ((workbook - 1) * MAX_LESSON * MAX_DAY) + ((lesson - 1) * MAX_DAY) + day;
-  return Math.round((current / (MAX_WORKBOOK * MAX_LESSON * MAX_DAY)) * 100);
+export function getCurriculumProgressPercent(
+  student: Pick<TeacherStudentRow, 'currentWorkbook' | 'currentLesson' | 'currentDay' | 'daysCompleted'>,
+): number {
+  return resolveCurriculumProgressPercent(student);
 }
 
 function calendarDayNumber(date: Date): number {

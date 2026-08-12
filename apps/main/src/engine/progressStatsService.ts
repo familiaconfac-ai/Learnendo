@@ -17,6 +17,8 @@ import {
   CourseProgressDoc,
 } from './courseProgressEngine';
 import { UserProgress } from '../types';
+import { MAX_DAY, MAX_LESSON, MAX_WORKBOOK } from './curriculumProgress';
+export { MAX_DAY, MAX_LESSON, MAX_WORKBOOK, resolveCurriculumProgressPercent } from './curriculumProgress';
 
 // ─────────────────────────────────────────────────────────────
 // Current learning position
@@ -43,10 +45,6 @@ export function getCurrentPath(progress: UserProgress): CurrentPath {
 // ─────────────────────────────────────────────────────────────
 // Progression logic
 // ─────────────────────────────────────────────────────────────
-
-export const MAX_DAY      = 7;
-export const MAX_LESSON   = 12;
-export const MAX_WORKBOOK = 8;
 
 /**
  * Given the just-completed path, return the next position the student

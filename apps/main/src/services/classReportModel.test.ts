@@ -86,6 +86,17 @@ assert.equal(serialized.includes('@private.example'), false, 'the shareable repo
 assert.equal(serialized.includes('uid-Ana'), false, 'the shareable report must not contain UIDs');
 assert.equal(getCurriculumProgressPercent(student('End', { currentWorkbook: 8, currentLesson: 12, currentDay: 7 })), 100);
 
+const learnendoKidsProgress = buildClassPerformanceReport('Learnendo Kids', [
+  student('Ryan Miranda', { currentWorkbook: 1, currentLesson: 1, currentDay: 1, daysCompleted: 38 }),
+  student('Aquilles Donadon', { currentWorkbook: 1, currentLesson: 1, currentDay: 1, daysCompleted: 7 }),
+  student('Lara Donadon', { currentWorkbook: 1, currentLesson: 1, currentDay: 1, daysCompleted: 1 }),
+], generatedAt);
+assert.deepEqual(
+  Object.fromEntries(learnendoKidsProgress.students.map((entry) => [entry.name, entry.progressPercent])),
+  { 'Ryan Miranda': 5.7, 'Aquilles Donadon': 1, 'Lara Donadon': 0.1 },
+  'legacy W1/L1/E1 pointers must fall back to unique completed activities in the official curriculum',
+);
+
 const largeReport = buildClassPerformanceReport(
   'Large class',
   Array.from({ length: 150 }, (_, index) => student(`Student ${index + 1}`, { totalStars: index, daysCompleted: index % 20 })),
