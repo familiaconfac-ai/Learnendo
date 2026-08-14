@@ -1,4 +1,49 @@
 type DashboardProgress = Record<string, any>;
+export const DASHBOARD_TIME_ZONE = 'America/Sao_Paulo';
+
+export type CompletedActivityRecord = {
+  id: string;
+  completedAt?: unknown;
+  score?: number;
+  totalQuestions?: number;
+  correctAnswers?: number;
+  attempts?: number;
+  errors?: number;
+  accuracy?: number;
+};
+
+function activityRecord(id: string, value: unknown): CompletedActivityRecord | null {
+  if (!value || typeof value !== 'object' || (value as { completed?: unknown }).completed !== true) return null;
+  return { id, ...(value as Omit<CompletedActivityRecord, 'id'>) };
+}
+
+/**
+ * Reads both the canonical `lessons` map and the legacy literal fields written
+ * by setDoc payloads such as `lessons.wb1_l3_d4`.
+ */
+export function getCompletedActivityRecords(raw?: DashboardProgress): CompletedActivityRecord[] {
+  if (!raw) return [];
+  const records = new Map<string, CompletedActivityRecord>();
+  const lessons = raw.lessons;
+  if (lessons && typeof lessons === 'object') {
+    Object.entries(lessons).forEach(([id, value]) => {
+      const record = activityRecord(id, value);
+      if (record) records.set(id, record);
+    });
+  }
+  Object.entries(raw).forEach(([field, value]) => {
+    if (!field.startsWith('lessons.')) return;
+    const id = field.slice('lessons.'.length);
+    const record = activityRecord(id, value);
+    if (record && !records.has(id)) records.set(id, record);
+  });
+  return Array.from(records.values());
+}
+
+function normalizedAccuracy(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
+  return Math.min(100, value <= 1 ? value * 100 : value);
+}
 
 function timestampMillis(value: unknown): number | null {
   if (!value) return null;
@@ -12,6 +57,23 @@ function timestampMillis(value: unknown): number | null {
   }
   const millis = new Date(value as string | number | Date).getTime();
   return Number.isFinite(millis) ? millis : null;
+}
+
+function calendarDayNumber(value: unknown): number | null {
+  const millis = timestampMillis(value);
+  if (millis === null) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: DASHBOARD_TIME_ZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(millis));
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((item) => item.type === type)?.value ?? 0);
+  return Math.floor(Date.UTC(part('year'), part('month') - 1, part('day')) / 86_400_000);
+}
+
+export function getDaysWithoutActivity(value: unknown, now = new Date()): number | null {
+  const activityDay = calendarDayNumber(value);
+  const currentDay = calendarDayNumber(now);
+  return activityDay === null || currentDay === null ? null : Math.max(0, currentDay - activityDay);
 }
 
 export function getLatestTimestamp(values: Iterable<unknown>): unknown | null {
@@ -72,6 +134,8 @@ export function getLastPedagogicalActivity(
     });
   }
 
+  getCompletedActivityRecords(raw).forEach((activity) => candidates.push(activity.completedAt));
+
   if (raw.courses && typeof raw.courses === 'object') {
     Object.values(raw.courses).forEach((course) => {
       if (course && typeof course === 'object') {
@@ -84,16 +148,58 @@ export function getLastPedagogicalActivity(
 }
 
 export function getUniqueCompletedActivityCount(raw?: DashboardProgress): number {
-  const lessons = raw?.lessons;
-  if (lessons && typeof lessons === 'object') {
-    const uniqueCompleted = Object.values(lessons).filter((value) =>
-      Boolean(value) && typeof value === 'object' && (value as { completed?: boolean }).completed === true).length;
-    if (uniqueCompleted > 0) return uniqueCompleted;
-  }
-  return typeof raw?.daysCompleted === 'number' ? Math.max(0, raw.daysCompleted) : 0;
+  const canonicalCompleted = raw?.lessons && typeof raw.lessons === 'object'
+    ? Object.values(raw.lessons).filter((value) =>
+        Boolean(value) && typeof value === 'object' && (value as { completed?: boolean }).completed === true).length
+    : 0;
+  if (canonicalCompleted > 0) return canonicalCompleted;
+  const uniqueCompleted = getCompletedActivityRecords(raw).length;
+  const aggregateCompleted = typeof raw?.daysCompleted === 'number' ? Math.max(0, raw.daysCompleted) : 0;
+  return Math.max(uniqueCompleted, aggregateCompleted);
+}
+
+export function deriveDashboardRewardMetrics(raw?: DashboardProgress) {
+  const activities = getCompletedActivityRecords(raw);
+  const recordedDiamonds = activities.filter((activity) => activity.score === 100).length;
+  const totalFire = typeof raw?.totalFire === 'number' ? Math.max(0, raw.totalFire) : 0;
+  const totalDiamonds = typeof raw?.totalDiamonds === 'number' && raw.totalDiamonds > 0
+    ? raw.totalDiamonds
+    : recordedDiamonds;
+  const totalStars = typeof raw?.totalStars === 'number' && raw.totalStars > 0
+    ? raw.totalStars
+    : totalFire + totalDiamonds;
+  return { totalFire, totalDiamonds, totalStars };
 }
 
 export function deriveDashboardAnswerMetrics(raw?: DashboardProgress) {
+  const activities = getCompletedActivityRecords(raw);
+  const storedAttempts = typeof raw?.totalAttempts === 'number' ? Math.max(0, raw.totalAttempts) : 0;
+  if (activities.length > 0 && storedAttempts === 0) {
+    let totalAttempts = 0;
+    let totalCorrect = 0;
+    let totalErrors = 0;
+    const accuracies: number[] = [];
+    activities.forEach((activity) => {
+      const attempts = Math.max(0, activity.attempts ?? activity.totalQuestions ?? 0);
+      const correct = Math.min(attempts, Math.max(0, activity.correctAnswers ?? Math.round(
+        attempts * ((normalizedAccuracy(activity.accuracy) ?? 0) / 100),
+      )));
+      const errors = Math.min(attempts, Math.max(0, activity.errors ?? attempts - correct));
+      totalAttempts += attempts;
+      totalCorrect += correct;
+      totalErrors += errors;
+      const accuracy = normalizedAccuracy(activity.accuracy)
+        ?? (attempts > 0 ? (correct / attempts) * 100 : null);
+      if (accuracy !== null) accuracies.push(accuracy);
+    });
+    return {
+      totalAttempts,
+      totalErrors,
+      avgAccuracy: accuracies.length
+        ? Math.round(accuracies.reduce((sum, accuracy) => sum + accuracy, 0) / accuracies.length)
+        : totalAttempts > 0 ? Math.round((totalCorrect / totalAttempts) * 100) : 0,
+    };
+  }
   const totalAttempts = typeof raw?.totalAttempts === 'number' ? Math.max(0, raw.totalAttempts) : 0;
   const totalCorrect = typeof raw?.totalCorrect === 'number' ? Math.max(0, raw.totalCorrect) : null;
   const totalErrors = typeof raw?.totalErrors === 'number'

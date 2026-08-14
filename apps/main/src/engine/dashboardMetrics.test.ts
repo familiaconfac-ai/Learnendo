@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDashboardAnswerMetrics, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount } from './dashboardMetrics.ts';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount } from './dashboardMetrics.ts';
 
 assert.equal(getUniqueCompletedActivityCount({
   daysCompleted: 99,
@@ -10,6 +10,41 @@ assert.equal(getUniqueCompletedActivityCount({
   },
 }), 2, 'repeating an activity must not inflate the unique completion count');
 assert.equal(getUniqueCompletedActivityCount({ daysCompleted: 4 }), 4, 'legacy records must keep their real aggregate fallback');
+
+const rianLegacyProgress = {
+  daysCompleted: 0,
+  totalAttempts: 0,
+  totalDiamonds: 0,
+  totalStars: 0,
+  'lessons.wb1_l3_d3': {
+    completed: true, completedAt: '2026-07-14T17:18:46Z', score: 100,
+    totalQuestions: 15, correctAnswers: 15, accuracy: 1,
+  },
+  'lessons.wb1_l3_d4': {
+    completed: true, completedAt: '2026-08-14T15:34:33Z', score: 100,
+    totalQuestions: 10, correctAnswers: 10, accuracy: 1,
+  },
+};
+assert.equal(getUniqueCompletedActivityCount(rianLegacyProgress), 2,
+  'literal lesson fields from the production schema must remain readable');
+assert.deepEqual(deriveDashboardAnswerMetrics(rianLegacyProgress), {
+  totalAttempts: 25, totalErrors: 0, avgAccuracy: 100,
+});
+assert.deepEqual(deriveDashboardRewardMetrics(rianLegacyProgress), {
+  totalFire: 0, totalDiamonds: 2, totalStars: 2,
+});
+assert.equal(getLastPedagogicalActivity(rianLegacyProgress), '2026-08-14T15:34:33Z');
+assert.equal(getDaysWithoutActivity('2026-08-11T23:59:00-03:00', new Date('2026-08-14T00:01:00-03:00')), 3,
+  'activity age must use São Paulo calendar days consistently across table, alerts and report');
+assert.equal(getUniqueCompletedActivityCount({
+  daysCompleted: 7,
+  'lessons.wb1_l1_d1': { completed: true },
+}), 7, 'partial legacy event maps must not erase a larger persisted historical aggregate');
+assert.deepEqual(deriveDashboardAnswerMetrics({
+  totalAttempts: 520, totalErrors: 0, avgAccuracy: 100,
+  'lessons.wb1_l1_d1': { completed: true, totalQuestions: 10, correctAnswers: 10, accuracy: 1 },
+}), { totalAttempts: 520, totalErrors: 0, avgAccuracy: 100 },
+'partial legacy event maps must not replace a populated historical aggregate');
 
 assert.deepEqual(deriveDashboardAnswerMetrics({ totalAttempts: 10, totalCorrect: 7 }), {
   totalAttempts: 10,

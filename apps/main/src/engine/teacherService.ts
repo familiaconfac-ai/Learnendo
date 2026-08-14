@@ -14,7 +14,7 @@ import { rankStudents, RankedStudent, computeScore } from './rankingService';
 import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
-import { deriveDashboardAnswerMetrics, getLastPedagogicalActivity, getUniqueCompletedActivityCount } from './dashboardMetrics';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, getDaysWithoutActivity, getLastPedagogicalActivity, getUniqueCompletedActivityCount } from './dashboardMetrics';
 import { subscribeToLivePedagogicalActivity, type LiveActivityScope } from '../services/livePedagogicalActivity';
 import { partitionStudentAccounts } from '../services/studentRolePolicy';
 
@@ -61,9 +61,8 @@ type PlacementRecord = {
 function relativeDate(value: any): string {
   if (!value) return '—';
   try {
-    const date: Date = typeof value.toDate === 'function' ? value.toDate() : new Date(value);
-    if (isNaN(date.getTime())) return '—';
-    const days = Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24));
+    const days = getDaysWithoutActivity(value);
+    if (days === null) return '—';
     if (days <= 0) return '⏱ 0d';
     if (days < 30) return `⏱ ${days}d`;
     if (days < 365) return `⏱ ${Math.floor(days / 30)}mo`;
@@ -168,8 +167,8 @@ function pathLabel(summary: UserProgressSummary, dashboardStatus: TeacherStudent
 }
 
 function formatLessonsLabel(student: RankedStudent & UserProgressSummary, lessonsCompleted: number): string {
-  if (lessonsCompleted > 0) return `${lessonsCompleted}L`;
   if ((student.daysCompleted ?? 0) > 0) return `${student.daysCompleted}E`;
+  if (lessonsCompleted > 0) return `${lessonsCompleted}L`;
   return '0E';
 }
 
@@ -328,6 +327,7 @@ export function subscribeToTeacherData(
       const userData = userDocs.get(uid) ?? {};
       const placement = getPlacementRecord(progressData);
       const { totalAttempts, totalErrors, avgAccuracy } = deriveDashboardAnswerMetrics(progressData);
+      const { totalStars, totalDiamonds, totalFire } = deriveDashboardRewardMetrics(progressData);
 
       return {
         uid,
@@ -337,10 +337,10 @@ export function subscribeToTeacherData(
         displayName: progressData.displayName ?? userData.displayName ?? userData.name ?? undefined,
         email: progressData.email ?? userData.email ?? undefined,
         group: progressData.group ?? userData.group ?? undefined,
-        totalStars: progressData.totalStars ?? 0,
-        totalFire: progressData.totalFire ?? 0,
+        totalStars,
+        totalFire,
         totalIce: progressData.totalIce ?? 0,
-        totalDiamonds: progressData.totalDiamonds ?? 0,
+        totalDiamonds,
         lessonsStarted: progressData.lessonsStarted ?? 0,
         daysCompleted: getUniqueCompletedActivityCount(progressData),
         totalTimeSpent: progressData.totalTimeSpent ?? 0,

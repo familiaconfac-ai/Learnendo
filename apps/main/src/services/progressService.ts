@@ -1,4 +1,4 @@
-import { doc, setDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { doc, increment, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 /**
@@ -28,28 +28,34 @@ export async function trackLessonCompletion({
   console.log('🔥 FIREBASE WRITE START', { userId, lessonId, score, correctAnswers, totalQuestions, accuracy });
 
   try {
-    await setDoc(
-      doc(db, 'progress', userId),
-      {
+    const reference = doc(db, 'progress', userId);
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(reference);
+      const data = snapshot.data() ?? {};
+      const existing = data.lessons?.[lessonId] ?? data[`lessons.${lessonId}`];
+      const firstCompletion = existing?.completed !== true;
+      transaction.set(reference, {
         lastLesson: lessonId,
         lastActive: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        sessions: increment(1),
-        daysCompleted: increment(1),
-        totalAttempts: increment(totalQuestions),
-        totalCorrect: increment(correctAnswers),
-
-        [`lessons.${lessonId}`]: {
-          completed: true,
-          score,
-          totalQuestions,
-          correctAnswers,
-          accuracy,
-          completedAt: serverTimestamp(),
+        ...(firstCompletion ? {
+          sessions: increment(1),
+          daysCompleted: increment(1),
+          totalAttempts: increment(totalQuestions),
+          totalCorrect: increment(correctAnswers),
+        } : {}),
+        lessons: {
+          [lessonId]: {
+            completed: true,
+            score,
+            totalQuestions,
+            correctAnswers,
+            accuracy,
+            completedAt: existing?.completedAt ?? serverTimestamp(),
+          },
         },
-      },
-      { merge: true },
-    );
+      }, { merge: true });
+    });
 
     console.log('[progressService] ✅ Progress write completed for', userId, lessonId, `score=${score}%`);
   } catch (error) {

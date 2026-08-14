@@ -42,7 +42,13 @@ import {
   runTransaction,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
-import { getLastPedagogicalActivity } from './dashboardMetrics';
+import {
+  deriveDashboardAnswerMetrics,
+  deriveDashboardRewardMetrics,
+  getCompletedActivityRecords,
+  getLastPedagogicalActivity,
+  getUniqueCompletedActivityCount,
+} from './dashboardMetrics';
 
 // ─────────────────────────────────────────────────────────────
 // Domain types
@@ -96,6 +102,19 @@ export const EMPTY_STATS: LessonStats = {
   fire: 0, ice: 0, diamonds: 0, stars: 0, totalCompleted: 0,
   sessions: 0, avgTimeSpent: 0, totalErrors: 0, totalAttempts: 0, avgAccuracy: 0,
 };
+
+/** Accept the legacy literal `lessons.1` fields while all new writes use the map. */
+export function normalizeCourseProgressDoc(raw: Record<string, any>): CourseProgressDoc {
+  const lessons: Record<string, LessonProgress> = {
+    ...(raw.lessons && typeof raw.lessons === 'object' ? raw.lessons : {}),
+  };
+  Object.entries(raw).forEach(([field, value]) => {
+    if (!field.startsWith('lessons.') || !value || typeof value !== 'object') return;
+    const lessonId = field.slice('lessons.'.length);
+    if (!lessons[lessonId]) lessons[lessonId] = value as LessonProgress;
+  });
+  return { ...(raw as CourseProgressDoc), lessons };
+}
 
 // Kept for backward compatibility with adminEngine / meta subsystem
 export type Language = 'en' | 'pt' | 'es' | 'el' | 'he';
@@ -251,7 +270,7 @@ export async function getCourseProgress(
   try {
     const ref = doc(db, `users/${uid}/courseProgress/${cpDocId(courseId, bookNumber)}`);
     const snap = await getDoc(ref);
-    return snap.exists() ? (snap.data() as CourseProgressDoc) : null;
+    return snap.exists() ? normalizeCourseProgressDoc(snap.data()) : null;
   } catch (e) {
     console.error('[UNLOCK] getCourseProgress error:', e);
     return null;
@@ -289,7 +308,7 @@ export async function ensureLessonStarted(
 
   try {
     const snap = await getDoc(ref);
-    const data = snap.exists() ? (snap.data() as CourseProgressDoc) : null;
+    const data = snap.exists() ? normalizeCourseProgressDoc(snap.data()) : null;
     const lessonKey = String(lessonId);
 
     // Idempotent: lesson already started — return existing record unchanged
@@ -304,7 +323,7 @@ export async function ensureLessonStarted(
     console.log(`[UNLOCK] Starting lesson ${lessonId} for uid: ${uid} — startedAt: ${startedAt}`);
 
     const patch: Record<string, unknown> = {
-      [`lessons.${lessonKey}`]: newLesson,
+      lessons: { [lessonKey]: newLesson },
       updatedAt: serverTimestamp(),
     };
 
@@ -381,7 +400,7 @@ export async function completeCourseDay(
           lessons: {},
         };
       } else {
-        data = snap.data() as CourseProgressDoc;
+        data = normalizeCourseProgressDoc(snap.data());
       }
 
       // ─ Auto-init lesson if missing ─
@@ -424,7 +443,7 @@ export async function completeCourseDay(
       console.log('[COMPLETE] rebuilt stats:', resultStats);
 
       tx.set(ref, {
-        [`lessons.${lessonKey}`]: updatedLesson,
+        lessons: { [lessonKey]: updatedLesson },
         updatedAt: serverTimestamp(),
       }, { merge: true });
     });
@@ -458,31 +477,68 @@ export async function completeCourseDay(
 export async function getCumulativeUserStats(uid: string): Promise<LessonStats> {
   if (!db) return { ...EMPTY_STATS };
   try {
-    const cpSnap = await getDocs(collection(db!, `users/${uid}/courseProgress`));
-    let fire = 0, ice = 0, diamonds = 0, totalCompleted = 0;
-    let totalTimeSpentSum = 0, totalErrors = 0, totalAttempts = 0;
-    let accSum = 0, accCount = 0;
+    const [cpSnap, flatSnapshot] = await Promise.all([
+      getDocs(collection(db!, `users/${uid}/courseProgress`)),
+      getDoc(doc(db!, 'progress', uid)),
+    ]);
+    const completedDays = new Map<string, DayEntry>();
 
     for (const cpDoc of cpSnap.docs) {
-      const cpData = cpDoc.data() as CourseProgressDoc;
-      for (const lesson of Object.values(cpData.lessons ?? {})) {
-        // Guard against non-lesson docs (e.g. the legacy "main" nav doc)
+      const cpData = normalizeCourseProgressDoc(cpDoc.data());
+      for (const [lessonId, lesson] of Object.entries(cpData.lessons ?? {})) {
         if (!lesson || !Array.isArray(lesson.days)) continue;
-        const s = rebuildLessonStats(lesson);
-        fire           += s.fire;
-        ice            += s.ice;
-        diamonds       += s.diamonds;
-        totalCompleted += s.totalCompleted;
-        totalTimeSpentSum += s.avgTimeSpent * s.totalCompleted;
-        totalErrors    += s.totalErrors;
-        totalAttempts  += s.totalAttempts;
-        if (s.avgAccuracy > 0) { accSum += s.avgAccuracy; accCount++; }
+        lesson.days.forEach((day) => {
+          if (!day.completed) return;
+          const id = `${cpData.courseId}:wb${cpData.bookNumber}_l${lessonId}_d${day.day}`;
+          completedDays.set(id, day);
+        });
       }
     }
 
-    const stars        = fire + diamonds;
-    const avgTimeSpent = totalCompleted > 0 ? Math.round(totalTimeSpentSum / totalCompleted) : 0;
-    const avgAccuracy  = accCount > 0       ? Math.round(accSum / accCount)                  : 0;
+    const flatData = flatSnapshot.data() ?? {};
+    const legacyCourseId = typeof flatData.courseId === 'string' ? flatData.courseId : 'legacy';
+    getCompletedActivityRecords(flatData).forEach((activity) => {
+      const id = `${legacyCourseId}:${activity.id}`;
+      if (completedDays.has(id)) return;
+      completedDays.set(id, {
+        day: Number(activity.id.match(/_d(\d+)$/)?.[1] ?? 0),
+        unlockedAt: '',
+        completed: true,
+        completedAt: activity.completedAt as string | undefined,
+        score: activity.score,
+        attempts: activity.attempts ?? activity.totalQuestions,
+        errors: activity.errors ?? (
+          typeof activity.totalQuestions === 'number' && typeof activity.correctAnswers === 'number'
+            ? Math.max(0, activity.totalQuestions - activity.correctAnswers)
+            : undefined
+        ),
+        accuracy: typeof activity.accuracy === 'number'
+          ? (activity.accuracy <= 1 ? activity.accuracy * 100 : activity.accuracy)
+          : undefined,
+      });
+    });
+
+    let fire = 0, ice = 0, diamonds = 0, totalTimeSpent = 0, totalErrors = 0, totalAttempts = 0;
+    let accuracyTotal = 0, accuracyCount = 0;
+    completedDays.forEach((day) => {
+      if (day.completedAt && day.unlockedAt) {
+        if (isSameCalendarDay(new Date(day.completedAt), new Date(day.unlockedAt))) fire++;
+        else ice++;
+      }
+      if ((day.score ?? 0) === 100) diamonds++;
+      totalTimeSpent += day.timeSpent ?? 0;
+      totalErrors += day.errors ?? 0;
+      totalAttempts += day.attempts ?? 0;
+      if (typeof day.accuracy === 'number') {
+        accuracyTotal += day.accuracy;
+        accuracyCount++;
+      }
+    });
+
+    const totalCompleted = completedDays.size;
+    const stars = fire + diamonds;
+    const avgTimeSpent = totalCompleted > 0 ? Math.round(totalTimeSpent / totalCompleted) : 0;
+    const avgAccuracy = accuracyCount > 0 ? Math.round(accuracyTotal / accuracyCount) : 0;
 
     return { fire, ice, diamonds, stars, totalCompleted, sessions: totalCompleted,
              avgTimeSpent, totalErrors, totalAttempts, avgAccuracy };
@@ -669,7 +725,7 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
         try {
           const cpSnap = await getDocs(collection(db!, `users/${uid}/courseProgress`));
           for (const cpDoc of cpSnap.docs) {
-            const cpData = cpDoc.data() as CourseProgressDoc;
+            const cpData = normalizeCourseProgressDoc(cpDoc.data());
             for (const lesson of Object.values(cpData.lessons ?? {})) {
               lessonsStarted++;
               const stats = rebuildLessonStats(lesson);
@@ -694,37 +750,19 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           }
         } catch { /* no courseProgress — skip */ }
 
-        const uniqueCompletedFromFlat =
-          flatProgress.lessons && typeof flatProgress.lessons === 'object'
-            ? Object.values(flatProgress.lessons as Record<string, any>).filter((v) => v?.completed === true).length
-            : 0;
-
-        const dashboardCompletedExercises =
-          uniqueCompletedFromFlat > 0
-            ? uniqueCompletedFromFlat
-            : daysCompleted;
-
-        const flatTotalAttempts =
-          typeof flatProgress.totalAttempts === 'number'
-            ? flatProgress.totalAttempts
-            : totalAttempts;
-
-        const flatTotalCorrect =
-          typeof flatProgress.totalCorrect === 'number'
-            ? flatProgress.totalCorrect
-            : undefined;
-
-        const derivedAccuracyFromFlat =
-          typeof flatTotalCorrect === 'number' && flatTotalAttempts > 0
-            ? Math.round((flatTotalCorrect / flatTotalAttempts) * 100)
-            : 0;
-
-        const dashboardAccuracy =
-          derivedAccuracyFromFlat > 0
-            ? derivedAccuracyFromFlat
-            : (typeof flatProgress.avgAccuracy === 'number' && flatProgress.avgAccuracy > 0
-                ? flatProgress.avgAccuracy
-                : (accCount > 0 ? Math.round(accSum / accCount) : 0));
+        const dashboardCompletedExercises = getUniqueCompletedActivityCount(flatProgress) || daysCompleted;
+        const answerMetrics = deriveDashboardAnswerMetrics({
+          ...flatProgress,
+          totalAttempts: flatProgress.totalAttempts ?? totalAttempts,
+          totalErrors: flatProgress.totalErrors ?? totalErrors,
+          avgAccuracy: flatProgress.avgAccuracy ?? (accCount > 0 ? Math.round(accSum / accCount) : 0),
+        });
+        const rewardMetrics = deriveDashboardRewardMetrics({
+          ...flatProgress,
+          totalFire: flatProgress.totalFire ?? totalFire,
+          totalDiamonds: flatProgress.totalDiamonds ?? totalDiamonds,
+          totalStars: flatProgress.totalStars ?? (totalFire + totalDiamonds),
+        });
 
         const dashboardWorkbook =
           typeof mainProgress.currentWorkbook === 'number'
@@ -762,11 +800,7 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
         };
 
         const extractCompletedIdsFromFlat = (): string[] => {
-          const lessonsMap = flatProgress.lessons;
-          if (!lessonsMap || typeof lessonsMap !== 'object') return [];
-          return Object.entries(lessonsMap as Record<string, any>)
-            .filter(([, value]) => value?.completed === true)
-            .map(([key]) => key);
+          return getCompletedActivityRecords(flatProgress).map((activity) => activity.id);
         };
 
         const completedIds = Array.from(new Set([
@@ -804,13 +838,6 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
             ? maxCompletedInCurrentLesson
             : (fallbackFromNextPointer > 0 ? fallbackFromNextPointer : 1);
 
-        const dashboardErrors =
-          typeof flatProgress.totalErrors === 'number'
-            ? flatProgress.totalErrors
-            : (typeof flatTotalCorrect === 'number' && flatTotalAttempts >= flatTotalCorrect
-                ? flatTotalAttempts - flatTotalCorrect
-                : totalErrors);
-
         const dashboardTotalTimeSpent =
           typeof flatProgress.totalTimeSpent === 'number' && flatProgress.totalTimeSpent > 0
             ? flatProgress.totalTimeSpent
@@ -829,17 +856,17 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           displayName: flatProgress.displayName ?? userData.displayName ?? userData.name,
           email: flatProgress.email ?? userData.email,
           group: metaGroup,
-          totalStars: totalFire + totalDiamonds,
-          totalFire,
+          totalStars: rewardMetrics.totalStars,
+          totalFire: rewardMetrics.totalFire,
           totalIce,
-          totalDiamonds,
+          totalDiamonds: rewardMetrics.totalDiamonds,
           lessonsStarted,
           daysCompleted: dashboardCompletedExercises,
           totalTimeSpent: dashboardTotalTimeSpent,
           timeSpentToday: dashboardTimeSpentToday,
-          totalErrors: dashboardErrors,
-          totalAttempts: flatTotalAttempts,
-          avgAccuracy: dashboardAccuracy,
+          totalErrors: answerMetrics.totalErrors,
+          totalAttempts: answerMetrics.totalAttempts,
+          avgAccuracy: answerMetrics.avgAccuracy,
           currentWorkbook: dashboardWorkbook,
           currentLesson:   resolvedLesson,
           currentDay:      dashboardLastCompletedDay,

@@ -20,6 +20,7 @@ import {
   formatAccuracy,
 } from '../../engine/teacherService';
 import { rankMedal } from '../../engine/rankingService';
+import { resolveCurriculumProgressPercent } from '../../engine/curriculumProgress';
 import { AlertType } from '../../engine/alertService';
 import { generateStudentReport } from '../../services/reportService';
 import { generatePlacementReport } from '../../services/placementReportService';
@@ -321,7 +322,7 @@ const StudentsTab: React.FC<{
                     <td className="px-3 py-3 text-slate-700 whitespace-nowrap font-mono text-xs align-top">
                       <div>{student.pathLabel}</div>
                       <div className="mt-1 font-sans text-[11px] font-semibold text-emerald-600">
-                        {student.avgAccuracy > 0 ? `✔ ${Math.round(student.avgAccuracy)}%` : '✔ 0%'}
+                        ✔ {resolveCurriculumProgressPercent(student)}%
                       </div>
                     </td>
                     <td className="px-3 py-3 text-slate-700 whitespace-nowrap align-top">

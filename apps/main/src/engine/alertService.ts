@@ -11,6 +11,7 @@
  */
 
 import { UserProgressSummary } from './courseProgressEngine';
+import { getDaysWithoutActivity } from './dashboardMetrics';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -36,18 +37,6 @@ const MIN_DAYS_FOR_ACCURACY_CHECK = 2; // avoid noise from brand-new students
 // Helpers
 // ─────────────────────────────────────────────────────────────
 
-/** Convert a Firestore Timestamp, ISO string, or null to a Date (or null). */
-function toDate(value: any): Date | null {
-  if (!value) return null;
-  if (typeof value.toDate === 'function') return value.toDate() as Date;
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function daysSince(date: Date): number {
-  return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24);
-}
-
 // ─────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────
@@ -62,14 +51,12 @@ export function detectAlerts(summary: UserProgressSummary): StudentAlert[] {
   const alerts: StudentAlert[] = [];
 
   // ── Inactive check ──────────────────────────────────────────
-  const lastDate = toDate(summary.lastActivity);
-  if (lastDate) {
-    const days = daysSince(lastDate);
+  const days = getDaysWithoutActivity(summary.lastActivity);
+  if (days !== null) {
     if (days >= INACTIVE_DAYS_THRESHOLD) {
-      const rounded = Math.floor(days);
       alerts.push({
         type: 'inactive',
-        message: `${rounded} day${rounded !== 1 ? 's' : ''} without activity`,
+        message: `${days} day${days !== 1 ? 's' : ''} without activity`,
       });
     }
   }
