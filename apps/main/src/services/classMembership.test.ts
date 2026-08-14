@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { getClassComposition, getClassMemberRows } from './classMembership.ts';
 import { buildClassPerformanceReport } from './classReportModel.ts';
+import { partitionStudentAccounts } from './studentRolePolicy.ts';
+import { rankStudents } from '../engine/rankingService.ts';
 import type { TeacherStudentRow } from '../engine/teacherService.ts';
 
 const students = [
@@ -37,6 +39,21 @@ const learnendoKids = {
 
 const composition = getClassComposition(learnendoKids, students);
 const members = getClassMemberRows(learnendoKids, students);
+const dashboardAccounts = partitionStudentAccounts(students);
+assert.deepEqual(dashboardAccounts.students.map((student) => student.displayName), [
+  'Ryan Miranda',
+  'Aquilles Toledo Donadon',
+  'Lara Donadon',
+  'gregosetelip',
+]);
+assert.deepEqual(dashboardAccounts.administrative.map((student) => student.displayName), [
+  'Márcio Martins',
+  'Conceição Martins',
+]);
+assert.equal(dashboardAccounts.students.length, 4, 'the Students total must count only student accounts');
+const studentRanking = rankStudents(dashboardAccounts.students);
+assert.equal(studentRanking.some((student) => student.role === 'teacher' || student.role === 'admin'), false);
+assert.equal(studentRanking.length, 4);
 assert.equal(composition.teacher?.displayName, 'Márcio Martins');
 assert.deepEqual(composition.students.map((student) => student.displayName), [
   'Ryan Miranda',
@@ -60,6 +77,7 @@ assert.deepEqual(report.students.map((student) => student.name).sort(), [
   'Lara Donadon',
   'Ryan Miranda',
 ].sort(), 'legacy members without a role must remain in the report');
+assert.equal(report.students.some((student) => student.name === 'Márcio Martins'), false);
 
 const other = getClassMemberRows({ assignedStudentIds: ['grego'], createdBy: 'teacher-not-loaded' }, students);
 assert.deepEqual(other.map((student) => student.uid), ['grego']);

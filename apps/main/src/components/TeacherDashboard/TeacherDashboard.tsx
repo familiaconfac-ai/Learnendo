@@ -128,10 +128,11 @@ const StudentsTab: React.FC<{
   user: User;
   canManageUsers: boolean;
   groups: LiveClassGroup[];
+  membershipRows: TeacherStudentRow[];
   selectedGroupId: string;
   onSelectedGroupIdChange: (value: string) => void;
   onStudentDeleted: (uid: string, result: StudentDeletionResult) => void;
-}> = ({ rows, allRows, user, canManageUsers, groups, selectedGroupId, onSelectedGroupIdChange, onStudentDeleted }) => {
+}> = ({ rows, allRows, user, canManageUsers, groups, membershipRows, selectedGroupId, onSelectedGroupIdChange, onStudentDeleted }) => {
   const [search, setSearch]         = useState('');
   const [sortCol, setSortCol]       = useState<SortColumn>('score');
   const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
@@ -193,8 +194,8 @@ const StudentsTab: React.FC<{
 
   const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null;
   const classComposition = useMemo(
-    () => getClassComposition(selectedGroup, allRows),
-    [allRows, selectedGroup],
+    () => getClassComposition(selectedGroup, membershipRows),
+    [membershipRows, selectedGroup],
   );
   const classReport = useMemo(
     () => selectedGroup
@@ -382,7 +383,7 @@ const StudentsTab: React.FC<{
         </div>
       )}
       {managedStudent !== undefined && <StudentAdminPanel admin={user} student={managedStudent} groups={groups} notificationStatus={managedStudent ? notificationStatuses[managedStudent.uid] : undefined} onNotificationStatusChange={(status) => setNotificationStatuses((current) => ({ ...current, [status.uid]: status }))} onClose={() => setManagedStudent(undefined)} onDeleted={onStudentDeleted} />}
-      {showClassManager && <ClassManagementModal groups={groups} students={allRows} onClose={() => setShowClassManager(false)} />}
+      {showClassManager && <ClassManagementModal groups={groups} students={membershipRows} onClose={() => setShowClassManager(false)} />}
       {showClassReport && classReport && <ClassReportModal report={classReport} onClose={() => setShowClassReport(false)} />}
     </div>
   );
@@ -537,6 +538,7 @@ const SummaryCard: React.FC<{
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canManageUsers = false, teacherUid = null }) => {
   const [tab, setTab]               = useState<Tab>('students');
   const [rows, setRows]             = useState<TeacherStudentRow[]>([]);
+  const [administrativeRows, setAdministrativeRows] = useState<TeacherStudentRow[]>([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -567,8 +569,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
     // Use realtime subscription so both the Students table and Ranking tab
     // always reflect the same live data from the flat `progress` collection,
     // identical to the data source used by the student-facing RankScreen.
-    const unsub = subscribeToTeacherData((data) => {
+    const unsub = subscribeToTeacherData((data, context) => {
       setRows(data);
+      setAdministrativeRows(context.administrativeRows);
       setLoading(false);
     }, null, canManageUsers ? null : teacherUid, {
       actorUid: user.uid,
@@ -596,6 +599,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
     if (!group) return rows;
     return getClassComposition(group, rows).students;
   }, [groups, rows, selectedGroupId]);
+
+  const membershipRows = useMemo(
+    () => [...rows, ...administrativeRows],
+    [administrativeRows, rows],
+  );
 
   // ── Loading state ──────────────────────────────────────────
   if (loading) {
@@ -696,7 +704,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
 
         {/* ── Tab content ─────────────────────────────── */}
         {tab === 'students' ? (
-          <StudentsTab rows={dashboardRows} allRows={rows} user={user} canManageUsers={canManageUsers} groups={groups} selectedGroupId={selectedGroupId} onSelectedGroupIdChange={setSelectedGroupId} onStudentDeleted={handleStudentDeleted} />
+          <StudentsTab rows={dashboardRows} allRows={rows} membershipRows={membershipRows} user={user} canManageUsers={canManageUsers} groups={groups} selectedGroupId={selectedGroupId} onSelectedGroupIdChange={setSelectedGroupId} onStudentDeleted={handleStudentDeleted} />
         ) : tab === 'ranking' ? (
           <RankingTab rows={dashboardRows} />
         ) : canManageUsers ? (

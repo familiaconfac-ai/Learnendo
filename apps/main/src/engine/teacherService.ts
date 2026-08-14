@@ -16,6 +16,7 @@ import { db } from '../services/firebase';
 import { UserTestData } from '../types';
 import { deriveDashboardAnswerMetrics, getLastPedagogicalActivity, getUniqueCompletedActivityCount } from './dashboardMetrics';
 import { subscribeToLivePedagogicalActivity, type LiveActivityScope } from '../services/livePedagogicalActivity';
+import { partitionStudentAccounts } from '../services/studentRolePolicy';
 
 // ─────────────────────────────────────────────────────────────
 // Re-exports so callers only need one import
@@ -214,10 +215,11 @@ function buildTeacherRow(student: RankedStudent & UserProgressSummary, raw?: Das
  */
 export async function getTeacherDashboardData(courseId?: string): Promise<TeacherStudentRow[]> {
   const allSummaries = await getAllUserProgressSummaries();
+  const { students } = partitionStudentAccounts(allSummaries);
   // Filter by course when requested — per-course ranking rule
   const summaries = courseId
-    ? allSummaries.filter(s => !s.courseId || s.courseId === courseId)
-    : allSummaries;
+    ? students.filter(s => !s.courseId || s.courseId === courseId)
+    : students;
   const ranked = rankStudents(summaries);
   return ranked.map(student => buildTeacherRow(student, { tests: student.tests }));
 }
@@ -292,13 +294,13 @@ const COURSE_LANGUAGE_MAP: Record<string, string> = {
  * Falls back to an empty list and calls `cb([])` when Firestore is unavailable.
  */
 export function subscribeToTeacherData(
-  cb: (rows: TeacherStudentRow[]) => void,
+  cb: (rows: TeacherStudentRow[], context: { administrativeRows: TeacherStudentRow[] }) => void,
   courseId?: string | null,
   teacherUid?: string | null,
   liveActivityScope?: LiveActivityScope,
 ): () => void {
   if (!db) {
-    cb([]);
+    cb([], { administrativeRows: [] });
     return () => {};
   }
 
@@ -382,8 +384,9 @@ export function subscribeToTeacherData(
       return hasStudySignals || hasIdentity;
     });
 
+    const partitioned = partitionStudentAccounts(summaries);
     const forDashboard = courseId
-      ? summaries.filter((summary) => {
+      ? partitioned.students.filter((summary) => {
           if (summary.courseId === courseId) return true;
           if (summary.courses?.[courseId] !== undefined) return true;
           const expectedLang = COURSE_LANGUAGE_MAP[courseId];
@@ -392,7 +395,7 @@ export function subscribeToTeacherData(
           if (expectedLang && placementLanguage === expectedLang) return true;
           return false;
         })
-      : summaries;
+      : partitioned.students;
 
     const scopedDashboard = teacherUid
       ? forDashboard.filter((summary) => {
@@ -402,7 +405,12 @@ export function subscribeToTeacherData(
       : forDashboard;
 
     const ranked = rankStudents(scopedDashboard);
-    cb(ranked.map((student) => buildTeacherRow(student, progressDocs.get(student.uid))));
+    const administrativeRows = rankStudents(partitioned.administrative)
+      .map((account) => buildTeacherRow(account, progressDocs.get(account.uid)));
+    cb(
+      ranked.map((student) => buildTeacherRow(student, progressDocs.get(student.uid))),
+      { administrativeRows },
+    );
   };
 
   const unsubProgress = onSnapshot(
@@ -413,7 +421,7 @@ export function subscribeToTeacherData(
     },
     (err) => {
       console.error('[TeacherService] onSnapshot error:', err);
-      cb([]);
+      cb([], { administrativeRows: [] });
     },
   );
 
@@ -425,7 +433,7 @@ export function subscribeToTeacherData(
     },
     (err) => {
       console.error('[TeacherService] users onSnapshot error:', err);
-      cb([]);
+      cb([], { administrativeRows: [] });
     },
   );
 

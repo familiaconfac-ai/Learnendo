@@ -1,4 +1,5 @@
 import type { TeacherStudentRow } from '../engine/teacherService';
+import { isStudentAccountRole } from './studentRolePolicy';
 import { computeScore } from '../engine/rankingService';
 import { resolveCurriculumProgressPercent } from '../engine/curriculumProgress';
 
@@ -85,7 +86,7 @@ export function buildClassPerformanceReport(
     // Legacy student profiles may not have a role. Exclude only accounts that
     // are positively identified as teacher/admin; class composition owns the
     // membership decision before the report reaches this point.
-    .filter((student) => student.role !== 'teacher' && student.role !== 'admin')
+    .filter((student) => isStudentAccountRole(student.role))
     .map((student) => ({ student, score: computeScore(student) }))
     .sort((left, right) => right.score - left.score ||
       (left.student.displayName || '').localeCompare(right.student.displayName || ''));

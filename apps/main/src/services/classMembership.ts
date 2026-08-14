@@ -1,5 +1,6 @@
 import type { LiveClassGroup } from '../types';
 import type { TeacherStudentRow } from '../engine/teacherService';
+import { isStudentAccountRole } from './studentRolePolicy';
 
 export interface ClassComposition {
   teacher: TeacherStudentRow | null;
@@ -8,7 +9,7 @@ export interface ClassComposition {
 }
 
 function isAdministrativeMember(student: TeacherStudentRow): boolean {
-  return student.role === 'teacher' || student.role === 'admin';
+  return !isStudentAccountRole(student.role);
 }
 
 export function getClassComposition(
