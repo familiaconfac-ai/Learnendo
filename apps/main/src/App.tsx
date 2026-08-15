@@ -28,6 +28,7 @@ import { ProgressEngine } from './engine/progressEngine';
 import { COURSES } from './courses/courseList';
 import { COURSE_WORKBOOKS } from './courses/courseRegistry';
 import { appendUniqueCompletionActivities } from './engine/lessonProgressionEngine';
+import { normalizePracticeRunAnswerMetrics } from './engine/exerciseCompletionEngine';
 import { auth, db, loginWithEmail, registerWithEmail, convertAnonymousToUser } from './services/firebase';
 import { createSession, createStudentProfile, finishSession, recordDailyAccess, updateLastActive, createOrUpdateUserProfile, createSessionForUser, recordLessonCompletion, getSessionCount, getWeeklyProgress } from './services/db';
 import { completeDayAndGetResult, saveStudentPlacementTest } from './engine/weeklyProgressEngine';
@@ -2255,8 +2256,6 @@ const App: React.FC = () => {
       return;
     }
 
-    const alreadyDone = progress.completedActivities.includes(dayId);
-
     // Extract day/lesson numbers early so we can update the path in progress
     const dayMatch = dayId.match(/d(\d+)/);
     const dayNumber = dayMatch ? parseInt(dayMatch[1], 10) : NaN;
@@ -2397,18 +2396,6 @@ const App: React.FC = () => {
     // Firebase: Track day completion and check for week completion
     if (user?.uid && currentLessonId) {
       // ── Atomic progress write (independent of completeCourseDay) ──
-      if (user?.uid && !alreadyDone) {
-        const questionCount = Math.max(1, currentDay?.exercises?.length ?? 0);
-        const estimatedCorrect = Math.round((score / 100) * questionCount);
-        trackLessonCompletion({
-          userId: user.uid,
-          lessonId: dayId,
-          score,
-          totalQuestions: questionCount,
-          correctAnswers: estimatedCorrect,
-        }).catch(e => console.warn('[App] trackLessonCompletion failed:', e));
-      }
-
       try {
         if (!isNaN(lessonNumber) && !isNaN(dayNumber)) {
           // ── Existing weeklyProgress path (kept unchanged) ──
@@ -2467,6 +2454,7 @@ const App: React.FC = () => {
                     displayName: user.displayName ?? null,
                     email: user.email ?? null,
                     courseId: currentCourseId ?? DEFAULT_COURSE_ID,
+                    languageCode: COURSE_TO_LANGUAGE[currentCourseId ?? DEFAULT_COURSE_ID],
                     currentWorkbook: updated.currentWorkbook,
                     currentLesson: updated.currentLesson,
                     currentDay: updated.currentDay,
@@ -3102,6 +3090,26 @@ const App: React.FC = () => {
             lessonTitle={currentPracticeLesson?.title}
             isDayCompleted={isCurrentPracticeDayCompleted}
             onComplete={handleDayComplete}
+            onActivityComplete={async (dayId, score, analytics) => {
+              if (!user?.uid) return;
+              const answerMetrics = normalizePracticeRunAnswerMetrics(
+                currentDay.exercises?.length ?? 0,
+                analytics.attempts,
+                analytics.errors,
+              );
+              const courseId = currentCourseId ?? DEFAULT_COURSE_ID;
+              await trackLessonCompletion({
+                userId: user.uid,
+                lessonId: dayId,
+                score,
+                ...answerMetrics,
+                courseId,
+                languageCode: COURSE_TO_LANGUAGE[courseId],
+                currentWorkbook: progress.currentWorkbook,
+                currentLesson: progress.currentLesson,
+                currentDay: progress.currentDay,
+              });
+            }}
             onLessonProgressChange={handleLessonExerciseProgress}
             onContinueToNextDay={nextPracticeDay ? () => {
               dayStartTimeRef.current = Date.now();

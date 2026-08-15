@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount } from './dashboardMetrics.ts';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics.ts';
+
+assert.equal(resolveDashboardLanguageCode('english', 'es'), 'en', 'active English course must beat a stale Spanish language code');
+assert.equal(resolveDashboardLanguageCode('spanish', 'en'), 'es');
+assert.equal(resolveDashboardLanguageCode('unknown', 'pt'), 'pt');
 
 assert.equal(getUniqueCompletedActivityCount({
   daysCompleted: 99,
@@ -71,6 +75,15 @@ assert.equal(getLastPedagogicalActivity({
   },
   courses: { english: { lastActivityAt: '2026-08-09T10:00:00Z' } },
 }), '2026-08-09T10:00:00Z', 'latest pedagogical marker must win');
+
+const replayCompletedToday = getLastPedagogicalActivity({
+  lastActive: '2026-08-14T23:20:25Z',
+  courseId: 'english',
+  languageCode: 'en',
+  courses: { english: { lastActivityAt: '2026-08-14T23:20:25Z' } },
+});
+assert.equal(getDaysWithoutActivity(replayCompletedToday, new Date('2026-08-14T23:40:00Z')), 0,
+  'a completed replay must clear the inactivity alert on the same Sao Paulo calendar day');
 
 const responseActivity = getLatestResponseActivityByStudent([
   { userId: 'ryan', answer: 'first answer', createdAt: '2026-08-04T20:00:00Z' },

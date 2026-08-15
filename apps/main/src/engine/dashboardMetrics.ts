@@ -1,6 +1,21 @@
 type DashboardProgress = Record<string, any>;
 export const DASHBOARD_TIME_ZONE = 'America/Sao_Paulo';
 
+const COURSE_LANGUAGE_CODES: Record<string, string> = {
+  english: 'en',
+  portuguese_foreigners: 'pt',
+  portuguese_native: 'pt',
+  spanish: 'es',
+  greek_koine: 'el',
+  hebrew_biblical: 'he',
+};
+
+/** The active course is authoritative when a legacy language field disagrees. */
+export function resolveDashboardLanguageCode(courseId: unknown, ...fallbacks: unknown[]): string | undefined {
+  if (typeof courseId === 'string' && COURSE_LANGUAGE_CODES[courseId]) return COURSE_LANGUAGE_CODES[courseId];
+  return fallbacks.find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim();
+}
+
 export type CompletedActivityRecord = {
   id: string;
   completedAt?: unknown;

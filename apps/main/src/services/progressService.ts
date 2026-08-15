@@ -14,16 +14,33 @@ export async function trackLessonCompletion({
   score,
   totalQuestions,
   correctAnswers,
+  attempts,
+  errors,
+  courseId,
+  languageCode,
+  currentWorkbook,
+  currentLesson,
+  currentDay,
 }: {
   userId: string;
   lessonId: string;
   score: number;
   totalQuestions: number;
   correctAnswers: number;
+  attempts?: number;
+  errors?: number;
+  courseId?: string;
+  languageCode?: string;
+  currentWorkbook?: number;
+  currentLesson?: number;
+  currentDay?: number;
 }): Promise<void> {
   if (!userId || !db) return;
 
-  const accuracy = totalQuestions > 0 ? correctAnswers / totalQuestions : 0;
+  const answerAttempts = Math.max(0, attempts ?? totalQuestions);
+  const answerErrors = Math.min(answerAttempts, Math.max(0, errors ?? answerAttempts - correctAnswers));
+  const answerCorrect = Math.min(answerAttempts, Math.max(0, answerAttempts - answerErrors));
+  const accuracy = answerAttempts > 0 ? answerCorrect / answerAttempts : 0;
 
   console.log('🔥 FIREBASE WRITE START', { userId, lessonId, score, correctAnswers, totalQuestions, accuracy });
 
@@ -34,24 +51,49 @@ export async function trackLessonCompletion({
       const data = snapshot.data() ?? {};
       const existing = data.lessons?.[lessonId] ?? data[`lessons.${lessonId}`];
       const firstCompletion = existing?.completed !== true;
+      const previousAttempts = Math.max(0, existing?.attempts ?? existing?.totalQuestions ?? 0);
+      const previousCorrect = Math.max(0, existing?.correctAnswers ?? 0);
+      const previousErrors = Math.max(0, existing?.errors ?? previousAttempts - previousCorrect);
+      const nextAttempts = previousAttempts + answerAttempts;
+      const nextCorrect = previousCorrect + answerCorrect;
+      const nextErrors = previousErrors + answerErrors;
+      const activeCourse = courseId ? {
+        ...(data.courses?.[courseId] ?? {}),
+        courseId,
+        ...(languageCode ? { languageCode } : {}),
+        lastActivityAt: serverTimestamp(),
+        ...(currentWorkbook !== undefined ? { currentWorkbook } : {}),
+        ...(currentLesson !== undefined ? { currentLesson } : {}),
+        ...(currentDay !== undefined ? { currentDay } : {}),
+      } : null;
       transaction.set(reference, {
         lastLesson: lessonId,
         lastActive: serverTimestamp(),
         updatedAt: serverTimestamp(),
+        ...(courseId ? { courseId } : {}),
+        ...(languageCode ? { languageCode } : {}),
+        ...(currentWorkbook !== undefined ? { currentWorkbook } : {}),
+        ...(currentLesson !== undefined ? { currentLesson } : {}),
+        ...(currentDay !== undefined ? { currentDay } : {}),
+        ...(activeCourse ? { courses: { ...(data.courses ?? {}), [courseId!]: activeCourse } } : {}),
         ...(firstCompletion ? {
           sessions: increment(1),
           daysCompleted: increment(1),
-          totalAttempts: increment(totalQuestions),
-          totalCorrect: increment(correctAnswers),
         } : {}),
+        totalAttempts: increment(answerAttempts),
+        totalCorrect: increment(answerCorrect),
+        totalErrors: increment(answerErrors),
         lessons: {
           [lessonId]: {
             completed: true,
-            score,
+            score: firstCompletion ? score : (existing?.score ?? score),
             totalQuestions,
-            correctAnswers,
-            accuracy,
+            attempts: nextAttempts,
+            correctAnswers: nextCorrect,
+            errors: nextErrors,
+            accuracy: nextAttempts > 0 ? nextCorrect / nextAttempts : accuracy,
             completedAt: existing?.completedAt ?? serverTimestamp(),
+            lastActivityAt: serverTimestamp(),
           },
         },
       }, { merge: true });

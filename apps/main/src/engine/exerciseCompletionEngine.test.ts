@@ -14,6 +14,8 @@ import {
   mergeLegacyCompletedDays,
   migrateMovedExerciseProgress,
   practiceRunSummary,
+  practiceCompletionPersistence,
+  normalizePracticeRunAnswerMetrics,
   resolvePracticeStart,
   workbookCompletionSummary,
 } from './exerciseCompletionEngine.ts';
@@ -156,4 +158,18 @@ test('15. moving a stable exercise ID mirrors completion without deleting the ol
   const migrated = migrateMovedExerciseProgress(original, workbook);
   assert.ok(migrated.records['w1/lesson1/day6/e1']);
   assert.equal(migrated.records['w1/lesson1/day7/e1']?.source, 'migrated-day');
+});
+
+test('16. replay completion records activity without duplicating the unique trail', () => {
+  assert.deepEqual(practiceCompletionPersistence(false), { recordActivity: true, recordUniqueCompletion: true });
+  assert.deepEqual(practiceCompletionPersistence(true), { recordActivity: true, recordUniqueCompletion: false });
+});
+
+test('17. an error followed by correction remains two answer attempts', () => {
+  assert.deepEqual(normalizePracticeRunAnswerMetrics(15, 16, 1), {
+    totalQuestions: 15,
+    attempts: 16,
+    errors: 1,
+    correctAnswers: 15,
+  });
 });

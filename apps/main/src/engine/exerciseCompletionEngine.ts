@@ -290,6 +290,22 @@ export function practiceRunSummary(state: ExerciseProgressState, runId: string) 
     vocabularyReviewed: new Set(runs.flatMap((run) => run.vocabularyReviewedIds)).size };
 }
 
+export function practiceCompletionPersistence(isReplay: boolean) {
+  return { recordActivity: true, recordUniqueCompletion: !isReplay };
+}
+
+export function normalizePracticeRunAnswerMetrics(totalQuestions: number, attempts: number, errors: number) {
+  const uniqueQuestions = Math.max(1, Math.floor(totalQuestions));
+  const answerAttempts = Math.max(uniqueQuestions, Math.floor(attempts));
+  const answerErrors = Math.min(answerAttempts, Math.max(0, Math.floor(errors)));
+  return {
+    totalQuestions: uniqueQuestions,
+    attempts: answerAttempts,
+    errors: answerErrors,
+    correctAnswers: answerAttempts - answerErrors,
+  };
+}
+
 export function workbookCompletionSummary(workbook: Workbook, state: ExerciseProgressState) {
   const exercises = workbook.lessons.flatMap((lesson) => lesson.days.flatMap((day) => day.exercises));
   let completed = 0;

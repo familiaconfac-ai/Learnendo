@@ -10,6 +10,7 @@ import {
   mergeLegacyCompletedDays,
   migrateMovedExerciseProgress,
   practiceRunSummary,
+  practiceCompletionPersistence,
   resolvePracticeStart,
   saveExerciseProgress,
   workbookCompletionSummary,
@@ -42,6 +43,18 @@ import { settleEditorialSequenceLoad, type EditorialSequenceLoadStatus } from '.
 
 const debugEditorialSequence = import.meta.env.DEV && import.meta.env.VITE_DEBUG_EDITORIAL_SEQUENCE === 'true';
 
+export interface PracticeCompletionAnalytics {
+  attempts: number;
+  errors: number;
+  accuracy: number;
+  points: number;
+  initialAccuracy?: number;
+  reviewedExercises?: number;
+  reviewAttempts?: number;
+  finalMastery?: number;
+  isLessonFinalReview?: boolean;
+}
+
 interface ExercisePracticeProps {
   day: Day;
   lessonId: string;
@@ -52,17 +65,12 @@ interface ExercisePracticeProps {
   onComplete: (
     dayId: string,
     score: number,
-    analytics?: {
-      attempts: number;
-      errors: number;
-      accuracy: number;
-      points: number;
-      initialAccuracy?: number;
-      reviewedExercises?: number;
-      reviewAttempts?: number;
-      finalMastery?: number;
-      isLessonFinalReview?: boolean;
-    },
+    analytics?: PracticeCompletionAnalytics,
+  ) => void | Promise<void>;
+  onActivityComplete?: (
+    dayId: string,
+    score: number,
+    analytics: PracticeCompletionAnalytics,
   ) => void | Promise<void>;
   onBack: () => void;
   totalDays?: number;
@@ -94,6 +102,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   interfaceLocale,
   progress,
   onComplete,
+  onActivityComplete,
   onBack,
   totalDays,
   onGrammar,
@@ -351,10 +360,9 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   );
 
   const persistDayCompletion = () => {
-    if (isReplay) return Promise.resolve();
     if (completionPromiseRef.current) return completionPromiseRef.current;
     isCompletedRef.current = true;
-    const request = Promise.resolve(onComplete(day.id, masterySummary.finalMastery, {
+    const analytics: PracticeCompletionAnalytics = {
       attempts: runSummary.attempts,
       errors: runSummary.errors,
       accuracy: masterySummary.initialAccuracy,
@@ -364,18 +372,24 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       reviewAttempts: masterySummary.reviewAttempts,
       finalMastery: masterySummary.finalMastery,
       isLessonFinalReview: isLastDayOfLesson,
-    })).catch((error) => {
+    };
+    const persistence = practiceCompletionPersistence(isReplay);
+    const request = Promise.resolve(persistence.recordActivity
+      ? onActivityComplete?.(day.id, masterySummary.finalMastery, analytics)
+      : undefined)
+      .then(() => persistence.recordUniqueCompletion ? onComplete(day.id, masterySummary.finalMastery, analytics) : undefined)
+      .catch((error) => {
       console.error('[ExercisePractice] onComplete failed:', error);
       isCompletedRef.current = false;
       completionPromiseRef.current = null;
       throw error;
-    });
+      });
     completionPromiseRef.current = request;
     return request;
   };
 
   useEffect(() => {
-    if (phase === 'summary' && mastery.phase === 'complete' && !isReplay) {
+    if (phase === 'summary' && mastery.phase === 'complete') {
       void persistDayCompletion().catch(() => { /* the summary keeps a retry path */ });
     }
   }, [phase, mastery.phase, isReplay]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -457,11 +471,6 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   };
 
   const handleDayContinue = (destination?: () => void) => {
-    if (isReplay) {
-      clearActiveRunStorage(runId);
-      (destination ?? leaveExercise)();
-      return;
-    }
     void persistDayCompletion().then(() => {
       clearActiveRunStorage(runId);
       (destination ?? leaveExercise)();

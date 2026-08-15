@@ -14,7 +14,7 @@ import { rankStudents, RankedStudent, computeScore } from './rankingService';
 import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
-import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, getDaysWithoutActivity, getLastPedagogicalActivity, getUniqueCompletedActivityCount } from './dashboardMetrics';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, getDaysWithoutActivity, getLastPedagogicalActivity, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics';
 import { subscribeToLivePedagogicalActivity, type LiveActivityScope } from '../services/livePedagogicalActivity';
 import { partitionStudentAccounts } from '../services/studentRolePolicy';
 
@@ -272,15 +272,6 @@ export function filterRows(rows: TeacherStudentRow[], query: string): TeacherStu
 // Course → language code mapping (mirrors App.tsx COURSE_TO_LANGUAGE)
 // Used to match legacy Firestore docs that stored languageCode instead of courseId.
 // ─────────────────────────────────────────────────────────────
-const COURSE_LANGUAGE_MAP: Record<string, string> = {
-  english:               'en',
-  portuguese_foreigners: 'pt',
-  portuguese_native:     'pt',
-  spanish:               'es',
-  greek_koine:           'el',
-  hebrew_biblical:       'he',
-};
-
 // ─────────────────────────────────────────────────────────────
 // Realtime subscription (flat "progress" collection)
 // ─────────────────────────────────────────────────────────────
@@ -357,12 +348,13 @@ export function subscribeToTeacherData(
           [liveActivityByStudent.get(uid)],
         ) ?? undefined,
         courseId: progressData.courseId ?? userData.courseId ?? undefined,
-        languageCode:
-          progressData.language ??
-          progressData.languageCode ??
-          userData.languageCode ??
-          placement?.languageCode ??
-          undefined,
+        languageCode: resolveDashboardLanguageCode(
+          progressData.courseId ?? userData.courseId,
+          progressData.language,
+          progressData.languageCode,
+          userData.languageCode,
+          placement?.languageCode,
+        ),
         studyProfile: progressData.studyProfile ?? userData.studyProfile ?? undefined,
         tests: progressData.tests ?? undefined,
         courses: progressData.courses ?? undefined,
@@ -389,7 +381,7 @@ export function subscribeToTeacherData(
       ? partitioned.students.filter((summary) => {
           if (summary.courseId === courseId) return true;
           if (summary.courses?.[courseId] !== undefined) return true;
-          const expectedLang = COURSE_LANGUAGE_MAP[courseId];
+          const expectedLang = resolveDashboardLanguageCode(courseId);
           if (expectedLang && summary.languageCode === expectedLang) return true;
           const placementLanguage = getPlacementRecord(progressDocs.get(summary.uid))?.languageCode;
           if (expectedLang && placementLanguage === expectedLang) return true;
