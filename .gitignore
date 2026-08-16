@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Locally generated certificate preview; source and required assets are versioned.
+/apps/main/output/pdf/learnendo-certificate-preview.pdf
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -592,13 +592,35 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
           const completed = itemState?.status === 'mastered';
           const incorrectAttempts = itemState?.incorrectAttempts ?? 0;
           const active = phase === 'exercise' && index === currentIdx;
-          const statusClass = incorrectAttempts > 0 ? 'bg-amber-400' : completed ? 'bg-emerald-400' : active ? 'bg-blue-400 ring-2 ring-white' : 'bg-slate-600';
-          const attemptLabel = incorrectAttempts > 0 ? `, ${incorrectAttempts} incorrect attempt${incorrectAttempts === 1 ? '' : 's'}, eventually corrected` : completed ? ', correct on first attempt' : '';
+          const activeReview = active && mastery.phase === 'review' && mastery.currentExerciseId === exercise.id;
+          const needsReview = mastery.reviewQueue.includes(exercise.id) && !activeReview;
+          const statusClass = activeReview
+            ? 'bg-emerald-400 ring-2 ring-white'
+            : needsReview
+              ? 'bg-amber-400'
+              : completed
+                ? 'bg-blue-500'
+                : active
+                  ? 'bg-blue-400 ring-2 ring-white'
+                  : 'bg-slate-600';
+          const attemptLabel = activeReview
+            ? ', active review'
+            : needsReview
+              ? `, needs review after ${incorrectAttempts} incorrect attempt${incorrectAttempts === 1 ? '' : 's'}`
+              : completed
+                ? ', completed'
+                : '';
           return <button type="button" key={exercise.id} title={`Practice exercise ${index + 1}${attemptLabel}`} aria-label={`Practice exercise ${index + 1}${attemptLabel}`}
             onClick={() => navigateToExercise(index)} className={`h-3 w-3 rounded-full ${statusClass}`} />;
         })}
       </div>
+      {phase === 'exercise' && mastery.phase === 'review' && (
+        <div data-testid="review-mode-indicator" role="status" className="fixed left-1/2 top-[116px] z-40 -translate-x-1/2 rounded-full border border-emerald-300/60 bg-emerald-950/95 px-4 py-1.5 text-center text-xs font-black uppercase tracking-[0.16em] text-emerald-200 shadow-lg">
+          Review exercise · first try counts
+        </div>
+      )}
       <PracticeSection
+        key={`${currentExercise.id}:${mastery.items[currentExercise.id]?.reviewPresentation ?? 0}`}
         item={practiceItem as any}
         onResult={handleResult}
         currentIdx={currentIdx}

@@ -7,18 +7,23 @@ function semanticKey(exercise: Exercise): string {
   return `${sourceAudio(exercise)}|${exercise.correctValue}`.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
-function takeDiverse(candidates: Exercise[], count: number, used: Set<string>): Exercise[] {
+function takeDiverse(
+  candidates: Exercise[],
+  count: number,
+  used: Set<string>,
+  keyOf: (exercise: Exercise) => string = semanticKey,
+): Exercise[] {
   const available = [...new Map(
     candidates
-      .filter((exercise) => !used.has(semanticKey(exercise)))
-      .map((exercise) => [semanticKey(exercise), exercise] as const),
+      .filter((exercise) => !used.has(keyOf(exercise)))
+      .map((exercise) => [keyOf(exercise), exercise] as const),
   ).values()];
   const selected: Exercise[] = [];
   for (let index = 0; index < count && available.length; index += 1) {
     const target = Math.min(available.length - 1, Math.floor((index * available.length) / count));
     const [exercise] = available.splice(target, 1);
     selected.push(exercise);
-    used.add(semanticKey(exercise));
+    used.add(keyOf(exercise));
   }
   return selected;
 }
@@ -33,7 +38,8 @@ function sourceAudio(exercise: Exercise): string {
 
 function isUsableSpeakingSource(exercise: Exercise): boolean {
   const answer = exercise.correctValue.trim();
-  return Boolean(answer)
+  return exercise.finalTestSpeakingEligible !== false
+    && Boolean(answer)
     && semanticKey({ ...exercise, correctValue: sourceAudio(exercise) }) !== semanticKey(exercise)
     && !/repeat|shadow|dialogue|read aloud/i.test(exercise.instruction)
     && !/___/.test(sourceAudio(exercise))
@@ -42,7 +48,8 @@ function isUsableSpeakingSource(exercise: Exercise): boolean {
 }
 
 function isFallbackSpeakingSource(exercise: Exercise): boolean {
-  return Boolean(exercise.correctValue.trim())
+  return exercise.finalTestSpeakingEligible !== false
+    && Boolean(exercise.correctValue.trim())
     && !/repeat|shadow|dialogue|read aloud/i.test(exercise.instruction)
     && !/___/.test(sourceAudio(exercise));
 }
@@ -134,12 +141,13 @@ function buildFinalTest(lesson: Lesson, sourcePool: Exercise[]): Exercise[] {
     (/\?/.test(sourceAudio(exercise)) || /\?/.test(exercise.instruction))
     && isUsableSpeakingSource(exercise)
   );
-  const speakingSources = takeDiverse(questionCandidates, FINAL_TEST_COUNTS.speaking, speakingUsed);
+  const speakingKey = (exercise: Exercise) => exercise.finalTestSpeakingSelectionKey ?? semanticKey(exercise);
+  const speakingSources = takeDiverse(questionCandidates, FINAL_TEST_COUNTS.speaking, speakingUsed, speakingKey);
   if (speakingSources.length < FINAL_TEST_COUNTS.speaking) {
-    speakingSources.push(...takeDiverse(sourcePool.filter(isUsableSpeakingSource), FINAL_TEST_COUNTS.speaking - speakingSources.length, speakingUsed));
+    speakingSources.push(...takeDiverse(sourcePool.filter(isUsableSpeakingSource), FINAL_TEST_COUNTS.speaking - speakingSources.length, speakingUsed, speakingKey));
   }
   if (speakingSources.length < FINAL_TEST_COUNTS.speaking) {
-    speakingSources.push(...takeDiverse(sourcePool.filter(isFallbackSpeakingSource), FINAL_TEST_COUNTS.speaking - speakingSources.length, speakingUsed));
+    speakingSources.push(...takeDiverse(sourcePool.filter(isFallbackSpeakingSource), FINAL_TEST_COUNTS.speaking - speakingSources.length, speakingUsed, speakingKey));
   }
   const listeningSources = takeDiverse(uniqueByAudio(sourcePool.filter((exercise) =>
     Boolean(sourceAudio(exercise))

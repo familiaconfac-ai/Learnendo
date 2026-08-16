@@ -25,6 +25,7 @@ export interface MasteryItemState {
   masteredDuringReview: boolean;
   attemptHistory: MasteryAttempt[];
   currentReviewHadError: boolean;
+  reviewPresentation: number;
   incorrectAttempts: number;
   technicalFailures: number;
 }
@@ -62,6 +63,7 @@ function createItem(exerciseId: string): MasteryItemState {
     masteredDuringReview: false,
     attemptHistory: [],
     currentReviewHadError: false,
+    reviewPresentation: 0,
     incorrectAttempts: 0,
     technicalFailures: 0,
   };
@@ -213,6 +215,31 @@ export function recordMasteryAttempt(state: MasterySessionState, exerciseId: str
     };
   }
 
+  // A correction in the same review presentation unlocks navigation, but it
+  // does not prove retrieval. Rotate the item to the end of the live queue and
+  // require a clean first attempt on a later presentation.
+  if (item.currentReviewHadError) {
+    const remainingQueue = state.reviewQueue.filter((queuedId) => queuedId !== exerciseId);
+    const reviewQueue = [...remainingQueue, exerciseId];
+    return {
+      ...state,
+      reviewAttempts,
+      reviewQueue,
+      currentExerciseId: reviewQueue[0],
+      items: {
+        ...state.items,
+        [exerciseId]: {
+          ...item,
+          status: 'queued-for-review',
+          reviewAttempts: item.reviewAttempts + 1,
+          currentReviewHadError: false,
+          reviewPresentation: item.reviewPresentation + 1,
+          attemptHistory,
+        },
+      },
+    };
+  }
+
   const reviewQueue = state.reviewQueue.filter((queuedId) => queuedId !== exerciseId);
   const reviewedExerciseIds = state.reviewedExerciseIds.includes(exerciseId)
     ? state.reviewedExerciseIds
@@ -262,6 +289,7 @@ export function restoreMasterySession(raw: MasterySessionState): MasterySessionS
       masteredDuringReview: source?.masteredDuringReview ?? false,
       attemptHistory: inferredHistory,
       incorrectAttempts: source?.incorrectAttempts ?? inferredHistory.filter((attempt) => !attempt.correct).length,
+      reviewPresentation: source?.reviewPresentation ?? 0,
     }];
   })) as Record<string, MasteryItemState>;
 

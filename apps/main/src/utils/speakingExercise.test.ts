@@ -50,6 +50,21 @@ test('question-and-answer accepts authored answer variants, not the question', (
   assert.equal(isSpeakingResponseCorrect(qa, 'What is five plus five?'), false);
 });
 
+test('personal speaking templates accept complete natural answers and reject fragments', () => {
+  const name = { instruction: 'Listen and answer with your name.', assessmentMode: 'speaking' as const, audioValue: 'What is your name?', correctValue: 'My name is Ana.', acceptedAnswers: ['My name is {name}.', 'I am {name}.'] };
+  const age = { instruction: 'Listen and answer with your age.', assessmentMode: 'speaking' as const, audioValue: 'How old are you?', correctValue: 'I am twelve years old.', acceptedAnswers: ['I am {age} years old.', 'I am {age}.'] };
+  const place = { instruction: 'Listen and answer with your country.', assessmentMode: 'speaking' as const, audioValue: 'Where are you from?', correctValue: 'I am from Brazil.', acceptedAnswers: ['I am from {place}.'] };
+
+  for (const answer of ['My name is Beatriz.', "I'm Gabriel."]) assert.equal(isSpeakingResponseCorrect(name, answer), true, answer);
+  for (const answer of ['I am 13 years old.', "I'm eleven."]) assert.equal(isSpeakingResponseCorrect(age, answer), true, answer);
+  for (const answer of ['I am from Argentina.', "I'm from South Africa."]) assert.equal(isSpeakingResponseCorrect(place, answer), true, answer);
+  for (const fragment of ['my name is', 'i am years old', 'i am from']) {
+    assert.equal(isSpeakingResponseCorrect(name, fragment), false, fragment);
+    assert.equal(isSpeakingResponseCorrect(age, fragment), false, fragment);
+    assert.equal(isSpeakingResponseCorrect(place, fragment), false, fragment);
+  }
+});
+
 test('reported Joe answer accepts normalization without accepting another name', () => {
   const choosingTeam = {
     instruction: 'Listen and answer aloud in English.',

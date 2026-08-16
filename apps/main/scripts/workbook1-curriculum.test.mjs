@@ -34,6 +34,27 @@ test('each Final Test has 8 listening-writing, 6 shadowing and 6 speaking exerci
   }
 });
 
+test('Workbook 1 has no repeat task with a semantic answer or incomplete personal target', () => {
+  const exercises = workbook1.lessons.flatMap((lesson) => lesson.days.flatMap((day) => day.exercises));
+  const incompatibleRepeat = exercises.filter((exercise) =>
+    /listen and repeat/i.test(exercise.instruction)
+    && /^(?:same|different)$/i.test(exercise.correctValue.trim()));
+  assert.deepEqual(incompatibleRepeat.map((exercise) => exercise.id), []);
+
+  const modeledRepeatMismatch = exercises.filter((exercise) =>
+    ['shadowing', 'repeat'].includes(exercise.assessmentMode)
+    && normalized(exercise.audioValue) !== normalized(exercise.correctValue));
+  assert.deepEqual(modeledRepeatMismatch.map((exercise) => exercise.id), []);
+
+  const incompletePersonalTargets = new Set([
+    'my name is', 'i am years old', 'i am from', 'his name is', 'her name is', 'he is from', 'she is from',
+  ]);
+  assert.deepEqual(
+    exercises.filter((exercise) => incompletePersonalTargets.has(normalized(exercise.correctValue))).map((exercise) => exercise.id),
+    [],
+  );
+});
+
 test('generated Final Tests use versioned IDs instead of reassigning practice IDs', () => {
   for (const lesson of workbook1.lessons) {
     if (lesson.id === 'wb1_l1') continue;

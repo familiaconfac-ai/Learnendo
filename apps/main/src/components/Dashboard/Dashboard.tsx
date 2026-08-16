@@ -3,6 +3,8 @@ import { Course, UserProgress, SectionType } from '../../types';
 import { LessonStats } from '../../engine/courseProgressEngine';
 import { getProgressStats, formatTime, formatAccuracy, getCurrentPath } from '../../engine/progressStatsService';
 import { COURSE_WORKBOOKS } from '../../courses/courseRegistry';
+import type { LearnendoCertificateRecord } from '../../models/certification';
+import { CertificateModal } from '../Certificate/CertificateModal';
 
 interface DashboardProps {
   progress: UserProgress;
@@ -14,6 +16,7 @@ interface DashboardProps {
   currentLanguage?: 'en' | 'pt' | 'es';
   /** Authenticated user identity — shown as the student card */
   currentUser?: { displayName?: string | null; email?: string | null };
+  certificateRecord?: LearnendoCertificateRecord | null;
   onNavigate: (section: SectionType, params?: any) => void;
 }
 
@@ -91,11 +94,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   userId,
   currentLanguage = 'en',
   currentUser,
+  certificateRecord = null,
   onNavigate,
 }) => {
   const L = DASHBOARD_LABELS[currentLanguage] ?? DASHBOARD_LABELS.en;
   const [stats, setStats] = useState<LessonStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(false);
+  const [certificateView, setCertificateView] = useState<'preview' | 'official' | null>(null);
   const resolvedCourseId = currentCourse?.id ?? currentCourseId ?? 'english';
   const availableWorkbookIds = Object.keys(COURSE_WORKBOOKS[resolvedCourseId] ?? COURSE_WORKBOOKS.english)
     .map(Number)
@@ -145,6 +150,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <p className="text-xs text-slate-500 truncate">{currentUser.email}</p>
           )}
         </div>
+      </div>
+
+      <div className="mb-4 grid gap-2 sm:grid-cols-2">
+        {certificateRecord && (
+          <button type="button" onClick={() => setCertificateView('official')} className="rounded-2xl bg-[#082653] px-5 py-3 font-black text-white shadow-sm">
+            My Certificate
+          </button>
+        )}
+        <button type="button" onClick={() => setCertificateView('preview')} className="rounded-2xl border border-amber-500 bg-amber-50 px-5 py-3 font-black text-[#082653] shadow-sm">
+          Preview Certificate
+        </button>
       </div>
 
       {/* ── Current position card ───────────────────── */}
@@ -220,6 +236,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
           );
         })}
       </div>
+      {certificateView && (
+        <CertificateModal
+          preview={certificateView === 'preview'}
+          record={certificateView === 'official' ? certificateRecord : null}
+          onClose={() => setCertificateView(null)}
+        />
+      )}
     </div>
   );
 };

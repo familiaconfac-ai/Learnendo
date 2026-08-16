@@ -94,7 +94,7 @@ test('four initial errors create one queue entry and preserve all attempts', () 
   ]);
 });
 
-test('an error during review keeps the item current and queued', () => {
+test('an error and correction during review rotates the item instead of mastering it', () => {
   let state = createMasterySession(['one']);
   state = recordMasteryAttempt(state, 'one', false);
   state = recordMasteryAttempt(state, 'one', true);
@@ -104,8 +104,42 @@ test('an error during review keeps the item current and queued', () => {
   assert.deepEqual(state.reviewQueue, ['one']);
   assert.equal(state.items.one.incorrectAttempts, 2);
   state = recordMasteryAttempt(state, 'one', true);
+  assert.equal(state.phase, 'review');
+  assert.deepEqual(state.reviewQueue, ['one']);
+  assert.equal(state.items.one.status, 'queued-for-review');
+  assert.equal(state.items.one.reviewPresentation, 1);
+  state = recordMasteryAttempt(state, 'one', true);
   assert.equal(state.phase, 'complete');
   assert.deepEqual(state.reviewQueue, []);
+});
+
+test('a corrected review item moves behind the other pending exercises', () => {
+  let state = createMasterySession(['1', '2']);
+  for (const id of ['1', '2']) {
+    state = recordMasteryAttempt(state, id, false);
+    state = recordMasteryAttempt(state, id, true);
+  }
+  assert.deepEqual(state.reviewQueue, ['1', '2']);
+  state = recordMasteryAttempt(state, '1', false);
+  state = recordMasteryAttempt(state, '1', true);
+  assert.deepEqual(state.reviewQueue, ['2', '1']);
+  assert.equal(state.currentExerciseId, '2');
+  state = recordMasteryAttempt(state, '2', true);
+  assert.deepEqual(state.reviewQueue, ['1']);
+  state = recordMasteryAttempt(state, '1', true);
+  assert.equal(state.phase, 'complete');
+});
+
+test('refresh after a review error preserves the retrieval debt', () => {
+  let state = createMasterySession(['one']);
+  state = recordMasteryAttempt(state, 'one', false);
+  state = recordMasteryAttempt(state, 'one', true);
+  state = recordMasteryAttempt(state, 'one', false);
+  state = restoreMasterySession(JSON.parse(JSON.stringify(state)));
+  assert.equal(state.items.one.currentReviewHadError, true);
+  state = recordMasteryAttempt(state, 'one', true);
+  assert.equal(state.phase, 'review');
+  assert.deepEqual(state.reviewQueue, ['one']);
 });
 
 test('a nonempty queue prevents completion at the end of the initial path', () => {

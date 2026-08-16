@@ -5,7 +5,7 @@ import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '..
 import { LESSON_CONFIGS, GRAMMAR_GUIDES, MODULE_ICONS, PRACTICE_ITEMS } from '../constants';
 import { isFillInBlankExercise, resolveFullSentenceAfterAnswer, resolvePromptAudioText } from '../utils/fillInBlankAudio';
 import { isWritingPromptResponseCorrect } from '../utils/writingPrompt';
-import { classifySpeakingExercise, speakingTargets } from '../utils/speakingExercise';
+import { classifySpeakingExercise, isSpeakingTemplateMatchAny, speakingTargets } from '../utils/speakingExercise';
 import { isDictationWritingExercise, resolveSpokenOptionText } from '../utils/exerciseAudio';
 import { resolveExerciseSpeechLocale } from '../utils/exerciseSpeechLocale';
 import { reduceRepeatPlayback, repeatMicAvailable, type RepeatPlaybackState } from '../models/repeatPlaybackState';
@@ -933,6 +933,7 @@ export const PracticeSection: React.FC<{
       const isCorrect = item.type === 'speaking'
         ? (
             isSpeakingMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage)
+            || isSpeakingTemplateMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage)
             || (!isModeledSpeaking && isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage))
           )
         : item.type === 'writing' && item.promptMode

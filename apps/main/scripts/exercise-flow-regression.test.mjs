@@ -95,10 +95,18 @@ test('individual exercises do not render a second completion report', () => {
   assert.match(exercisePracticeSource, /Final Test performance/);
 });
 
-test('attempt dots preserve an orange error history after eventual mastery', () => {
-  assert.match(exercisePracticeSource, /incorrectAttempts > 0 \? 'bg-amber-400'/);
-  assert.match(exercisePracticeSource, /incorrect attempt\$\{incorrectAttempts === 1/);
+test('attempt dots distinguish completed, pending and actively reviewed exercises', () => {
+  assert.match(exercisePracticeSource, /activeReview[\s\S]+bg-emerald-400/);
+  assert.match(exercisePracticeSource, /needsReview[\s\S]+bg-amber-400/);
+  assert.match(exercisePracticeSource, /completed[\s\S]+bg-blue-500/);
+  assert.match(exercisePracticeSource, /needs review after/);
   assert.match(exercisePracticeSource, /masterySummary\.totalIncorrectAttempts/);
+});
+
+test('Review Mode is visibly identified only while the mastery phase is review', () => {
+  assert.match(exercisePracticeSource, /phase === 'exercise' && mastery\.phase === 'review'/);
+  assert.match(exercisePracticeSource, /data-testid="review-mode-indicator"/);
+  assert.match(exercisePracticeSource, /Review exercise · first try counts/);
 });
 
 test('every exercise instruction has its own audio control', () => {

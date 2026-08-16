@@ -45,6 +45,14 @@ function toWritingExercise(exercise: Exercise, id: string, enableQuestionProduct
 }
 
 function toSpeakingExercise(exercise: Exercise, id: string): Exercise {
+  const normalizedAudio = exercise.audioValue.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const normalizedAnswer = exercise.correctValue.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  // A quantitative trail layout must not turn comprehension or sound
+  // discrimination into shadowing. Only an item whose authored answer already
+  // matches its modeled audio can safely become "Listen and repeat".
+  if (exercise.assessmentMode !== 'speaking' && (!normalizedAudio || normalizedAudio !== normalizedAnswer)) {
+    return cloneExercise(exercise, id, { finalTestSpeakingEligible: false });
+  }
   const displayValue = exercise.displayValue ?? exercise.audioValue;
   const instruction = /dialogue/i.test(exercise.instruction)
     ? 'Listen and repeat the dialogue.'
@@ -56,6 +64,25 @@ function toSpeakingExercise(exercise: Exercise, id: string): Exercise {
     displayValue,
     options: undefined,
   });
+}
+
+function alignAuthoredShadowingTarget(exercise: Exercise): Exercise {
+  const normalizedAudio = exercise.audioValue.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const normalizedAnswer = exercise.correctValue.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const isModeledRepeat = exercise.type === 'speaking'
+    && exercise.assessmentMode !== 'speaking'
+    && /(?:listen\s+and\s+repeat|repeat exactly|shadow|read aloud|listen to the text)/i.test(exercise.instruction);
+  if (!isModeledRepeat || !normalizedAudio || normalizedAudio === normalizedAnswer) return exercise;
+  return {
+    ...exercise,
+    assessmentMode: 'shadowing',
+    instruction: /listen to the text/i.test(exercise.instruction)
+      ? 'Listen and repeat exactly what you hear.'
+      : exercise.instruction,
+    correctValue: exercise.audioValue,
+    acceptedAnswers: undefined,
+    finalTestSpeakingEligible: false,
+  };
 }
 
 function uniqueRefs(refs: ExerciseRef[]): ExerciseRef[] {
@@ -119,9 +146,12 @@ function materializeTrailExercises(
 ): Exercise[] {
   return refs.map((ref, index) => {
     const id = `${lesson.id}_d${trailNumber}_e${index + 1}`;
-    if (transform === 'speaking') return toSpeakingExercise(ref.exercise, id);
-    if (transform === 'writing') return toWritingExercise(ref.exercise, id, enableQuestionProduction);
-    return cloneExercise(ref.exercise, id);
+    const materialized = transform === 'speaking'
+      ? toSpeakingExercise(ref.exercise, id)
+      : transform === 'writing'
+        ? toWritingExercise(ref.exercise, id, enableQuestionProduction)
+        : cloneExercise(ref.exercise, id);
+    return alignAuthoredShadowingTarget(materialized);
   });
 }
 

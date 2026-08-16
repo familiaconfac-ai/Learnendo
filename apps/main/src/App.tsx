@@ -2633,7 +2633,7 @@ const App: React.FC = () => {
             userId={user?.uid ?? null}
             currentCourseId={activeCourseId}
             currentLanguage={uiLanguage}
-            currentUser={user ? { displayName: user.displayName, email: user.email } : undefined}
+            currentUser={user ? { displayName: userAccountProfile?.name || user.displayName, email: user.email } : undefined}
             onNavigate={handleNavigate}
           />
         );

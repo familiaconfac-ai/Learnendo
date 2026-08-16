@@ -37,6 +37,10 @@ export interface Exercise {
   introducesNewContent?: boolean;
   assessesContent?: boolean;
   formatJustification?: string;
+  /** Internal curriculum-generation guard; not part of the learner-facing exercise contract. */
+  finalTestSpeakingEligible?: boolean;
+  /** Stable deduplication key used when a source answer is intentionally personalized. */
+  finalTestSpeakingSelectionKey?: string;
   imageUrl?: string;
   imagePath?: string;
   imageAlt?: string;
