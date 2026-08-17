@@ -1,5 +1,7 @@
 import { doc, increment, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
+import { clearPedagogicalAppBadge } from './appBadge';
+import { closeObsoleteInactivityNotifications } from './persistentNotifications';
 
 /**
  * Atomically records a day/lesson completion in the flat /progress/{userId} doc.
@@ -98,6 +100,13 @@ export async function trackLessonCompletion({
         },
       }, { merge: true });
     });
+
+    // Chrome/Android derives its launcher badge from persistent notifications.
+    // Remove only obsolete inactivity reminders after the activity is durable.
+    await closeObsoleteInactivityNotifications().catch((error) => {
+      console.warn('[Notifications] Could not close obsolete inactivity notifications:', error);
+    });
+    await clearPedagogicalAppBadge();
 
     console.log('[progressService] ✅ Progress write completed for', userId, lessonId, `score=${score}%`);
   } catch (error) {

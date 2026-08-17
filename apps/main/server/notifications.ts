@@ -4,7 +4,7 @@ import { adminDb, adminMessaging } from './firebaseAdmin.js';
 import { buildNotificationContent, type NotificationType } from './notificationTemplates.js';
 import { getLastPedagogicalActivity } from '../src/engine/dashboardMetrics.js';
 import { notificationEventDocumentId, NOTIFICATION_TIMEZONE, safeInternalNotificationUrl, saoPauloDayKey } from './notificationPolicy.js';
-import { classifyNotificationDevices, isDailyReminderEligible, resolveNotificationDeliveryStatus } from './dailyReminderPolicy.js';
+import { classifyNotificationDevices, deriveDaysInactive, isDailyReminderEligible, resolveNotificationDeliveryStatus } from './dailyReminderPolicy.js';
 import { isInvalidFcmTokenError } from './notificationDevicePolicy.js';
 
 type DeliveryStatus = 'sending' | 'sent' | 'partial' | 'failed' | 'disabled' | 'no-devices' | 'duplicate';
@@ -56,6 +56,7 @@ export async function sendNotificationToUser(input: {
   uid: string;
   type: NotificationType;
   eventKey: string;
+  badgeCount?: number;
 }): Promise<NotificationSendResult> {
   const { eventId, existing } = await claimEvent(input.uid, input.type, input.eventKey);
   if (existing) {
@@ -68,7 +69,10 @@ export async function sendNotificationToUser(input: {
     };
   }
 
-  const preference = await adminDb.doc(`users/${input.uid}/notificationSettings/preferences`).get();
+  const [preference, progress] = await Promise.all([
+    adminDb.doc(`users/${input.uid}/notificationSettings/preferences`).get(),
+    adminDb.doc(`progress/${input.uid}`).get(),
+  ]);
   if (preference.data()?.enabled !== true) {
     return finishDelivery(eventId, 'disabled', { deviceCount: 0, successCount: 0, failureCount: 0 });
   }
@@ -88,6 +92,9 @@ export async function sendNotificationToUser(input: {
 
   const content = buildNotificationContent(input.type);
   const destination = safeInternalNotificationUrl(content.path, process.env.APP_ORIGIN);
+  const badgeCount = input.badgeCount
+    ?? deriveDaysInactive(getLastPedagogicalActivity(progress.data()))
+    ?? 0;
   let successCount = 0;
   let failureCount = 0;
   const errorCodes: string[] = [];
@@ -104,6 +111,8 @@ export async function sendNotificationToUser(input: {
           url: destination,
           type: input.type,
           eventId,
+          badgeCount: String(badgeCount),
+          notificationTag: content.tag,
         },
         webpush: {
           headers: { Urgency: 'normal' },
@@ -169,6 +178,7 @@ export async function runPreparedDailyReminderJob(now = new Date()) {
       uid: user.id,
       type: 'DAILY_REMINDER',
       eventKey: `${user.id}:DAILY_REMINDER:${dayKey}`,
+      badgeCount: deriveDaysInactive(lastActivity, now) ?? 0,
     }));
   }
   return { dayKey, timezone: NOTIFICATION_TIMEZONE, results };

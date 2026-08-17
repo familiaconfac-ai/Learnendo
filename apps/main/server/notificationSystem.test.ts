@@ -78,12 +78,19 @@ assert.ok(!isDailyReminderEligible({
   lastPedagogicalActivity: new Date('2026-08-12T11:30:00Z'),
 }));
 assert.equal(deriveDaysInactive(new Date('2026-08-10T12:00:00Z'), now), 2);
+assert.equal(deriveDaysInactive(new Date('2026-08-12T11:30:00Z'), now), 0);
+assert.equal(deriveDaysInactive(new Date('2026-08-11T11:30:00Z'), now), 1);
 
 assert.equal(saoPauloDayKey(new Date('2026-08-12T01:00:00Z')), '2026-08-11');
 assert.equal(safeInternalNotificationUrl('/student/lesson/3', 'https://learnendo.vercel.app'), 'https://learnendo.vercel.app/student/lesson/3');
 assert.equal(safeInternalNotificationUrl('https://site-malicioso.com', 'https://learnendo.vercel.app'), 'https://learnendo.vercel.app/');
 assert.equal(safeInternalNotificationUrl('javascript:alert(1)', 'https://learnendo.vercel.app'), 'https://learnendo.vercel.app/');
 assert.equal(buildNotificationContent('DAILY_REMINDER').title, 'Learnendo');
+assert.equal(buildNotificationContent('DAILY_REMINDER').tag, 'INACTIVITY_DAILY_REMINDER');
+assert.equal(buildNotificationContent('ADMIN_TEST').title, 'Learnendo test notification');
+assert.equal(buildNotificationContent('ADMIN_TEST').tag, 'ADMIN_TEST');
+assert.match(buildNotificationContent('ADMIN_TEST').body, /Administrative push delivery test/);
+assert.equal(new Set(Array.from({ length: 4 }, () => buildNotificationContent('ADMIN_TEST').tag)).size, 1);
 
 const dailyKey = 'student-a:DAILY_REMINDER:2026-08-12';
 assert.equal(notificationEventDocumentId(dailyKey), notificationEventDocumentId(dailyKey));
@@ -156,6 +163,25 @@ assert.match(firestoreRules, /match \/users\/\{uid\}[\s\S]*match \/\{document=\*
 const notificationApi = fs.readFileSync(path.resolve('api/notifications.ts'), 'utf8');
 assert.match(notificationApi, /const admin = await requireAdmin\(authorization\)/);
 assert.match(notificationApi, /body\.action === 'status'/);
+
+const notificationSender = fs.readFileSync(path.resolve('server/notifications.ts'), 'utf8');
+assert.match(notificationSender, /badgeCount: String\(badgeCount\)/);
+assert.match(notificationSender, /notificationTag: content\.tag/);
+assert.match(notificationApi, /type: 'ADMIN_TEST'/);
+assert.doesNotMatch(notificationApi, /progress\//, 'ADMIN_TEST endpoint must not write or address student progress');
+
+const serviceWorkerSource = fs.readFileSync(path.resolve('src/sw.ts'), 'utf8');
+assert.match(serviceWorkerSource, /applyNotificationAppBadge\(payload\.data\?\.type, badgeCount\)/);
+assert.match(serviceWorkerSource, /tag: payload\.data\?\.notificationTag/);
+assert.match(serviceWorkerSource, /closeSupersededAdminTestNotifications\(self\.registration\)/);
+assert.match(serviceWorkerSource, /openWindow\(destination\)/);
+
+const progressServiceSource = fs.readFileSync(path.resolve('src/services/progressService.ts'), 'utf8');
+assert.match(progressServiceSource, /await closeObsoleteInactivityNotifications\(\)/);
+
+const foregroundNotificationSource = fs.readFileSync(path.resolve('src/services/notifications.ts'), 'utf8');
+assert.match(foregroundNotificationSource, /registration\.showNotification/);
+assert.match(foregroundNotificationSource, /closeSupersededAdminTestNotifications\(registration\)/);
 
 for (const serverModule of ['server/notifications.ts', 'server/adminNotificationStatus.ts', 'server/dailyReminderPolicy.ts']) {
   const source = fs.readFileSync(path.resolve(serverModule), 'utf8');

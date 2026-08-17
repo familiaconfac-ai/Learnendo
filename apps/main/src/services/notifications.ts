@@ -5,6 +5,8 @@ import { getMessaging, getToken, isSupported, onMessage, type Unsubscribe } from
 import { app, db } from './firebase';
 import { notificationDeviceIdFromFid } from './notificationDeviceIdentity';
 import { disableNotificationDevice, registerNotificationDevice, signOutNotificationDevice } from './notificationDeviceApi';
+import { applyNotificationAppBadge } from './appBadge';
+import { closeSupersededAdminTestNotifications } from './persistentNotifications';
 
 export type NotificationPermissionState =
   | 'not-requested'
@@ -129,16 +131,25 @@ export async function listenForForegroundNotifications(): Promise<Unsubscribe | 
   if (!await isSupported()) return null;
   return onMessage(getMessaging(app), (payload) => {
     if (Notification.permission !== 'granted') return;
-    const notification = new Notification(payload.data?.title?.trim() || 'Learnendo', {
-      body: payload.data?.body?.trim() || 'You have a new notification.',
-      icon: '/pwa-192x192.png',
-      tag: payload.data?.eventId || payload.messageId,
+    void getServiceWorkerRegistration().then(async (registration) => {
+      if (payload.data?.type === 'ADMIN_TEST') {
+        await closeSupersededAdminTestNotifications(registration);
+      }
+      await registration.showNotification(payload.data?.title?.trim() || 'Learnendo', {
+        body: payload.data?.body?.trim() || 'You have a new notification.',
+        icon: '/pwa-192x192.png',
+        badge: '/pwa-192x192.png',
+        tag: payload.data?.notificationTag || payload.data?.eventId || payload.messageId,
+        data: {
+          url: safeForegroundPath(payload.data?.url),
+          type: payload.data?.type,
+          badgeCount: payload.data?.badgeCount,
+        },
+      });
+      await applyNotificationAppBadge(payload.data?.type, payload.data?.badgeCount);
+    }).catch((error) => {
+      console.warn('[Notifications] Foreground notification could not be shown:', error);
     });
-    notification.onclick = () => {
-      window.focus();
-      window.location.assign(safeForegroundPath(payload.data?.url));
-      notification.close();
-    };
   });
 }
 
