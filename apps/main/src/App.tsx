@@ -39,6 +39,7 @@ import { ensureLessonStarted, completeCourseDay, getCumulativeUserStats, LessonP
 import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
 import { trackLessonCompletion } from './services/progressService';
+import { LAST_PEDAGOGICAL_ACTIVITY_FIELD } from './engine/dashboardMetrics';
 import { listenForForegroundNotifications, markNotificationDeviceSignedOut, refreshGrantedNotificationDevice } from './services/notifications';
 import { subscribePendingExerciseReportCount } from './services/exerciseReportsService';
 import { lesson1NewWords } from './data/workbook1/lesson1';
@@ -2458,6 +2459,7 @@ const App: React.FC = () => {
                     currentWorkbook: updated.currentWorkbook,
                     currentLesson: updated.currentLesson,
                     currentDay: updated.currentDay,
+                    [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: serverTimestamp(),
                     lastActivity: serverTimestamp(),
                     totalStars: cumulativeStats.stars,
                     totalDiamonds: cumulativeStats.diamonds,

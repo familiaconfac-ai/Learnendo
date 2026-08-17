@@ -10,7 +10,7 @@
  *   HIGH_ERROR_THRESHOLD — more than 10 cumulative errors
  */
 
-import { UserProgressSummary } from './courseProgressEngine';
+import type { UserProgressSummary } from './courseProgressEngine';
 import { getDaysWithoutActivity } from './dashboardMetrics';
 
 // ─────────────────────────────────────────────────────────────
@@ -47,11 +47,11 @@ const MIN_DAYS_FOR_ACCURACY_CHECK = 2; // avoid noise from brand-new students
  *
  * @returns  Array of StudentAlert (empty = no issues detected)
  */
-export function detectAlerts(summary: UserProgressSummary): StudentAlert[] {
+export function detectAlerts(summary: UserProgressSummary, now = new Date()): StudentAlert[] {
   const alerts: StudentAlert[] = [];
 
   // ── Inactive check ──────────────────────────────────────────
-  const days = getDaysWithoutActivity(summary.lastActivity);
+  const days = getDaysWithoutActivity(summary.lastActivity, now);
   if (days !== null) {
     if (days >= INACTIVE_DAYS_THRESHOLD) {
       alerts.push({

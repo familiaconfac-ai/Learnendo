@@ -19,6 +19,7 @@ import {
   SortColumn,
   formatAccuracy,
 } from '../../engine/teacherService';
+import { getDaysWithoutActivity } from '../../engine/dashboardMetrics';
 import { rankMedal } from '../../engine/rankingService';
 import { resolveCurriculumProgressPercent } from '../../engine/curriculumProgress';
 import { AlertType } from '../../engine/alertService';
@@ -205,10 +206,8 @@ const StudentsTab: React.FC<{
     [classComposition, selectedGroup],
   );
   const activeRecently = rows.filter((student) => {
-    const raw = student.lastActivity as { toDate?: () => Date } | string | number | Date | null | undefined;
-    if (!raw) return false;
-    const date = typeof raw === 'object' && 'toDate' in raw && typeof raw.toDate === 'function' ? raw.toDate() : new Date(raw as string | number | Date);
-    return !Number.isNaN(date.getTime()) && Date.now() - date.getTime() < 2 * 24 * 60 * 60 * 1000;
+    const days = getDaysWithoutActivity(student.lastActivity);
+    return days !== null && days < 2;
   }).length;
   const mostAdvanced = rows.length ? [...rows].sort((a, b) => b.score - a.score)[0] : null;
   const needsAttention = rows.length ? [...rows].sort((a, b) => b.alerts.length - a.alerts.length || a.score - b.score)[0] : null;

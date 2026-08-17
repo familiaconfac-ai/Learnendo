@@ -1,5 +1,6 @@
 type DashboardProgress = Record<string, any>;
 export const DASHBOARD_TIME_ZONE = 'America/Sao_Paulo';
+export const LAST_PEDAGOGICAL_ACTIVITY_FIELD = 'lastPedagogicalActivityAt';
 
 const COURSE_LANGUAGE_CODES: Record<string, string> = {
   english: 'en',
@@ -19,6 +20,7 @@ export function resolveDashboardLanguageCode(courseId: unknown, ...fallbacks: un
 export type CompletedActivityRecord = {
   id: string;
   completedAt?: unknown;
+  lastActivityAt?: unknown;
   score?: number;
   totalQuestions?: number;
   correctAnswers?: number;
@@ -91,6 +93,14 @@ export function getDaysWithoutActivity(value: unknown, now = new Date()): number
   return activityDay === null || currentDay === null ? null : Math.max(0, currentDay - activityDay);
 }
 
+export function formatLastPedagogicalActivityLabel(value: unknown, now = new Date()): string {
+  const days = getDaysWithoutActivity(value, now);
+  if (days === null) return '—';
+  if (days === 0) return 'Today';
+  if (days === 1) return '1 day without activity';
+  return `${days} days without activity`;
+}
+
 export function getLatestTimestamp(values: Iterable<unknown>): unknown | null {
   let latest: { value: unknown; millis: number } | null = null;
   for (const value of values) {
@@ -130,8 +140,10 @@ export function getLatestResponseActivityByStudent(
 }
 
 /**
- * Returns only timestamps written by learning events. `progress.lastActivity`
- * is intentionally excluded because older app versions stamped it on login.
+ * Resolves the latest timestamp written by a durable learning event. The
+ * explicit marker is canonical; event-level fields remain as legacy fallbacks.
+ * `progress.lastActivity` is intentionally excluded because older app versions
+ * stamped it on login.
  */
 export function getLastPedagogicalActivity(
   raw?: DashboardProgress,
@@ -139,17 +151,22 @@ export function getLastPedagogicalActivity(
 ): unknown | null {
   if (!raw) return null;
   const candidates: unknown[] = [...additionalCandidates];
+  if (raw[LAST_PEDAGOGICAL_ACTIVITY_FIELD]) candidates.push(raw[LAST_PEDAGOGICAL_ACTIVITY_FIELD]);
   if (raw.lastActive) candidates.push(raw.lastActive); // trackLessonCompletion
 
   if (raw.lessons && typeof raw.lessons === 'object') {
     Object.values(raw.lessons).forEach((lesson) => {
       if (lesson && typeof lesson === 'object' && (lesson as { completed?: unknown }).completed === true) {
         candidates.push((lesson as { completedAt?: unknown }).completedAt);
+        candidates.push((lesson as { lastActivityAt?: unknown }).lastActivityAt);
       }
     });
   }
 
-  getCompletedActivityRecords(raw).forEach((activity) => candidates.push(activity.completedAt));
+  getCompletedActivityRecords(raw).forEach((activity) => {
+    candidates.push(activity.completedAt);
+    candidates.push(activity.lastActivityAt);
+  });
 
   if (raw.courses && typeof raw.courses === 'object') {
     Object.values(raw.courses).forEach((course) => {

@@ -1,4 +1,4 @@
-import { saoPauloDayKey } from './notificationPolicy.js';
+import { getDaysWithoutActivity } from '../src/engine/dashboardMetrics.js';
 
 export const DEVICE_STALE_AFTER_DAYS = 90;
 
@@ -21,17 +21,7 @@ export function isDailyReminderEligible(input: {
 }) {
   if (input.role === 'admin' || input.role === 'teacher') return false;
   if (!input.notificationsEnabled || !input.hasValidDevice) return false;
-  const activityMillis = millis(input.lastPedagogicalActivity);
-  return activityMillis === null
-    || saoPauloDayKey(new Date(activityMillis)) !== saoPauloDayKey(input.now);
-}
-
-export function deriveDaysInactive(lastPedagogicalActivity: unknown, now = new Date()) {
-  const activityMillis = millis(lastPedagogicalActivity);
-  if (activityMillis === null) return null;
-  const currentDay = Date.parse(`${saoPauloDayKey(now)}T12:00:00Z`);
-  const activityDay = Date.parse(`${saoPauloDayKey(new Date(activityMillis))}T12:00:00Z`);
-  return Math.max(0, Math.floor((currentDay - activityDay) / 86_400_000));
+  return getDaysWithoutActivity(input.lastPedagogicalActivity, input.now) !== 0;
 }
 
 export function classifyNotificationDevices(

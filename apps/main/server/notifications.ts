@@ -2,9 +2,9 @@ import { FieldValue } from 'firebase-admin/firestore';
 import type { BatchResponse } from 'firebase-admin/messaging';
 import { adminDb, adminMessaging } from './firebaseAdmin.js';
 import { buildNotificationContent, type NotificationType } from './notificationTemplates.js';
-import { getLastPedagogicalActivity } from '../src/engine/dashboardMetrics.js';
+import { getDaysWithoutActivity, getLastPedagogicalActivity } from '../src/engine/dashboardMetrics.js';
 import { notificationEventDocumentId, NOTIFICATION_TIMEZONE, safeInternalNotificationUrl, saoPauloDayKey } from './notificationPolicy.js';
-import { classifyNotificationDevices, deriveDaysInactive, isDailyReminderEligible, resolveNotificationDeliveryStatus } from './dailyReminderPolicy.js';
+import { classifyNotificationDevices, isDailyReminderEligible, resolveNotificationDeliveryStatus } from './dailyReminderPolicy.js';
 import { isInvalidFcmTokenError } from './notificationDevicePolicy.js';
 
 type DeliveryStatus = 'sending' | 'sent' | 'partial' | 'failed' | 'disabled' | 'no-devices' | 'duplicate';
@@ -93,7 +93,7 @@ export async function sendNotificationToUser(input: {
   const content = buildNotificationContent(input.type);
   const destination = safeInternalNotificationUrl(content.path, process.env.APP_ORIGIN);
   const badgeCount = input.badgeCount
-    ?? deriveDaysInactive(getLastPedagogicalActivity(progress.data()))
+    ?? getDaysWithoutActivity(getLastPedagogicalActivity(progress.data()))
     ?? 0;
   let successCount = 0;
   let failureCount = 0;
@@ -178,7 +178,7 @@ export async function runPreparedDailyReminderJob(now = new Date()) {
       uid: user.id,
       type: 'DAILY_REMINDER',
       eventKey: `${user.id}:DAILY_REMINDER:${dayKey}`,
-      badgeCount: deriveDaysInactive(lastActivity, now) ?? 0,
+      badgeCount: getDaysWithoutActivity(lastActivity, now) ?? 0,
     }));
   }
   return { dayKey, timezone: NOTIFICATION_TIMEZONE, results };

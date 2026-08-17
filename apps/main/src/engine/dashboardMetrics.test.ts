@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics.ts';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics.ts';
 
 assert.equal(resolveDashboardLanguageCode('english', 'es'), 'en', 'active English course must beat a stale Spanish language code');
 assert.equal(resolveDashboardLanguageCode('spanish', 'en'), 'es');
@@ -40,6 +40,18 @@ assert.deepEqual(deriveDashboardRewardMetrics(rianLegacyProgress), {
 assert.equal(getLastPedagogicalActivity(rianLegacyProgress), '2026-08-14T15:34:33Z');
 assert.equal(getDaysWithoutActivity('2026-08-11T23:59:00-03:00', new Date('2026-08-14T00:01:00-03:00')), 3,
   'activity age must use São Paulo calendar days consistently across table, alerts and report');
+const saoPauloNow = new Date('2026-08-14T12:00:00-03:00');
+assert.equal(getDaysWithoutActivity('2026-08-14T00:01:00-03:00', saoPauloNow), 0);
+assert.equal(formatLastPedagogicalActivityLabel('2026-08-14T00:01:00-03:00', saoPauloNow), 'Today');
+assert.equal(getDaysWithoutActivity('2026-08-13T23:59:00-03:00', saoPauloNow), 1);
+assert.equal(formatLastPedagogicalActivityLabel('2026-08-13T23:59:00-03:00', saoPauloNow), '1 day without activity');
+assert.equal(getDaysWithoutActivity('2026-08-12T23:59:00-03:00', saoPauloNow), 2);
+assert.equal(formatLastPedagogicalActivityLabel('2026-08-12T23:59:00-03:00', saoPauloNow), '2 days without activity');
+assert.equal(getDaysWithoutActivity('2026-08-13T23:59:59-03:00', new Date('2026-08-14T00:00:01-03:00')), 1,
+  'crossing midnight in Sao Paulo starts a new inactivity day even when only seconds elapsed');
+assert.equal(getDaysWithoutActivity({ toMillis: () => Date.parse('2026-08-14T10:00:00-03:00') }, saoPauloNow), 0);
+assert.equal(getDaysWithoutActivity({ toDate: () => new Date('2026-08-13T10:00:00-03:00') }, saoPauloNow), 1);
+assert.equal(getDaysWithoutActivity(Date.parse('2026-08-12T10:00:00-03:00'), saoPauloNow), 2);
 assert.equal(getUniqueCompletedActivityCount({
   daysCompleted: 7,
   'lessons.wb1_l1_d1': { completed: true },
@@ -64,7 +76,16 @@ assert.deepEqual(deriveDashboardAnswerMetrics({ totalAttempts: 10, totalErrors: 
 assert.equal(getLastPedagogicalActivity({
   lastActivity: '2026-08-11T12:00:00Z',
   lastUpdated: '2026-08-11T12:00:00Z',
+  lastLoginAt: '2026-08-11T12:00:00Z',
+  lastNotificationAt: '2026-08-11T12:00:00Z',
+  notificationDeliveries: { latest: '2026-08-11T12:00:00Z' },
 }), null, 'login/admin timestamps must not count as learning activity');
+
+assert.equal(getLastPedagogicalActivity({
+  lastPedagogicalActivityAt: '2026-08-14T14:00:00Z',
+  lastActivity: '2026-08-15T14:00:00Z',
+  lastNotificationAt: '2026-08-16T14:00:00Z',
+}), '2026-08-14T14:00:00Z', 'technical and push timestamps must not supersede the canonical pedagogical marker');
 
 assert.equal(getLastPedagogicalActivity({
   lastActivity: '2026-08-11T12:00:00Z',
@@ -84,6 +105,27 @@ const replayCompletedToday = getLastPedagogicalActivity({
 });
 assert.equal(getDaysWithoutActivity(replayCompletedToday, new Date('2026-08-14T23:40:00Z')), 0,
   'a completed replay must clear the inactivity alert on the same Sao Paulo calendar day');
+
+const reviewActivity = getLastPedagogicalActivity({
+  lessons: {
+    review: {
+      completed: true,
+      completedAt: '2026-08-10T12:00:00Z',
+      lastActivityAt: '2026-08-14T12:00:00Z',
+    },
+  },
+});
+assert.equal(reviewActivity, '2026-08-14T12:00:00Z',
+  'a valid review/replay must use its latest activity timestamp, not the first completion timestamp');
+assert.equal(getDaysWithoutActivity(reviewActivity, saoPauloNow), 0);
+
+assert.equal(getLastPedagogicalActivity({
+  'lessons.legacy-review': {
+    completed: true,
+    completedAt: '2026-08-10T12:00:00Z',
+    lastActivityAt: '2026-08-13T12:00:00Z',
+  },
+}), '2026-08-13T12:00:00Z', 'legacy literal lesson maps must preserve replay activity');
 
 const responseActivity = getLatestResponseActivityByStudent([
   { userId: 'ryan', answer: 'first answer', createdAt: '2026-08-04T20:00:00Z' },

@@ -4,10 +4,10 @@ import path from 'node:path';
 import { isAuthorizedCronRequest } from './cronAuth';
 import {
   classifyNotificationDevices,
-  deriveDaysInactive,
   isDailyReminderEligible,
   resolveNotificationDeliveryStatus,
 } from './dailyReminderPolicy';
+import { getDaysWithoutActivity } from '../src/engine/dashboardMetrics';
 import { buildAdminNotificationStatus } from './adminNotificationStatus';
 import {
   isInvalidFcmTokenError,
@@ -77,9 +77,9 @@ assert.ok(!isDailyReminderEligible({
   role: 'student',
   lastPedagogicalActivity: new Date('2026-08-12T11:30:00Z'),
 }));
-assert.equal(deriveDaysInactive(new Date('2026-08-10T12:00:00Z'), now), 2);
-assert.equal(deriveDaysInactive(new Date('2026-08-12T11:30:00Z'), now), 0);
-assert.equal(deriveDaysInactive(new Date('2026-08-11T11:30:00Z'), now), 1);
+assert.equal(getDaysWithoutActivity(new Date('2026-08-10T12:00:00Z'), now), 2);
+assert.equal(getDaysWithoutActivity(new Date('2026-08-12T11:30:00Z'), now), 0);
+assert.equal(getDaysWithoutActivity(new Date('2026-08-11T11:30:00Z'), now), 1);
 
 assert.equal(saoPauloDayKey(new Date('2026-08-12T01:00:00Z')), '2026-08-11');
 assert.equal(safeInternalNotificationUrl('/student/lesson/3', 'https://learnendo.vercel.app'), 'https://learnendo.vercel.app/student/lesson/3');

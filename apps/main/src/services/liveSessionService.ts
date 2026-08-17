@@ -30,6 +30,7 @@ import {
 import type { Day, Exercise, Lesson } from '../types';
 import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from './liveWhiteboardActivities';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
+import { LAST_PEDAGOGICAL_ACTIVITY_FIELD } from '../engine/dashboardMetrics';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_SESSION_COLLECTION = 'session';
@@ -552,10 +553,18 @@ export async function submitLiveResponse(
   if (!classId) return;
 
   const responsesRef = collection(db, LIVE_CLASSES_COLLECTION, classId, 'responses');
-  await addDoc(responsesRef, {
+  const responseRef = doc(responsesRef);
+  const batch = writeBatch(db);
+  batch.set(responseRef, {
     ...response,
     createdAt: serverTimestamp(),
   });
+  if (response.userId) {
+    batch.set(doc(db, 'progress', response.userId), {
+      [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: serverTimestamp(),
+    }, { merge: true });
+  }
+  await batch.commit();
 }
 
 export function subscribeLiveResponses(

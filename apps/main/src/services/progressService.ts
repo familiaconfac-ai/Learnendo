@@ -2,6 +2,7 @@ import { doc, increment, runTransaction, serverTimestamp } from 'firebase/firest
 import { db } from './firebase';
 import { clearPedagogicalAppBadge } from './appBadge';
 import { closeObsoleteInactivityNotifications } from './persistentNotifications';
+import { LAST_PEDAGOGICAL_ACTIVITY_FIELD } from '../engine/dashboardMetrics';
 
 /**
  * Atomically records a day/lesson completion in the flat /progress/{userId} doc.
@@ -70,6 +71,7 @@ export async function trackLessonCompletion({
       } : null;
       transaction.set(reference, {
         lastLesson: lessonId,
+        [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: serverTimestamp(),
         lastActive: serverTimestamp(),
         updatedAt: serverTimestamp(),
         ...(courseId ? { courseId } : {}),

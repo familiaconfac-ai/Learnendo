@@ -14,7 +14,7 @@ import { rankStudents, RankedStudent, computeScore } from './rankingService';
 import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
-import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, getDaysWithoutActivity, getLastPedagogicalActivity, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getLastPedagogicalActivity, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics';
 import { subscribeToLivePedagogicalActivity, type LiveActivityScope } from '../services/livePedagogicalActivity';
 import { partitionStudentAccounts } from '../services/studentRolePolicy';
 
@@ -57,20 +57,6 @@ type PlacementRecord = {
 // ─────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────
-
-function relativeDate(value: any): string {
-  if (!value) return '—';
-  try {
-    const days = getDaysWithoutActivity(value);
-    if (days === null) return '—';
-    if (days <= 0) return '⏱ 0d';
-    if (days < 30) return `⏱ ${days}d`;
-    if (days < 365) return `⏱ ${Math.floor(days / 30)}mo`;
-    return `⏱ ${Math.floor(days / 365)}y`;
-  } catch {
-    return '—';
-  }
-}
 
 function formatProgressLabel(summary: UserProgressSummary, dashboardStatus: TeacherStudentRow['dashboardStatus']): string {
   if (dashboardStatus === 'Placement Done') return 'PT ✔';
@@ -184,7 +170,7 @@ function buildTeacherRow(student: RankedStudent & UserProgressSummary, raw?: Das
     ...student,
     alerts: detectAlerts(student),
     pathLabel: pathLabel(student, dashboardStatus),
-    lastActivityLabel: relativeDate(student.lastActivity),
+    lastActivityLabel: formatLastPedagogicalActivityLabel(student.lastActivity),
     tests: raw?.tests ?? student.tests,
     dashboardStatus,
     selectedCourseId,
