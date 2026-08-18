@@ -117,7 +117,7 @@ const StudentsTab: React.FC<{
   onStudentDeleted: (uid: string, result: StudentDeletionResult) => void;
 }> = ({ rows, allRows, user, canManageUsers, groups, membershipRows, selectedGroupId, onSelectedGroupIdChange, onStudentDeleted }) => {
   const [search, setSearch]         = useState('');
-  const [sortCol, setSortCol]       = useState<SortColumn>('score');
+  const [sortCol, setSortCol]       = useState<SortColumn>('path');
   const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
   const [generating, setGenerating]           = useState<string | null>(null);
   const [generatingPlacement, setGeneratingPlacement] = useState<string | null>(null);
@@ -152,10 +152,28 @@ const StudentsTab: React.FC<{
     }
   };
 
-  const visible = useMemo(
-    () => sortRows(filterRows(rows, search), sortCol, sortDir),
-    [rows, search, sortCol, sortDir],
-  );
+  const progressRankedRows = useMemo(() => {
+    let rank = 0;
+    let previousProgress: number | undefined;
+    return [...rows]
+      .sort((a, b) => resolveCurriculumProgressPercent(b) - resolveCurriculumProgressPercent(a)
+        || (a.displayName ?? '').localeCompare(b.displayName ?? ''))
+      .map((student) => {
+        const progress = resolveCurriculumProgressPercent(student);
+        if (progress !== previousProgress) rank += 1;
+        previousProgress = progress;
+        return { ...student, rank };
+      });
+  }, [rows]);
+
+  const visible = useMemo(() => {
+    const filtered = filterRows(progressRankedRows, search);
+    if (sortCol !== 'path') return sortRows(filtered, sortCol, sortDir);
+    const factor = sortDir === 'asc' ? 1 : -1;
+    return [...filtered].sort((a, b) => factor * (
+      resolveCurriculumProgressPercent(a) - resolveCurriculumProgressPercent(b)
+    ) || (a.displayName ?? '').localeCompare(b.displayName ?? ''));
+  }, [progressRankedRows, search, sortCol, sortDir]);
 
   const handlePdf = (student: TeacherStudentRow) => {
     setGenerating(student.uid);
