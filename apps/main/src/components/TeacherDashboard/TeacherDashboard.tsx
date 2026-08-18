@@ -23,7 +23,6 @@ import { getDaysWithoutActivity } from '../../engine/dashboardMetrics';
 import { rankMedal } from '../../engine/rankingService';
 import { resolveCurriculumProgressPercent } from '../../engine/curriculumProgress';
 import { generateStudentReport } from '../../services/reportService';
-import { generatePlacementReport } from '../../services/placementReportService';
 import { AdminUserAccessTab } from './AdminUserAccessTab';
 import type { LiveClassGroup } from '../../types';
 import { subscribeLiveClassGroups } from '../../services/liveClassesService';
@@ -120,7 +119,6 @@ const StudentsTab: React.FC<{
   const [sortCol, setSortCol]       = useState<SortColumn>('path');
   const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
   const [generating, setGenerating]           = useState<string | null>(null);
-  const [generatingPlacement, setGeneratingPlacement] = useState<string | null>(null);
   const [managedStudent, setManagedStudent] = useState<TeacherStudentRow | null | undefined>(undefined);
   const [showClassManager, setShowClassManager] = useState(false);
   const [showClassReport, setShowClassReport] = useState(false);
@@ -181,15 +179,6 @@ const StudentsTab: React.FC<{
       generateStudentReport(student);
     } finally {
       setGenerating(null);
-    }
-  };
-
-  const handlePlacementPdf = (student: TeacherStudentRow) => {
-    setGeneratingPlacement(student.uid);
-    try {
-      generatePlacementReport(student);
-    } finally {
-      setGeneratingPlacement(null);
     }
   };
 
@@ -285,8 +274,7 @@ const StudentsTab: React.FC<{
                   <SortHeader col="path"         label="Progress"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Work</th>
                   <SortHeader col="lastActivity" label="Active"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">PT</th>
-                  <th className="px-3 py-3 text-center text-sm font-semibold text-white">PDF</th>
+                  <th className="px-3 py-3 text-center text-sm font-semibold text-white whitespace-nowrap">Student Report</th>
                   {canManageUsers && <th className="px-3 py-3 text-center text-sm font-semibold text-white"><span className="sr-only">Actions</span></th>}
                 </tr>
               </thead>
@@ -322,24 +310,6 @@ const StudentsTab: React.FC<{
                     </td>
                     <td className="px-3 py-3 text-slate-500 text-xs whitespace-nowrap align-top">
                       {activityLabel(student.lastActivity)}
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap align-top">
-                      {student.tests?.placement ? (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-xs font-bold text-blue-700">{student.tests.placement.level ?? '—'}</span>
-                          <span className="text-[11px] text-slate-500">{student.tests.placement.score}%</span>
-                          <button
-                            onClick={() => handlePlacementPdf(student)}
-                            disabled={generatingPlacement === student.uid}
-                            title="Download Placement Test PDF"
-                            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-2 py-1 rounded-md text-[11px] font-medium transition-all active:scale-95 mt-0.5"
-                          >
-                            {generatingPlacement === student.uid ? '…' : '📋 PDF'}
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-slate-400">{student.placementLabel}</span>
-                      )}
                     </td>
                     <td className="px-3 py-3 text-center align-top">
                       <button

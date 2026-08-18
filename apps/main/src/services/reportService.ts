@@ -9,8 +9,8 @@
  */
 
 import jsPDF from 'jspdf';
-import { TeacherStudentRow } from '../engine/teacherService';
-import { ActiveCourse, StudentStudyProfile } from '../types';
+import type { TeacherStudentRow } from '../engine/teacherService';
+import type { ActiveCourse, PlacementAnswerItem, StudentStudyProfile } from '../types';
 import { formatTime, formatAccuracy, MAX_WORKBOOK, MAX_LESSON, MAX_DAY } from '../engine/progressStatsService';
 
 // Human-readable labels for course IDs used in the Active Courses section.
@@ -386,13 +386,123 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   }
 
   // ── FOOTER ────────────────────────────────────────────────
+  const placement = student.tests?.placement;
+  if (placement) {
+    doc.addPage();
+    y = MARGIN;
+    y = sectionHead(doc, `${nextSection}. Placement Test`, y);
+
+    const parsedTestDate = placement.date ? new Date(placement.date) : null;
+    const testDate = parsedTestDate && !isNaN(parsedTestDate.getTime())
+      ? parsedTestDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+      : '—';
+    const bookLevel = placement.recommendedBook
+      ? `Book ${placement.recommendedBook}${placement.level ? ` · ${placement.level}` : ''}`
+      : (placement.level ?? '—');
+    const entryPoint = placement.recommendedEntryPoint ?? bookLevel;
+
+    labelValue(doc, 'Test date', testDate, MARGIN, y);
+    labelValue(doc, 'Score', `${placement.score}%`, col2x(), y);
+    y += 8;
+    labelValue(doc, 'Book / level', bookLevel, MARGIN, y);
+    y += 8;
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor('#64748b');
+    doc.text('Recommended Entry Point', MARGIN, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor('#1e293b');
+    const entryLines = doc.splitTextToSize(entryPoint, COL_W - 48);
+    doc.text(entryLines, MARGIN + 48, y);
+    y += Math.max(8, entryLines.length * 5 + 3);
+
+    const breakdown: PlacementAnswerItem[] = placement.answerBreakdown ?? [];
+    const skillStats = new Map<string, { correct: number; total: number }>();
+    for (const answer of breakdown) {
+      const stat = skillStats.get(answer.skillType) ?? { correct: 0, total: 0 };
+      stat.total += 1;
+      if (answer.isCorrect) stat.correct += 1;
+      skillStats.set(answer.skillType, stat);
+    }
+
+    if (skillStats.size > 0) {
+      y = sectionHead(doc, 'Skill Breakdown', y);
+      for (const [skill, stat] of skillStats) {
+        if (y > 272) {
+          doc.addPage();
+          y = MARGIN;
+        }
+        const pct = Math.round((stat.correct / stat.total) * 100);
+        const label = skill === 'multiple-choice'
+          ? 'Grammar'
+          : skill.charAt(0).toUpperCase() + skill.slice(1);
+        labelValue(doc, label, `${stat.correct} / ${stat.total} (${pct}%)`, MARGIN, y);
+        y += 7;
+      }
+      y += 3;
+    }
+
+    const incorrect = breakdown.filter((answer) => !answer.isCorrect);
+    y = sectionHead(doc, `Questions Answered Incorrectly (${incorrect.length})`, y);
+    if (incorrect.length === 0) {
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor('#16a34a');
+      doc.text('No incorrect answers recorded.', MARGIN, y);
+    } else {
+      incorrect.forEach((answer, index) => {
+        const questionLines = doc.splitTextToSize(answer.prompt, COL_W - 8);
+        const studentLines = doc.splitTextToSize(answer.studentAnswer ?? 'No answer', COL_W - 35);
+        const correctLines = doc.splitTextToSize(answer.correctAnswer, COL_W - 35);
+        const noteLines = answer.explanation ? doc.splitTextToSize(answer.explanation, COL_W - 12) : [];
+        const requiredHeight = 12 + (questionLines.length + studentLines.length + correctLines.length + noteLines.length) * 4;
+        if (y + requiredHeight > 278) {
+          doc.addPage();
+          y = MARGIN;
+        }
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.setTextColor('#1e293b');
+        doc.text(`${index + 1}.`, MARGIN, y);
+        doc.text(questionLines, MARGIN + 7, y);
+        y += questionLines.length * 4.5 + 3;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor('#b91c1c');
+        doc.text('Student answer:', MARGIN + 4, y);
+        doc.text(studentLines, MARGIN + 35, y);
+        y += studentLines.length * 4 + 2;
+        doc.setTextColor('#15803d');
+        doc.text('Correct answer:', MARGIN + 4, y);
+        doc.text(correctLines, MARGIN + 35, y);
+        y += correctLines.length * 4 + 2;
+
+        if (noteLines.length > 0) {
+          doc.setFont('helvetica', 'italic');
+          doc.setTextColor('#475569');
+          doc.text('Note:', MARGIN + 4, y);
+          doc.text(noteLines, MARGIN + 16, y);
+          y += noteLines.length * 4 + 2;
+        }
+        rule(doc, y);
+        y += 6;
+      });
+    }
+  }
+
   const footerY = 287;
-  rule(doc, footerY - 4);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor('#94a3b8');
-  doc.text('Learnendo  ·  Confidential  ·  For parent/guardian use only', MARGIN, footerY);
-  doc.text(`Page 1`, PAGE_W - MARGIN - 12, footerY);
+  const pageCount = doc.getNumberOfPages();
+  for (let page = 1; page <= pageCount; page++) {
+    doc.setPage(page);
+    rule(doc, footerY - 4);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor('#94a3b8');
+    doc.text('Learnendo  ·  Confidential  ·  For parent/guardian use only', MARGIN, footerY);
+    doc.text(`Page ${page}`, PAGE_W - MARGIN - 12, footerY);
+  }
 
   // ── DOWNLOAD ──────────────────────────────────────────────
   const filename = `learnendo_report_${name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
