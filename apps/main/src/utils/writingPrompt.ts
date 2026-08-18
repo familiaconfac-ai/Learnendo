@@ -14,6 +14,7 @@ type QuestionProductionSource = {
   correctValue: string;
   options?: string[];
   acceptedQuestions?: string[];
+  questionPromptTranslation?: string;
 };
 
 export function normalizeProducedQuestion(value: string): string {
@@ -56,12 +57,14 @@ function contractedQuestion(question: string): string | null {
 }
 
 export function questionProductionFields(source: QuestionProductionSource): {
-  instruction: 'Write the question.';
+  instruction: 'Write the question.' | 'Write the question in English.';
   displayValue: string;
   audioValue: string;
   correctValue: string;
   acceptedAnswers?: string[];
   promptMode: 'write-question';
+  finalTestSelectionAudio?: string;
+  finalTestSelectionAnswer?: string;
 } | null {
   const question = source.audioValue.trim();
   if (!source.options?.length || !/\?$/.test(question) || normalizeProducedQuestion(question) === normalizeProducedQuestion(source.correctValue)) {
@@ -73,11 +76,13 @@ export function questionProductionFields(source: QuestionProductionSource): {
     ...(contracted && normalizeProducedQuestion(contracted) === normalizeProducedQuestion(question) ? [contracted] : []),
   ])];
   return {
-    instruction: 'Write the question.',
-    displayValue: `Answer: ${source.correctValue}`,
-    audioValue: source.correctValue,
+    instruction: source.questionPromptTranslation ? 'Write the question in English.' : 'Write the question.',
+    displayValue: source.questionPromptTranslation ?? `Answer: ${source.correctValue}`,
+    audioValue: source.questionPromptTranslation ? '' : source.correctValue,
     correctValue: question,
     acceptedAnswers: acceptedQuestions.length ? acceptedQuestions : undefined,
     promptMode: 'write-question',
+    finalTestSelectionAudio: source.questionPromptTranslation ? source.correctValue : undefined,
+    finalTestSelectionAnswer: source.questionPromptTranslation ? question : undefined,
   };
 }

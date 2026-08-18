@@ -661,6 +661,18 @@ service cloud.firestore {
       allow read, create, update, delete: if isOwner(uid) || isAdmin();
     }
 
+    // Delivery logs and idempotency claims are server-only. Firebase Admin
+    // bypasses Firestore rules after the API has verified the administrator.
+    match /notificationDeliveries/{deliveryId} {
+      allow read, write: if false;
+    }
+
+    // Maps a hashed Firebase Installation ID to its current authenticated
+    // owner. Only trusted server code may read or mutate this reassociation map.
+    match /notificationDeviceOwners/{deviceId} {
+      allow read, write: if false;
+    }
+
     match /exerciseReports/{reportId} {
       allow get, list: if isAdmin();
       allow create: if signedIn()

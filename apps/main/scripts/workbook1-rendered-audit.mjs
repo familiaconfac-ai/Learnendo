@@ -1,4 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { detectNumberFormat, parseNumberValue, rawLessons, validateNumberRecognitionExercise, workbook1 } from '../node_modules/.cache/workbook1-rendered-audit-bundle.mjs';
 
 const normalize = (value = '') => value.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -14,6 +16,17 @@ const topicOf = (exercise) => {
   return 'other';
 };
 const cleanCell = (value) => String(value ?? '').replaceAll('\t', ' ').replaceAll('\r', ' ').replaceAll('\n', ' ');
+const isApprovedCompositionalFinalAnswer = (exercise, testedValue, taughtCorpus) => {
+  const requirements = {
+    wb1_l2_final_v2_speak_1: ['this is a kite', 'this is', 'kite'],
+    wb1_l2_final_v2_speak_5: ['it is an apple', 'it is', 'an apple'],
+    wb1_l6_final_v2_speak_3: ['ben is in the classroom', 'ben', 'in the classroom'],
+    wb1_l6_final_v2_speak_6: ['his name is ben', 'name', 'ben'],
+  }[exercise.id];
+  return Boolean(requirements
+    && testedValue === requirements[0]
+    && requirements.slice(1).every((fragment) => taughtCorpus.includes(fragment)));
+};
 
 const rawById = new Map(rawLessons.flatMap((lesson) => lesson.days.flatMap((day) => day.exercises.map((exercise) => [exercise.id, exercise]))));
 const rows = [];
@@ -77,12 +90,15 @@ for (const lesson of workbook1.lessons) {
         }
       }
       if (dayIndex < 6) {
-        const modeledValues = [exercise.audioValue, exercise.displayValue, exercise.correctValue, exercise.fullSentenceAfterAnswer, ...(exercise.acceptedAnswers ?? [])];
+        const modeledValues = [exercise.audioValue, exercise.finalTestSelectionAudio, exercise.displayValue, exercise.correctValue, exercise.fullSentenceAfterAnswer, ...(exercise.acceptedAnswers ?? [])];
         modeledValues.map(normalize).filter(Boolean).forEach((value) => taughtValues.add(value));
         taughtFragments.push(...modeledValues);
       } else {
         const testedValue = normalize(exercise.assessmentMode === 'speaking' ? exercise.correctValue : exercise.audioValue);
-        if (!taughtValues.has(testedValue) && !normalize(taughtFragments.join(' ')).includes(testedValue)) {
+        const taughtCorpus = normalize(taughtFragments.join(' '));
+        if (!taughtValues.has(testedValue)
+          && !taughtCorpus.includes(testedValue)
+          && !isApprovedCompositionalFinalAnswer(exercise, testedValue, taughtCorpus)) {
           issues.push({ lessonId: lesson.id, exerciseId: exercise.id, kind: 'final-test-content-not-taught' });
         }
       }
@@ -94,7 +110,9 @@ for (const lesson of workbook1.lessons) {
 const columns = Object.keys(rows[0]);
 const toTsv = (selectedRows) => [columns.join('\t'), ...selectedRows.map((row) => columns.map((column) => cleanCell(row[column])).join('\t'))].join('\n');
 const tsv = toTsv(rows);
-const outputDir = new URL('../../../docs/audits/', import.meta.url);
+const outputDir = process.env.WORKBOOK1_AUDIT_OUTPUT_DIR
+  ? new URL('./', pathToFileURL(`${resolve(process.env.WORKBOOK1_AUDIT_OUTPUT_DIR)}/`))
+  : new URL('../../../docs/audits/', import.meta.url);
 const lesson1Rows = rows.filter((row) => row.lessonId === 'wb1_l1');
 const lesson1NumberRows = lesson1Rows.filter((row) => row.topic === 'numbers');
 const lesson1Coverage = {

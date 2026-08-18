@@ -92,9 +92,11 @@ export const lesson6: Lesson = {
           id: 'wb1_l6_d2_e1',
           type: 'multiple-choice',
           instruction: 'Complete the sentence.',
-          audioValue: 'Good morning!',
-          options: ['Good morning!', 'Good night!', 'Goodbye!'],
-          correctValue: 'Good morning!',
+          audioValue: '',
+          finalTestSelectionAudio: 'Good morning!',
+          finalTestSelectionAnswer: 'Good morning!',
+          options: ['morning', 'afternoon', 'night'],
+          correctValue: 'morning',
           displayValue: 'Good ______!',
           isNewVocab: false
         },
@@ -102,9 +104,11 @@ export const lesson6: Lesson = {
           id: 'wb1_l6_d2_e2',
           type: 'multiple-choice',
           instruction: 'Complete the sentence.',
-          audioValue: 'Good afternoon!',
-          options: ['Good afternoon!', 'Goodbye!', 'See you!'],
-          correctValue: 'Good afternoon!',
+          audioValue: '',
+          finalTestSelectionAudio: 'Good afternoon!',
+          finalTestSelectionAnswer: 'Good afternoon!',
+          options: ['afternoon', 'morning', 'evening'],
+          correctValue: 'afternoon',
           displayValue: 'Good ______!',
           isNewVocab: false
         },
@@ -232,10 +236,14 @@ export const lesson6: Lesson = {
         {
           id: 'wb1_l6_d4_e1',
           type: 'speaking',
-          instruction: 'Listen and repeat the dialogue.',
-          audioValue: 'Teacher: Good morning, class. Students: Good morning, teacher. Teacher: How are you? Students: We are fine, thank you.',
-          correctValue: 'Good morning, class. Good morning, teacher. How are you? We are fine, thank you.',
-          displayValue: 'Teacher: Good morning, class.\nStudents: Good morning, teacher.\nTeacher: How are you?\nStudents: We are fine, thank you.',
+          assessmentMode: 'shadowing',
+          finalTestSpeakingEligible: false,
+          instruction: 'Listen and repeat exactly what you hear.',
+          audioValue: 'Good morning, class. How are you?',
+          correctValue: 'Good morning, class. How are you?',
+          finalTestSelectionAudio: 'Teacher: Good morning, class. Students: Good morning, teacher. Teacher: How are you? Students: We are fine, thank you.',
+          finalTestSelectionAnswer: 'Teacher: Good morning, class. Students: Good morning, teacher. Teacher: How are you? Students: We are fine, thank you.',
+          displayValue: 'Good morning, class. How are you?',
           isNewVocab: false
         },
         {
@@ -262,7 +270,8 @@ export const lesson6: Lesson = {
           id: 'wb1_l6_d4_e4',
           type: 'writing',
           instruction: 'Complete the dialogue.',
-          audioValue: 'Good afternoon, Ana.',
+          audioValue: '',
+          finalTestSelectionAudio: 'Good afternoon, Ana.',
           correctValue: 'Good afternoon',
           displayValue: 'Teacher: Good afternoon, Ana.\nAna: ______, teacher.',
           isNewVocab: false
@@ -365,9 +374,12 @@ export const lesson6: Lesson = {
         {
           id: 'wb1_l6_d6_e1',
           type: 'speaking',
-          instruction: 'Listen to the text.',
-          audioValue: 'Good morning! My name is Ben. I am in my classroom. I see my teacher and my friends. I say, Hello, teacher! My teacher says, Good morning, Ben! Anna says, Hi, Ben! I say, Hi, Anna! We are happy. In the afternoon, I say, Goodbye, friends! They say, See you, Ben!',
+          assessmentMode: 'shadowing',
+          instruction: 'Listen and repeat exactly what you hear.',
+          audioValue: 'Good morning! My name is Ben.',
           correctValue: 'Good morning! My name is Ben.',
+          finalTestSelectionAudio: 'Good morning! My name is Ben. I am in my classroom. I see my teacher and my friends. I say, Hello, teacher! My teacher says, Good morning, Ben! Anna says, Hi, Ben! I say, Hi, Anna! We are happy. In the afternoon, I say, Goodbye, friends! They say, See you, Ben!',
+          finalTestSelectionAnswer: 'Good morning! My name is Ben. I am in my classroom. I see my teacher and my friends. I say, Hello, teacher! My teacher says, Good morning, Ben! Anna says, Hi, Ben! I say, Hi, Anna! We are happy. In the afternoon, I say, Goodbye, friends! They say, See you, Ben!',
           displayValue: 'Reading: Greetings at School',
           isNewVocab: false
         },
@@ -378,6 +390,7 @@ export const lesson6: Lesson = {
           audioValue: 'What is the boy’s name?',
           options: ['Ben', 'Lucas', 'Daniel'],
           correctValue: 'Ben',
+          questionPromptTranslation: 'Qual é o nome do menino?',
           displayValue: 'What is the boy’s name?',
           isNewVocab: false
         },
@@ -398,6 +411,7 @@ export const lesson6: Lesson = {
           audioValue: 'What does Ben say to the teacher?',
           options: ['Hello, teacher!', 'Good night, teacher!', 'Goodbye, teacher!'],
           correctValue: 'Hello, teacher!',
+          questionPromptTranslation: 'O que Ben diz para o professor?',
           displayValue: 'What does Ben say to the teacher?',
           isNewVocab: false
         },
@@ -408,6 +422,7 @@ export const lesson6: Lesson = {
           audioValue: 'Are Ben and Anna happy?',
           options: ['Yes, they are.', 'No, they are not.', 'Yes, it is.'],
           correctValue: 'Yes, they are.',
+          questionPromptTranslation: 'Ben e Anna estão felizes?',
           displayValue: 'Are Ben and Anna happy?',
           isNewVocab: false
         },

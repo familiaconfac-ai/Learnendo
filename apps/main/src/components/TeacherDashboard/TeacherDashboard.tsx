@@ -332,11 +332,11 @@ const StudentsTab: React.FC<{
                       {student.lastActivityLabel}
                     </td>
                     <td className="px-3 py-3 align-top">
-                      {student.alerts.length === 0 ? (
+                      {student.alerts.every((alert) => alert.type === 'high_errors') ? (
                         <span className="text-xs text-green-600 font-medium">✓</span>
                       ) : (
                         <div className="flex flex-col gap-1">
-                          {student.alerts.slice(0, 2).map((a, i) => (
+                          {student.alerts.filter((alert) => alert.type !== 'high_errors').slice(0, 2).map((a, i) => (
                             <AlertBadge key={i} type={a.type} message={a.message} />
                           ))}
                         </div>

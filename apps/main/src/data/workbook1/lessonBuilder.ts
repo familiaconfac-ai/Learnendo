@@ -8,6 +8,7 @@ export interface DrillRow {
   display?: string;
   accepted?: string[];
   translation?: string;
+  finalTestSelectionAudio?: string;
 }
 
 type ExerciseExtras = Partial<Omit<ExerciseDraft, 'type' | 'instruction' | 'audioValue' | 'correctValue' | 'options'>>;
@@ -109,7 +110,7 @@ export function writingDrill(rows: DrillRow[], instruction: string): ExerciseDra
     row.answer,
     row.display ?? row.prompt,
     row.accepted,
-    { instruction, translation: row.translation },
+    { instruction, translation: row.translation, finalTestSelectionAudio: row.finalTestSelectionAudio },
   ));
 }
 

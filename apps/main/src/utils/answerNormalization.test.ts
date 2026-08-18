@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   isAnswerMatch,
+  isCompleteSpeakingMatchAny,
+  isExactListeningWritingMatch,
   isSpeakingMatchAny,
   normalizeAnswer,
   normalizeStrictWritingAnswer,
@@ -51,6 +53,50 @@ test('controlled speech tolerance accepts one small transcription error but reje
 test('strict writing preserves the digit-versus-word distinction', () => {
   assert.notEqual(normalizeStrictWritingAnswer('18'), normalizeStrictWritingAnswer('eighteen'));
   assert.equal(normalizeStrictWritingAnswer('Eighteen.'), normalizeStrictWritingAnswer('eighteen'));
+});
+
+test('exact listening-writing tolerates mechanics but preserves spoken words', () => {
+  assert.equal(isExactListeningWritingMatch(' april! ', ['April']), true);
+  assert.equal(isExactListeningWritingMatch('It is April.', ['April']), false);
+  assert.equal(isExactListeningWritingMatch('She is in the classroom.', ["She's in the classroom."]), false);
+  assert.equal(isExactListeningWritingMatch('Who is she? She is Ms. Greene.', [
+    'Who is she? She is Ms. Green.',
+    'Who is she? She is Ms. Greene.',
+  ]), true);
+  assert.equal(isExactListeningWritingMatch("Who is she? She's Ms. Green.", [
+    'Who is she? She is Ms. Green.',
+    'Who is she? She is Ms. Greene.',
+  ]), false);
+});
+
+test('exact listening-writing rejects the eight removed semantic variants', () => {
+  const removedVariants = [
+    ['My birthday is January twenty-first.', 'My birthday is January 21st.'],
+    ['Who is second?', 'Lucas.'],
+    ['Who is second?', 'Lucas is second.'],
+    ['Monday', 'What day is it today?'],
+    ['January first', "What's the date?"],
+    ["Are they late? No, they aren't.", 'Are they late? No, they are not.'],
+    ['What day is it today? It is Monday.', 'It is Monday.'],
+    ['Where are the students? They are at school.', 'They are at school.'],
+  ];
+  for (const [target, removed] of removedVariants) {
+    assert.equal(isExactListeningWritingMatch(target, [target]), true, target);
+    assert.equal(isExactListeningWritingMatch(removed, [target]), false, removed);
+  }
+});
+
+test('complete speaking targets reject bare month names and other months', () => {
+  const january = ['It is January.', 'The month is January.', 'January is the first month of the year.'];
+  const may = ['It is May.', 'The month is May.', 'May comes after April.'];
+  assert.equal(isCompleteSpeakingMatchAny('The month is January.', january), true);
+  assert.equal(isCompleteSpeakingMatchAny('January is the first month of the year.', january), true);
+  assert.equal(isCompleteSpeakingMatchAny('January', january), false);
+  assert.equal(isCompleteSpeakingMatchAny('It is February.', january), false);
+  assert.equal(isCompleteSpeakingMatchAny('The month is May.', may), true);
+  assert.equal(isCompleteSpeakingMatchAny('May comes after April.', may), true);
+  assert.equal(isCompleteSpeakingMatchAny('May', may), false);
+  assert.equal(isCompleteSpeakingMatchAny('It is June.', may), false);
 });
 
 test('reported January date accepts only its authored word and numeric ordinal forms', () => {

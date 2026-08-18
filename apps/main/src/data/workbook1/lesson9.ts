@@ -15,9 +15,9 @@ const completions: DrillRow[] = [
   { prompt: 'Complete the greeting.', display: 'Hi, ______ Sofia.', answer: "I'm" }, { prompt: 'Complete the introduction.', display: 'My ______ is Lucas.', answer: 'name' },
   { prompt: 'Complete the age question.', display: 'How ______ are you?', answer: 'old' }, { prompt: 'Complete the country question.', display: 'Where are you ______?', answer: 'from' },
   { prompt: 'Complete the student question.', display: '______ you a student?', answer: 'Are' }, { prompt: 'Complete the friend question.', display: '______ she your friend?', answer: 'Is' },
-  { prompt: 'Complete the correction.', display: "No, she ______. She's my friend.", answer: "isn't" }, { prompt: 'Complete the day question.', display: 'What ______ is it today?', answer: 'day' },
-  { prompt: 'Complete the date question.', display: "What's the ______?", answer: 'date' }, { prompt: 'Complete the birthday question.', display: '______ is your birthday?', answer: 'When' },
-  { prompt: 'Complete the spelling request.', display: 'Could you ______ your name?', answer: 'spell' }, { prompt: 'Complete the number question.', display: "What's your phone ______?", answer: 'number' },
+  { prompt: 'Complete the correction.', display: "No, she ______. She's my friend.", answer: "isn't" }, { prompt: '', finalTestSelectionAudio: 'Complete the day question.', display: 'What ______ is it today?', answer: 'day' },
+  { prompt: '', finalTestSelectionAudio: 'Complete the date question.', display: "What's the ______?", answer: 'date' }, { prompt: 'Complete the birthday question.', display: '______ is your birthday?', answer: 'When' },
+  { prompt: '', finalTestSelectionAudio: 'Complete the spelling request.', display: 'Could you ______ your name?', answer: 'spell' }, { prompt: '', finalTestSelectionAudio: 'Complete the number question.', display: "What's your phone ______?", answer: 'number' },
   { prompt: 'Complete the confirmation.', display: 'Is this information ______?', answer: 'correct' }, { prompt: 'Complete the classroom request.', display: 'Please ______ your book.', answer: 'open' },
   { prompt: 'Complete the polite reply.', display: "You're ______.", answer: 'welcome' },
 ];

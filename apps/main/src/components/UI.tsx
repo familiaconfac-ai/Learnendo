@@ -16,6 +16,8 @@ import {
   normalizeSentenceAnswer,
   normalizeSpeakingAnswer,
   normalizeStrictWritingAnswer,
+  isExactListeningWritingMatch,
+  isCompleteSpeakingMatchAny,
   isSpeakingMatchAny,
 } from '../utils/answerNormalization';
 import speakerIcon from '../assets/icons/speaker.svg';
@@ -553,6 +555,8 @@ export const PracticeSection: React.FC<{
     // so that the audio button is immediately available in all three languages.
     const isDictationWriting = isDictationWritingExercise(item);
     const isFinalTestListeningWriting = item.assessmentMode === 'listening-writing';
+    const requiresExactListeningWriting = isFinalTestListeningWriting
+      && item.instruction === 'Listen and write exactly what you hear.';
 
     const translation = item.translation ? fixPortugueseSupportText(item.translation) : '';
     const displayCorrectValue = fixPortugueseSupportText(item.correctValue);
@@ -692,13 +696,6 @@ export const PracticeSection: React.FC<{
       }
       // non-dictation writing: audio is only revealed after the first wrong attempt
 
-      setTimeout(() => {
-        if (item.type === 'speaking') {
-          textareaRef.current?.focus();
-        } else {
-          inputRef.current?.focus();
-        }
-      }, 200);
       return () => {
         _cleanups.forEach(c => c());
         promptPlaybackRef.current?.cancel();
@@ -734,6 +731,22 @@ export const PracticeSection: React.FC<{
 
     const wrongFooterLocked = feedbackActionLocked || localWrongFooterLocked;
     const footerActionLocked = feedbackActionLocked || (feedback === 'wrong' && localWrongFooterLocked);
+
+    useEffect(() => {
+      if (exerciseActionLocked || showFooter || wrongFooterLocked) return undefined;
+
+      const focusTimer = window.setTimeout(() => {
+        const answerField = item.type === 'speaking'
+          ? textareaRef.current
+          : item.type === 'writing'
+            ? inputRef.current
+            : null;
+        if (!answerField || answerField.disabled) return;
+        answerField.focus({ preventScroll: true });
+      }, 200);
+
+      return () => window.clearTimeout(focusTimer);
+    }, [exerciseActionLocked, item.id, item.type, showFooter, wrongFooterLocked]);
 
     // Auto-grow textarea
     const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -841,7 +854,11 @@ export const PracticeSection: React.FC<{
         });
         return;
       }
-      const acceptedAnswers = getAcceptedAnswers(item);
+      // Exact Final Test transcription must use only authored targets. General
+      // variant expansion can introduce contractions or paraphrases not heard.
+      const acceptedAnswers = requiresExactListeningWriting
+        ? [item.correctValue, ...(item.acceptedAnswers ?? [])]
+        : getAcceptedAnswers(item);
       const acceptedSpeakingTargets = isModeledSpeaking ? speakingTargets(item) : acceptedAnswers;
       const nextAttemptNumber = (lastAttemptMetaRef.current?.attemptNumber ?? 0) + 1;
       const reportAttempt = (answer: string, isCorrect: boolean) => {
@@ -873,8 +890,8 @@ export const PracticeSection: React.FC<{
       if (isDictationWriting) {
         const normalizedInput = normalizeStrictWritingAnswer(rawInput);
         const isStrictWritingCorrect = acceptedAnswers.some((answer) =>
-          isFinalTestListeningWriting
-            ? isAnswerMatch(rawInput, answer, currentLanguage)
+          requiresExactListeningWriting
+            ? isExactListeningWritingMatch(rawInput, acceptedAnswers)
             : normalizeStrictWritingAnswer(answer) === normalizedInput
         );
         reportAttempt(rawInput, isStrictWritingCorrect);
@@ -932,7 +949,9 @@ export const PracticeSection: React.FC<{
 
       const isCorrect = item.type === 'speaking'
         ? (
-            isSpeakingMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage)
+            (item.requiresCompleteSpokenAnswer
+              ? isCompleteSpeakingMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage)
+              : isSpeakingMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage))
             || isSpeakingTemplateMatchAny(rawInput, acceptedSpeakingTargets, currentLanguage)
             || (!isModeledSpeaking && isExpandedQuestionResponseMatch(rawInput, acceptedAnswers, promptAudioText || item.audioValue, currentLanguage))
           )

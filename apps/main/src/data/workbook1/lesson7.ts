@@ -233,10 +233,13 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d4_e1',
           type: 'speaking',
-          instruction: 'Listen and repeat the dialogue.',
-          audioValue: 'Teacher: What day is it today? Ben: It is Monday. Teacher: What month is it? Anna: It is January. Teacher: What is the date? Lucas: It is January first.',
-          correctValue: 'What day is it today? It is Monday. What month is it? It is January. What is the date? It is January first.',
-          displayValue: 'Teacher: What day is it today?\nBen: It is Monday.\nTeacher: What month is it?\nAnna: It is January.\nTeacher: What is the date?\nLucas: It is January first.',
+          assessmentMode: 'shadowing',
+          instruction: 'Listen and repeat exactly what you hear.',
+          audioValue: 'What day is it today? It is Monday.',
+          correctValue: 'What day is it today? It is Monday.',
+          finalTestSelectionAudio: 'Teacher: What day is it today? Ben: It is Monday. Teacher: What month is it? Anna: It is January. Teacher: What is the date? Lucas: It is January first.',
+          finalTestSelectionAnswer: 'Teacher: What day is it today? Ben: It is Monday. Teacher: What month is it? Anna: It is January. Teacher: What is the date? Lucas: It is January first.',
+          displayValue: 'What day is it today? It is Monday.',
           isNewVocab: false
         },
         {
@@ -246,6 +249,7 @@ export const lesson7: Lesson = {
           audioValue: 'What day is it today?',
           options: ['It is Monday.', 'It is January.'],
           correctValue: 'It is Monday.',
+          questionPromptTranslation: 'Que dia é hoje?',
           isNewVocab: false
         },
         {
@@ -255,6 +259,7 @@ export const lesson7: Lesson = {
           audioValue: 'What month is it?',
           options: ['It is January.', 'It is Monday.'],
           correctValue: 'It is January.',
+          questionPromptTranslation: 'Que mês é?',
           isNewVocab: false
         },
         {
@@ -387,9 +392,12 @@ export const lesson7: Lesson = {
         {
           id: 'wb1_l7_d6_e1',
           type: 'speaking',
-          instruction: 'Listen to the text.',
-          audioValue: 'Today is Monday. The month is January. Ben is in the classroom. The teacher writes the date on the board. It is January first. Anna says, My birthday is in March. Lucas says, My birthday is in July. The students read the days and the months. They are happy.',
+          assessmentMode: 'shadowing',
+          instruction: 'Listen and repeat exactly what you hear.',
+          audioValue: 'Today is Monday. The month is January.',
           correctValue: 'Today is Monday. The month is January.',
+          finalTestSelectionAudio: 'Today is Monday. The month is January. Ben is in the classroom. The teacher writes the date on the board. It is January first. Anna says, My birthday is in March. Lucas says, My birthday is in July. The students read the days and the months. They are happy.',
+          finalTestSelectionAnswer: 'Today is Monday. The month is January. Ben is in the classroom. The teacher writes the date on the board. It is January first. Anna says, My birthday is in March. Lucas says, My birthday is in July. The students read the days and the months. They are happy.',
           displayValue: 'Reading: The Calendar in Class',
           isNewVocab: false
         },
@@ -401,6 +409,7 @@ export const lesson7: Lesson = {
           options: ['Monday', 'Friday'],
           correctValue: 'Monday',
           acceptedQuestions: ['What day is it today?'],
+          questionPromptTranslation: 'Que dia é hoje?',
           isNewVocab: false
         },
         {
@@ -411,6 +420,7 @@ export const lesson7: Lesson = {
           options: ['January', 'March'],
           correctValue: 'January',
           acceptedQuestions: ['What month is it now?'],
+          questionPromptTranslation: 'Que mês é?',
           isNewVocab: false
         },
         {
@@ -420,6 +430,7 @@ export const lesson7: Lesson = {
           audioValue: 'What is the date?',
           options: ['January first', 'March first'],
           correctValue: 'January first',
+          questionPromptTranslation: 'Qual é a data?',
           isNewVocab: false
         },
         {
@@ -429,6 +440,7 @@ export const lesson7: Lesson = {
           audioValue: 'When is Anna’s birthday?',
           options: ['In March', 'In January'],
           correctValue: 'In March',
+          questionPromptTranslation: 'Quando é o aniversário da Anna?',
           isNewVocab: false
         },
         {
@@ -438,6 +450,7 @@ export const lesson7: Lesson = {
           audioValue: 'When is Lucas’s birthday?',
           options: ['In July', 'In May'],
           correctValue: 'In July',
+          questionPromptTranslation: 'Quando é o aniversário do Lucas?',
           isNewVocab: false
         },
         {

@@ -9,7 +9,7 @@ const timeExamples: DrillRow[] = [
   { prompt: 'the afternoon', answer: 'in the afternoon' }, { prompt: 'midnight', answer: 'at midnight' },
 ];
 
-const grammar: DrillRow[] = timeExamples.map((row) => ({ prompt: row.answer, display: row.answer.replace(/^(in|on|at)/, '____'), answer: row.answer.split(' ')[0] }));
+const grammar: DrillRow[] = timeExamples.map((row) => ({ prompt: '', finalTestSelectionAudio: row.answer, display: row.answer.replace(/^(in|on|at)/, '____'), answer: row.answer.split(' ')[0] }));
 
 const questions: DrillRow[] = [
   { prompt: 'When is the English class?', answer: "It's on Monday at nine o'clock." }, { prompt: 'When is your birthday?', answer: 'It is in July.' },

@@ -129,6 +129,25 @@ test('speaking answer field starts on one row and wraps safely on narrow screens
   assert.match(uiSource, /Math\.min\(textareaRef\.current\.scrollHeight, 120\)/);
 });
 
+test('text answer fields regain focus whenever the current exercise becomes answerable', () => {
+  assert.match(
+    uiSource,
+    /if \(exerciseActionLocked \|\| showFooter \|\| wrongFooterLocked\) return undefined;/,
+    'focus must wait until writing/listening-writing is enabled and feedback is dismissed',
+  );
+  assert.match(
+    uiSource,
+    /item\.type === 'speaking'[\s\S]{0,180}textareaRef\.current[\s\S]{0,180}item\.type === 'writing'[\s\S]{0,180}inputRef\.current/,
+    'speaking and writing must share the same focus lifecycle',
+  );
+  assert.match(uiSource, /answerField\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(
+    uiSource,
+    /\[exerciseActionLocked, item\.id, item\.type, showFooter, wrongFooterLocked\]/,
+    'focus must rerun on exercise changes, audio unlock and retry feedback dismissal',
+  );
+});
+
 test('ordinal speaking questions include visible context and complete accepted answers', () => {
   assert.match(lesson4Source, /Who is second\?/);
   assert.match(lesson4Source, /contextVisual: \{ type: 'ordinal-line', people: \['Anna', 'Lucas', 'Daniel', 'Emily'\] \}/);

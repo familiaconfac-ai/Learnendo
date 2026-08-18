@@ -141,6 +141,28 @@ export function normalizeStrictWritingAnswer(answer: string): string {
     .replace(/\s+/g, ' ');
 }
 
+/**
+ * Mechanical normalization for Final Test transcription. Unlike the general
+ * answer matcher, this intentionally preserves the words that were spoken:
+ * contractions are not expanded and answer prefixes are not removed.
+ */
+export function normalizeExactListeningWritingAnswer(answer: string): string {
+  return answer
+    .normalize('NFC')
+    .replace(/[\u2018\u2019\u02bc\u2032]/g, "'")
+    .toLocaleLowerCase('en')
+    .trim()
+    .replace(/'/g, '')
+    .replace(/[.,!?;:\"\u00bf\u00a1()[\]{}\u2013\u2014-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function isExactListeningWritingMatch(response: string, targets: readonly string[]): boolean {
+  const normalizedResponse = normalizeExactListeningWritingAnswer(response);
+  return targets.some((target) => normalizeExactListeningWritingAnswer(target) === normalizedResponse);
+}
+
 export function isAnswerMatch(
   response: string,
   target: string,
@@ -239,3 +261,16 @@ export const isSpeakingMatchAny = (
   targets: string[],
   language: AnswerLanguage = 'en',
 ): boolean => targets.some((target) => isSpeakingMatch(response, target, language));
+
+export const isCompleteSpeakingMatchAny = (
+  response: string,
+  targets: string[],
+  language: AnswerLanguage = 'en',
+): boolean => {
+  const normalizedResponse = normalizeAnswer(response, { stripPrefixes: false, language });
+  return targets.some((target) => {
+    const normalizedTarget = normalizeAnswer(target, { stripPrefixes: false, language });
+    return normalizedResponse === normalizedTarget
+      || isControlledSpeechVariation(normalizedResponse, normalizedTarget);
+  });
+};

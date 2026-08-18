@@ -23,11 +23,14 @@ export interface Exercise {
   options?: string[];
   correctValue: string;
   acceptedAnswers?: string[];
+  requiresCompleteSpokenAnswer?: boolean;
   acceptedQuestions?: string[];
   translation?: string;
   character?: 'teacher' | 'student';
   isNewVocab?: boolean;
   promptMode?: 'answer-question' | 'write-question';
+  /** Authored PT-BR prompt used when this item is converted into question production. */
+  questionPromptTranslation?: string;
   assessmentMode?: 'listening' | 'listening-writing' | 'shadowing' | 'repeat' | 'speaking';
   coverageObjective?: string;
   sourceExerciseId?: string;
@@ -41,6 +44,10 @@ export interface Exercise {
   finalTestSpeakingEligible?: boolean;
   /** Stable deduplication key used when a source answer is intentionally personalized. */
   finalTestSpeakingSelectionKey?: string;
+  /** Stable generator-only audio key when learner-facing audio is intentionally removed or shortened. */
+  finalTestSelectionAudio?: string;
+  /** Stable generator-only answer key when a learner-facing target is intentionally rewritten. */
+  finalTestSelectionAnswer?: string;
   imageUrl?: string;
   imagePath?: string;
   imageAlt?: string;
@@ -495,6 +502,7 @@ export interface PracticeItem {
   options?: string[];
   correctValue: string;
   acceptedAnswers?: string[];
+  requiresCompleteSpokenAnswer?: boolean;
   contextVisual?: {
     type: 'ordinal-line';
     people: string[];
