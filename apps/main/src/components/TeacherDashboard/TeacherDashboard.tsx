@@ -22,7 +22,6 @@ import {
 import { getDaysWithoutActivity } from '../../engine/dashboardMetrics';
 import { rankMedal } from '../../engine/rankingService';
 import { resolveCurriculumProgressPercent } from '../../engine/curriculumProgress';
-import { AlertType } from '../../engine/alertService';
 import { generateStudentReport } from '../../services/reportService';
 import { generatePlacementReport } from '../../services/placementReportService';
 import { AdminUserAccessTab } from './AdminUserAccessTab';
@@ -33,11 +32,7 @@ import type { StudentDeletionResult } from '../../services/adminStudents';
 import { buildClassPerformanceReport } from '../../services/classReportModel';
 import { ClassReportModal } from './ClassReportModal';
 import { getClassComposition } from '../../services/classMembership';
-import {
-  adminNotificationStatusLabel,
-  getAdminNotificationStatuses,
-  type AdminNotificationStatus,
-} from '../../services/adminNotifications';
+import { getAdminNotificationStatuses, type AdminNotificationStatus } from '../../services/adminNotifications';
 
 // ─────────────────────────────────────────────────────────────
 // Types
@@ -52,34 +47,6 @@ interface TeacherDashboardProps {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Alert Badge
-// ─────────────────────────────────────────────────────────────
-
-const ALERT_STYLES: Record<AlertType, { bg: string; text: string; icon: string }> = {
-  inactive:     { bg: 'bg-yellow-100', text: 'text-yellow-800', icon: '⏰' },
-  low_accuracy: { bg: 'bg-red-100',    text: 'text-red-800',    icon: '📉' },
-  high_errors:  { bg: 'bg-pink-100',   text: 'text-pink-800',   icon: '⚠️' },
-};
-
-const AlertBadge: React.FC<{ type: AlertType; message: string }> = ({ type, message }) => {
-  const s = ALERT_STYLES[type];
-  return (
-    <span
-      title={message}
-      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${s.bg} ${s.text} cursor-default`}
-    >
-      {s.icon} {message}
-    </span>
-  );
-};
-
-const STATUS_STYLES: Record<TeacherStudentRow['dashboardStatus'], string> = {
-  Registered: 'bg-slate-100 text-slate-700',
-  'Placement Done': 'bg-blue-100 text-blue-700',
-  'Not Started': 'bg-amber-100 text-amber-700',
-  Active: 'bg-green-100 text-green-700',
-};
-
 const rowBackgroundClass = (index: number) => index % 2 === 0 ? 'bg-white' : 'bg-slate-50';
 
 const NOTIFICATION_STATUS_STYLES: Record<AdminNotificationStatus['kind'], string> = {
@@ -90,12 +57,26 @@ const NOTIFICATION_STATUS_STYLES: Record<AdminNotificationStatus['kind'], string
 };
 
 const NotificationStatusBadge: React.FC<{ status?: AdminNotificationStatus; loading: boolean }> = ({ status, loading }) => {
-  if (!status) return <span className="text-xs text-slate-400">{loading ? 'Carregando…' : 'Indisponível'}</span>;
+  if (!status) return <span className="text-xs text-slate-400">{loading ? 'Loading…' : 'Unavailable'}</span>;
+  const label = status.kind === 'active'
+    ? `${status.activeDeviceCount} device${status.activeDeviceCount === 1 ? '' : 's'}`
+    : status.kind === 'not-authorized'
+      ? 'Not authorized'
+      : status.kind === 'no-device'
+        ? 'No device'
+        : 'Disabled';
   return (
     <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold whitespace-nowrap ${NOTIFICATION_STATUS_STYLES[status.kind]}`}>
-      {adminNotificationStatusLabel(status)}
+      {label}
     </span>
   );
+};
+
+const activityLabel = (value: unknown) => {
+  const days = getDaysWithoutActivity(value);
+  if (days === null) return '—';
+  if (days === 0) return 'Today';
+  return `${days} day${days === 1 ? '' : 's'} inactive`;
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -257,7 +238,7 @@ const StudentsTab: React.FC<{
             <div><span className="block text-xs text-slate-500">Average progress</span><b>{classReport?.summary.averageProgress ?? 0}%</b></div>
             <div><span className="block text-xs text-slate-500">Most advanced</span><b className="block truncate">{mostAdvanced?.displayName ?? '—'}</b></div>
             <div><span className="block text-xs text-slate-500">Needs attention</span><b className="block truncate">{needsAttention?.alerts.length ? needsAttention.displayName : '—'}</b></div>
-            {canManageUsers && <div><span className="block text-xs text-slate-500">Notificações ativas</span><b>{activeNotifications} / {rows.length}</b></div>}
+            {canManageUsers && <div><span className="block text-xs text-slate-500">Active notifications</span><b>{activeNotifications} / {rows.length}</b></div>}
           </div>
           {classReport && classReport.students.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3 text-xs font-bold text-slate-700">
@@ -282,12 +263,10 @@ const StudentsTab: React.FC<{
               <thead className="bg-gradient-to-r from-blue-600 to-blue-700">
                 <tr>
                   <SortHeader col="name"         label="Student"      activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Status</th>
-                  {canManageUsers && <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Notificações</th>}
+                  {canManageUsers && <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Notifications</th>}
                   <SortHeader col="path"         label="Progress"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Work</th>
                   <SortHeader col="lastActivity" label="Active"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
-                  <SortHeader col="alerts"       label="Alerts"       activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">PT</th>
                   <th className="px-3 py-3 text-center text-sm font-semibold text-white">PDF</th>
                   {canManageUsers && <th className="px-3 py-3 text-center text-sm font-semibold text-white"><span className="sr-only">Actions</span></th>}
@@ -308,11 +287,6 @@ const StudentsTab: React.FC<{
                         </div>
                       </div>
                     </td>
-                    <td className="px-3 py-3 whitespace-nowrap align-top">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold ${STATUS_STYLES[student.dashboardStatus]}`}>
-                        {student.dashboardStatus}
-                      </span>
-                    </td>
                     {canManageUsers && (
                       <td className="px-3 py-3 whitespace-nowrap align-top">
                         <NotificationStatusBadge status={notificationStatuses[student.uid]} loading={notificationStatusesLoading} />
@@ -329,18 +303,7 @@ const StudentsTab: React.FC<{
                       <div className="text-[11px] text-slate-500">{student.selectedLanguageLabel}</div>
                     </td>
                     <td className="px-3 py-3 text-slate-500 text-xs whitespace-nowrap align-top">
-                      {student.lastActivityLabel}
-                    </td>
-                    <td className="px-3 py-3 align-top">
-                      {student.alerts.every((alert) => alert.type === 'high_errors') ? (
-                        <span className="text-xs text-green-600 font-medium">✓</span>
-                      ) : (
-                        <div className="flex flex-col gap-1">
-                          {student.alerts.filter((alert) => alert.type !== 'high_errors').slice(0, 2).map((a, i) => (
-                            <AlertBadge key={i} type={a.type} message={a.message} />
-                          ))}
-                        </div>
-                      )}
+                      {activityLabel(student.lastActivity)}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap align-top">
                       {student.tests?.placement ? (
