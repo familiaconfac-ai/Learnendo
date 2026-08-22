@@ -795,32 +795,6 @@ const App: React.FC = () => {
         console.log('[App] Recording user profile...');
         await createOrUpdateUserProfile(authenticatedUser);
 
-        // Sync displayName/email to the flat progress doc so rankings show real names.
-        // Anonymous users get a stable "Player_XXXXXX" identifier derived from their UID.
-        if (db) {
-          const displayName =
-            authenticatedUser.displayName ??
-            (authenticatedUser.isAnonymous
-              ? `Player_${authenticatedUser.uid.slice(0, 6)}`
-              : authenticatedUser.email?.split('@')[0] ?? 'User');
-          console.log('[WRITE] setDoc', {
-            path: `users/${authenticatedUser.uid}/progress`,
-            workbookId: null,
-            courseId: currentCourseId ?? DEFAULT_COURSE_ID,
-            completedDays: countCompletedDays(progress.days),
-            payloadKeys: ['displayName', 'email', 'courseId'],
-          });
-          setDoc(
-            doc(db, 'progress', authenticatedUser.uid),
-            {
-              displayName,
-              email: authenticatedUser.email ?? null,
-              courseId: currentCourseId ?? DEFAULT_COURSE_ID,
-            },
-            { merge: true },
-          ).catch(e => console.warn('[App] progress profile write failed:', e));
-        }
-
         // Create session entry
         console.log('[App] Creating session...');
         const sessionId = await createSessionForUser(authenticatedUser);

@@ -20,4 +20,24 @@ assert.deepEqual(detectAlerts(student('2026-08-12T23:59:00-03:00'), now).find((a
   message: '2 days without activity',
 });
 
+const historicalErrors = {
+  ...student('2026-08-14T09:00:00-03:00'),
+  totalAttempts: 50,
+  totalErrors: 43,
+  lastLessonId: 'workbook1_lesson4',
+};
+assert.equal(detectAlerts(historicalErrors, now).some((alert) => alert.type === 'high_errors'), false,
+  'cumulative historical errors must not create an active alert');
+assert.equal(detectAlerts(historicalErrors, now).some((alert) => alert.message.includes('total errors recorded')), false);
+
+const lowAccuracy = {
+  ...historicalErrors,
+  daysCompleted: 2,
+  avgAccuracy: 50,
+};
+assert.deepEqual(detectAlerts(lowAccuracy, now), [{
+  type: 'low_accuracy',
+  message: 'Accuracy below 60% (50%)',
+}], 'real low-accuracy alerts must remain active independently of historical error totals');
+
 console.log('pedagogical inactivity alert tests passed');

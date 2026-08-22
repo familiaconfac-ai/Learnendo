@@ -21,7 +21,8 @@ export function isDailyReminderEligible(input: {
 }) {
   if (input.role === 'admin' || input.role === 'teacher') return false;
   if (!input.notificationsEnabled || !input.hasValidDevice) return false;
-  return getDaysWithoutActivity(input.lastPedagogicalActivity, input.now) !== 0;
+  const daysWithoutActivity = getDaysWithoutActivity(input.lastPedagogicalActivity, input.now);
+  return daysWithoutActivity !== null && daysWithoutActivity > 0;
 }
 
 export function classifyNotificationDevices(

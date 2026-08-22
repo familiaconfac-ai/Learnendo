@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
-  deleteUserAccountRecord,
   subscribeUserAccounts,
   updateUserAccountRole,
   updateUserAssignedTeacher,
   UserAccountProfile,
   UserRole,
 } from '../../services/userRoles';
-import { updateAdminStudent } from '../../services/adminStudents';
+import { deleteAdminStudent, updateAdminStudent } from '../../services/adminStudents';
 
 interface AdminUserAccessTabProps {
   user: User;
@@ -205,17 +204,22 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
 
   const handleDelete = async (account: UserAccountProfile) => {
     const confirmed = window.confirm(
-      `Delete the dashboard record for "${account.name || account.email || account.uid}"?\n\nThis removes the Firestore user/profile entry and its progress mirror, but it does not delete the Firebase Auth login itself.`,
+      `Permanently delete the student "${account.name || account.email || account.uid}"?\n\nThis removes the Firebase Auth account and linked student data. This action cannot be undone.`,
     );
     if (!confirmed) return;
 
     setSavingUid(account.uid);
     try {
-      await deleteUserAccountRecord(account.uid);
+      const result = await deleteAdminStudent(user, account.uid);
+      if (!result.completed) {
+        const detail = result.issues.map((issue) => `${issue.scope}: ${issue.message}`).join(' ');
+        setError(`Failed to delete student completely.${detail ? ` ${detail}` : ''}`);
+        return;
+      }
       setError(null);
     } catch (reason) {
       console.warn('[AdminUserAccessTab] user delete failed:', reason);
-      setError('Unable to delete this user record right now.');
+      setError(reason instanceof Error ? reason.message : 'Unable to delete this student right now.');
     } finally {
       setSavingUid(null);
     }
@@ -375,7 +379,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
                             disabled={isSaving || !canDelete}
                             onClick={() => void handleDelete(account)}
                             className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-700 transition-colors hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50"
-                            title={canDelete ? 'Delete Firestore profile/progress record' : 'Reserved admins and your own account cannot be deleted here'}
+                            title={canDelete ? 'Permanently delete student account and linked data' : 'Reserved admins and your own account cannot be deleted here'}
                           >
                             Delete
                           </button>

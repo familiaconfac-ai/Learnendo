@@ -49,6 +49,12 @@ assert.equal(getDaysWithoutActivity('2026-08-12T23:59:00-03:00', saoPauloNow), 2
 assert.equal(formatLastPedagogicalActivityLabel('2026-08-12T23:59:00-03:00', saoPauloNow), '2 days without activity');
 assert.equal(getDaysWithoutActivity('2026-08-13T23:59:59-03:00', new Date('2026-08-14T00:00:01-03:00')), 1,
   'crossing midnight in Sao Paulo starts a new inactivity day even when only seconds elapsed');
+assert.equal(getDaysWithoutActivity('2026-08-31T23:59:59-03:00', new Date('2026-09-01T00:00:01-03:00')), 1,
+  'calendar-day inactivity must remain correct across month boundaries');
+assert.equal(getDaysWithoutActivity('2026-09-01T01:30:00Z', new Date('2026-09-01T04:30:00Z')), 1,
+  'UTC timestamps must be compared as Sao Paulo calendar days');
+assert.equal(getDaysWithoutActivity('2026-08-10T12:00:00-03:00', saoPauloNow), 4);
+assert.equal(formatLastPedagogicalActivityLabel(null, saoPauloNow), '—');
 assert.equal(getDaysWithoutActivity({ toMillis: () => Date.parse('2026-08-14T10:00:00-03:00') }, saoPauloNow), 0);
 assert.equal(getDaysWithoutActivity({ toDate: () => new Date('2026-08-13T10:00:00-03:00') }, saoPauloNow), 1);
 assert.equal(getDaysWithoutActivity(Date.parse('2026-08-12T10:00:00-03:00'), saoPauloNow), 2);

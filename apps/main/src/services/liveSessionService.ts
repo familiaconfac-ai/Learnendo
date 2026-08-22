@@ -31,6 +31,8 @@ import type { Day, Exercise, Lesson } from '../types';
 import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from './liveWhiteboardActivities';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import { LAST_PEDAGOGICAL_ACTIVITY_FIELD } from '../engine/dashboardMetrics';
+import { clearPedagogicalAppBadge } from './appBadge';
+import { closeObsoleteInactivityNotifications } from './persistentNotifications';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_SESSION_COLLECTION = 'session';
@@ -954,11 +956,22 @@ export async function updateExerciseBlockResponse(
     payload[`responseAnsweredAt.${studentUid}`] = meta.answeredAt;
   }
 
-  await setDoc(
-    doc(getExerciseBlocksCollection(classId), blockId),
-    payload,
-    { merge: true },
-  );
+  const blockRef = doc(getExerciseBlocksCollection(classId), blockId);
+  if (!answerText.trim()) {
+    await setDoc(blockRef, payload, { merge: true });
+    return;
+  }
+
+  const batch = writeBatch(db);
+  batch.set(blockRef, payload, { merge: true });
+  batch.set(doc(db, 'progress', studentUid), {
+    [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: serverTimestamp(),
+  }, { merge: true });
+  await batch.commit();
+  await closeObsoleteInactivityNotifications().catch((error) => {
+    console.warn('[Notifications] Could not close obsolete inactivity notifications:', error);
+  });
+  await clearPedagogicalAppBadge();
 }
 
 export async function setExerciseBlockStudentLock(

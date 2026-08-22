@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   applyNotificationAppBadge,
   applyPedagogicalAppBadge,
+  clearPedagogicalAppBadge,
   normalizePedagogicalBadgeCount,
   type AppBadgeStateStore,
   type AppBadgeTarget,
@@ -35,6 +36,10 @@ assert.equal(inactive.current(), 2, 'two inactive calendar days must show badge 
 
 await applyPedagogicalAppBadge(0, inactive.target, inactive.store);
 assert.equal(inactive.current(), 0, 'valid learning activity must clear the badge');
+
+await applyPedagogicalAppBadge(3, inactive.target, inactive.store);
+await clearPedagogicalAppBadge(inactive.target, inactive.store);
+assert.equal(inactive.current(), 0, 'the activity cleanup entry point must clear the inactivity badge');
 
 await applyPedagogicalAppBadge(1, inactive.target, inactive.store);
 assert.equal(inactive.current(), 1, 'inactivity after studying must restart at 1');

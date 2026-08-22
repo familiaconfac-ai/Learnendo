@@ -7,7 +7,6 @@
  * Thresholds:
  *   INACTIVE_DAYS     — 2+ days without any recorded activity
  *   LOW_ACCURACY      — avgAccuracy < 60 % (requires ≥ 2 completed days for reliability)
- *   HIGH_ERROR_THRESHOLD — more than 10 cumulative errors
  */
 
 import type { UserProgressSummary } from './courseProgressEngine';
@@ -30,7 +29,6 @@ export interface StudentAlert {
 
 const INACTIVE_DAYS_THRESHOLD   = 2;
 const LOW_ACCURACY_THRESHOLD    = 60;
-const HIGH_ERROR_THRESHOLD      = 10;
 const MIN_DAYS_FOR_ACCURACY_CHECK = 2; // avoid noise from brand-new students
 
 // ─────────────────────────────────────────────────────────────
@@ -75,15 +73,6 @@ export function detectAlerts(summary: UserProgressSummary, now = new Date()): St
     alerts.push({
       type: 'low_accuracy',
       message: `Accuracy below ${LOW_ACCURACY_THRESHOLD}% (${summary.avgAccuracy}%)`,
-    });
-  }
-
-  // ── High error rate ─────────────────────────────────────────
-  if (summary.totalErrors > HIGH_ERROR_THRESHOLD) {
-    const where = summary.lastLessonId ? ` (latest: ${summary.lastLessonId})` : '';
-    alerts.push({
-      type: 'high_errors',
-      message: `${summary.totalErrors} total errors recorded${where}`,
     });
   }
 

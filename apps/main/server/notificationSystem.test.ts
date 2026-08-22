@@ -67,6 +67,10 @@ assert.ok(!isDailyReminderEligible({ ...baseEligibility, role: 'admin' }));
 assert.ok(!isDailyReminderEligible({ ...baseEligibility, role: 'teacher' }));
 assert.ok(!isDailyReminderEligible({ ...baseEligibility, role: 'student', notificationsEnabled: false }));
 assert.ok(!isDailyReminderEligible({ ...baseEligibility, role: 'student', hasValidDevice: false }));
+assert.ok(!isDailyReminderEligible({ ...baseEligibility, role: 'student', lastPedagogicalActivity: null }),
+  'a student without a pedagogical activity marker must not receive an inactivity reminder');
+assert.ok(!isDailyReminderEligible({ ...baseEligibility, role: 'student', lastPedagogicalActivity: 'invalid-date' }),
+  'an invalid activity marker must not be treated as inactivity');
 assert.ok(isDailyReminderEligible({
   ...baseEligibility,
   role: 'student',
@@ -178,6 +182,11 @@ assert.match(serviceWorkerSource, /openWindow\(destination\)/);
 
 const progressServiceSource = fs.readFileSync(path.resolve('src/services/progressService.ts'), 'utf8');
 assert.match(progressServiceSource, /await closeObsoleteInactivityNotifications\(\)/);
+const liveSessionServiceSource = fs.readFileSync(path.resolve('src/services/liveSessionService.ts'), 'utf8');
+assert.match(liveSessionServiceSource, /await closeObsoleteInactivityNotifications\(\)/,
+  'valid Live activity must close the real inactivity notification');
+assert.match(liveSessionServiceSource, /await clearPedagogicalAppBadge\(\)/,
+  'valid Live activity must clear the inactivity badge');
 
 const foregroundNotificationSource = fs.readFileSync(path.resolve('src/services/notifications.ts'), 'utf8');
 assert.match(foregroundNotificationSource, /registration\.showNotification/);
@@ -196,7 +205,7 @@ for (const serverModule of ['server/notifications.ts', 'server/adminNotification
 const dashboardSource = fs.readFileSync(path.resolve('src/components/TeacherDashboard/TeacherDashboard.tsx'), 'utf8');
 const studentPanelSource = fs.readFileSync(path.resolve('src/components/TeacherDashboard/StudentAdminPanel.tsx'), 'utf8');
 const appSource = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8');
-assert.match(dashboardSource, />Notificações</);
+assert.match(dashboardSource, />Notifications</);
 assert.match(dashboardSource, /NotificationStatusBadge/);
 assert.match(studentPanelSource, /notificationDetails\?\.kind !== 'active'/);
 assert.doesNotMatch(studentPanelSource, /\.token\b/);

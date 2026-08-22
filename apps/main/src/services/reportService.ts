@@ -8,9 +8,9 @@
  * Output: A4 portrait, clean layout.
  */
 
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import type { TeacherStudentRow } from '../engine/teacherService';
-import type { ActiveCourse, PlacementAnswerItem, StudentStudyProfile } from '../types';
+import type { ActiveCourse, PlacementAnswerItem, StudentStudyProfile, TestRecord } from '../types';
 import { formatTime, formatAccuracy, MAX_WORKBOOK, MAX_LESSON, MAX_DAY } from '../engine/progressStatsService';
 
 // Human-readable labels for course IDs used in the Active Courses section.
@@ -148,6 +148,20 @@ function formatRelativeDateShort(iso: string): string {
   } catch { return ''; }
 }
 
+/** Prefer the selected-language result, while preserving legacy placement data. */
+export function resolveStudentReportPlacement(student: TeacherStudentRow): TestRecord | undefined {
+  const tests = student.tests;
+  if (!tests) return undefined;
+  const selectedPlacement = student.selectedLanguageCode
+    ? tests.placements?.[student.selectedLanguageCode]
+    : undefined;
+  if (selectedPlacement) return selectedPlacement;
+  if (tests.placement) return tests.placement;
+  return Object.values(tests.placements ?? {})
+    .filter((placement): placement is TestRecord => Boolean(placement))
+    .sort((a, b) => Date.parse(b.date || '') - Date.parse(a.date || ''))[0];
+}
+
 // ─────────────────────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────────────────────
@@ -158,8 +172,9 @@ function formatRelativeDateShort(iso: string): string {
  *
  * @param student  Enriched student row from the teacher dashboard
  */
-export function generateStudentReport(student: TeacherStudentRow): void {
+export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const placement = resolveStudentReportPlacement(student);
 
   const name      = student.displayName || 'Student';
   const email     = student.email       || '—';
@@ -283,8 +298,8 @@ export function generateStudentReport(student: TeacherStudentRow): void {
     y = sectionHead(doc, `${nextSection}. Tests Performance`, y);
     nextSection++;
 
-    if (student.tests?.placement) {
-      const pt = student.tests.placement;
+    if (placement) {
+      const pt = placement;
       let ptLabel = `${pt.score}%`;
       if (pt.level) ptLabel += ` — ${pt.level}`;
       if (pt.date) {
@@ -386,7 +401,6 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   }
 
   // ── FOOTER ────────────────────────────────────────────────
-  const placement = student.tests?.placement;
   if (placement) {
     doc.addPage();
     y = MARGIN;
@@ -397,7 +411,7 @@ export function generateStudentReport(student: TeacherStudentRow): void {
       ? parsedTestDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
       : '—';
     const bookLevel = placement.recommendedBook
-      ? `Book ${placement.recommendedBook}${placement.level ? ` · ${placement.level}` : ''}`
+      ? `Book ${placement.recommendedBook}${placement.level ? ` - ${placement.level}` : ''}`
       : (placement.level ?? '—');
     const entryPoint = placement.recommendedEntryPoint ?? bookLevel;
 
@@ -505,6 +519,11 @@ export function generateStudentReport(student: TeacherStudentRow): void {
   }
 
   // ── DOWNLOAD ──────────────────────────────────────────────
+  return doc;
+}
+
+export function generateStudentReport(student: TeacherStudentRow): void {
+  const name = student.displayName || 'Student';
   const filename = `learnendo_report_${name.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
-  doc.save(filename);
+  createStudentReportPdf(student).save(filename);
 }

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import type { TeacherStudentRow } from '../engine/teacherService.ts';
+import { detectAlerts } from '../engine/alertService.ts';
 import { buildClassPerformanceReport, getCurriculumProgressPercent } from './classReportModel.ts';
 
 function student(
@@ -69,6 +70,18 @@ const timezoneReport = buildClassPerformanceReport('Timezone', [
 assert.equal(timezoneReport.students.find((item) => item.name === 'Same Brazilian day')?.lastActivity, 'Today');
 assert.equal(timezoneReport.students.find((item) => item.name === 'Previous Brazilian day')?.lastActivity, 'Yesterday');
 assert.equal(report.students[2].attempts, 0);
+
+const historicalErrorStudent = student('Historical errors', {
+  totalAttempts: 50,
+  totalErrors: 43,
+  avgAccuracy: 86,
+  lastActivity: '2026-08-11T09:00:00Z',
+});
+historicalErrorStudent.alerts = detectAlerts(historicalErrorStudent, generatedAt);
+const historicalErrorReport = buildClassPerformanceReport('Historical errors', [historicalErrorStudent], generatedAt);
+assert.equal(historicalErrorReport.students[0].errors, 43, 'historical errors must remain available as report data');
+assert.deepEqual(historicalErrorReport.students[0].needsAttention, [],
+  'historical errors alone must not appear as an active class-report concern');
 
 const tieReport = buildClassPerformanceReport('Tie class', [
   student('Zoe', { totalStars: 5, daysCompleted: 2 }),

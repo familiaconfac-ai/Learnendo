@@ -9,6 +9,7 @@ const read = (relativePath: string) => fs.readFileSync(path.join(projectRoot, re
 
 const progressService = read('src/services/progressService.ts');
 const app = read('src/App.tsx');
+const exercisePractice = read('src/components/ExercisePractice/ExercisePractice.tsx');
 const liveSessionService = read('src/services/liveSessionService.ts');
 const teacherService = read('src/engine/teacherService.ts');
 const notifications = read('server/notifications.ts');
@@ -19,8 +20,14 @@ assert.match(progressService, /\[LAST_PEDAGOGICAL_ACTIVITY_FIELD\]: serverTimest
   'normal completion and Review Mode must persist the canonical pedagogical marker');
 assert.match(app, /\[LAST_PEDAGOGICAL_ACTIVITY_FIELD\]: serverTimestamp\(\)/,
   'the legacy durable completion path must persist the same marker');
+assert.match(exercisePractice, /practiceCompletionPersistence\(isReplay\)/,
+  'normal completion and replay must share the activity persistence policy');
+assert.match(exercisePractice, /onActivityComplete\?\.\(day\.id, masterySummary\.finalMastery, analytics\)/,
+  'all exercise and Review Mode variants must record activity after mastery completion');
 assert.match(liveSessionService, /batch\.set\(doc\(db, 'progress', response\.userId\)/,
   'a durable Live answer must update the student pedagogical marker atomically');
+assert.match(liveSessionService, /batch\.set\(doc\(db, 'progress', studentUid\)/,
+  'a durable exercise-block answer must also update the student pedagogical marker atomically');
 assert.match(teacherService, /onSnapshot\(/,
   'the Dashboard must receive the new marker through its realtime subscription');
 assert.match(teacherService, /progressDocs = new Map\(snap\.docs/,

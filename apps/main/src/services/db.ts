@@ -4,6 +4,7 @@ import { db } from "./firebase";
 import { auth } from "./firebase";
 import { AnswerLog, UserProgress } from "../types";
 import type { User } from "firebase/auth";
+import { resolveLoginProfileFields } from "./profileLoginPolicy";
 
 // ==========================================
 // PRODUCTION-READY FIRESTORE ARCHITECTURE
@@ -60,18 +61,16 @@ export async function createOrUpdateUserProfile(user: User, emailOverride?: stri
     const userDoc = doc(db, 'users', user.uid);
     const existingSnapshot = await getDoc(userDoc);
     const existingData = existingSnapshot.data() || {};
-    const emailToUse = existingData.email || emailOverride || user.email || null;
-    const fallbackName = emailToUse ? String(emailToUse).split('@')[0] : 'User';
-    const existingName = String(existingData.name || existingData.displayName || '').trim();
-    const looksLikeGuestAlias = /^Player_[A-Za-z0-9]{4,}$/.test(existingName);
-    const nameToUse =
-      user.displayName?.trim() ||
-      (!looksLikeGuestAlias ? existingName : '') ||
-      fallbackName;
+    const { name: nameToUse, email: emailToUse } = resolveLoginProfileFields(
+      existingData,
+      user.displayName,
+      user.email,
+      emailOverride,
+    );
     const wasAnonymous =
       Boolean(existingData.wasAnonymous) ||
       Boolean(existingData.isAnonymous) ||
-      looksLikeGuestAlias;
+      /^Player_[A-Za-z0-9]{4,}$/.test(nameToUse);
     
     await setDoc(userDoc, {
       uid: user.uid,
@@ -80,7 +79,7 @@ export async function createOrUpdateUserProfile(user: User, emailOverride?: stri
       email: emailToUse,
       isAnonymous: user.isAnonymous,
       wasAnonymous,
-      createdAt: serverTimestamp(),
+      ...(!existingSnapshot.exists() ? { createdAt: serverTimestamp() } : {}),
       lastLoginAt: serverTimestamp(),
     }, { merge: true });
 
@@ -503,14 +502,16 @@ export async function createStudentProfile(uid: string, email: string, displayNa
   try {
     const userDocRef = doc(db, "users", uid);
     const existingSnapshot = await getDoc(userDocRef);
-    const existingData = existingSnapshot.data() || {};
-    const resolvedEmail = existingData.email || email || null;
-    const existingName = String(existingData.name || existingData.displayName || '').trim();
-    const looksLikeGuestAlias = /^Player_[A-Za-z0-9]{4,}$/.test(existingName);
-    const resolvedName =
-      displayName?.trim() ||
-      (!looksLikeGuestAlias ? existingName : '') ||
-      (resolvedEmail ? resolvedEmail.split("@")[0] : 'User');
+    if (existingSnapshot.exists()) {
+      console.log("Student profile already exists; preserving Firestore profile:", uid);
+      return;
+    }
+
+    const { name: resolvedName, email: resolvedEmail } = resolveLoginProfileFields(
+      {},
+      displayName,
+      email,
+    );
     await setDoc(userDocRef, {
       uid,
       email: resolvedEmail,

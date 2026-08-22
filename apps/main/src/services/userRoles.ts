@@ -1,6 +1,5 @@
 import {
   collection,
-  deleteDoc,
   doc,
   getDocFromServer,
   onSnapshot,
@@ -289,17 +288,4 @@ export async function updateStudentDisplayName(
   }
 
   return trimmedName;
-}
-
-export async function deleteUserAccountRecord(
-  uid: string,
-): Promise<void> {
-  if (!db) {
-    throw new Error('Firestore is not initialized');
-  }
-
-  if (!uid) return;
-
-  await deleteDoc(doc(db, 'users', uid));
-  await deleteDoc(doc(db, 'progress', uid));
 }
