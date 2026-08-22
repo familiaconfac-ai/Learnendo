@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { resolveLoginProfileFields } from './profileLoginPolicy.ts';
 
 assert.deepEqual(
@@ -28,5 +29,45 @@ assert.deepEqual(
   { name: 'Player_ABC123', email: 'converted@example.com' },
   'even an existing guest alias must not be silently replaced during login',
 );
+
+const authProfile = { displayName: 'Nome Antigo', email: 'old-auth@example.com' };
+let usersDocument: Record<string, unknown> = {
+  name: 'Nome Novo',
+  displayName: 'Nome Novo',
+  email: 'official@example.com',
+  role: 'student',
+  status: 'active',
+  group: 'Turma A',
+};
+let progressDocument: Record<string, unknown> = {
+  displayName: 'Nome Novo',
+  email: 'official@example.com',
+};
+
+for (const event of ['bootstrap', 'refresh', 'logout/login', 'second refresh']) {
+  const resolved = resolveLoginProfileFields(
+    usersDocument,
+    authProfile.displayName,
+    authProfile.email,
+  );
+  usersDocument = { ...usersDocument, name: resolved.name, displayName: resolved.name, email: resolved.email };
+  progressDocument = { ...progressDocument, displayName: resolved.name, email: resolved.email };
+  const pedagogicalProgressWrite = { totalAttempts: 12, totalErrors: 2 };
+  progressDocument = { ...progressDocument, ...pedagogicalProgressWrite };
+
+  assert.equal(usersDocument.displayName, 'Nome Novo', `${event}: users name must remain official`);
+  assert.equal(progressDocument.displayName, 'Nome Novo', `${event}: progress name must remain official`);
+  assert.equal(usersDocument.role, 'student', `${event}: role must remain untouched`);
+  assert.equal(usersDocument.status, 'active', `${event}: status must remain untouched`);
+  assert.equal(usersDocument.group, 'Turma A', `${event}: group must remain untouched`);
+}
+
+const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
+const flatProgressPayload = appSource.match(/const flatProgressPayload = \{([\s\S]*?)\n\s+\};/)?.[1] ?? '';
+assert.ok(flatProgressPayload, 'lesson completion progress payload must exist');
+assert.doesNotMatch(flatProgressPayload, /\bdisplayName\s*:/,
+  'lesson completion must not copy stale Firebase Auth displayName into progress');
+assert.doesNotMatch(flatProgressPayload, /\bemail\s*:/,
+  'lesson completion must not overwrite the administrative email');
 
 console.log('profile login policy tests passed');

@@ -2424,10 +2424,10 @@ const App: React.FC = () => {
                 // never resets when the student moves to a new lesson or workbook.
                 if (db) {
                   const cumulativeStats = await getCumulativeUserStats(user.uid!);
+                  // Identity is mirrored by createOrUpdateUserProfile using the
+                  // Firestore-first policy; pedagogical writes must not copy Auth fields.
                   const flatProgressPayload = {
                     uid: user.uid,
-                    displayName: user.displayName ?? null,
-                    email: user.email ?? null,
                     courseId: currentCourseId ?? DEFAULT_COURSE_ID,
                     languageCode: COURSE_TO_LANGUAGE[currentCourseId ?? DEFAULT_COURSE_ID],
                     currentWorkbook: updated.currentWorkbook,
