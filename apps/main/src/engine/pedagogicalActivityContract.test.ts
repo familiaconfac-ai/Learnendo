@@ -18,6 +18,10 @@ const technicalActivity = read('src/services/db.ts');
 assert.equal(LAST_PEDAGOGICAL_ACTIVITY_FIELD, 'lastPedagogicalActivityAt');
 assert.match(progressService, /\[LAST_PEDAGOGICAL_ACTIVITY_FIELD\]: serverTimestamp\(\)/,
   'normal completion and Review Mode must persist the canonical pedagogical marker');
+assert.match(progressService, /recordNormalLessonPedagogicalActivity[\s\S]*?await setDoc\(doc\(db, 'progress', userId\),[\s\S]*?\[LAST_PEDAGOGICAL_ACTIVITY_FIELD\]: serverTimestamp\(\)/,
+  'normal completion must have a direct durable write for the canonical marker');
+assert.match(app, /await recordNormalLessonPedagogicalActivity\(user\.uid\)/,
+  'handleDayComplete must await the direct canonical marker write');
 assert.match(app, /\[LAST_PEDAGOGICAL_ACTIVITY_FIELD\]: serverTimestamp\(\)/,
   'the legacy durable completion path must persist the same marker');
 assert.match(exercisePractice, /practiceCompletionPersistence\(isReplay\)/,

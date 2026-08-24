@@ -153,6 +153,33 @@ assert.equal(buildAdminNotificationStatus({
   uid: 'student-enabled-without-device', preferenceExists: true, preference: { enabled: true, permission: 'granted' }, devices: [], now,
 }).kind, 'no-device');
 
+// Real activation regression: the durable Learnendo preference drives the
+// administrative status independently from browser permission provisioning.
+let gregorioPreference = { enabled: false, permission: 'granted' };
+let gregorioDevices = activeDevices(1);
+assert.equal(buildAdminNotificationStatus({
+  uid: 'gregorio', preferenceExists: true, preference: gregorioPreference, devices: gregorioDevices, now,
+}).kind, 'disabled');
+
+gregorioPreference = { enabled: true, permission: 'granted' };
+let gregorioStatus = buildAdminNotificationStatus({
+  uid: 'gregorio', preferenceExists: true, preference: gregorioPreference, devices: gregorioDevices, now,
+});
+assert.equal(gregorioStatus.kind, 'active');
+assert.equal(gregorioStatus.activeDeviceCount, 1);
+
+gregorioDevices = activeDevices(2);
+gregorioStatus = buildAdminNotificationStatus({
+  uid: 'gregorio', preferenceExists: true, preference: gregorioPreference, devices: gregorioDevices, now,
+});
+assert.equal(gregorioStatus.kind, 'active');
+assert.equal(gregorioStatus.activeDeviceCount, 2);
+
+gregorioPreference = { enabled: false, permission: 'granted' };
+assert.equal(buildAdminNotificationStatus({
+  uid: 'gregorio', preferenceExists: true, preference: gregorioPreference, devices: gregorioDevices, now,
+}).kind, 'disabled');
+
 const vercelConfig = JSON.parse(fs.readFileSync(path.resolve('vercel.json'), 'utf8')) as {
   crons?: Array<{ path: string; schedule: string }>;
 };
@@ -191,6 +218,16 @@ assert.match(liveSessionServiceSource, /await clearPedagogicalAppBadge\(\)/,
 const foregroundNotificationSource = fs.readFileSync(path.resolve('src/services/notifications.ts'), 'utf8');
 assert.match(foregroundNotificationSource, /registration\.showNotification/);
 assert.match(foregroundNotificationSource, /closeSupersededAdminTestNotifications\(registration\)/);
+const enableNotificationsSource = foregroundNotificationSource.slice(
+  foregroundNotificationSource.indexOf('export async function enableNotifications'),
+  foregroundNotificationSource.indexOf('export async function disableNotifications'),
+);
+assert.ok(
+  enableNotificationsSource.indexOf('await setDoc(reference') < enableNotificationsSource.indexOf('await obtainAndSaveDevice(user)'),
+  'the enabled preference must be durable before provisioning the FCM device',
+);
+assert.doesNotMatch(enableNotificationsSource, /enabled:\s*false[\s\S]*permission:\s*'error'/,
+  'an FCM/device error must not revert the Learnendo preference to disabled');
 
 for (const serverModule of ['server/notifications.ts', 'server/adminNotificationStatus.ts', 'server/dailyReminderPolicy.ts']) {
   const source = fs.readFileSync(path.resolve(serverModule), 'utf8');
@@ -204,6 +241,7 @@ for (const serverModule of ['server/notifications.ts', 'server/adminNotification
 
 const dashboardSource = fs.readFileSync(path.resolve('src/components/TeacherDashboard/TeacherDashboard.tsx'), 'utf8');
 const studentPanelSource = fs.readFileSync(path.resolve('src/components/TeacherDashboard/StudentAdminPanel.tsx'), 'utf8');
+const notificationSettingsSource = fs.readFileSync(path.resolve('src/components/NotificationSettings.tsx'), 'utf8');
 const appSource = fs.readFileSync(path.resolve('src/App.tsx'), 'utf8');
 assert.match(dashboardSource, />Notifications</);
 assert.match(dashboardSource, /NotificationStatusBadge/);
@@ -211,6 +249,8 @@ assert.match(studentPanelSource, /notificationDetails\?\.kind !== 'active'/);
 assert.doesNotMatch(studentPanelSource, /\.token\b/);
 assert.match(appSource, /case SectionType\.SETTINGS:[\s\S]*?<NotificationSettings user=\{user\} \/>/);
 assert.doesNotMatch(appSource, /This feature is under construction/);
+assert.match(notificationSettingsSource, /setPreference\(await readNotificationPreference\(user\)\)/,
+  'the settings UI must reload the durable preference after a device provisioning error');
 
 const firestoreIndexes = JSON.parse(fs.readFileSync(path.resolve('../../firestore.indexes.json'), 'utf8')) as {
   fieldOverrides?: Array<{ collectionGroup?: string; fieldPath?: string }>;

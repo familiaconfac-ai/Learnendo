@@ -36,7 +36,14 @@ export const NotificationSettings: React.FC<{ user: User }> = ({ user }) => {
     try {
       setPreference(preference.enabled ? await disableNotifications(user) : await enableNotifications(user));
     } catch (reason) {
-      setPreference((current) => ({ ...current, enabled: false, permission: 'error' }));
+      // Device/token provisioning may fail after the Learnendo preference was
+      // persisted. Reload the durable preference instead of presenting it as
+      // disabled locally.
+      try {
+        setPreference(await readNotificationPreference(user));
+      } catch {
+        setPreference((current) => ({ ...current, permission: 'error' }));
+      }
       setError(reason instanceof Error ? reason.message : 'Unable to change notification settings.');
     } finally {
       setLoading(false);

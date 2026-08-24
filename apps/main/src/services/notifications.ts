@@ -78,14 +78,12 @@ export async function enableNotifications(user: User): Promise<NotificationPrefe
   }
   const enabled = permission === 'granted';
   const reference = doc(db, 'users', user.uid, 'notificationSettings', 'preferences');
-  try {
-    if (enabled) await obtainAndSaveDevice(user);
-    await setDoc(reference, { enabled, permission, updatedAt: serverTimestamp() }, { merge: true });
-    return { enabled, permission };
-  } catch (error) {
-    await setDoc(reference, { enabled: false, permission: 'error', updatedAt: serverTimestamp() }, { merge: true });
-    throw error;
-  }
+  // The Learnendo preference and this browser's FCM registration are separate
+  // states. Persist the user's choice first; a token/device provisioning error
+  // must not silently turn the global preference off again.
+  await setDoc(reference, { enabled, permission, updatedAt: serverTimestamp() }, { merge: true });
+  if (enabled) await obtainAndSaveDevice(user);
+  return { enabled, permission };
 }
 
 export async function disableNotifications(user: User): Promise<NotificationPreference> {

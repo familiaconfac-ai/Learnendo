@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics.ts';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount, LAST_PEDAGOGICAL_ACTIVITY_FIELD, resolveDashboardLanguageCode } from './dashboardMetrics.ts';
 
 assert.equal(resolveDashboardLanguageCode('english', 'es'), 'en', 'active English course must beat a stale Spanish language code');
 assert.equal(resolveDashboardLanguageCode('spanish', 'en'), 'es');
@@ -58,6 +58,33 @@ assert.equal(formatLastPedagogicalActivityLabel(null, saoPauloNow), '—');
 assert.equal(getDaysWithoutActivity({ toMillis: () => Date.parse('2026-08-14T10:00:00-03:00') }, saoPauloNow), 0);
 assert.equal(getDaysWithoutActivity({ toDate: () => new Date('2026-08-13T10:00:00-03:00') }, saoPauloNow), 1);
 assert.equal(getDaysWithoutActivity(Date.parse('2026-08-12T10:00:00-03:00'), saoPauloNow), 2);
+
+// Production regression: a normal completion must replace a three-day-old
+// durable marker, and a fresh snapshot after reload must keep showing Today.
+const normalCompletionNow = new Date('2026-08-14T12:00:00-03:00');
+let persistedNormalCompletionProgress: Record<string, unknown> = {
+  [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: '2026-08-11T12:00:00-03:00',
+};
+assert.equal(getDaysWithoutActivity(
+  getLastPedagogicalActivity(persistedNormalCompletionProgress),
+  normalCompletionNow,
+), 3);
+persistedNormalCompletionProgress = {
+  ...persistedNormalCompletionProgress,
+  [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: normalCompletionNow.toISOString(),
+};
+assert.equal(getLastPedagogicalActivity(persistedNormalCompletionProgress), normalCompletionNow.toISOString(),
+  'normal completion must durably replace the canonical activity marker');
+assert.equal(formatLastPedagogicalActivityLabel(
+  getLastPedagogicalActivity(persistedNormalCompletionProgress),
+  normalCompletionNow,
+), 'Today');
+const refreshedNormalCompletionProgress = JSON.parse(JSON.stringify(persistedNormalCompletionProgress));
+assert.equal(formatLastPedagogicalActivityLabel(
+  getLastPedagogicalActivity(refreshedNormalCompletionProgress),
+  normalCompletionNow,
+), 'Today', 'a fresh Dashboard snapshot after reload must keep the normal completion as Today');
+
 assert.equal(getUniqueCompletedActivityCount({
   daysCompleted: 7,
   'lessons.wb1_l1_d1': { completed: true },

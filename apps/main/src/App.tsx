@@ -38,7 +38,7 @@ import { calculateWeeklyScore, DayProgress, ScoreResult } from './engine/scoring
 import { ensureLessonStarted, completeCourseDay, getCumulativeUserStats, LessonProgress, DayAnalytics } from './engine/courseProgressEngine';
 import { computeNextPath } from './engine/progressStatsService';
 import { ResultAnimation } from './components/ResultAnimation/ResultAnimation';
-import { trackLessonCompletion } from './services/progressService';
+import { recordNormalLessonPedagogicalActivity, trackLessonCompletion } from './services/progressService';
 import { LAST_PEDAGOGICAL_ACTIVITY_FIELD } from './engine/dashboardMetrics';
 import { listenForForegroundNotifications, markNotificationDeviceSignedOut, refreshGrantedNotificationDevice } from './services/notifications';
 import { subscribePendingExerciseReportCount } from './services/exerciseReportsService';
@@ -2295,6 +2295,13 @@ const App: React.FC = () => {
 
     // Persist progress to Firestore.
     if (user?.uid && db) {
+      try {
+        await recordNormalLessonPedagogicalActivity(user.uid);
+        console.log('[PROGRESS] canonical normal-completion activity marker persisted ✓');
+      } catch (e) {
+        console.error('[PROGRESS] canonical normal-completion activity marker failed:', e);
+      }
+
       const currentDays = latestProgressRef.current?.days ?? {};
       const newDays = {
         ...currentDays,

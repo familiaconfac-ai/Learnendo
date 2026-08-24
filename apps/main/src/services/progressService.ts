@@ -1,8 +1,21 @@
-import { doc, increment, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, increment, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { clearPedagogicalAppBadge } from './appBadge';
 import { closeObsoleteInactivityNotifications } from './persistentNotifications';
 import { LAST_PEDAGOGICAL_ACTIVITY_FIELD } from '../engine/dashboardMetrics';
+
+/**
+ * Durably stamps the canonical activity marker from the normal day-completion
+ * path. This deliberately does not depend on stats aggregation or the broader
+ * completion transaction: the Dashboard must observe the activity even when a
+ * secondary completion write fails.
+ */
+export async function recordNormalLessonPedagogicalActivity(userId: string): Promise<void> {
+  if (!userId || !db) return;
+  await setDoc(doc(db, 'progress', userId), {
+    [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: serverTimestamp(),
+  }, { merge: true });
+}
 
 /**
  * Atomically records a day/lesson completion in the flat /progress/{userId} doc.
