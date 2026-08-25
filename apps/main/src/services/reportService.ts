@@ -11,7 +11,9 @@
 import { jsPDF } from 'jspdf';
 import type { TeacherStudentRow } from '../engine/teacherService';
 import type { ActiveCourse, PlacementAnswerItem, StudentStudyProfile, TestRecord } from '../types';
-import { formatTime, formatAccuracy, MAX_WORKBOOK, MAX_LESSON, MAX_DAY } from '../engine/progressStatsService';
+import { formatTime, MAX_LESSON, MAX_DAY } from '../engine/progressStatsService';
+import { getCourseWorkbookTotal } from '../courses/courseWorkbookTotals';
+import { DASHBOARD_TIME_ZONE, getDaysWithoutActivity } from '../engine/dashboardMetrics';
 
 // Human-readable labels for course IDs used in the Active Courses section.
 const COURSE_LABELS: Record<string, string> = {
@@ -22,6 +24,16 @@ const COURSE_LABELS: Record<string, string> = {
   'spanish':               'Spanish',
   'greek_koine':           'Greek (Koine)',
   'hebrew_biblical':       'Hebrew (Biblical)',
+};
+
+const COURSE_LANGUAGE_CODES: Record<string, string> = {
+  english: 'en',
+  'english-native': 'en',
+  spanish: 'es',
+  portuguese_foreigners: 'pt',
+  portuguese_native: 'pt',
+  greek_koine: 'el',
+  hebrew_biblical: 'he',
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -135,28 +147,81 @@ function progressBar(
   doc.text(`${pct}%`, barX + barW + 2, y);
 }
 
-/** Format an ISO date string as a short relative/absolute label for PDF display. */
-function formatRelativeDateShort(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso.slice(0, 10);
-    const days = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
-    if (days === 0) return 'Today';
-    if (days === 1) return 'Yesterday';
-    if (days < 30)  return `${days}d ago`;
-    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  } catch { return ''; }
+/** Format an ISO date or Firestore Timestamp using Sao Paulo civil days. */
+function formatRelativeDateShort(value: unknown): string {
+  const date = timestampDate(value);
+  if (!date) return '—';
+  const days = getDaysWithoutActivity(date);
+  if (days === null) return '—';
+  if (days === 0) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 30) return `${days}d ago`;
+  return date.toLocaleDateString('en-GB', {
+    timeZone: DASHBOARD_TIME_ZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+}
+
+function timestampDate(value: unknown): Date | null {
+  if (!value) return null;
+  if (typeof value === 'object' && typeof (value as { toDate?: unknown }).toDate === 'function') {
+    const date = (value as { toDate: () => Date }).toDate();
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  if (typeof value === 'object' && typeof (value as { toMillis?: unknown }).toMillis === 'function') {
+    const date = new Date((value as { toMillis: () => number }).toMillis());
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  const date = new Date(value as string | number | Date);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+export function formatStudentReportStudyDate(value: unknown): string {
+  const date = timestampDate(value);
+  if (!date) return '—';
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: DASHBOARD_TIME_ZONE,
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('day')} ${part('month')} ${part('year')} · ${part('hour')}:${part('minute')} ${part('dayPeriod').toUpperCase()}`;
+}
+
+export function getStudentReportStudyGap(previous: unknown, last: unknown): number | null {
+  const lastDate = timestampDate(last);
+  if (!lastDate) return null;
+  const elapsedDays = getDaysWithoutActivity(previous, lastDate);
+  return elapsedDays === null ? null : Math.max(0, elapsedDays - 1);
+}
+
+function reportLanguageCode(student: TeacherStudentRow): string | undefined {
+  const selected = student.selectedLanguageCode?.trim().toLowerCase();
+  if (selected) return COURSE_LANGUAGE_CODES[selected] ?? selected;
+  const courseId = (student.selectedCourseId ?? student.courseId)?.trim().toLowerCase();
+  if (courseId && COURSE_LANGUAGE_CODES[courseId]) return COURSE_LANGUAGE_CODES[courseId];
+  const language = student.languageCode?.trim().toLowerCase();
+  return language ? (COURSE_LANGUAGE_CODES[language] ?? language) : undefined;
 }
 
 /** Prefer the selected-language result, while preserving legacy placement data. */
 export function resolveStudentReportPlacement(student: TeacherStudentRow): TestRecord | undefined {
   const tests = student.tests;
   if (!tests) return undefined;
-  const selectedPlacement = student.selectedLanguageCode
-    ? tests.placements?.[student.selectedLanguageCode]
-    : undefined;
+  const languageCode = reportLanguageCode(student);
+  const selectedPlacement = languageCode ? tests.placements?.[languageCode] : undefined;
   if (selectedPlacement) return selectedPlacement;
-  if (tests.placement) return tests.placement;
+  if (tests.placement) {
+    const legacyLanguage = tests.placement.languageCode?.trim().toLowerCase();
+    if (!languageCode || !legacyLanguage || legacyLanguage === languageCode) return tests.placement;
+  }
+  if (languageCode) return undefined;
   return Object.values(tests.placements ?? {})
     .filter((placement): placement is TestRecord => Boolean(placement))
     .sort((a, b) => Date.parse(b.date || '') - Date.parse(a.date || ''))[0];
@@ -183,6 +248,7 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
   const dy        = student.currentDay      ?? 1;
   const today     = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
   const courseLabel = student.courseId ?? student.languageCode ?? null;
+  const workbookTotal = getCourseWorkbookTotal(student.selectedCourseId ?? student.courseId ?? 'english');
   const profile: StudentStudyProfile = student.studyProfile ?? {};
 
   let y = MARGIN;
@@ -212,7 +278,7 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
   }
   // ── PROGRESS ─────────────────────────────────────────────
   y = sectionHead(doc, '2. Learning Position', y);
-  labelValue(doc, 'Workbook', `${wb} / ${MAX_WORKBOOK}`, MARGIN,  y);
+  labelValue(doc, 'Workbook', `${wb} / ${workbookTotal}`, MARGIN,  y);
   labelValue(doc, 'Lesson',   `${ls} / ${MAX_LESSON}`,   col2x(), y);
   y += 8;
   labelValue(doc, 'Exercise', `${dy} / ${MAX_DAY}`,      MARGIN,  y);
@@ -222,7 +288,7 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
   // Overall course progress bar
   const coursePct = Math.round(
     ((wb - 1) * MAX_LESSON * MAX_DAY + (ls - 1) * MAX_DAY + dy) /
-    (MAX_WORKBOOK * MAX_LESSON * MAX_DAY) * 100,
+    (workbookTotal * MAX_LESSON * MAX_DAY) * 100,
   );
   progressBar(doc, 'Overall progress', coursePct, MARGIN, y, COL_W - 20);
   y += 12;
@@ -243,6 +309,19 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
   labelValue(doc, 'Total errors',       errors,   MARGIN,  y);
   y += 8;
   progressBar(doc, 'Accuracy', student.avgAccuracy, MARGIN, y, COL_W - 20);
+  y += 12;
+
+  // ── RECENT ACTIVITY ───────────────────────────────────────
+  y = sectionHead(doc, 'Recent Activity', y);
+  const lastStudy = student.lastPedagogicalActivity;
+  const previousStudy = student.previousPedagogicalActivity;
+  const studyGap = getStudentReportStudyGap(previousStudy, lastStudy);
+  labelValue(doc, 'Last study', formatStudentReportStudyDate(lastStudy), MARGIN, y);
+  y += 8;
+  labelValue(doc, 'Previous study', formatStudentReportStudyDate(previousStudy), MARGIN, y);
+  y += 8;
+  labelValue(doc, 'Gap', studyGap === null ? '—' : `${studyGap} ${studyGap === 1 ? 'day' : 'days'}`, MARGIN, y);
+  labelValue(doc, 'Total study time', timeTot, col2x(), y);
   y += 12;
 
   // ── GAMIFICATION ──────────────────────────────────────────
@@ -346,7 +425,13 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
       currentDay:      student.currentDay,
     }]);
   }
-  if (courseEntries.length > 0 && y < 240) {
+  let continuationPageStarted = false;
+  if (courseEntries.length > 0) {
+    if (y >= 240) {
+      doc.addPage();
+      y = MARGIN;
+      continuationPageStarted = true;
+    }
     y = sectionHead(doc, `${nextSection}. Active Courses`, y);
     nextSection++;
 
@@ -363,8 +448,13 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
       const wb  = entry.currentWorkbook ?? 1;
       const ls  = entry.currentLesson   ?? 1;
       const dy  = entry.currentDay      ?? 1;
-      const posLabel = `Wbk ${wb}/8 · L${ls}/12 · Ex ${dy}/7`;
-      const lastAct = entry.lastActivityAt ? formatRelativeDateShort(entry.lastActivityAt) : '—';
+      const courseWorkbookTotal = getCourseWorkbookTotal(entry.courseId);
+      const posLabel = `Wbk ${wb}/${courseWorkbookTotal} · L${ls}/12 · Ex ${dy}/7`;
+      const isSelectedCourse = entry.courseId === (student.selectedCourseId ?? student.courseId);
+      const courseActivity = isSelectedCourse
+        ? student.lastPedagogicalActivity ?? entry.lastActivityAt
+        : entry.lastActivityAt;
+      const lastAct = formatRelativeDateShort(courseActivity);
 
       // Compact row: bg strip + label left, data right
       roundRect(doc, MARGIN, y - 3, COL_W, 14, 2, '#f0f9ff');
@@ -386,8 +476,14 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
 
   // ── STUDY PROFILE ─────────────────────────────────────────
   // Tests Performance is always rendered now, so profile is always one section higher.
-  if (y < 250) {
+  if (y >= 250) {
+    doc.addPage();
+    y = MARGIN;
+    continuationPageStarted = true;
+  }
+  {
     y = sectionHead(doc, `${nextSection}. Study Profile`, y);
+    nextSection++;
     labelValue(doc, 'Access type',    profile.appAccessType     ?? '—', MARGIN,  y);
     labelValue(doc, 'PDF workbook',   profile.pdfStatus         ?? '—', col2x(), y);
     y += 8;
@@ -402,8 +498,12 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
 
   // ── FOOTER ────────────────────────────────────────────────
   if (placement) {
-    doc.addPage();
-    y = MARGIN;
+    if (!continuationPageStarted || y > 190) {
+      doc.addPage();
+      y = MARGIN;
+    } else {
+      y += 6;
+    }
     y = sectionHead(doc, `${nextSection}. Placement Test`, y);
 
     const parsedTestDate = placement.date ? new Date(placement.date) : null;

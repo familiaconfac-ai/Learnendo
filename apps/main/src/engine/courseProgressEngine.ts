@@ -47,6 +47,7 @@ import {
   deriveDashboardRewardMetrics,
   getCompletedActivityRecords,
   getLastPedagogicalActivity,
+  getPreviousPedagogicalActivity,
   getUniqueCompletedActivityCount,
 } from './dashboardMetrics';
 
@@ -655,6 +656,10 @@ export interface UserProgressSummary {
   lastLessonId?: string;
   // Last activity — populated from users/{uid}.lastActive
   lastActivity?: any;      // Firestore Timestamp or ISO string
+  /** Canonical durable pedagogical marker used by the Student Report. */
+  lastPedagogicalActivity?: any;
+  /** Latest persisted pedagogical event on an earlier Sao Paulo civil day. */
+  previousPedagogicalActivity?: any;
   // ── Course / language context (for per-course ranking) ──────────────────
   // IMPORTANT: ranking must always be filtered by courseId — students should
   // only compete with others studying the same language/course.
@@ -872,6 +877,11 @@ export async function getAllUserProgressSummaries(): Promise<UserProgressSummary
           currentDay:      dashboardLastCompletedDay,
           lastLessonId:    typeof flatProgress.lastLesson === 'string' ? flatProgress.lastLesson : undefined,
           lastActivity:    getLastPedagogicalActivity(flatProgress),
+          lastPedagogicalActivity: flatProgress.lastPedagogicalActivityAt,
+          previousPedagogicalActivity: getPreviousPedagogicalActivity(
+            flatProgress,
+            flatProgress.lastPedagogicalActivityAt,
+          ),
           tests:           flatProgress.tests ?? undefined,
         } as UserProgressSummary;
       })

@@ -14,7 +14,7 @@ import { rankStudents, RankedStudent, computeScore } from './rankingService';
 import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
-import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getLastPedagogicalActivity, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getLastPedagogicalActivity, getPreviousPedagogicalActivity, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics';
 import { subscribeToLivePedagogicalActivity, type LiveActivityScope } from '../services/livePedagogicalActivity';
 import { partitionStudentAccounts } from '../services/studentRolePolicy';
 
@@ -332,6 +332,11 @@ export function subscribeToTeacherData(
         lastActivity: getLastPedagogicalActivity(
           progressData,
           [liveActivityByStudent.get(uid)],
+        ) ?? undefined,
+        lastPedagogicalActivity: progressData.lastPedagogicalActivityAt,
+        previousPedagogicalActivity: getPreviousPedagogicalActivity(
+          progressData,
+          progressData.lastPedagogicalActivityAt,
         ) ?? undefined,
         courseId: progressData.courseId ?? userData.courseId ?? undefined,
         languageCode: resolveDashboardLanguageCode(

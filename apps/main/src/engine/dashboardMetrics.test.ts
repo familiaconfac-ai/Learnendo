@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getUniqueCompletedActivityCount, LAST_PEDAGOGICAL_ACTIVITY_FIELD, resolveDashboardLanguageCode } from './dashboardMetrics.ts';
+import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getDaysWithoutActivity, getLastPedagogicalActivity, getLatestResponseActivityByStudent, getPreviousPedagogicalActivity, getUniqueCompletedActivityCount, LAST_PEDAGOGICAL_ACTIVITY_FIELD, resolveDashboardLanguageCode } from './dashboardMetrics.ts';
 
 assert.equal(resolveDashboardLanguageCode('english', 'es'), 'en', 'active English course must beat a stale Spanish language code');
 assert.equal(resolveDashboardLanguageCode('spanish', 'en'), 'es');
@@ -58,6 +58,18 @@ assert.equal(formatLastPedagogicalActivityLabel(null, saoPauloNow), '—');
 assert.equal(getDaysWithoutActivity({ toMillis: () => Date.parse('2026-08-14T10:00:00-03:00') }, saoPauloNow), 0);
 assert.equal(getDaysWithoutActivity({ toDate: () => new Date('2026-08-13T10:00:00-03:00') }, saoPauloNow), 1);
 assert.equal(getDaysWithoutActivity(Date.parse('2026-08-12T10:00:00-03:00'), saoPauloNow), 2);
+assert.equal(getPreviousPedagogicalActivity({
+  lastPedagogicalActivityAt: '2026-08-24T16:30:00.000Z',
+  lessons: {
+    today: { completed: true, completedAt: '2026-08-24T15:00:00.000Z' },
+    previous: { completed: true, lastActivityAt: '2026-08-19T23:15:00.000Z' },
+    older: { completed: true, completedAt: '2026-08-10T12:00:00.000Z' },
+  },
+}), '2026-08-19T23:15:00.000Z', 'previous activity must be the latest earlier Sao Paulo study day');
+assert.equal(getPreviousPedagogicalActivity({
+  lastPedagogicalActivityAt: '2026-08-24T16:30:00.000Z',
+  lessons: { today: { completed: true, completedAt: '2026-08-24T15:00:00.000Z' } },
+}), null, 'same-day actions must not become Previous study');
 
 // Production regression: a normal completion must replace a three-day-old
 // durable marker, and a fresh snapshot after reload must keep showing Today.

@@ -179,6 +179,33 @@ export function getLastPedagogicalActivity(
   return getLatestTimestamp(candidates);
 }
 
+/**
+ * Returns the latest persisted pedagogical event from a civil day before the
+ * canonical last-study day. Multiple actions on the same study day therefore
+ * do not masquerade as separate study sessions in reports.
+ */
+export function getPreviousPedagogicalActivity(
+  raw?: DashboardProgress,
+  lastActivity: unknown = raw?.[LAST_PEDAGOGICAL_ACTIVITY_FIELD],
+): unknown | null {
+  if (!raw) return null;
+  const lastDay = calendarDayNumber(lastActivity);
+  if (lastDay === null) return null;
+
+  const candidates: unknown[] = [];
+  getCompletedActivityRecords(raw).forEach((activity) => {
+    candidates.push(activity.completedAt, activity.lastActivityAt);
+  });
+
+  const previousMarker = raw.previousPedagogicalActivityAt;
+  if (previousMarker) candidates.push(previousMarker);
+
+  return getLatestTimestamp(candidates.filter((candidate) => {
+    const candidateDay = calendarDayNumber(candidate);
+    return candidateDay !== null && candidateDay < lastDay;
+  }));
+}
+
 export function getUniqueCompletedActivityCount(raw?: DashboardProgress): number {
   const canonicalCompleted = raw?.lessons && typeof raw.lessons === 'object'
     ? Object.values(raw.lessons).filter((value) =>
