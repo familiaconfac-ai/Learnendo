@@ -1,23 +1,7 @@
 import React, { useState } from 'react';
 import ForgotPasswordModal from '../common/ForgotPasswordModal';
 import { learnendoLogoTransparent } from '../../assets/branding';
-
-function mapAuthError(code: string): string {
-  switch (code) {
-    case 'auth/invalid-credential':
-    case 'auth/wrong-password':
-    case 'auth/user-not-found':
-      return 'Invalid email or password.';
-    case 'auth/invalid-email':
-      return 'Invalid email format.';
-    case 'auth/too-many-requests':
-      return 'Too many attempts. Try again later.';
-    case 'auth/network-request-failed':
-      return 'Network error. Check your connection.';
-    default:
-      return 'Login failed. Please try again.';
-  }
-}
+import { mapAuthError } from './authErrorMessage';
 
 interface LoginScreenProps {
   menuOpen: boolean;
@@ -61,7 +45,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         await onRegister(email.trim(), password, 'student');
       }
     } catch (err: any) {
-      setError(mapAuthError(err?.code ?? ''));
+      if (action === 'register') {
+        console.error('[Create account] Firebase registration failed:', {
+          code: err?.code ?? 'unknown',
+          message: err?.message ?? String(err),
+        });
+      }
+      setError(mapAuthError(err?.code ?? '', action));
     } finally {
       setIsSubmitting(false);
     }
