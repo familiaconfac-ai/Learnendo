@@ -30,9 +30,7 @@ import {
 import type { Day, Exercise, Lesson } from '../types';
 import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from './liveWhiteboardActivities';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
-import { LAST_PEDAGOGICAL_ACTIVITY_FIELD } from '../engine/dashboardMetrics';
-import { clearPedagogicalAppBadge } from './appBadge';
-import { closeObsoleteInactivityNotifications } from './persistentNotifications';
+import { recordLiveAttendanceExercise } from './liveAttendanceService';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_SESSION_COLLECTION = 'session';
@@ -556,17 +554,10 @@ export async function submitLiveResponse(
 
   const responsesRef = collection(db, LIVE_CLASSES_COLLECTION, classId, 'responses');
   const responseRef = doc(responsesRef);
-  const batch = writeBatch(db);
-  batch.set(responseRef, {
+  await setDoc(responseRef, {
     ...response,
     createdAt: serverTimestamp(),
   });
-  if (response.userId) {
-    batch.set(doc(db, 'progress', response.userId), {
-      [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: serverTimestamp(),
-    }, { merge: true });
-  }
-  await batch.commit();
 }
 
 export function subscribeLiveResponses(
@@ -927,6 +918,8 @@ export async function updateExerciseBlockResponse(
     attempts?: number;
     verdict?: LiveExerciseAnswerVerdict;
     answeredAt?: string;
+    workbookId?: number;
+    lessonId?: string | null;
   },
 ): Promise<void> {
   if (!db) throw new Error('Firestore is not initialized');
@@ -962,16 +955,19 @@ export async function updateExerciseBlockResponse(
     return;
   }
 
-  const batch = writeBatch(db);
-  batch.set(blockRef, payload, { merge: true });
-  batch.set(doc(db, 'progress', studentUid), {
-    [LAST_PEDAGOGICAL_ACTIVITY_FIELD]: serverTimestamp(),
-  }, { merge: true });
-  await batch.commit();
-  await closeObsoleteInactivityNotifications().catch((error) => {
-    console.warn('[Notifications] Could not close obsolete inactivity notifications:', error);
+  await setDoc(blockRef, payload, { merge: true });
+  await recordLiveAttendanceExercise({
+    classId,
+    uid: studentUid,
+    exerciseId: blockId,
+    workbookId: meta?.workbookId,
+    lessonId: meta?.lessonId,
+    attempts: meta?.attempts,
+    verdict: meta?.verdict,
+    answeredAt: meta?.answeredAt,
+  }).catch((error) => {
+    console.warn('[Live Attendance] Could not persist the exercise result:', error);
   });
-  await clearPedagogicalAppBadge();
 }
 
 export async function setExerciseBlockStudentLock(

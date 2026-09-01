@@ -30,6 +30,7 @@ import {
   updateLiveSession,
 } from '../../services/liveSessionService';
 import { buildLiveTrailCompletion } from '../../services/liveTrailTransition';
+import { recordLiveAttendanceGrammar } from '../../services/liveAttendanceService';
 import {
   loadWorkbookForWhiteboard,
   resolveLessonForWhiteboard,
@@ -1232,6 +1233,15 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     () => getGrammarGuideForLesson(lessonNumber),
     [lessonNumber],
   );
+  useEffect(() => {
+    if (isTeacher || !showGrammarModal || !grammarGuide?.grammarTitle) return;
+    void recordLiveAttendanceGrammar(
+      classId,
+      user.uid,
+      grammarGuide.grammarTitle,
+      session.activeLessonId,
+    ).catch(console.error);
+  }, [classId, grammarGuide?.grammarTitle, isTeacher, session.activeLessonId, showGrammarModal, user.uid]);
   const canEdit = currentBlock
     ? session.sessionStatus === 'active' &&
       !isStudentLocked(currentBlock, user.uid) &&
@@ -1644,6 +1654,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             attempts: answer ? payload.attemptNumber : 0,
             verdict,
             answeredAt: answer ? new Date().toISOString() : undefined,
+            workbookId,
+            lessonId,
           },
         );
         if (teacherGuidedMode && answer) {
@@ -1700,6 +1712,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             attempts: answer ? payload.attemptNumber : 0,
             verdict,
             answeredAt: answer ? new Date().toISOString() : undefined,
+            workbookId,
+            lessonId,
           },
         );
         if (teacherGuidedMode && answer) {

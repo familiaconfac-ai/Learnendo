@@ -44,6 +44,8 @@ import { listenForForegroundNotifications, markNotificationDeviceSignedOut, refr
 import { subscribePendingExerciseReportCount } from './services/exerciseReportsService';
 import { lesson1NewWords } from './data/workbook1/lesson1';
 import { subscribeLiveSession, updateLiveSession } from './services/liveSessionService';
+import { recordLiveAttendanceGrammar } from './services/liveAttendanceService';
+import { appendGrammarFocusWorkspacePage } from './services/grammarFocusWorkspace';
 import {
   getAllowedViewModes,
   getUserViewModeStorageKey,
@@ -1668,6 +1670,40 @@ const App: React.FC = () => {
       sharedGrammarScrollRatio: null,
     });
   }, [activeGrammarLessonNumber, pushSharedGrammarSessionState]);
+
+  const handleLiveGrammarViewed = useCallback((title: string, lessonId: string) => {
+    if (!activeOnlineClass?.id || !user?.uid || canManageLiveClasses) return;
+    void recordLiveAttendanceGrammar(activeOnlineClass.id, user.uid, title, lessonId)
+      .catch((error) => console.warn('[Live Attendance] Could not persist Grammar Focus title:', error));
+  }, [activeOnlineClass?.id, canManageLiveClasses, user?.uid]);
+
+  const openGrammarInWorkspace = async (
+    mode: 'document' | 'slides',
+    content: { title: string; body: string; lessonNumber: number },
+  ) => {
+    if (!activeOnlineClass?.id || !user?.uid || !canManageLiveClasses) {
+      throw new Error('Open a live class before sending Grammar Focus to the classroom.');
+    }
+    await appendGrammarFocusWorkspacePage({
+      classId: activeOnlineClass.id,
+      mode,
+      title: content.title,
+      markdown: content.body,
+      lessonNumber: content.lessonNumber,
+      userId: user.uid,
+      userName: user.displayName || user.email || 'Teacher',
+    });
+    await updateLiveSession(activeOnlineClass.id, {
+      mainStageMode: 'workspace',
+      sharedGrammarOpen: false,
+      sharedGrammarLessonNumber: content.lessonNumber,
+      sharedGrammarScrollRatio: null,
+    }, user.uid);
+    setShowGrammarModal(false);
+    const roomPath = `/live-class/${encodeURIComponent(activeOnlineClass.id)}`;
+    if (window.location.pathname !== roomPath) window.history.pushState({}, '', roomPath);
+    setCurrentSection(SectionType.LIVE_CLASSES);
+  };
 
   const handleGrammarModalScroll = useCallback(() => {
     const element = grammarModalScrollRef.current;
@@ -3458,6 +3494,14 @@ const App: React.FC = () => {
             onSelectLesson={openGrammarForLesson}
             onOpenOverview={openGrammarOverview}
             onClose={closeGrammarModal}
+            canPresent={canManageLiveClasses && Boolean(activeOnlineClass?.id)}
+            onOpenBoard={(content) => openGrammarInWorkspace('document', content)}
+            onOpenSlides={(content) => openGrammarInWorkspace('slides', content)}
+            onOpenPractice={(lessonId) => {
+              closeGrammarModal();
+              openLesson(lessonId, { force: canManageLiveClasses });
+            }}
+            onContentViewed={handleLiveGrammarViewed}
           />
         );
       })()}

@@ -14,6 +14,7 @@ import type { ActiveCourse, PlacementAnswerItem, StudentStudyProfile, TestRecord
 import { formatTime, MAX_LESSON, MAX_DAY } from '../engine/progressStatsService';
 import { getCourseWorkbookTotal } from '../courses/courseWorkbookTotals';
 import { DASHBOARD_TIME_ZONE, getDaysWithoutActivity } from '../engine/dashboardMetrics';
+import { getLiveAttendanceDuration, getLiveAttendanceMetrics, type LiveAttendanceRecord } from '../models/liveAttendance';
 
 // Human-readable labels for course IDs used in the Active Courses section.
 const COURSE_LABELS: Record<string, string> = {
@@ -192,6 +193,25 @@ export function formatStudentReportStudyDate(value: unknown): string {
   }).formatToParts(date);
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '';
   return `${part('day')} ${part('month')} ${part('year')} · ${part('hour')}:${part('minute')} ${part('dayPeriod').toUpperCase()}`;
+}
+
+function formatLiveAttendanceClock(value: string | null | undefined): string {
+  const date = timestampDate(value);
+  if (!date) return '—';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: DASHBOARD_TIME_ZONE,
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).format(date).replace(/\s+/g, ' ');
+}
+
+function formatLiveAttendanceLesson(record: LiveAttendanceRecord): string {
+  const workbook = record.workbookId ? `Workbook ${record.workbookId}` : null;
+  const lessonNumber = record.lessonId?.match(/(?:lesson[-_ ]*|\bl)(\d+)\b/i)?.[1]
+    ?? record.lessonId?.match(/(?:^|_l)(\d+)$/i)?.[1];
+  const lesson = lessonNumber ? `Lesson ${Number(lessonNumber)}` : null;
+  return [workbook, lesson].filter(Boolean).join(' · ') || '—';
 }
 
 export function getStudentReportStudyGap(previous: unknown, last: unknown): number | null {
@@ -493,6 +513,64 @@ export function createStudentReportPdf(student: TeacherStudentRow): jsPDF {
     if (profile.startDate) {
       labelValue(doc, 'Start date', profile.startDate, MARGIN, y);
       y += 8;
+    }
+  }
+
+  // Only render actual persisted class attendance; never infer historical sessions.
+  const liveAttendance = student.liveAttendance ?? [];
+  if (liveAttendance.length > 0) {
+    if (y > 215) {
+      doc.addPage();
+      y = MARGIN;
+      continuationPageStarted = true;
+    } else {
+      y += 8;
+    }
+    y = sectionHead(doc, `${nextSection}. Live Class History`, y);
+    nextSection++;
+
+    for (const record of liveAttendance) {
+      if (y > 225) {
+        doc.addPage();
+        y = sectionHead(doc, 'Live Class History (continued)', MARGIN);
+        continuationPageStarted = true;
+      }
+
+      const joinedDate = timestampDate(record.joinedAt);
+      const dateLabel = joinedDate
+        ? joinedDate.toLocaleDateString('en-GB', {
+          timeZone: DASHBOARD_TIME_ZONE,
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        })
+        : record.date;
+      const metrics = getLiveAttendanceMetrics(record);
+      const durationMinutes = Math.max(0, Math.round(getLiveAttendanceDuration(record) / 60));
+      const specificGrammar = record.grammarFocusTitles.filter((title) => !/^Lesson \d+$/i.test(title));
+      const grammarTitles = specificGrammar.length > 0 ? specificGrammar : record.grammarFocusTitles;
+
+      roundRect(doc, MARGIN, y - 4, COL_W, 52, 2, '#f0f9ff');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor('#1e40af');
+      doc.text(`${dateLabel} · ${record.classTitle}${record.groupName ? ` / ${record.groupName}` : ''}`, MARGIN + 4, y + 2);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor('#1e293b');
+      doc.text(`Joined: ${formatLiveAttendanceClock(record.joinedAt)}`, MARGIN + 4, y + 10);
+      doc.text(`Left: ${formatLiveAttendanceClock(record.leftAt)}`, col2x(), y + 10);
+      doc.text(`Duration: ${durationMinutes} min`, MARGIN + 4, y + 17);
+      doc.text(formatLiveAttendanceLesson(record), col2x(), y + 17);
+      const grammarLabel = doc.splitTextToSize(`Grammar Focus: ${grammarTitles.join(', ') || '—'}`, COL_W - 8)[0];
+      doc.text(grammarLabel, MARGIN + 4, y + 24);
+      doc.text(`Exercises: ${metrics.exercises}`, MARGIN + 4, y + 31);
+      doc.text(`First-pass correct: ${metrics.firstPassCorrect}`, col2x(), y + 31);
+      doc.text(`Incorrect: ${metrics.incorrect}`, MARGIN + 4, y + 38);
+      doc.text(`Corrected: ${metrics.corrected}`, col2x(), y + 38);
+      doc.setFont('helvetica', 'bold');
+      doc.text(`Final result: ${metrics.finalCorrect}/${metrics.exercises}`, MARGIN + 4, y + 45);
+      y += 57;
     }
   }
 

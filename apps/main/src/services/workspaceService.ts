@@ -301,6 +301,44 @@ export async function saveWorkspaceSurfaceMode(
   }
 }
 
+/** Preserve both surfaces and activate the destination in one Firestore write. */
+export async function saveWorkspaceSurfaceTransition(
+  classId: string,
+  previousMode: WorkspaceSurfaceMode,
+  previousState: WorkspaceSurfaceState,
+  nextMode: WorkspaceSurfaceMode,
+  nextState: WorkspaceSurfaceState,
+  uid: string,
+  name: string,
+): Promise<void> {
+  if (!db) return;
+  const { setDoc } = await import('firebase/firestore');
+  const serializeState = (state: WorkspaceSurfaceState) => buildSurfaceState(
+    serializeWorkspacePagesForRemote(state.pages),
+    state.currentPageId,
+    state.docContent,
+    (state.items ?? []).map(serializeWorkspaceItemForRemote),
+  );
+  const previous = serializeState(previousState);
+  const next = serializeState(nextState);
+
+  await setDoc(workspaceRef(classId), {
+    [surfaceStateKey(previousMode)]: previous,
+    [surfaceStateKey(nextMode)]: next,
+    surfaceMode: nextMode,
+    pages: next.pages,
+    currentPageId: next.currentPageId,
+    docContent: next.docContent,
+    docUpdatedBy: uid,
+    items: next.items,
+    itemsUpdatedBy: uid,
+    ...(nextMode === 'document' ? { presentationMode: false } : {}),
+    updatedAt: Date.now(),
+    updatedBy: uid,
+    updatedByName: name,
+  }, { merge: true });
+}
+
 /** Persist shared presentation mode for slides so viewers follow the teacher. */
 export async function saveWorkspacePresentationMode(
   classId: string,

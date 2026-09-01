@@ -660,6 +660,8 @@ export interface UserProgressSummary {
   lastPedagogicalActivity?: any;
   /** Latest persisted pedagogical event on an earlier Sao Paulo civil day. */
   previousPedagogicalActivity?: any;
+  /** Durable live classroom sessions, explicitly separate from autonomous study. */
+  liveAttendance?: import('../models/liveAttendance').LiveAttendanceRecord[];
   // ── Course / language context (for per-course ranking) ──────────────────
   // IMPORTANT: ranking must always be filtered by courseId — students should
   // only compete with others studying the same language/course.

@@ -15,7 +15,8 @@ import { formatTime, formatAccuracy } from './progressStatsService';
 import { db } from '../services/firebase';
 import { UserTestData } from '../types';
 import { deriveDashboardAnswerMetrics, deriveDashboardRewardMetrics, formatLastPedagogicalActivityLabel, getLastPedagogicalActivity, getPreviousPedagogicalActivity, getUniqueCompletedActivityCount, resolveDashboardLanguageCode } from './dashboardMetrics';
-import { subscribeToLivePedagogicalActivity, type LiveActivityScope } from '../services/livePedagogicalActivity';
+import { subscribeToLiveAttendance, type LiveActivityScope } from '../services/livePedagogicalActivity';
+import type { LiveAttendanceRecord } from '../models/liveAttendance';
 import { partitionStudentAccounts } from '../services/studentRolePolicy';
 
 // ─────────────────────────────────────────────────────────────
@@ -284,7 +285,7 @@ export function subscribeToTeacherData(
   const usersQuery = collection(db, 'users');
   let progressDocs = new Map<string, DashboardSource>();
   let userDocs = new Map<string, DashboardSource>();
-  let liveActivityByStudent = new Map<string, unknown>();
+  let liveAttendanceByStudent = new Map<string, LiveAttendanceRecord[]>();
 
   const buildRows = () => {
     const allUids = new Set<string>([
@@ -329,15 +330,13 @@ export function subscribeToTeacherData(
         currentLesson: progressData.currentLesson ?? 1,
         currentDay: progressData.currentDay ?? 1,
         lastLessonId: progressData.lastLesson ?? undefined,
-        lastActivity: getLastPedagogicalActivity(
-          progressData,
-          [liveActivityByStudent.get(uid)],
-        ) ?? undefined,
+        lastActivity: getLastPedagogicalActivity(progressData) ?? undefined,
         lastPedagogicalActivity: progressData.lastPedagogicalActivityAt,
         previousPedagogicalActivity: getPreviousPedagogicalActivity(
           progressData,
           progressData.lastPedagogicalActivityAt,
         ) ?? undefined,
+        liveAttendance: liveAttendanceByStudent.get(uid) ?? [],
         courseId: progressData.courseId ?? userData.courseId ?? undefined,
         languageCode: resolveDashboardLanguageCode(
           progressData.courseId ?? userData.courseId,
@@ -421,13 +420,13 @@ export function subscribeToTeacherData(
   );
 
   const unsubLiveActivity = liveActivityScope
-    ? subscribeToLivePedagogicalActivity(
+    ? subscribeToLiveAttendance(
         liveActivityScope,
-        (activityByStudent) => {
-          liveActivityByStudent = activityByStudent;
+        (attendanceByStudent) => {
+          liveAttendanceByStudent = attendanceByStudent;
           buildRows();
         },
-        (err) => console.error('[TeacherService] live activity subscription error:', err),
+        (err) => console.error('[TeacherService] live attendance subscription error:', err),
       )
     : () => {};
 

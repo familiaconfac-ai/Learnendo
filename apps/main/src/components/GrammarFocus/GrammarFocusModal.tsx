@@ -36,6 +36,11 @@ interface GrammarFocusModalProps {
   onSelectLesson: (lessonNumber: number) => void;
   onOpenOverview: () => void;
   onClose: () => void;
+  canPresent?: boolean;
+  onOpenBoard?: (content: { title: string; body: string; lessonNumber: number }) => Promise<void>;
+  onOpenSlides?: (content: { title: string; body: string; lessonNumber: number }) => Promise<void>;
+  onOpenPractice?: (lessonId: string) => void;
+  onContentViewed?: (title: string, lessonId: string) => void;
 }
 
 const LANGUAGE_LABELS: Record<GrammarFocusLanguage, string> = {
@@ -116,6 +121,7 @@ const ControlledMarkdown: React.FC<{ body: string }> = ({ body }) => {
 export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   workbookId, lessonId, lessonNumber, lessonTitle, lessons, activeLanguage, isAdmin, userId,
   scrollRef, onScroll, onSelectLesson, onOpenOverview, onClose,
+  canPresent = false, onOpenBoard, onOpenSlides, onOpenPractice, onContentViewed,
 }) => {
   const displayLanguage = normalizeGrammarFocusLanguage(activeLanguage);
   const canonicalLessonId = lessonId ? canonicalGrammarFocusLessonId(lessonId) : null;
@@ -131,12 +137,18 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
+  const [openingSurface, setOpeningSurface] = useState<'board' | 'slides' | null>(null);
 
   const dirty = editing && JSON.stringify(draft) !== JSON.stringify(baseline);
   const isOverview = lessonNumber == null || lessonId == null;
   const activeLocale = getLocalizedGrammarFocusContent(documentValue?.content, activeLanguage);
   const hasDocumentContent = hasGrammarFocusContent(documentValue?.content);
   const hasActiveContent = Boolean(activeLocale.title.trim() || activeLocale.body.trim());
+
+  useEffect(() => {
+    if (!lessonId || !hasActiveContent || !onContentViewed) return;
+    onContentViewed(activeLocale.title.trim() || lessonTitle || `Lesson ${lessonNumber}`, lessonId);
+  }, [activeLocale.title, hasActiveContent, lessonId, lessonNumber, lessonTitle, onContentViewed]);
 
   useEffect(() => {
     setEditing(false);
@@ -219,6 +231,24 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   };
 
   const previewLocale = draft[editorLanguage];
+  const openSurface = async (surface: 'board' | 'slides') => {
+    if (!lessonNumber || openingSurface) return;
+    const handler = surface === 'board' ? onOpenBoard : onOpenSlides;
+    if (!handler) return;
+    setOpeningSurface(surface);
+    setSaveError('');
+    try {
+      await handler({
+        title: activeLocale.title.trim() || lessonTitle || `Lesson ${lessonNumber}`,
+        body: activeLocale.body,
+        lessonNumber,
+      });
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not open the classroom workspace.');
+    } finally {
+      setOpeningSurface(null);
+    }
+  };
   return (
     <div className="fixed inset-0 z-[1001] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={requestClose}>
       <section role="dialog" aria-modal="true" aria-labelledby="grammar-focus-title" className="flex h-full w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-3xl" onClick={(event) => event.stopPropagation()}>
@@ -282,7 +312,13 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
           ) : (
             <div className="mx-auto max-w-3xl">
               {hasActiveContent ? <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7"><h3 className="mb-5 text-2xl font-black text-slate-900">{activeLocale.title || lessonTitle || copy.grammarNotes}</h3>{activeLocale.body.trim() && <ControlledMarkdown body={activeLocale.body} />}</div> : <p className="text-sm text-slate-500">{copy.noNotes}</p>}
-              {isAdmin && <button type="button" onClick={beginEditing} className="mt-6 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{hasDocumentContent ? copy.edit : copy.add}</button>}
+              {saveError && <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{saveError}</div>}
+              <div className="mt-6 flex flex-wrap gap-2">
+                {isAdmin && <button type="button" onClick={beginEditing} className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{hasDocumentContent ? copy.edit : copy.add}</button>}
+                {canPresent && hasActiveContent && onOpenBoard && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('board')} className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 disabled:opacity-50">{openingSurface === 'board' ? 'Opening...' : 'Board'}</button>}
+                {canPresent && hasActiveContent && onOpenSlides && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('slides')} className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-3 font-black text-violet-700 disabled:opacity-50">{openingSurface === 'slides' ? 'Opening...' : 'Slides'}</button>}
+                {lessonId && onOpenPractice && <button type="button" onClick={() => onOpenPractice(lessonId)} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 font-black text-emerald-700">Practice</button>}
+              </div>
             </div>
           )}
         </div>

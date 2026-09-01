@@ -100,6 +100,26 @@ export function resolveLessonForWhiteboard(workbook: Workbook | null, lessonRefe
   return lessons[lessonNumber - 1] ?? null;
 }
 
+/** Live pickers must never keep a lesson belonging to the previously selected workbook. */
+export function resolveLessonForLiveTrails(
+  workbook: Workbook | null,
+  lessonReference: string | null | undefined,
+): Lesson | null {
+  return resolveLessonForWhiteboard(workbook, lessonReference) ?? workbook?.lessons?.[0] ?? null;
+}
+
+export function buildLiveTrailSessionTitle(lesson: Lesson | null, selectedTrailIds: string[]): string {
+  if (!lesson) return '';
+  const trailNumbers = lesson.days
+    .map((trail, index) => selectedTrailIds.includes(trail.id) ? index + 1 : null)
+    .filter((trailNumber): trailNumber is number => trailNumber !== null);
+  if (trailNumbers.length === 0) return lesson.title;
+  const trailLabel = trailNumbers.length === 1
+    ? `Trail ${trailNumbers[0]}`
+    : `All Trails (${trailNumbers.join(', ')})`;
+  return `${lesson.title} - ${trailLabel}`;
+}
+
 export function resolveDayForWhiteboard(lesson: Lesson | null, dayReference: string | null | undefined): Day | null {
   const days = lesson?.days ?? [];
   if (!days.length) return null;

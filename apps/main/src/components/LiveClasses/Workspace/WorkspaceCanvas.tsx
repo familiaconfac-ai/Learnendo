@@ -31,7 +31,7 @@ import {
   saveScrollRatio,
   saveTeacherSelection,
   savePageSwitch,
-  saveWorkspaceSurfaceMode,
+  saveWorkspaceSurfaceTransition,
   saveWorkspacePresentationMode,
   normalizeWorkspacePages,
   WorkspaceItem,
@@ -3183,7 +3183,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
       // -- Pages / active-page sync (Fase 2) ----------------------------------
       // Only apply remote changes; skip our own echo (local state already updated).
-      if (remoteCurrentPageId && !isPageSelfEcho) {
+      // A same-user write is not always a local canvas echo. Grammar Focus, for
+      // example, appends a page through a dedicated service before this canvas
+      // mounts, so the remote current page can legitimately differ from the
+      // local one even though updatedBy is this teacher.
+      if (remoteCurrentPageId && (!isPageSelfEcho || remoteCurrentPageId !== activePageIdRef.current)) {
         const remoteCPID = remoteCurrentPageId;
         if (remotePages && remotePages.length > 0) {
           const normalized = remotePages;
@@ -5070,23 +5074,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     flushFloatingEditorBeforePageMutation();
     const flushed = flushPages();
     const currentDoc = docRef.current?.innerHTML ?? docHtml;
-    updateSurfaceStateRef(surfaceModeRef.current, () => ({
+    const previousMode = surfaceModeRef.current;
+    const previousState: WorkspaceSurfaceState = {
       pages: flushed,
       currentPageId: activePageIdRef.current,
       docContent: currentDoc,
       items,
-    }));
-    savePageSwitch(
-      classId,
-      flushed,
-      activePageIdRef.current,
-      currentDoc,
-      items,
-      userId,
-      userName,
-      surfaceModeRef.current,
-    ).catch(console.error);
-    const nextMode: WorkspaceSurfaceMode = surfaceModeRef.current === 'slides' ? 'document' : 'slides';
+    };
+    updateSurfaceStateRef(previousMode, () => previousState);
+    const nextMode: WorkspaceSurfaceMode = previousMode === 'slides' ? 'document' : 'slides';
     surfaceModeRef.current = nextMode;
     setSurfaceMode(nextMode);
     if (nextMode !== 'slides' && presentationMode) {
@@ -5094,7 +5090,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     }
     const targetState = surfaceStatesRef.current[nextMode] ?? createDefaultSurfaceState(nextMode, uid());
     applySurfaceState(nextMode, targetState);
-    saveWorkspaceSurfaceMode(classId, nextMode, userId, userName, targetState).catch(console.error);
+    saveWorkspaceSurfaceTransition(
+      classId,
+      previousMode,
+      previousState,
+      nextMode,
+      targetState,
+      userId,
+      userName,
+    ).catch(console.error);
   }, [
     applySurfaceState,
     classId,

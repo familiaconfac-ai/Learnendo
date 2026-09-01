@@ -15,7 +15,12 @@ import {
   updateExerciseBlockResponse,
 } from '../../services/liveSessionService';
 import { speak } from '../../services/ttsService';
-import { getWorkbookOptionsForCourse, loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from '../../services/liveWhiteboardActivities';
+import {
+  buildLiveTrailSessionTitle,
+  getWorkbookOptionsForCourse,
+  loadWorkbookForWhiteboard,
+  resolveLessonForLiveTrails,
+} from '../../services/liveWhiteboardActivities';
 
 interface ExerciseSessionPanelProps {
   classId: string;
@@ -631,7 +636,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   // Memoized values with proper dependency ordering
   const workbookOptions = useMemo(() => getWorkbookOptionsForCourse(courseId), [courseId]);
   const lessonOptions = useMemo(() => workbook?.lessons ?? [], [workbook]);
-  const selectedLesson = useMemo(() => resolveLessonForWhiteboard(workbook, lessonId), [lessonId, workbook]);
+  const selectedLesson = useMemo(() => resolveLessonForLiveTrails(workbook, lessonId), [lessonId, workbook]);
   const trailOptions = useMemo(() => selectedLesson?.days ?? [], [selectedLesson]);
 
   useEffect(() => {
@@ -642,9 +647,8 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
       .then((nextWorkbook) => {
         if (!active) return;
         setWorkbook(nextWorkbook);
-        const nextLesson = resolveLessonForWhiteboard(nextWorkbook, lessonId);
-        const resolvedLessonId = nextLesson?.id ?? nextWorkbook?.lessons?.[0]?.id ?? '';
-        setLessonId((previous) => previous || resolvedLessonId);
+        const nextLesson = resolveLessonForLiveTrails(nextWorkbook, lessonId);
+        setLessonId(nextLesson?.id ?? '');
       })
       .catch((error) => {
         console.warn('[ExerciseSessionPanel] workbook load failed:', error);
@@ -659,7 +663,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
     return () => {
       active = false;
     };
-  }, [courseId, lessonId, workbookId]);
+  }, [courseId, workbookId]);
 
   useEffect(() => {
     if (!trailOptions.length) {
@@ -675,6 +679,10 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
   }, [trailOptions]);
 
   useEffect(() => {
+    setSessionTitleDraft(buildLiveTrailSessionTitle(selectedLesson, selectedTrailIds));
+  }, [selectedLesson, selectedTrailIds]);
+
+  useEffect(() => {
     setLoadingSession(true);
     setActionError('');
 
@@ -682,7 +690,6 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
       classId,
       (next) => {
         setSession(next);
-        setSessionTitleDraft(next.title);
         setLoadingSession(false);
       },
       (error) => {
@@ -1027,7 +1034,13 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
               Course
               <input
                 value={courseId}
-                onChange={(event) => setCourseId(event.target.value)}
+                onChange={(event) => {
+                  setCourseId(event.target.value);
+                  setWorkbook(null);
+                  setLessonId('');
+                  setSelectedTrailIds([]);
+                  setSessionTitleDraft('');
+                }}
                 className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-normal uppercase text-white"
               />
             </label>
@@ -1035,7 +1048,13 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
               Book
               <select
                 value={String(workbookId)}
-                onChange={(event) => setWorkbookId(Number(event.target.value) || 1)}
+                onChange={(event) => {
+                  setWorkbookId(Number(event.target.value) || 1);
+                  setWorkbook(null);
+                  setLessonId('');
+                  setSelectedTrailIds([]);
+                  setSessionTitleDraft('');
+                }}
                 className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-normal text-white"
               >
                 {workbookOptions.map((option) => (
@@ -1047,7 +1066,11 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
               Lesson
               <select
                 value={lessonId}
-                onChange={(event) => setLessonId(event.target.value)}
+                onChange={(event) => {
+                  setLessonId(event.target.value);
+                  setSelectedTrailIds([]);
+                  setSessionTitleDraft('');
+                }}
                 className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-normal text-white"
                 disabled={loadingWorkbook || lessonOptions.length === 0}
               >
@@ -1059,6 +1082,8 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
             <div className="text-xs font-black uppercase tracking-wide text-slate-400">
               Trails
               <div className="mt-2 flex flex-wrap gap-2 rounded-2xl border border-slate-700 bg-slate-900 px-3 py-3">
+                {loadingWorkbook ? <span className="font-normal normal-case text-slate-400">Loading trails...</span> : null}
+                {!loadingWorkbook && trailOptions.length === 0 ? <span className="font-normal normal-case text-slate-400">No trails available for this lesson.</span> : null}
                 {trailOptions.map((trail, index) => {
                   const isActive = selectedTrailIds.includes(trail.id);
                   return (

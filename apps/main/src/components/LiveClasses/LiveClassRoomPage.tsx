@@ -18,6 +18,7 @@ import type { SavedBattleTemplate } from './Battle/battleTypes';
 import { createBattleSession, deleteBattleSession } from './Battle/battleService';
 import { LiveClassRoomShell } from './Shared/LiveClassRoomShell';
 import { WorkspaceCanvas } from './Workspace/WorkspaceCanvas';
+import { finishLiveAttendance, persistLiveAttendanceSnapshot, recordLiveAttendanceGrammar, startLiveAttendance } from '../../services/liveAttendanceService';
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
 import { resolveAssignedStudentRoster } from '../../services/liveClassesService';
@@ -307,16 +308,51 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     const displayName = user.displayName || user.email || 'Usuario';
     const syncPresence = () => upsertLivePresence(liveClass.id, user.uid, displayName, role);
 
-    void syncPresence();
+    void syncPresence().then(() => {
+      if (role === 'student') return startLiveAttendance(liveClass, user.uid);
+      return undefined;
+    }).catch((error) => console.warn('[Live Attendance] Could not start classroom attendance:', error));
     const heartbeat = window.setInterval(() => {
       void syncPresence();
     }, 30_000);
 
     return () => {
       window.clearInterval(heartbeat);
+      if (role === 'student') {
+        void finishLiveAttendance(liveClass.id, user.uid)
+          .catch((error) => console.warn('[Live Attendance] Could not close classroom attendance:', error));
+      }
       void markLivePresenceOffline(liveClass.id, user.uid);
     };
   }, [isPreview, liveClass.id, role, user.displayName, user.email, user.uid]);
+
+  useEffect(() => {
+    if (isPreview || role !== 'student' || !sessionLoaded) return;
+    void persistLiveAttendanceSnapshot(liveClass.id, user.uid, {
+      workbookId: session.activeWorkbookId ?? liveClass.workbookId ?? null,
+      lessonId: session.activeLessonId ?? liveClass.lessonId ?? null,
+    }).catch((error) => console.warn('[Live Attendance] Could not update classroom lesson:', error));
+    if (session.sharedGrammarOpen && session.sharedGrammarLessonNumber) {
+      void recordLiveAttendanceGrammar(
+        liveClass.id,
+        user.uid,
+        `Lesson ${session.sharedGrammarLessonNumber}`,
+        session.activeLessonId ?? liveClass.lessonId,
+      ).catch((error) => console.warn('[Live Attendance] Could not persist Grammar Focus:', error));
+    }
+  }, [
+    isPreview,
+    liveClass.id,
+    liveClass.lessonId,
+    liveClass.workbookId,
+    role,
+    session.activeLessonId,
+    session.activeWorkbookId,
+    session.sharedGrammarLessonNumber,
+    session.sharedGrammarOpen,
+    sessionLoaded,
+    user.uid,
+  ]);
 
   useEffect(() => {
     const unsubscribe = subscribeLivePresence(

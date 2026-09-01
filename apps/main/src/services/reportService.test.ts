@@ -174,6 +174,48 @@ const reportWithoutHistory = createStudentReportPdf({
 assert.match(reportWithoutHistory.output(), /Previous study/);
 assert.match(reportWithoutHistory.output(), /Gap/);
 
+const reportWithLiveAttendance = createStudentReportPdf({
+  ...baseStudent,
+  liveAttendance: [{
+    id: '2026_08_25',
+    studentUid: baseStudent.uid,
+    classId: 'class-english',
+    classTitle: 'English Class',
+    groupName: 'Evening group',
+    courseId: 'english',
+    date: '2026-08-25',
+    joinedAt: '2026-08-25T22:03:00.000Z',
+    leftAt: '2026-08-25T23:01:00.000Z',
+    activeSegmentStartedAt: null,
+    durationSeconds: 58 * 60,
+    workbookId: 1,
+    lessonId: 'wb1_l1',
+    grammarFocusTitles: ['Lesson 1', 'Letters and Numbers'],
+    exercises: {
+      first: { exerciseId: 'first', attempts: 1, firstVerdict: 'correct', finalVerdict: 'correct' },
+      corrected: { exerciseId: 'corrected', attempts: 2, firstVerdict: 'wrong', finalVerdict: 'correct_second_try' },
+      incorrect: { exerciseId: 'incorrect', attempts: 1, firstVerdict: 'wrong', finalVerdict: 'wrong' },
+    },
+  }],
+} as TeacherStudentRow).output();
+for (const expected of [
+  'LIVE CLASS HISTORY',
+  'English Class / Evening group',
+  'Joined: 7:03 PM',
+  'Left: 8:01 PM',
+  'Duration: 58 min',
+  'Workbook 1',
+  'Lesson 1',
+  'Grammar Focus: Letters and Numbers',
+  'Exercises: 3',
+  'First-pass correct: 1',
+  'Incorrect: 2',
+  'Corrected: 1',
+  'Final result: 2/3',
+]) assert.ok(reportWithLiveAttendance.includes(expected), `missing live attendance PDF text: ${expected}`);
+assert.match(reportWithLiveAttendance, /Last study/,
+  'online attendance must preserve the separate autonomous-study history');
+
 const reportWithPlacement = createStudentReportPdf(mapOnlyStudent);
 assert.equal(reportWithPlacement.getNumberOfPages(), 2);
 const renderedPdf = reportWithPlacement.output();
