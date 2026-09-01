@@ -145,7 +145,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
             className="mb-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95"
           >
             <span>📖</span>
-            <span>Grammar Focus</span>
+            <span>Grammar</span>
           </button>
         )}
         {(() => {

@@ -96,7 +96,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
               onClick={onOpenGrammarOverview}
               className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95"
             >
-              <span>Grammar Focus</span>
+              <span>Grammar</span>
             </button>
           )}
           <p className="mt-3 text-center text-sm font-black uppercase tracking-[0.24em] text-yellow-300">

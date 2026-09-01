@@ -28,6 +28,7 @@ import {
   sanitizeMainStageMode,
 } from '../../../services/liveClassStage';
 import { LiveClass, LiveClassPresence, LiveClassSession } from '../../../types';
+import type { UserRole } from '../../../services/userRoles';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 
 function hasActiveLiveTrailSession(session: LiveClassSession) {
@@ -48,6 +49,8 @@ function openExternalLink(rawUrl: string) {
 interface StudentRoomViewProps {
   liveClass: LiveClass;
   user: User;
+  accountRole: UserRole;
+  effectiveRole: UserRole;
   session: LiveClassSession;
   presence: LiveClassPresence[];
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
@@ -69,6 +72,8 @@ function getStudentWorkspaceEditingEnabled(session: LiveClassSession) {
 const StudentStage: React.FC<{
   liveClass: LiveClass;
   user: User;
+  accountRole: UserRole;
+  effectiveRole: UserRole;
   session: LiveClassSession;
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
   teacherPresent: boolean;
@@ -82,6 +87,8 @@ const StudentStage: React.FC<{
 }> = ({
   liveClass,
   user,
+  accountRole,
+  effectiveRole,
   session,
   assignedRoster,
   teacherPresent,
@@ -923,6 +930,7 @@ const StudentStage: React.FC<{
             <LiveTrailExerciseOverlay
               classId={liveClass.id}
               user={user}
+              userRole={effectiveRole}
               session={session}
               isTeacher={false}
               assignedRoster={assignedRoster}
@@ -1016,7 +1024,7 @@ const StudentStage: React.FC<{
 };
 
 export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
-  const { liveClass, user, session, onOpenBattleHub, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
+  const { liveClass, user, accountRole, effectiveRole, session, onOpenBattleHub, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
   const teacherPresent = props.presence.some((participant) => participant.isOnline && participant.role === 'teacher');
   const onlineParticipantCount = props.presence.filter((participant) => participant.isOnline).length;
   const allowSoloTrailAdvance = onlineParticipantCount <= 1;
@@ -1287,6 +1295,8 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
         <StudentStage
           liveClass={liveClass}
           user={user}
+          accountRole={accountRole}
+          effectiveRole={effectiveRole}
           session={session}
           assignedRoster={props.assignedRoster}
           teacherPresent={teacherPresent}

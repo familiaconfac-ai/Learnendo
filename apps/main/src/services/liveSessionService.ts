@@ -151,6 +151,8 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
   activeTrailLabel: data?.activeTrailLabel ?? null,
   trailCompletion: normalizeLiveTrailCompletion(data?.trailCompletion),
   sharedGrammarOpen: Boolean(data?.sharedGrammarOpen),
+  sharedGrammarWorkbookId:
+    Number.isFinite(data?.sharedGrammarWorkbookId) ? Number(data.sharedGrammarWorkbookId) : null,
   sharedGrammarLessonNumber:
     Number.isFinite(data?.sharedGrammarLessonNumber) ? Number(data.sharedGrammarLessonNumber) : null,
   sharedGrammarScrollRatio:
@@ -449,6 +451,7 @@ export async function updateLiveSession(
   if ('activeTrailLabel' in patch) payload.activeTrailLabel = patch.activeTrailLabel ?? null;
   if ('trailCompletion' in patch) payload.trailCompletion = patch.trailCompletion ?? null;
   if ('sharedGrammarOpen' in patch) payload.sharedGrammarOpen = Boolean(patch.sharedGrammarOpen);
+  if ('sharedGrammarWorkbookId' in patch) payload.sharedGrammarWorkbookId = patch.sharedGrammarWorkbookId ?? null;
   if ('sharedGrammarLessonNumber' in patch) payload.sharedGrammarLessonNumber = patch.sharedGrammarLessonNumber ?? null;
   if ('sharedGrammarScrollRatio' in patch) payload.sharedGrammarScrollRatio = patch.sharedGrammarScrollRatio ?? null;
   if ('liveAudioTransport' in patch) payload.liveAudioTransport = patch.liveAudioTransport ?? 'not-configured';

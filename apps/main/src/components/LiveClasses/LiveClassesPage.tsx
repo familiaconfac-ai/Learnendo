@@ -470,6 +470,8 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
       <LiveClassRoomPage
         liveClass={activeRoomClass}
         user={user}
+        accountRole={accountRole}
+        effectiveRole={userRole}
         isTeacher={canManageClasses}
         uiLanguage={uiLanguage}
         onOpenClassContent={onOpenClassContent}

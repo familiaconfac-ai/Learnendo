@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
-import { GRAMMAR_GUIDES } from '../../constants';
 import { PracticeSection } from '../UI';
+import {
+  GrammarNavigatorModal,
+  type GrammarNavigatorSelection,
+} from '../GrammarFocus/GrammarNavigatorModal';
 import type { BattleConfig, BattleQuestion, SavedBattleTemplate } from './Battle/battleTypes';
 import { buildBattleGeneratedHint, buildSavedBattleTemplate, sanitizeBattleQuestion } from './Battle/battleUtils';
 import {
@@ -31,6 +34,8 @@ import {
 } from '../../services/liveSessionService';
 import { buildLiveTrailCompletion } from '../../services/liveTrailTransition';
 import { recordLiveAttendanceGrammar } from '../../services/liveAttendanceService';
+import { appendGrammarFocusWorkspacePage } from '../../services/grammarFocusWorkspace';
+import type { UserRole } from '../../services/userRoles';
 import {
   loadWorkbookForWhiteboard,
   resolveLessonForWhiteboard,
@@ -47,6 +52,7 @@ import { expandAcceptedAnswerVariants } from '../../utils/answerVariants';
 interface LiveTrailExerciseOverlayProps {
   classId: string;
   user: User;
+  userRole: UserRole;
   session: LiveClassSession;
   isTeacher: boolean;
   assignedRoster: Array<{
@@ -59,7 +65,7 @@ interface LiveTrailExerciseOverlayProps {
   teacherPresent?: boolean;
   allowSoloAdvance?: boolean;
   onReturnToWorkspace?: () => void | Promise<void>;
-  onOpenSessionPanel?: () => void;
+  onOpenSessionPanel?: (selection?: GrammarNavigatorSelection) => void;
   onStartTrailBattle?: (
     template: SavedBattleTemplate,
     completion: LiveTrailCompletion,
@@ -248,128 +254,6 @@ function getLessonNumberFromId(lessonId: string | null | undefined) {
   const match = lessonId.match(/(\d+)/);
   return match ? Number(match[1]) : 1;
 }
-
-type NormalizedGrammarSection = {
-  title: string;
-  lines: string[];
-};
-
-type NormalizedGrammarGuide = {
-  label?: string;
-  lessonTitle?: string;
-  grammarTitle?: string;
-  sections: NormalizedGrammarSection[];
-};
-
-const normalizeGrammarGuide = (guide: (typeof GRAMMAR_GUIDES)[string]): NormalizedGrammarGuide => {
-  if (Array.isArray(guide)) {
-    return {
-      sections: [{ title: 'Notes', lines: guide }],
-    };
-  }
-
-  const lessonTitle = guide.sections.find((section) => section.title === 'Lesson Title')?.lines[0];
-  const grammarTitle = guide.sections.find((section) => section.title === 'Grammar Title')?.lines[0];
-  const sections = guide.sections.filter(
-    (section) => section.title !== 'Lesson Title' && section.title !== 'Grammar Title',
-  );
-
-  return {
-    label: guide.label,
-    lessonTitle,
-    grammarTitle,
-    sections,
-  };
-};
-
-const renderInlineFormatting = (text: string): React.ReactNode[] => {
-  let nodeKey = 0;
-
-  const parse = (value: string): React.ReactNode[] => {
-    const nodes: React.ReactNode[] = [];
-    let index = 0;
-
-    while (index < value.length) {
-      if (value.startsWith('**', index)) {
-        const end = value.indexOf('**', index + 2);
-        if (end !== -1) {
-          nodes.push(
-            <strong key={`strong-${nodeKey++}`}>
-              {parse(value.slice(index + 2, end))}
-            </strong>,
-          );
-          index = end + 2;
-          continue;
-        }
-      }
-
-      if (value[index] === '*') {
-        const end = value.indexOf('*', index + 1);
-        if (end !== -1) {
-          nodes.push(
-            <em key={`em-${nodeKey++}`}>
-              {parse(value.slice(index + 1, end))}
-            </em>,
-          );
-          index = end + 1;
-          continue;
-        }
-      }
-
-      const nextStrong = value.indexOf('**', index);
-      const nextEm = value.indexOf('*', index);
-      const nextIndex = [nextStrong, nextEm]
-        .filter((candidate) => candidate !== -1)
-        .reduce((smallest, candidate) => Math.min(smallest, candidate), value.length);
-
-      nodes.push(value.slice(index, nextIndex));
-      index = nextIndex;
-    }
-
-    return nodes;
-  };
-
-  return parse(text);
-};
-
-const getGrammarGuideForLesson = (lessonNumber: number): NormalizedGrammarGuide | null => {
-  const grammarKey = `L${lessonNumber}_GRAMMAR`;
-  if (!Object.prototype.hasOwnProperty.call(GRAMMAR_GUIDES, grammarKey)) return null;
-  return normalizeGrammarGuide(GRAMMAR_GUIDES[grammarKey]);
-};
-
-const getGrammarSectionTitle = (title: string): string => {
-  if (title === 'Examples by Person or Structure') return 'Examples';
-  return title;
-};
-
-const shouldRenderGrammarBullets = (section: NormalizedGrammarSection): boolean => {
-  if (section.lines.length > 1) return true;
-  return ['Main Notes', 'Examples by Person or Structure', 'Questions', 'Negative Sentences', 'Common Mistakes'].includes(section.title);
-};
-
-const renderGrammarLine = (line: string, sectionTitle: string): React.ReactNode => {
-  if (sectionTitle !== 'Common Mistakes') {
-    return renderInlineFormatting(line);
-  }
-
-  const match = line.match(/^(Correct|Incorrect):\s*(.*)$/i);
-  if (!match) return renderInlineFormatting(line);
-
-  const status = match[1].toLowerCase();
-  const content = match[2];
-  const statusClass = status === 'correct' ? 'text-blue-600' : 'text-red-600';
-
-  return (
-    <>
-      <strong className={statusClass}>
-        {match[1]}
-        :
-      </strong>{' '}
-      {renderInlineFormatting(content)}
-    </>
-  );
-};
 
 function getCourseLanguageCode(
   courseId: string | null | undefined,
@@ -953,6 +837,7 @@ const TrailVocabHelper: React.FC<TrailVocabHelperProps> = ({
 export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> = ({
   classId,
   user,
+  userRole,
   session,
   isTeacher,
   assignedRoster,
@@ -993,6 +878,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const resumedTransitionRef = useRef<string | null>(null);
 
   const actorName = getActorName(user);
+  const canPresentGrammar = userRole === 'teacher' || userRole === 'admin';
   const courseId = defaultCourseId ?? 'english';
   const workbookId = session.activeWorkbookId ?? 1;
   const lessonId = session.activeLessonId ?? null;
@@ -1229,19 +1115,6 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     [trackedStudents],
   );
 
-  const grammarGuide = useMemo(
-    () => getGrammarGuideForLesson(lessonNumber),
-    [lessonNumber],
-  );
-  useEffect(() => {
-    if (isTeacher || !showGrammarModal || !grammarGuide?.grammarTitle) return;
-    void recordLiveAttendanceGrammar(
-      classId,
-      user.uid,
-      grammarGuide.grammarTitle,
-      session.activeLessonId,
-    ).catch(console.error);
-  }, [classId, grammarGuide?.grammarTitle, isTeacher, session.activeLessonId, showGrammarModal, user.uid]);
   const canEdit = currentBlock
     ? session.sessionStatus === 'active' &&
       !isStudentLocked(currentBlock, user.uid) &&
@@ -1350,7 +1223,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     setSaveError(null);
   }, [currentBlock?.id]);
 
-  const pushSharedGrammarState = useCallback(async (patch: Pick<LiveClassSession, 'sharedGrammarOpen' | 'sharedGrammarLessonNumber' | 'sharedGrammarScrollRatio'>) => {
+  const pushSharedGrammarState = useCallback(async (patch: Pick<LiveClassSession, 'sharedGrammarOpen' | 'sharedGrammarWorkbookId' | 'sharedGrammarLessonNumber' | 'sharedGrammarScrollRatio'>) => {
     try {
       await updateLiveSession(
         classId,
@@ -1374,19 +1247,51 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
     void pushSharedGrammarState({
       sharedGrammarOpen: true,
-      sharedGrammarLessonNumber: lessonNumber,
+      sharedGrammarWorkbookId: workbookId,
+      sharedGrammarLessonNumber: null,
       sharedGrammarScrollRatio: 0,
     });
-  }, [lessonNumber, pushSharedGrammarState]);
+  }, [lessonNumber, pushSharedGrammarState, workbookId]);
 
   const closeSharedGrammarModal = useCallback(() => {
     setShowGrammarModal(false);
     void pushSharedGrammarState({
       sharedGrammarOpen: false,
-      sharedGrammarLessonNumber: lessonNumber,
+      sharedGrammarWorkbookId: session.sharedGrammarWorkbookId ?? workbookId,
+      sharedGrammarLessonNumber: session.sharedGrammarLessonNumber ?? null,
       sharedGrammarScrollRatio: null,
     });
-  }, [lessonNumber, pushSharedGrammarState]);
+  }, [pushSharedGrammarState, session.sharedGrammarLessonNumber, session.sharedGrammarWorkbookId, workbookId]);
+
+  const handleLiveGrammarViewed = useCallback((title: string, viewedLessonId: string) => {
+    if (userRole !== 'student') return;
+    void recordLiveAttendanceGrammar(classId, user.uid, title, viewedLessonId).catch(console.error);
+  }, [classId, user.uid, userRole]);
+
+  const openLiveGrammarSurface = useCallback(async (
+    mode: 'document' | 'slides',
+    content: { title: string; body: string; workbookId: number; lessonNumber: number },
+  ) => {
+    if (!canPresentGrammar) throw new Error('Only teachers can present Grammar Focus.');
+    await appendGrammarFocusWorkspacePage({
+      classId,
+      mode,
+      title: content.title,
+      markdown: content.body,
+      lessonNumber: content.lessonNumber,
+      userId: user.uid,
+      userName: actorName,
+    });
+    await updateLiveSession(classId, {
+      mainStageMode: 'workspace',
+      sharedGrammarOpen: false,
+      sharedGrammarWorkbookId: content.workbookId,
+      sharedGrammarLessonNumber: content.lessonNumber,
+      sharedGrammarScrollRatio: null,
+    }, user.uid);
+    setShowGrammarModal(false);
+    await onReturnToWorkspace?.();
+  }, [actorName, canPresentGrammar, classId, onReturnToWorkspace, user.uid]);
 
   const handleGrammarModalScroll = useCallback(() => {
     const element = grammarModalScrollRef.current;
@@ -1402,11 +1307,12 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     grammarScrollSyncDebounceRef.current = setTimeout(() => {
       void pushSharedGrammarState({
         sharedGrammarOpen: true,
-        sharedGrammarLessonNumber: lessonNumber,
+        sharedGrammarWorkbookId: session.sharedGrammarWorkbookId ?? workbookId,
+        sharedGrammarLessonNumber: session.sharedGrammarLessonNumber ?? null,
         sharedGrammarScrollRatio: Number.isFinite(scrollRatio) ? Math.max(0, Math.min(1, scrollRatio)) : 0,
       });
     }, 120);
-  }, [lessonNumber, pushSharedGrammarState, showGrammarModal]);
+  }, [pushSharedGrammarState, session.sharedGrammarLessonNumber, session.sharedGrammarWorkbookId, showGrammarModal, workbookId]);
 
   useEffect(() => {
     const remoteOpen = Boolean(session.sharedGrammarOpen);
@@ -1414,11 +1320,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       typeof session.sharedGrammarLessonNumber === 'number'
         ? session.sharedGrammarLessonNumber
         : null;
-    const matchesLesson = remoteLessonNumber === null || remoteLessonNumber === lessonNumber;
-    const shouldOpen = remoteOpen && matchesLesson;
-
-    setShowGrammarModal((current) => (current === shouldOpen ? current : shouldOpen));
-  }, [lessonNumber, session.sharedGrammarLessonNumber, session.sharedGrammarOpen]);
+    setShowGrammarModal((current) => (current === remoteOpen ? current : remoteOpen));
+  }, [session.sharedGrammarOpen]);
 
   useEffect(() => {
     if (!showGrammarModal) return;
@@ -1868,7 +1771,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         {isTeacher && onOpenSessionPanel ? (
           <button
             type="button"
-            onClick={onOpenSessionPanel}
+            onClick={() => onOpenSessionPanel()}
             className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
           >
             {copy.panel}
@@ -1908,13 +1811,15 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             </button>
           </>
         ) : null}
-        <button
-          type="button"
-          onClick={openSharedGrammarModal}
-          className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
-        >
-          {copy.grammar}
-        </button>
+        {canPresentGrammar ? (
+          <button
+            type="button"
+            onClick={openSharedGrammarModal}
+            className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+          >
+            {copy.grammar}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -2067,7 +1972,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               {isTeacher && onOpenSessionPanel ? (
                 <button
                   type="button"
-                  onClick={onOpenSessionPanel}
+                  onClick={() => onOpenSessionPanel()}
                   className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
                 >
                   {copy.panel}
@@ -2107,13 +2012,15 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   </button>
                 </>
               ) : null}
-              <button
-                type="button"
-                onClick={openSharedGrammarModal}
-                className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
-              >
-                {copy.grammar}
-              </button>
+              {canPresentGrammar ? (
+                <button
+                  type="button"
+                  onClick={openSharedGrammarModal}
+                  className="rounded-2xl border border-slate-700 bg-slate-950/92 px-3 py-2 text-[11px] font-black uppercase tracking-wide text-slate-100 shadow-2xl backdrop-blur-sm"
+                >
+                  {copy.grammar}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => {
@@ -2168,81 +2075,34 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       ) : null}
 
       {showGrammarModal ? (
-        <div
-          className="fixed inset-0 z-[140] flex items-end justify-center bg-black/60 p-4 backdrop-blur-sm sm:items-center"
-          onClick={closeSharedGrammarModal}
-        >
-          <div
-            ref={grammarModalScrollRef}
-            onScroll={handleGrammarModalScroll}
-            className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="sticky top-0 flex items-center justify-between rounded-t-3xl border-b border-slate-100 bg-white px-6 py-4">
-              <h2 className="text-lg font-bold text-slate-800">{copy.grammarTitle(lessonNumber)}</h2>
-              <button
-                type="button"
-                onClick={closeSharedGrammarModal}
-                className="flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-                aria-label={copy.close}
-              >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
-                  <path d="M6 6L18 18" />
-                  <path d="M18 6L6 18" />
-                </svg>
-              </button>
-            </div>
-            <div className="space-y-5 px-6 py-4">
-              {!grammarGuide ? (
-                <p className="text-sm text-slate-500">
-                  {copy.noGrammar}
-                </p>
-              ) : (
-                <>
-                  {grammarGuide.grammarTitle ? (
-                    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-500">
-                        {grammarGuide.lessonTitle || copy.grammar}
-                      </p>
-                      <p className="mt-1 text-base font-bold text-slate-900">
-                        {grammarGuide.grammarTitle}
-                      </p>
-                    </div>
-                  ) : null}
-                  {grammarGuide.sections.map((section) => {
-                    const useBullets = shouldRenderGrammarBullets(section);
-
-                    return (
-                      <div key={section.title}>
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-500">
-                          {getGrammarSectionTitle(section.title)}
-                        </p>
-                        {useBullets ? (
-                          <ul className="space-y-1.5">
-                            {section.lines.map((line, index) => (
-                              <li key={`${section.title}_${index}`} className="flex gap-2 text-sm text-slate-700">
-                                <span className="flex-shrink-0 text-blue-400">-</span>
-                                <span>{renderGrammarLine(line, section.title)}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="space-y-2">
-                            {section.lines.map((line, index) => (
-                              <p key={`${section.title}_${index}`} className="text-sm text-slate-700">
-                                {renderGrammarLine(line, section.title)}
-                              </p>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          </div>
-        </div>
+        <GrammarNavigatorModal
+          courseId={courseId}
+          initialWorkbookId={session.sharedGrammarWorkbookId ?? workbookId}
+          currentLessonId={lesson?.id ?? lessonId}
+          currentLessonNumber={lessonNumber}
+          synchronizedLessonNumber={session.sharedGrammarOpen ? session.sharedGrammarLessonNumber ?? null : null}
+          activeLanguage={effectiveUiLanguage}
+          userRole={userRole}
+          user={user}
+          scrollRef={grammarModalScrollRef}
+          onScroll={handleGrammarModalScroll}
+          onClose={closeSharedGrammarModal}
+          onOpenBoard={canPresentGrammar ? (content) => openLiveGrammarSurface('document', content) : undefined}
+          onOpenSlides={canPresentGrammar ? (content) => openLiveGrammarSurface('slides', content) : undefined}
+          onOpenPractice={canPresentGrammar ? (selection) => {
+            closeSharedGrammarModal();
+            onOpenSessionPanel?.(selection);
+          } : undefined}
+          onSelectionChange={({ workbookId: selectedWorkbookId, lessonNumber: selectedLessonNumber }) => {
+            void pushSharedGrammarState({
+              sharedGrammarOpen: true,
+              sharedGrammarWorkbookId: selectedWorkbookId,
+              sharedGrammarLessonNumber: selectedLessonNumber,
+              sharedGrammarScrollRatio: 0,
+            });
+          }}
+          onContentViewed={handleLiveGrammarViewed}
+        />
       ) : null}
 
       {selectedVocab ? (

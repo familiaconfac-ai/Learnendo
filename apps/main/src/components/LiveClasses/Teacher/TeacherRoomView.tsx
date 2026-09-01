@@ -17,6 +17,11 @@ import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavig
 import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
 import { LiveClassChat } from '../LiveClassChat';
 import { LiveTrailExerciseOverlay } from '../LiveTrailExerciseOverlay';
+import {
+  GrammarNavigatorModal,
+  type GrammarNavigatorSelection,
+  type GrammarNavigatorSurfaceContent,
+} from '../../GrammarFocus/GrammarNavigatorModal';
 import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../../services/liveKitDebug';
 import { getLiveClassMeetLink } from '../../../services/liveClassesService';
@@ -24,6 +29,8 @@ import { sanitizeMainStageMode } from '../../../services/liveClassStage';
 import type { SavedBattleTemplate } from '../Battle/battleTypes';
 import type { LiveClass, LiveClassPresence, LiveClassSession, LiveTrailCompletion } from '../../../types';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
+import type { UserRole } from '../../../services/userRoles';
+import { appendGrammarFocusWorkspacePage } from '../../../services/grammarFocusWorkspace';
 
 function openExternalLink(rawUrl: string) {
   const trimmed = rawUrl.trim();
@@ -51,6 +58,8 @@ function getStudentWorkspaceEditingEnabled(session: LiveClassSession) {
 interface TeacherRoomViewProps {
   liveClass: LiveClass;
   user: User;
+  accountRole: UserRole;
+  effectiveRole: UserRole;
   session: LiveClassSession;
   presence: LiveClassPresence[];
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
@@ -71,6 +80,8 @@ interface TeacherRoomViewProps {
 const TeacherStage: React.FC<{
   liveClass: LiveClass;
   user: User;
+  accountRole: UserRole;
+  effectiveRole: UserRole;
   session: LiveClassSession;
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
@@ -90,6 +101,8 @@ const TeacherStage: React.FC<{
 }> = ({
   liveClass,
   user,
+  accountRole,
+  effectiveRole,
   session,
   assignedRoster,
   handleUpdateSession,
@@ -132,6 +145,9 @@ const TeacherStage: React.FC<{
   const [micError, setMicError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
+  const [showWorkspaceGrammar, setShowWorkspaceGrammar] = useState(false);
+  const [exercisePanelSelection, setExercisePanelSelection] = useState<GrammarNavigatorSelection | null>(null);
+  const grammarScrollRef = useRef<HTMLDivElement>(null);
   const previousNonCameraStageModeRef = useRef<Exclude<LiveClassSession['mainStageMode'], 'camera'> | null>(
     stageMode === 'camera' ? null : stageMode,
   );
@@ -320,6 +336,29 @@ const TeacherStage: React.FC<{
     },
     [localParticipant],
   );
+
+  const openGrammarOnWorkspace = async (
+    mode: 'document' | 'slides',
+    content: GrammarNavigatorSurfaceContent,
+  ) => {
+    await appendGrammarFocusWorkspacePage({
+      classId: liveClass.id,
+      mode,
+      title: content.title,
+      markdown: content.body,
+      lessonNumber: content.lessonNumber,
+      userId: teacherUid,
+      userName: teacherName,
+    });
+    await handleUpdateSession({
+      mainStageMode: 'workspace',
+      sharedGrammarOpen: false,
+      sharedGrammarWorkbookId: content.workbookId,
+      sharedGrammarLessonNumber: content.lessonNumber,
+      sharedGrammarScrollRatio: null,
+    });
+    setShowWorkspaceGrammar(false);
+  };
 
   const republishLocalTrack = useCallback(
     async (source: Track.Source.Camera | Track.Source.Microphone) => {
@@ -515,6 +554,13 @@ const TeacherStage: React.FC<{
                         aria-label={labels.workspace}
                       >
                         &#x270F;&#xFE0F;
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowWorkspaceGrammar(true)}
+                        className="flex h-7 items-center justify-center rounded border border-violet-300 bg-violet-50 px-2 text-[10px] font-black uppercase tracking-wide text-violet-700 transition hover:bg-violet-100"
+                      >
+                        Grammar
                       </button>
                       <button
                         type="button"
@@ -774,10 +820,12 @@ const TeacherStage: React.FC<{
             type="button"
             onClick={() => {
               if (hasActiveTrailSession && !isTrailStage) {
+                setExercisePanelSelection(null);
                 setShowExerciseSession(false);
                 void handleUpdateSession({ mainStageMode: 'trail' });
                 return;
               }
+              setExercisePanelSelection(null);
               setShowExerciseSession(!showExerciseSession);
             }}
             className={`flex h-12 w-12 items-center justify-center rounded-full text-[11px] font-black shadow transition ${
@@ -875,6 +923,7 @@ const TeacherStage: React.FC<{
             <LiveTrailExerciseOverlay
               classId={liveClass.id}
               user={user}
+              userRole={effectiveRole}
               session={session}
               isTeacher={true}
               assignedRoster={assignedRoster}
@@ -884,7 +933,10 @@ const TeacherStage: React.FC<{
                 setShowExerciseSession(false);
                 void handleUpdateSession({ mainStageMode: 'workspace' as LiveClassSession['mainStageMode'] });
               }}
-              onOpenSessionPanel={() => setShowExerciseSession(true)}
+              onOpenSessionPanel={(selection) => {
+                setExercisePanelSelection(selection ?? null);
+                setShowExerciseSession(true);
+              }}
               onStartTrailBattle={onStartTrailBattle}
             />
           ) : null}
@@ -895,25 +947,52 @@ const TeacherStage: React.FC<{
                   <h2 className="text-lg font-black text-white">Trail Session Panel</h2>
                   <button
                     type="button"
-                    onClick={() => setShowExerciseSession(false)}
+                    onClick={() => {
+                      setExercisePanelSelection(null);
+                      setShowExerciseSession(false);
+                    }}
                     className="rounded-lg px-3 py-1 text-sm font-bold text-slate-300 hover:bg-slate-800"
                   >
                     Close
                   </button>
                 </div>
                 <ExerciseSessionPanel
+                  key={`${exercisePanelSelection?.workbookId ?? session.activeWorkbookId ?? liveClass.workbookId ?? 1}:${exercisePanelSelection?.lessonId ?? session.activeLessonId ?? liveClass.lessonId ?? ''}`}
                   classId={liveClass.id}
                   user={user}
                   isTeacher={true}
                   assignedRoster={assignedRoster}
                   defaultCourseId={liveClass.courseId ?? 'english'}
-                  defaultWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
-                  defaultLessonId={session.activeLessonId ?? liveClass.lessonId ?? ''}
+                  defaultWorkbookId={exercisePanelSelection?.workbookId ?? session.activeWorkbookId ?? liveClass.workbookId ?? 1}
+                  defaultLessonId={exercisePanelSelection?.lessonId ?? session.activeLessonId ?? liveClass.lessonId ?? ''}
                   onUpdateSession={handleUpdateSession}
-                  onStarted={() => setShowExerciseSession(false)}
+                  onStarted={() => {
+                    setExercisePanelSelection(null);
+                    setShowExerciseSession(false);
+                  }}
                 />
               </div>
             </div>
+          ) : null}
+          {showWorkspaceGrammar ? (
+            <GrammarNavigatorModal
+              courseId={liveClass.courseId ?? 'english'}
+              initialWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
+              currentLessonId={session.activeLessonId ?? liveClass.lessonId ?? null}
+              activeLanguage={uiLang}
+              userRole={effectiveRole}
+              user={user}
+              scrollRef={grammarScrollRef}
+              onScroll={() => undefined}
+              onClose={() => setShowWorkspaceGrammar(false)}
+              onOpenBoard={(content) => openGrammarOnWorkspace('document', content)}
+              onOpenSlides={(content) => openGrammarOnWorkspace('slides', content)}
+              onOpenPractice={(selection) => {
+                setExercisePanelSelection(selection);
+                setShowWorkspaceGrammar(false);
+                setShowExerciseSession(true);
+              }}
+            />
           ) : null}
         </>
       }
@@ -922,7 +1001,7 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onStartTrailBattle, onOpenPreviewTab, onOpenTrackTab, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
+  const { liveClass, user, accountRole, effectiveRole, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onStartTrailBattle, onOpenPreviewTab, onOpenTrackTab, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [liveKitError, setLiveKitError] = useState<string | null>(null);
@@ -1190,6 +1269,8 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
         <TeacherStage
           liveClass={liveClass}
           user={user}
+          accountRole={accountRole}
+          effectiveRole={effectiveRole}
           session={session}
           assignedRoster={assignedRoster}
           handleUpdateSession={handleUpdateSession}

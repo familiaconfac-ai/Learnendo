@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { renderGrammarFocusWorkspaceHtml, resolveLegacyWorkspaceSurfaceState } from './grammarFocusWorkspace';
+import { buildGrammarFocusSurfaceState, renderGrammarFocusWorkspaceHtml, resolveLegacyWorkspaceSurfaceState } from './grammarFocusWorkspace';
 
 const html = renderGrammarFocusWorkspaceHtml('English — Letters and Numbers', [
   '# Alphabet',
@@ -56,6 +56,50 @@ assert.equal(resolveLegacyWorkspaceSurfaceState({
   pages: [legacyBoardPage],
 }, 'document'), null, 'an existing dedicated surface must not be replaced from legacy top-level fields');
 
+const pastSlide = {
+  id: 'past-slide',
+  name: 'Past tense',
+  backgroundColor: '#ffffff',
+  docContent: '<h1>Past</h1>',
+  items: [],
+};
+const alphabetSlide = {
+  id: 'alphabet-slide',
+  name: 'Alphabet',
+  backgroundColor: '#ffffff',
+  docContent: '<h1>Alphabet</h1>',
+  items: [],
+};
+const freshSlides = buildGrammarFocusSurfaceState({
+  surfaceMode: 'slides',
+  slidesState: {
+    pages: [pastSlide],
+    currentPageId: pastSlide.id,
+    docContent: pastSlide.docContent,
+    items: [],
+  },
+  boardState: {
+    pages: [legacyBoardPage],
+    currentPageId: legacyBoardPage.id,
+    docContent: legacyBoardPage.docContent,
+    items: [],
+  },
+}, 'slides', alphabetSlide);
+assert.deepEqual(freshSlides.pages, [alphabetSlide], 'a Grammar Focus export must start a clean active slide deck');
+assert.equal(freshSlides.currentPageId, alphabetSlide.id, 'the new Grammar Focus slide must be active');
+assert.equal(freshSlides.docContent, alphabetSlide.docContent, 'the listener-facing surface state must retain the new content');
+
+const boardAfterGrammar = buildGrammarFocusSurfaceState({
+  surfaceMode: 'document',
+  boardState: {
+    pages: [legacyBoardPage],
+    currentPageId: legacyBoardPage.id,
+    docContent: legacyBoardPage.docContent,
+    items: [],
+  },
+}, 'document', alphabetSlide);
+assert.deepEqual(boardAfterGrammar.pages, [legacyBoardPage, alphabetSlide], 'Board exports must preserve existing Board pages');
+
 const grammarModal = readFileSync(resolve(process.cwd(), 'src/components/GrammarFocus/GrammarFocusModal.tsx'), 'utf8');
 const workspaceCanvas = readFileSync(resolve(process.cwd(), 'src/components/LiveClasses/Workspace/WorkspaceCanvas.tsx'), 'utf8');
 const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8');
@@ -69,5 +113,7 @@ assert.match(surfaceToggle, /saveWorkspaceSurfaceTransition\(/,
   'Board and Slides must switch through a single durable surface transition');
 assert.doesNotMatch(surfaceToggle, /savePageSwitch\(|saveWorkspaceSurfaceMode\(/,
   'the surface switch must not race independent writes that reactivate the previous mode');
+assert.match(workspaceCanvas, /data\?\.slidesState\?\.pages\?\.length[\s\S]+data\.slidesState\.currentPageId/,
+  'workspace snapshots must restore the dedicated active slide deck and its active page');
 
 console.log('grammar focus workspace export tests passed');

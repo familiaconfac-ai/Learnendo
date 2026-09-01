@@ -9,9 +9,24 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import {
+  getAllowedViewModes,
+  getDefaultViewMode,
+  getEffectiveViewRole,
+  getRoleModeMenuVisibility,
+  normalizeUserViewMode,
+  type UserRole,
+  type UserViewMode,
+} from './roleMode';
 
-export type UserRole = 'student' | 'teacher' | 'admin';
-export type UserViewMode = 'student' | 'teacher' | 'admin';
+export {
+  getAllowedViewModes,
+  getDefaultViewMode,
+  getEffectiveViewRole,
+  getRoleModeMenuVisibility,
+  normalizeUserViewMode,
+};
+export type { UserRole, UserViewMode };
 
 export interface UserAccountProfile {
   uid: string;
@@ -54,26 +69,6 @@ export function getEffectiveUserRole(email?: string | null, storedRole?: string 
   // mas nunca concede autorização à interface por si só.
   void email;
   return normalizeUserRole(storedRole);
-}
-
-export function getAllowedViewModes(role: UserRole): UserViewMode[] {
-  if (role === 'admin') return ['student', 'teacher', 'admin'];
-  if (role === 'teacher') return ['student', 'teacher'];
-  return ['student', 'teacher'];
-}
-
-export function getDefaultViewMode(role: UserRole): UserViewMode {
-  if (role === 'admin') return 'admin';
-  if (role === 'teacher') return 'teacher';
-  return 'student';
-}
-
-export function normalizeUserViewMode(role: UserRole, requested?: string | null): UserViewMode {
-  const allowed = getAllowedViewModes(role);
-  if (requested && allowed.includes(requested as UserViewMode)) {
-    return requested as UserViewMode;
-  }
-  return getDefaultViewMode(role);
 }
 
 export function getUserViewModeStorageKey(uid: string): string {

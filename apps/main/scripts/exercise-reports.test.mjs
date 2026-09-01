@@ -33,7 +33,7 @@ assert.match(generalReport, /source: 'hamburger-menu'/, 'general reports must id
 assert.match(generalReport, /initialWorkbookId/, 'general reports should prefill available context');
 assert.match(appSource, /setGeneralReportOpen\(true\)/, 'the hamburger menu must open the general report');
 assert.doesNotMatch(practice, /setCurrentIdx\([^)]*submitProblemReport/, 'report submission must not advance the exercise');
-assert.match(appSource, /isAdmin && \([\s\S]*Relatórios de problemas/, 'menu item must be admin-only');
+assert.match(appSource, /menuVisibility\.problemReports && \([\s\S]*Relatórios de problemas/, 'menu item must follow the effective admin mode');
 assert.match(appSource, /pendingProblemReports > 0/, 'pending badge must hide at zero');
 assert.match(appSource, /currentSection === SectionType\.PROBLEM_REPORTS && !isAdmin/, 'admin route must have a frontend guard');
 assert.match(dashboard, /status:\s*'reviewing'/, 'admin can mark reviewing');
@@ -98,7 +98,7 @@ assert.match(rules, /allow create: if signedIn\(\)/, 'signed-in students can cre
 assert.match(rules, /request\.resource\.data\.userId == request\.auth\.uid/, 'students can create only owned reports');
 assert.match(rules, /request\.resource\.data\.status == 'new'/, 'students cannot choose report status');
 assert.match(rules, /request\.resource\.data\.priority == 'normal'/, 'students cannot choose priority');
-assert.match(rules, /source in \['exercise-practice', 'hamburger-menu'\]/, 'rules must allow both authorized report entry points');
+assert.match(rules, /source in \['exercise-practice', 'hamburger-menu', 'grammar-focus'\]/, 'rules must allow all authorized report entry points');
 assert.match(rules, /allow update: if isAdmin\(\)/, 'only admins can update reports');
 assert.match(rules, /'verificationResult'/, 'admins must be allowed to save verification outcomes');
 assert.match(rules, /allow delete: if false/, 'reports are permanent and cannot be deleted');

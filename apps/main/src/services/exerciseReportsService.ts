@@ -34,7 +34,18 @@ export const EXERCISE_REPORT_CATEGORIES = [
   'Outro problema',
 ] as const;
 
-export type ExerciseReportCategory = typeof EXERCISE_REPORT_CATEGORIES[number];
+export const GRAMMAR_FOCUS_REPORT_CATEGORIES = [
+  'Content error',
+  'Grammar error',
+  'Translation',
+  'Inappropriate example',
+  'Improvement suggestion',
+  'Other',
+] as const;
+
+export type ExerciseReportCategory =
+  | typeof EXERCISE_REPORT_CATEGORIES[number]
+  | typeof GRAMMAR_FOCUS_REPORT_CATEGORIES[number];
 export type ExerciseReportStatus = 'new' | 'reviewing' | 'resolved' | 'dismissed';
 export type ExerciseReportPriority = 'low' | 'normal' | 'high' | 'critical';
 export type ExerciseReportVerificationResult = 'ready-for-verification' | 'fixed' | 'better-than-expected' | 'not-fixed' | 'needs-improvement';
@@ -46,6 +57,7 @@ export interface ExerciseReport {
   status: ExerciseReportStatus;
   priority: ExerciseReportPriority;
   source: string;
+  reporterRole?: 'student' | 'teacher' | 'admin';
   userId: string;
   userName: string | null;
   userEmail: string | null;

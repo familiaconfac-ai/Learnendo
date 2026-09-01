@@ -17,7 +17,7 @@ import { PronunciationTrainer } from './components/PronunciationTrainer/Pronunci
 import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
 import { ProblemReportsDashboard } from './components/ProblemReports/ProblemReportsDashboard';
 import { GeneralProblemReportModal } from './components/ProblemReports/GeneralProblemReportModal';
-import { GrammarFocusModal } from './components/GrammarFocus/GrammarFocusModal';
+import { GrammarNavigatorModal, type GrammarNavigatorSelection } from './components/GrammarFocus/GrammarNavigatorModal';
 import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
 import { LanguageSelector } from './components/LanguageSelector';
 import { NotificationSettings } from './components/NotificationSettings';
@@ -48,6 +48,8 @@ import { recordLiveAttendanceGrammar } from './services/liveAttendanceService';
 import { appendGrammarFocusWorkspacePage } from './services/grammarFocusWorkspace';
 import {
   getAllowedViewModes,
+  getEffectiveViewRole,
+  getRoleModeMenuVisibility,
   getUserViewModeStorageKey,
   normalizeUserViewMode,
   PENDING_VIEW_MODE_STORAGE_KEY,
@@ -418,18 +420,22 @@ const App: React.FC = () => {
   const [conversionSuccess, setConversionSuccess] = useState(false);
   const [showGrammarModal, setShowGrammarModal] = useState(false);
   const [activeGrammarLessonNumber, setActiveGrammarLessonNumber] = useState<number | null>(null);
+  const [pendingGrammarPractice, setPendingGrammarPractice] = useState<GrammarNavigatorSelection | null>(null);
   const grammarModalScrollRef = useRef<HTMLDivElement | null>(null);
   const applyingRemoteGrammarScrollRef = useRef(false);
   const grammarScrollSyncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const userRole = userAccountProfile?.role ?? 'student';
+  const actualRole = userAccountProfile?.role ?? 'student';
+  const effectiveRole = getEffectiveViewRole(actualRole, userViewMode);
+  const menuVisibility = getRoleModeMenuVisibility(effectiveRole);
   const isGuestAccount = Boolean(user?.isAnonymous);
-  const isAdmin = userRole === 'admin';
-  const isTeacherAccount = userRole === 'teacher' || userRole === 'admin';
-  const canAccessTeacherDashboard = isTeacherAccount && userViewMode !== 'student';
-  const canManageUsers = isAdmin;
-  const canManageLiveClasses = isAdmin || (isTeacherAccount && userViewMode !== 'student');
-  const liveClassViewerRole = userRole === 'teacher' && !canManageLiveClasses ? 'student' : userRole;
-  const availableViewModes = getAllowedViewModes(userRole);
+  const isActualAdmin = actualRole === 'admin';
+  const isAdmin = effectiveRole === 'admin';
+  const isTeacherAccount = actualRole === 'teacher' || actualRole === 'admin';
+  const canAccessTeacherDashboard = isTeacherAccount && menuVisibility.teacherDashboard;
+  const canManageUsers = isActualAdmin && isAdmin;
+  const canManageLiveClasses = isTeacherAccount && effectiveRole !== 'student';
+  const liveClassViewerRole = effectiveRole;
+  const availableViewModes = getAllowedViewModes(actualRole);
   const activeCourseId = currentCourseId ?? DEFAULT_COURSE_ID;
   const languagePlacement = (progress.tests as any)?.placements?.[language];
   const legacyPlacement = (progress.tests as any)?.placement;
@@ -461,7 +467,7 @@ const App: React.FC = () => {
     hasPlacementReport ||
     localPlacementDone
   );
-  const shouldPromptPlacementTest = userRole === 'student';
+  const shouldPromptPlacementTest = effectiveRole === 'student';
   const showPlacementBanner = progressLoaded && shouldPromptPlacementTest && !hasPlacementResult &&
     !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON, SectionType.LIVE_CLASSES] as string[]).includes(currentSection);
   const isInLiveRoom =
@@ -906,7 +912,7 @@ const App: React.FC = () => {
     console.log('[BOOT_DEBUG] Starting Firestore progress listener', {
       uid: user.uid,
       email: user.email,
-      userRole,
+      actualRole,
       userViewMode,
       savedLanguage: getScopedStorageItem(USER_LANGUAGE_STORAGE_KEY),
       savedCourseId: null, // read from Firestore snapshot
@@ -1705,6 +1711,15 @@ const App: React.FC = () => {
     setCurrentSection(SectionType.LIVE_CLASSES);
   };
 
+  useEffect(() => {
+    if (!pendingGrammarPractice || !currentWorkbook) return;
+    if (Number(currentWorkbook.id) !== pendingGrammarPractice.workbookId) return;
+    const lesson = currentWorkbook.lessons?.find((item: Lesson) => item.id === pendingGrammarPractice.lessonId);
+    if (!lesson) return;
+    setPendingGrammarPractice(null);
+    openLesson(lesson.id, { force: canManageLiveClasses, syncToSession: false });
+  }, [canManageLiveClasses, currentWorkbook, pendingGrammarPractice]);
+
   const handleGrammarModalScroll = useCallback(() => {
     const element = grammarModalScrollRef.current;
     if (!element || applyingRemoteGrammarScrollRef.current) return;
@@ -2009,7 +2024,7 @@ const App: React.FC = () => {
 
   const handleViewModeChange = (nextMode: UserViewMode) => {
     if (!user?.uid) return;
-    const normalized = normalizeUserViewMode(userRole, nextMode);
+    const normalized = normalizeUserViewMode(actualRole, nextMode);
     setUserViewMode(normalized);
     if (typeof window !== 'undefined') {
       window.sessionStorage.setItem(buildTabViewModeStorageKey(user.uid), normalized);
@@ -2662,7 +2677,7 @@ const App: React.FC = () => {
         return (
           <LiveClassesPage
             user={user}
-            accountRole={userRole}
+            accountRole={actualRole}
             userRole={liveClassViewerRole}
             viewMode={userViewMode}
             canManageClasses={canManageLiveClasses}
@@ -3347,7 +3362,7 @@ const App: React.FC = () => {
             className="bg-white rounded-3xl shadow-2xl p-6 w-11/12 max-w-sm mx-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            {isAdmin ? (
+            {availableViewModes.length > 1 ? (
               <div className="mb-4 rounded-2xl bg-slate-50 p-3">
                 <div className="flex flex-wrap gap-2">
                   {availableViewModes.map((mode) => (
@@ -3365,10 +3380,6 @@ const App: React.FC = () => {
                     </button>
                   ))}
                 </div>
-              </div>
-            ) : isTeacherAccount ? (
-              <div className="mb-4 rounded-2xl bg-slate-50 px-4 py-3">
-                <p className="text-sm font-bold text-slate-800">Teacher</p>
               </div>
             ) : null}
             {isGuestAccount ? (
@@ -3400,7 +3411,7 @@ const App: React.FC = () => {
               {canAccessTeacherDashboard && (
                 <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>
               )}
-              {isAdmin && (
+              {menuVisibility.problemReports && (
                 <button className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left font-medium text-rose-700 transition-colors hover:bg-rose-50" onClick={() => { setCurrentSection(SectionType.PROBLEM_REPORTS); setMenuOpen(false); }}>
                   <span>Relatórios de problemas</span>
                   {pendingProblemReports > 0 && <span className="min-w-6 rounded-full bg-rose-600 px-2 py-0.5 text-center text-xs font-black text-white">{pendingProblemReports}</span>}
@@ -3408,13 +3419,13 @@ const App: React.FC = () => {
               )}
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
-              <button className="block w-full rounded-xl px-4 py-3 text-left font-medium text-amber-700 transition-colors hover:bg-amber-50" onClick={() => { setMenuOpen(false); setGeneralReportOpen(true); }}>⚠ Reportar problema</button>
+              {menuVisibility.generalProblemReport && <button className="block w-full rounded-xl px-4 py-3 text-left font-medium text-amber-700 transition-colors hover:bg-amber-50" onClick={() => { setMenuOpen(false); setGeneralReportOpen(true); }}>⚠ Reportar problema</button>}
               <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 font-medium transition-colors" onClick={handleLogout}>Logout</button>
             </div>
           </div>
         </div>
       )}
-      {generalReportOpen && (
+      {generalReportOpen && menuVisibility.generalProblemReport && (
         <GeneralProblemReportModal
           onClose={() => setGeneralReportOpen(false)}
           userId={user?.uid ?? 'anonymous'}
@@ -3471,35 +3482,28 @@ const App: React.FC = () => {
       )}
       {showGrammarModal && (() => {
         const grammarWorkbookId = currentWorkbookId || progress.currentWorkbook || 1;
-        const grammarLessons = (currentWorkbook?.lessons ?? []).map((lesson: Lesson, index: number) => ({
-          id: lesson.id,
-          lessonNumber: getLessonNumberFromId(lesson.id) || index + 1,
-          title: lesson.title,
-        }));
-        const selectedGrammarLesson = activeGrammarLessonNumber == null
-          ? null
-          : grammarLessons.find((lesson) => lesson.lessonNumber === activeGrammarLessonNumber) ?? null;
         return (
-          <GrammarFocusModal
-            workbookId={grammarWorkbookId}
-            lessonId={selectedGrammarLesson?.id ?? null}
-            lessonNumber={activeGrammarLessonNumber}
-            lessonTitle={selectedGrammarLesson?.title}
-            lessons={grammarLessons}
+          <GrammarNavigatorModal
+            courseId={currentCourseId ?? DEFAULT_COURSE_ID}
+            initialWorkbookId={grammarWorkbookId}
+            currentLessonId={currentLessonId}
+            currentLessonNumber={activeGrammarLessonNumber}
             activeLanguage={language}
-            isAdmin={isAdmin}
-            userId={user?.uid ?? null}
+            userRole={effectiveRole}
+            user={user}
             scrollRef={grammarModalScrollRef}
             onScroll={handleGrammarModalScroll}
-            onSelectLesson={openGrammarForLesson}
-            onOpenOverview={openGrammarOverview}
             onClose={closeGrammarModal}
-            canPresent={canManageLiveClasses && Boolean(activeOnlineClass?.id)}
-            onOpenBoard={(content) => openGrammarInWorkspace('document', content)}
-            onOpenSlides={(content) => openGrammarInWorkspace('slides', content)}
-            onOpenPractice={(lessonId) => {
+            onOpenBoard={canManageLiveClasses && activeOnlineClass?.id ? (content) => openGrammarInWorkspace('document', content) : undefined}
+            onOpenSlides={canManageLiveClasses && activeOnlineClass?.id ? (content) => openGrammarInWorkspace('slides', content) : undefined}
+            onOpenPractice={(selection) => {
               closeGrammarModal();
-              openLesson(lessonId, { force: canManageLiveClasses });
+              if (selection.workbookId === grammarWorkbookId) {
+                openLesson(selection.lessonId, { force: canManageLiveClasses, syncToSession: false });
+                return;
+              }
+              setPendingGrammarPractice(selection);
+              handleSelectWorkbook(selection.workbookId);
             }}
             onContentViewed={handleLiveGrammarViewed}
           />

@@ -22,3 +22,14 @@ test('Grammar Focus rules validate locales, metadata, field types and limits', (
   assert.match(rules, /data\.updatedBy == request\.auth\.uid/);
   assert.match(rules, /data\.updatedAt is timestamp/);
 });
+
+test('Grammar Focus reports require teacher mode backed by a real teacher/admin account', () => {
+  const start = rules.indexOf('match /exerciseReports/{reportId}');
+  const end = rules.indexOf('match /liveClassGroups/{groupId}', start);
+  const block = rules.slice(start, end);
+  assert.ok(start >= 0 && end > start);
+  assert.match(block, /'grammar-focus'/);
+  assert.match(block, /request\.resource\.data\.reporterRole == 'teacher'/);
+  assert.match(block, /request\.resource\.data\.reporterRole == 'teacher'[\s\S]+isTeacherAccount\(\)/);
+  assert.match(block, /request\.resource\.data\.userId == request\.auth\.uid/);
+});

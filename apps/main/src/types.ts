@@ -289,6 +289,7 @@ export interface LiveClassSession {
   activeTrailLabel?: string | null;
   trailCompletion?: LiveTrailCompletion | null;
   sharedGrammarOpen?: boolean;
+  sharedGrammarWorkbookId?: number | null;
   sharedGrammarLessonNumber?: number | null;
   sharedGrammarScrollRatio?: number | null;
   liveAudioTransport?: 'not-configured' | 'connecting' | 'connected';

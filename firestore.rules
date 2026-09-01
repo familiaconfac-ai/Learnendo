@@ -677,7 +677,7 @@ service cloud.firestore {
       allow get, list: if isAdmin();
       allow create: if signedIn()
         && request.resource.data.keys().hasOnly([
-          'reportId', 'createdAt', 'updatedAt', 'status', 'priority', 'source',
+          'reportId', 'createdAt', 'updatedAt', 'status', 'priority', 'source', 'reporterRole',
           'userId', 'userName', 'userEmail', 'language', 'workbookId', 'workbookTitle',
           'lessonId', 'lessonTitle', 'dayId', 'dayNumber', 'exerciseId', 'exerciseType',
           'exerciseMode', 'sessionPhase', 'currentExerciseIndex', 'instruction',
@@ -697,7 +697,14 @@ service cloud.firestore {
         && request.resource.data.resolvedAt == null
         && request.resource.data.dismissedAt == null
         && request.resource.data.emailNotificationStatus == 'not_requested'
-        && request.resource.data.source in ['exercise-practice', 'hamburger-menu']
+        && request.resource.data.source in ['exercise-practice', 'hamburger-menu', 'grammar-focus']
+        && (
+          request.resource.data.source != 'grammar-focus'
+          || (
+            request.resource.data.reporterRole == 'teacher'
+            && isTeacherAccount()
+          )
+        )
         && request.resource.data.workbookId is int
         && request.resource.data.currentExerciseIndex is int
         && request.resource.data.attemptCount is int
@@ -711,7 +718,13 @@ service cloud.firestore {
           'Tradução incorreta',
           'Exercício travado',
           'Conteúdo incompatível com a lição',
-          'Outro problema'
+          'Outro problema',
+          'Content error',
+          'Grammar error',
+          'Translation',
+          'Inappropriate example',
+          'Improvement suggestion',
+          'Other'
         ];
       allow update: if isAdmin()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([

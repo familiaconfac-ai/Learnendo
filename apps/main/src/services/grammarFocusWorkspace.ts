@@ -59,6 +59,24 @@ export function renderGrammarFocusWorkspaceHtml(title: string, markdown: string)
   return [heading, ...blocks].filter(Boolean).join('');
 }
 
+/** A Grammar Focus export starts a fresh slide deck, while Board keeps its existing pages. */
+export function buildGrammarFocusSurfaceState(
+  workspace: Partial<WorkspaceDoc>,
+  mode: WorkspaceSurfaceMode,
+  page: WorkspacePage,
+): WorkspaceSurfaceState {
+  const current = workspace[surfaceStateKey(mode)];
+  const existingPages = mode === 'slides'
+    ? []
+    : current?.pages ?? (workspace.surfaceMode === mode ? workspace.pages ?? [] : []);
+  return {
+    pages: [...existingPages, page],
+    currentPageId: page.id,
+    docContent: page.docContent,
+    items: page.items,
+  };
+}
+
 export async function appendGrammarFocusWorkspacePage(input: {
   classId: string;
   mode: WorkspaceSurfaceMode;
@@ -80,8 +98,6 @@ export async function appendGrammarFocusWorkspacePage(input: {
     const legacyActiveState = activeMode !== input.mode
       ? resolveLegacyWorkspaceSurfaceState(workspace, activeMode)
       : null;
-    const current = workspace[key];
-    const pages = [...(current?.pages ?? (workspace.surfaceMode === input.mode ? workspace.pages ?? [] : []))];
     const page: WorkspacePage = {
       id: pageId,
       name: input.title.trim() || `Lesson ${input.lessonNumber} Grammar Focus`,
@@ -89,13 +105,8 @@ export async function appendGrammarFocusWorkspacePage(input: {
       docContent: html,
       items: [],
     };
-    pages.push(page);
-    const state: WorkspaceSurfaceState = {
-      pages,
-      currentPageId: page.id,
-      docContent: html,
-      items: [],
-    };
+    const state = buildGrammarFocusSurfaceState(workspace, input.mode, page);
+    const pages = state.pages;
     transaction.set(reference, {
       ...(legacyActiveState ? { [surfaceStateKey(activeMode)]: legacyActiveState } : {}),
       surfaceMode: input.mode,

@@ -22,6 +22,7 @@ import { finishLiveAttendance, persistLiveAttendanceSnapshot, recordLiveAttendan
 import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
 import { resolveAssignedStudentRoster } from '../../services/liveClassesService';
+import type { UserRole } from '../../services/userRoles';
 import {
   BASE_UI_LANGUAGE_STORAGE_KEY,
   TAB_APP_CONTEXT_STORAGE_KEY,
@@ -31,6 +32,8 @@ import {
 interface LiveClassRoomPageProps {
   liveClass: LiveClass;
   user: User;
+  accountRole: UserRole;
+  effectiveRole: UserRole;
   isTeacher: boolean;
   uiLanguage?: 'en' | 'pt' | 'es';
   onOpenClassContent: (liveClass: LiveClass) => void;
@@ -277,6 +280,8 @@ function buildInitialSession(liveClass: LiveClass): LiveClassSession {
 export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   liveClass,
   user,
+  accountRole,
+  effectiveRole,
   isTeacher,
   uiLanguage = (() => {
     try {
@@ -657,6 +662,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
           <TeacherRoomView
             liveClass={liveClass}
             user={user}
+            accountRole={accountRole}
+            effectiveRole={effectiveRole}
             session={session}
             presence={presence}
             assignedRoster={assignedRoster}
@@ -703,6 +710,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
       <StudentRoomView
         liveClass={liveClass}
         user={user}
+        accountRole={accountRole}
+        effectiveRole={effectiveRole}
         session={session}
         presence={presence}
         assignedRoster={assignedRoster}

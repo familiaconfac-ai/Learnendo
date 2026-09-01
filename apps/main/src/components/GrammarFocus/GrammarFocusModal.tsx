@@ -14,7 +14,10 @@ import {
   type GrammarFocusLanguage,
 } from '../../models/grammarFocus';
 import { saveGrammarFocus, subscribeGrammarFocus } from '../../services/grammarFocusService';
+import { getGrammarFocusActions } from '../../services/grammarFocusPermissions';
+import type { UserRole } from '../../services/userRoles';
 import { parseControlledMarkdown } from '../../utils/controlledMarkdown';
+import { GrammarFocusReportModal } from './GrammarFocusReportModal';
 
 interface GrammarFocusLessonOption {
   id: string;
@@ -28,15 +31,20 @@ interface GrammarFocusModalProps {
   lessonNumber: number | null;
   lessonTitle?: string;
   lessons: GrammarFocusLessonOption[];
+  workbookOptions?: Array<{ id: number; label: string }>;
+  highlightedLessonId?: string | null;
+  onSelectWorkbook?: (workbookId: number) => void;
   activeLanguage: string;
-  isAdmin: boolean;
+  userRole: UserRole;
   userId: string | null;
+  userName: string | null;
+  userEmail: string | null;
+  workbookTitle?: string;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: () => void;
   onSelectLesson: (lessonNumber: number) => void;
   onOpenOverview: () => void;
   onClose: () => void;
-  canPresent?: boolean;
   onOpenBoard?: (content: { title: string; body: string; lessonNumber: number }) => Promise<void>;
   onOpenSlides?: (content: { title: string; body: string; lessonNumber: number }) => Promise<void>;
   onOpenPractice?: (lessonId: string) => void;
@@ -119,9 +127,9 @@ const ControlledMarkdown: React.FC<{ body: string }> = ({ body }) => {
 };
 
 export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
-  workbookId, lessonId, lessonNumber, lessonTitle, lessons, activeLanguage, isAdmin, userId,
+  workbookId, lessonId, lessonNumber, lessonTitle, lessons, workbookOptions = [], highlightedLessonId, onSelectWorkbook, activeLanguage, userRole, userId, userName, userEmail, workbookTitle,
   scrollRef, onScroll, onSelectLesson, onOpenOverview, onClose,
-  canPresent = false, onOpenBoard, onOpenSlides, onOpenPractice, onContentViewed,
+  onOpenBoard, onOpenSlides, onOpenPractice, onContentViewed,
 }) => {
   const displayLanguage = normalizeGrammarFocusLanguage(activeLanguage);
   const canonicalLessonId = lessonId ? canonicalGrammarFocusLessonId(lessonId) : null;
@@ -138,6 +146,8 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   const [saveError, setSaveError] = useState('');
   const [savedMessage, setSavedMessage] = useState('');
   const [openingSurface, setOpeningSurface] = useState<'board' | 'slides' | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const actions = getGrammarFocusActions(userRole);
 
   const dirty = editing && JSON.stringify(draft) !== JSON.stringify(baseline);
   const isOverview = lessonNumber == null || lessonId == null;
@@ -179,6 +189,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     if (confirmDiscard()) onClose();
   };
   const beginEditing = () => {
+    if (!actions.edit) return;
     const next = documentValue?.content ?? emptyGrammarFocusContent();
     setDraft(next);
     setBaseline(next);
@@ -203,6 +214,10 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     setSavedMessage('');
   };
   const handleSave = async () => {
+    if (!actions.edit) {
+      setSaveError('Only administrators can edit official Grammar Focus content.');
+      return;
+    }
     if (!canonicalLessonId || !userId || saving) return;
     if (!hasGrammarFocusContent(draft)) {
       setSaveError(copy.required);
@@ -254,7 +269,11 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
       <section role="dialog" aria-modal="true" aria-labelledby="grammar-focus-title" className="flex h-full w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-3xl" onClick={(event) => event.stopPropagation()}>
         <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 sm:px-8 sm:py-5">
           <div className="min-w-0">
-            <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-500">{isOverview ? `Workbook ${workbookId}` : `Lesson ${lessonNumber}`}</p>
+            {isOverview && workbookOptions.length > 0 && onSelectWorkbook ? (
+              <select value={workbookId} onChange={(event) => onSelectWorkbook(Number(event.target.value))} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-black text-blue-700" aria-label="Workbook">
+                {workbookOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              </select>
+            ) : <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-500">{isOverview ? `Workbook ${workbookId}` : `Lesson ${lessonNumber}`}</p>}
             <h2 id="grammar-focus-title" className="mt-1 text-2xl font-black text-slate-900 sm:text-3xl">Grammar Focus</h2>
             {!isOverview && <p className="mt-2 truncate text-lg font-semibold text-slate-700 sm:text-xl">{copy.grammarNotes}</p>}
           </div>
@@ -270,7 +289,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
             <div>
               <p className="mb-5 text-sm text-slate-500">{copy.noWorkbookNotes}</p>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {lessons.map((lesson) => <button type="button" key={lesson.id} onClick={() => onSelectLesson(lesson.lessonNumber)} className="rounded-3xl border border-slate-200 bg-slate-50 p-5 text-left transition hover:border-blue-300 hover:bg-blue-50"><p className="text-xs font-black uppercase tracking-[0.26em] text-blue-500">Lesson {lesson.lessonNumber}</p><p className="mt-2 text-lg font-bold text-slate-900">{lesson.title || copy.grammarNotes}</p></button>)}
+                {lessons.map((lesson) => <button type="button" key={lesson.id} onClick={() => onSelectLesson(lesson.lessonNumber)} className={`rounded-3xl border p-5 text-left transition hover:border-blue-300 hover:bg-blue-50 ${highlightedLessonId === lesson.id ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200' : 'border-slate-200 bg-slate-50'}`}><p className="text-xs font-black uppercase tracking-[0.26em] text-blue-500">Lesson {lesson.lessonNumber}</p><p className="mt-2 text-lg font-bold text-slate-900">{lesson.title || copy.grammarNotes}</p>{highlightedLessonId === lesson.id && <span className="mt-3 inline-block rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">Current lesson</span>}</button>)}
               </div>
             </div>
           ) : loading ? (
@@ -300,7 +319,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
             </div>
           ) : loadError ? (
             <div className="mx-auto max-w-3xl">
-              {isAdmin ? (
+              {actions.edit ? (
                 <>
                   <div role="alert" className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">{copy.loadError}</div>
                   <button type="button" onClick={beginEditing} className="mt-6 rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{copy.add}</button>
@@ -314,15 +333,30 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
               {hasActiveContent ? <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7"><h3 className="mb-5 text-2xl font-black text-slate-900">{activeLocale.title || lessonTitle || copy.grammarNotes}</h3>{activeLocale.body.trim() && <ControlledMarkdown body={activeLocale.body} />}</div> : <p className="text-sm text-slate-500">{copy.noNotes}</p>}
               {saveError && <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{saveError}</div>}
               <div className="mt-6 flex flex-wrap gap-2">
-                {isAdmin && <button type="button" onClick={beginEditing} className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{hasDocumentContent ? copy.edit : copy.add}</button>}
-                {canPresent && hasActiveContent && onOpenBoard && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('board')} className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 disabled:opacity-50">{openingSurface === 'board' ? 'Opening...' : 'Board'}</button>}
-                {canPresent && hasActiveContent && onOpenSlides && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('slides')} className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-3 font-black text-violet-700 disabled:opacity-50">{openingSurface === 'slides' ? 'Opening...' : 'Slides'}</button>}
-                {lessonId && onOpenPractice && <button type="button" onClick={() => onOpenPractice(lessonId)} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 font-black text-emerald-700">Practice</button>}
+                {actions.edit && <button type="button" onClick={beginEditing} className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{hasDocumentContent ? copy.edit : copy.add}</button>}
+                {actions.board && hasActiveContent && onOpenBoard && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('board')} className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 disabled:opacity-50">{openingSurface === 'board' ? 'Opening...' : 'Board'}</button>}
+                {actions.slides && hasActiveContent && onOpenSlides && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('slides')} className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-3 font-black text-violet-700 disabled:opacity-50">{openingSurface === 'slides' ? 'Opening...' : 'Slides'}</button>}
+                {actions.practice && lessonId && onOpenPractice && <button type="button" onClick={() => onOpenPractice(lessonId)} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 font-black text-emerald-700">Practice</button>}
+                {actions.report && lessonId && userId && <button type="button" onClick={() => setReporting(true)} className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 font-black text-amber-700">Report</button>}
               </div>
             </div>
           )}
         </div>
       </section>
+      {reporting && lessonId && userId && (
+        <GrammarFocusReportModal
+          userId={userId}
+          userName={userName}
+          userEmail={userEmail}
+          language={displayLanguage}
+          workbookId={workbookId}
+          workbookTitle={workbookTitle || `Workbook ${workbookId}`}
+          lessonId={canonicalLessonId || lessonId}
+          lessonTitle={lessonTitle || `Lesson ${lessonNumber}`}
+          grammarFocusTitle={activeLocale.title.trim() || lessonTitle || `Lesson ${lessonNumber}`}
+          onClose={() => setReporting(false)}
+        />
+      )}
     </div>
   );
 };
