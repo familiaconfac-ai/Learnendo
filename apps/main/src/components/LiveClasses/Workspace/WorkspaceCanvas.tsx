@@ -29,7 +29,7 @@ import {
   saveWorkspaceItem,
   saveDocContent,
   saveScrollRatio,
-  saveTeacherSelection,
+  saveParticipantSelection,
   savePageSwitch,
   saveWorkspaceSurfaceTransition,
   saveWorkspacePresentationMode,
@@ -41,6 +41,7 @@ import {
   type WorkspaceSurfaceState,
   type WorkspaceSurfaceMode,
 } from '../../../services/workspaceService';
+import { restoreDomRange, serializeDomRange } from './workspaceSelectionAwareness';
 import { app } from '../../../services/firebase';
 import {
   saveWorkspaceAsMaterial,
@@ -77,14 +78,10 @@ function buildSelectionSignature(selection: WorkspaceSelectionSnapshot | null): 
   return JSON.stringify({
     surfaceMode: selection.surfaceMode,
     target: selection.target,
+    pageId: selection.pageId,
     itemId: selection.itemId ?? null,
     text: selection.text ?? '',
-    rects: selection.rects.map((rect) => ({
-      top: Math.round(rect.top),
-      left: Math.round(rect.left),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    })),
+    range: selection.range,
   });
 }
 
@@ -1612,19 +1609,60 @@ const StableResizeHandle: React.FC<StableResizeHandleProps> = ({ onPointerDown }
   </div>
 );
 
-const TeacherSelectionOverlay: React.FC<{
+const RemoteSelectionOverlay: React.FC<{
   selection: WorkspaceSelectionSnapshot;
-}> = ({ selection }) => {
-  if (selection.rects.length === 0) return null;
-  const anchor = selection.rects[0];
+  rootRef: React.RefObject<HTMLElement | null>;
+}> = ({ selection, rootRef }) => {
+  const [rects, setRects] = useState<Array<{ top: number; left: number; width: number; height: number }>>([]);
   const label = selection.text?.trim();
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) {
+      setRects([]);
+      return undefined;
+    }
+
+    const updateRects = () => {
+      const range = restoreDomRange(root, selection.range);
+      if (!range) {
+        setRects([]);
+        return;
+      }
+      const rootRect = root.getBoundingClientRect();
+      setRects(Array.from(range.getClientRects())
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+        .slice(0, 24)
+        .map((rect) => ({
+          top: rect.top - rootRect.top,
+          left: rect.left - rootRect.left,
+          width: rect.width,
+          height: rect.height,
+        })));
+    };
+
+    const frame = window.requestAnimationFrame(updateRects);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(updateRects) : null;
+    observer?.observe(root);
+    root.addEventListener('scroll', updateRects, { passive: true });
+    window.addEventListener('resize', updateRects);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer?.disconnect();
+      root.removeEventListener('scroll', updateRects);
+      window.removeEventListener('resize', updateRects);
+    };
+  }, [rootRef, selection]);
+
+  if (rects.length === 0) return null;
+  const anchor = rects[0];
 
   return (
     <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
-      {selection.rects.map((rect, index) => (
+      {rects.map((rect, index) => (
         <div
           key={`${rect.left}:${rect.top}:${rect.width}:${rect.height}:${index}`}
-          className="absolute rounded-[4px] border border-blue-500/70 bg-blue-500/30 shadow-[0_0_0_1px_rgba(59,130,246,0.12)]"
+          className="absolute rounded-[3px] border border-blue-600/80 bg-blue-500/45 shadow-[0_0_0_1px_rgba(37,99,235,0.18)]"
           style={{
             left: `${rect.left}px`,
             top: `${rect.top}px`,
@@ -1673,7 +1711,7 @@ interface StableFloatingBlockProps {
   onEditorTyping?: () => void;
   onEditorFocus: (id: string, el: HTMLElement) => void;
   onEditorBlur: () => void;
-  remoteTeacherSelection?: WorkspaceSelectionSnapshot | null;
+  remoteSelections?: WorkspaceSelectionSnapshot[];
 }
 
 const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
@@ -1700,7 +1738,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   onEditorTyping,
   onEditorFocus,
   onEditorBlur,
-  remoteTeacherSelection,
+  remoteSelections = [],
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const lastTypedAtRef = useRef<number>(0);
@@ -2209,7 +2247,13 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           opacity: isOwnedByOther ? 0.65 : isBlockedByLock ? 0.85 : 1,
         }}
       />
-      {remoteTeacherSelection ? <TeacherSelectionOverlay selection={remoteTeacherSelection} /> : null}
+      {remoteSelections.map((selection) => (
+        <RemoteSelectionOverlay
+          key={`${selection.updatedBy}:${selection.updatedAt}`}
+          selection={selection}
+          rootRef={contentRef}
+        />
+      ))}
       {isSelected && canResizeThisBox ? <StableResizeHandle onPointerDown={onPointerDownResize} /> : null}
     </div>
   );
@@ -2244,6 +2288,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsTeacher = isTeacher(viewerContext);
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
+  const canPublishSelection = viewerCanManageWorkspace || viewerIsStudent;
   const viewerCanUseStudentTools = !readOnly && (viewerIsAdmin || viewerIsTeacher || viewerIsStudent);
   const effectiveReadOnly = readOnly || (viewerIsStudent && !studentEditingEnabled);
   const viewerCanEditSharedDocument = !effectiveReadOnly && (viewerCanManageWorkspace || viewerIsStudent);
@@ -2814,10 +2859,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const saveSingleItemDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveDocDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const teacherSelectionDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const selectionAwarenessDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const applyingRemoteScrollRef = useRef(false);
   const lastRemoteScrollRatioRef = useRef<number | null>(null);
-  const lastPublishedTeacherSelectionRef = useRef<string>('none');
+  const lastPublishedSelectionRef = useRef<string>('initial');
   const pendingItemsSaveRef = useRef<{
     items: WorkspaceItem[];
     pages: WorkspacePage[];
@@ -2855,7 +2900,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const dirtyItemTimestampsRef = useRef<Record<string, number>>({});
   const deletedItemTimestampsRef = useRef<Record<string, number>>({});
   const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
-  const [remoteTeacherSelection, setRemoteTeacherSelection] = useState<WorkspaceSelectionSnapshot | null>(null);
+  const [remoteSelections, setRemoteSelections] = useState<WorkspaceSelectionSnapshot[]>([]);
 
   useEffect(() => {
     if (assignedRoster.length === 0) {
@@ -2911,29 +2956,29 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     };
   }, []);
 
-  const publishTeacherSelection = useCallback((selection: WorkspaceSelectionSnapshot | null) => {
-    if (!viewerCanManageWorkspace) return;
+  const publishSelection = useCallback((selection: WorkspaceSelectionSnapshot | null) => {
+    if (!canPublishSelection) return;
     const nextSignature = buildSelectionSignature(selection);
-    if (lastPublishedTeacherSelectionRef.current === nextSignature) return;
-    lastPublishedTeacherSelectionRef.current = nextSignature;
-    if (teacherSelectionDebounce.current) {
-      clearTimeout(teacherSelectionDebounce.current);
+    if (lastPublishedSelectionRef.current === nextSignature) return;
+    lastPublishedSelectionRef.current = nextSignature;
+    if (selectionAwarenessDebounce.current) {
+      clearTimeout(selectionAwarenessDebounce.current);
     }
-    teacherSelectionDebounce.current = setTimeout(() => {
-      saveTeacherSelection(classId, selection).catch(() => {});
+    selectionAwarenessDebounce.current = setTimeout(() => {
+      saveParticipantSelection(classId, userId, selection).catch(() => {});
     }, selection ? 80 : 0);
-  }, [classId, viewerCanManageWorkspace]);
+  }, [canPublishSelection, classId, userId]);
 
-  const clearTeacherSelection = useCallback(() => {
-    publishTeacherSelection(null);
-  }, [publishTeacherSelection]);
+  const clearPublishedSelection = useCallback(() => {
+    publishSelection(null);
+  }, [publishSelection]);
 
-  const captureTeacherSelection = useCallback(() => {
-    if (!viewerCanManageWorkspace) return;
+  const captureSharedSelection = useCallback(() => {
+    if (!canPublishSelection) return;
 
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
-      clearTeacherSelection();
+      clearPublishedSelection();
       return;
     }
 
@@ -2954,37 +2999,28 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }
 
     if (!root) {
-      clearTeacherSelection();
+      clearPublishedSelection();
       return;
     }
 
-    const rootRect = root.getBoundingClientRect();
-    const rects = Array.from(range.getClientRects())
-      .filter((rect) => rect.width > 0 && rect.height > 0)
-      .slice(0, 24)
-      .map((rect) => ({
-        top: rect.top - rootRect.top + root.scrollTop,
-        left: rect.left - rootRect.left + root.scrollLeft,
-        width: rect.width,
-        height: rect.height,
-      }));
-
-    if (rects.length === 0) {
-      clearTeacherSelection();
+    const serializedRange = serializeDomRange(root, range);
+    if (!serializedRange) {
+      clearPublishedSelection();
       return;
     }
 
-    publishTeacherSelection({
+    publishSelection({
       surfaceMode,
+      pageId: activePageIdRef.current,
       target,
       itemId: target === 'item' ? itemId : undefined,
-      rects,
+      range: serializedRange,
       text: selection.toString().replace(/\s+/g, ' ').trim().slice(0, 160) || undefined,
       updatedAt: Date.now(),
       updatedBy: userId,
       updatedByName: userName,
     });
-  }, [clearTeacherSelection, publishTeacherSelection, surfaceMode, userId, userName, viewerCanManageWorkspace]);
+  }, [canPublishSelection, clearPublishedSelection, publishSelection, surfaceMode, userId, userName]);
 
   const pruneItemSyncGuards = useCallback((now = Date.now()) => {
     const maxAgeMs = ITEM_GUARD_MS * 4;
@@ -3258,15 +3294,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         syncActivePageDocRef(nextDocContent);
       }
 
-      if (viewerIsStudent) {
-        const nextTeacherSelection =
-          data?.teacherSelection && data.teacherSelection.surfaceMode === remoteSurfaceMode
-            ? data.teacherSelection
-            : null;
-        setRemoteTeacherSelection(nextTeacherSelection);
-      } else {
-        setRemoteTeacherSelection(null);
-      }
+      const nextRemoteSelections = Object.values(data?.participantSelections ?? {}).filter(
+        (selection) =>
+          selection.updatedBy !== userId &&
+          selection.surfaceMode === remoteSurfaceMode &&
+          selection.pageId === remoteCurrentPageId,
+      );
+      setRemoteSelections(nextRemoteSelections);
 
       if ((readOnly || viewerIsStudent) && data?.scrollRatio != null && overflowRef.current) {
         const el = overflowRef.current;
@@ -3298,27 +3332,37 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   ]);
 
   useEffect(() => {
-    if (!viewerCanManageWorkspace) return undefined;
+    if (!canPublishSelection) return undefined;
 
     const handleSelectionChange = () => {
       window.setTimeout(() => {
-        captureTeacherSelection();
+        captureSharedSelection();
       }, 0);
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
-      clearTeacherSelection();
+      if (selectionAwarenessDebounce.current) {
+        clearTimeout(selectionAwarenessDebounce.current);
+        selectionAwarenessDebounce.current = null;
+      }
+      lastPublishedSelectionRef.current = 'none';
+      saveParticipantSelection(classId, userId, null).catch(() => {});
     };
-  }, [captureTeacherSelection, clearTeacherSelection, viewerCanManageWorkspace]);
+  }, [canPublishSelection, captureSharedSelection, classId, userId]);
+
+  useEffect(() => {
+    clearPublishedSelection();
+    setRemoteSelections([]);
+  }, [activePageId, clearPublishedSelection, surfaceMode]);
 
   useEffect(() => () => {
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     if (saveSingleItemDebounce.current) clearTimeout(saveSingleItemDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
-    if (teacherSelectionDebounce.current) clearTimeout(teacherSelectionDebounce.current);
+    if (selectionAwarenessDebounce.current) clearTimeout(selectionAwarenessDebounce.current);
     pendingItemsSaveRef.current = null;
     pendingSingleItemSaveRef.current = {};
     pendingDocSaveRef.current = null;
@@ -3539,23 +3583,23 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const captureCurrentSelection = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) {
-      clearTeacherSelection();
+      clearPublishedSelection();
       return;
     }
     const range = selection.getRangeAt(0);
     const root = activeFloatingElRef.current ?? docRef.current;
     if (!root) {
-      clearTeacherSelection();
+      clearPublishedSelection();
       return;
     }
     const container = range.commonAncestorContainer;
     if (!root.contains(container)) {
-      clearTeacherSelection();
+      clearPublishedSelection();
       return;
     }
     savedSelectionRangeRef.current = range.cloneRange();
-    captureTeacherSelection();
-  }, [captureTeacherSelection, clearTeacherSelection]);
+    captureSharedSelection();
+  }, [captureSharedSelection, clearPublishedSelection]);
 
   const restoreSavedSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -4723,8 +4767,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (t === canvasRef.current || t === overflowRef.current || t === docRef.current) {
       if (selectedId) releaseItemLock(selectedId);
       setSelectedId(null);
-      if (viewerCanManageWorkspace) {
-        clearTeacherSelection();
+      if (canPublishSelection) {
+        clearPublishedSelection();
       }
     }
   };
@@ -6528,9 +6572,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   scrollbarColor: isSlidesMode ? 'rgba(148,163,184,0.45) transparent' : undefined,
                 }}
               />
-              {viewerIsStudent && remoteTeacherSelection?.target === 'document' ? (
-                <TeacherSelectionOverlay selection={remoteTeacherSelection} />
-              ) : null}
+              {remoteSelections
+                .filter((selection) => selection.target === 'document')
+                .map((selection) => (
+                  <RemoteSelectionOverlay
+                    key={`${selection.updatedBy}:${selection.updatedAt}`}
+                    selection={selection}
+                    rootRef={docRef}
+                  />
+                ))}
             </div>
           </div>
 
@@ -6572,13 +6622,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   activeFloatingElRef.current = null;
                   handleFloatingBlur(item.id);
                 }}
-                remoteTeacherSelection={
-                  viewerIsStudent &&
-                  remoteTeacherSelection?.target === 'item' &&
-                  remoteTeacherSelection.itemId === item.id
-                    ? remoteTeacherSelection
-                    : null
-                }
+                remoteSelections={remoteSelections.filter(
+                  (selection) => selection.target === 'item' && selection.itemId === item.id,
+                )}
               />
             ))}
           </div>

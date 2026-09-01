@@ -1,5 +1,6 @@
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
+import type { SerializedSelectionRange } from '../components/LiveClasses/Workspace/workspaceSelectionAwareness';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,18 +16,12 @@ export interface WorkspaceTextStyles {
 export type WorkspaceItemType = 'text' | 'image';
 export type WorkspaceSurfaceMode = 'document' | 'slides';
 
-export interface WorkspaceSelectionRect {
-  top: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
 export interface WorkspaceSelectionSnapshot {
   surfaceMode: WorkspaceSurfaceMode;
+  pageId: string;
   target: 'document' | 'item';
   itemId?: string;
-  rects: WorkspaceSelectionRect[];
+  range: SerializedSelectionRange;
   text?: string;
   updatedAt: number;
   updatedBy: string;
@@ -95,8 +90,8 @@ export interface WorkspaceDoc {
   docUpdatedBy?: string;
   /** Scroll position (0-1) for scroll-sync */
   scrollRatio?: number;
-  /** Teacher-only viewport selection that students mirror visually. */
-  teacherSelection?: WorkspaceSelectionSnapshot | null;
+  /** Ephemeral text selections keyed by participant UID. */
+  participantSelections?: Record<string, WorkspaceSelectionSnapshot>;
   /** All pages (Fase 2). Active page content is always mirrored in docContent/items for real-time sync. */
   pages?: WorkspacePage[];
   /** ID of the currently active page (Fase 2). */
@@ -244,17 +239,21 @@ export async function saveScrollRatio(
   });
 }
 
-/** Persist the teacher's current selection so students can follow the explanation. */
-export async function saveTeacherSelection(
+/** Publish or clear one participant's ephemeral text-selection awareness. */
+export async function saveParticipantSelection(
   classId: string,
-  teacherSelection: WorkspaceSelectionSnapshot | null,
+  participantId: string,
+  selection: WorkspaceSelectionSnapshot | null,
 ): Promise<void> {
   if (!db) return;
-  const { updateDoc, setDoc } = await import('firebase/firestore');
+  const { deleteField, updateDoc, setDoc } = await import('firebase/firestore');
+  const field = `participantSelections.${participantId}`;
   try {
-    await updateDoc(workspaceRef(classId), { teacherSelection });
+    await updateDoc(workspaceRef(classId), { [field]: selection ?? deleteField() });
   } catch {
-    await setDoc(workspaceRef(classId), { teacherSelection }, { merge: true });
+    if (selection) {
+      await setDoc(workspaceRef(classId), { participantSelections: { [participantId]: selection } }, { merge: true });
+    }
   }
 }
 
