@@ -28,8 +28,8 @@ import {
   saveWorkspace,
   saveWorkspaceItem,
   saveDocContent,
-  saveScrollRatio,
   saveParticipantSelection,
+  saveParticipantScroll,
   savePageSwitch,
   saveWorkspaceSurfaceTransition,
   saveWorkspacePresentationMode,
@@ -41,7 +41,18 @@ import {
   type WorkspaceSurfaceState,
   type WorkspaceSurfaceMode,
 } from '../../../services/workspaceService';
-import { restoreDomRange, serializeDomRange } from './workspaceSelectionAwareness';
+import {
+  isSerializedRangeCollapsed,
+  restoreDomRange,
+  restoreScrollTop,
+  serializeDomRange,
+  serializeScrollRatio,
+} from './workspaceSelectionAwareness';
+import {
+  parseEffectiveFontSize,
+  summarizeFormattingValues,
+  type MixedValue,
+} from './workspaceFormattingState';
 import { app } from '../../../services/firebase';
 import {
   saveWorkspaceAsMaterial,
@@ -1614,7 +1625,8 @@ const RemoteSelectionOverlay: React.FC<{
   rootRef: React.RefObject<HTMLElement | null>;
 }> = ({ selection, rootRef }) => {
   const [rects, setRects] = useState<Array<{ top: number; left: number; width: number; height: number }>>([]);
-  const label = selection.text?.trim();
+  const collapsed = isSerializedRangeCollapsed(selection.range);
+  const label = selection.text?.trim() || (collapsed ? selection.updatedByName : '');
 
   useEffect(() => {
     const root = rootRef.current;
@@ -1630,7 +1642,7 @@ const RemoteSelectionOverlay: React.FC<{
         return;
       }
       const rootRect = root.getBoundingClientRect();
-      setRects(Array.from(range.getClientRects())
+      const selectionRects = Array.from(range.getClientRects())
         .filter((rect) => rect.width > 0 && rect.height > 0)
         .slice(0, 24)
         .map((rect) => ({
@@ -1638,7 +1650,65 @@ const RemoteSelectionOverlay: React.FC<{
           left: rect.left - rootRect.left,
           width: rect.width,
           height: rect.height,
-        })));
+        }));
+      if (selectionRects.length > 0 || !range.collapsed) {
+        setRects(selectionRects);
+        return;
+      }
+
+      const probe = range.cloneRange();
+      const container = range.startContainer;
+      let caretAtEnd = false;
+      const firstTextNode = (node: Node): Node | null => {
+        if (node.nodeType === Node.TEXT_NODE && (node.nodeValue?.length ?? 0) > 0) return node;
+        for (const child of Array.from(node.childNodes)) {
+          const found = firstTextNode(child);
+          if (found) return found;
+        }
+        return null;
+      };
+      const lastTextNode = (node: Node): Node | null => {
+        if (node.nodeType === Node.TEXT_NODE && (node.nodeValue?.length ?? 0) > 0) return node;
+        for (const child of Array.from(node.childNodes).reverse()) {
+          const found = lastTextNode(child);
+          if (found) return found;
+        }
+        return null;
+      };
+      if (container.nodeType === Node.TEXT_NODE) {
+        const textLength = container.nodeValue?.length ?? 0;
+        if (range.startOffset < textLength) {
+          probe.setEnd(container, range.startOffset + 1);
+        } else if (range.startOffset > 0) {
+          probe.setStart(container, range.startOffset - 1);
+          caretAtEnd = true;
+        }
+      } else {
+        const nextText = container.childNodes[range.startOffset]
+          ? firstTextNode(container.childNodes[range.startOffset])
+          : null;
+        const previousText = range.startOffset > 0 && container.childNodes[range.startOffset - 1]
+          ? lastTextNode(container.childNodes[range.startOffset - 1])
+          : null;
+        const probeText = nextText ?? previousText;
+        if (probeText) {
+          const length = probeText.nodeValue?.length ?? 0;
+          caretAtEnd = !nextText;
+          probe.setStart(probeText, caretAtEnd ? Math.max(length - 1, 0) : 0);
+          probe.setEnd(probeText, caretAtEnd ? length : Math.min(1, length));
+        }
+      }
+      const probeRect = Array.from(probe.getClientRects()).find((rect) => rect.height > 0);
+      if (!probeRect) {
+        setRects([]);
+        return;
+      }
+      setRects([{
+        top: probeRect.top - rootRect.top,
+        left: (caretAtEnd ? probeRect.right : probeRect.left) - rootRect.left,
+        width: 2,
+        height: probeRect.height,
+      }]);
     };
 
     const frame = window.requestAnimationFrame(updateRects);
@@ -1662,7 +1732,9 @@ const RemoteSelectionOverlay: React.FC<{
       {rects.map((rect, index) => (
         <div
           key={`${rect.left}:${rect.top}:${rect.width}:${rect.height}:${index}`}
-          className="absolute rounded-[3px] border border-blue-600/80 bg-blue-500/45 shadow-[0_0_0_1px_rgba(37,99,235,0.18)]"
+          className={collapsed
+            ? 'absolute rounded-full bg-blue-600 shadow-[0_0_0_1px_rgba(255,255,255,0.75)]'
+            : 'absolute rounded-[3px] border border-blue-600/80 bg-blue-500/45 shadow-[0_0_0_1px_rgba(37,99,235,0.18)]'}
           style={{
             left: `${rect.left}px`,
             top: `${rect.top}px`,
@@ -2355,7 +2427,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [pendingImageUpload, setPendingImageUpload] = useState(false);
   const [pendingSlideImport, setPendingSlideImport] = useState(false);
   const [fontFamily, setFontFamily] = useState<string>(FONT_FAMILIES[0].v);
-  const [fontSize, setFontSize] = useState<number>(16);
+  const [fontSize, setFontSize] = useState<MixedValue<number>>(16);
+  const [boldState, setBoldState] = useState<MixedValue<boolean>>(false);
+  const [italicState, setItalicState] = useState<MixedValue<boolean>>(false);
+  const [underlineState, setUnderlineState] = useState<MixedValue<boolean>>(false);
   const [textColor, setTextColor] = useState<string>('#000000');
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
@@ -2854,6 +2929,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const canvasRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
   const savedSelectionRangeRef = useRef<Range | null>(null);
+  const savedSelectionRootRef = useRef<HTMLElement | null>(null);
+  const savedSelectionItemIdRef = useRef<string | null>(null);
   const dragRef = useRef<DragState | null>(null);
   const saveItemsDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveSingleItemDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2861,7 +2938,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectionAwarenessDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const applyingRemoteScrollRef = useRef(false);
-  const lastRemoteScrollRatioRef = useRef<number | null>(null);
+  const suppressScrollPublishUntilRef = useRef(0);
+  const lastRemoteScrollUpdateRef = useRef(0);
   const lastPublishedSelectionRef = useRef<string>('initial');
   const pendingItemsSaveRef = useRef<{
     items: WorkspaceItem[];
@@ -2977,7 +3055,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (!canPublishSelection) return;
 
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    if (!selection || selection.rangeCount === 0) {
       clearPublishedSelection();
       return;
     }
@@ -3289,7 +3367,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (!isLocallyTyping) {
         setDocHtml(nextDocContent);
         if (docRef.current && docRef.current.innerHTML !== nextDocContent) {
+          const localSelection = window.getSelection();
+          const localRange = localSelection?.rangeCount ? localSelection.getRangeAt(0) : null;
+          const serializedLocalRange = localRange
+            && docRef.current.contains(localRange.startContainer)
+            && docRef.current.contains(localRange.endContainer)
+              ? serializeDomRange(docRef.current, localRange)
+              : null;
           docRef.current.innerHTML = nextDocContent;
+          if (serializedLocalRange && localSelection) {
+            const restoredLocalRange = restoreDomRange(docRef.current, serializedLocalRange);
+            if (restoredLocalRange) {
+              localSelection.removeAllRanges();
+              localSelection.addRange(restoredLocalRange);
+              savedSelectionRangeRef.current = restoredLocalRange.cloneRange();
+            }
+          }
         }
         syncActivePageDocRef(nextDocContent);
       }
@@ -3302,17 +3395,26 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       );
       setRemoteSelections(nextRemoteSelections);
 
-      if ((readOnly || viewerIsStudent) && data?.scrollRatio != null && overflowRef.current) {
+      const newestRemoteScroll = Object.values(data?.participantScroll ?? {})
+        .filter((scroll) =>
+          scroll.updatedBy !== userId &&
+          scroll.surfaceMode === remoteSurfaceMode &&
+          scroll.pageId === remoteCurrentPageId,
+        )
+        .sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null;
+      if (
+        newestRemoteScroll &&
+        newestRemoteScroll.updatedAt > lastRemoteScrollUpdateRef.current &&
+        overflowRef.current
+      ) {
         const el = overflowRef.current;
-        const max = el.scrollHeight - el.clientHeight;
-        lastRemoteScrollRatioRef.current = data.scrollRatio;
-        if (max > 0) {
-          applyingRemoteScrollRef.current = true;
-          el.scrollTop = data.scrollRatio * max;
-          window.requestAnimationFrame(() => {
-            applyingRemoteScrollRef.current = false;
-          });
-        }
+        lastRemoteScrollUpdateRef.current = newestRemoteScroll.updatedAt;
+        applyingRemoteScrollRef.current = true;
+        suppressScrollPublishUntilRef.current = Date.now() + 250;
+        el.scrollTop = restoreScrollTop(newestRemoteScroll.ratio, el.scrollHeight, el.clientHeight);
+        window.requestAnimationFrame(() => {
+          applyingRemoteScrollRef.current = false;
+        });
       }
     });
     return unsub;
@@ -3349,13 +3451,19 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
       lastPublishedSelectionRef.current = 'none';
       saveParticipantSelection(classId, userId, null).catch(() => {});
+      saveParticipantScroll(classId, userId, null).catch(() => {});
     };
   }, [canPublishSelection, captureSharedSelection, classId, userId]);
 
   useEffect(() => {
     clearPublishedSelection();
     setRemoteSelections([]);
-  }, [activePageId, clearPublishedSelection, surfaceMode]);
+    savedSelectionRangeRef.current = null;
+    savedSelectionRootRef.current = null;
+    savedSelectionItemIdRef.current = null;
+    lastRemoteScrollUpdateRef.current = 0;
+    saveParticipantScroll(classId, userId, null).catch(() => {});
+  }, [activePageId, classId, clearPublishedSelection, surfaceMode, userId]);
 
   useEffect(() => () => {
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
@@ -3548,36 +3656,73 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const onScrollSync = () => {
     if (!overflowRef.current) return;
-    if (viewerIsStudent) {
-      if (applyingRemoteScrollRef.current) return;
-      const ratio = lastRemoteScrollRatioRef.current;
-      if (ratio == null) return;
-      const el = overflowRef.current;
-      const max = el.scrollHeight - el.clientHeight;
-      if (max <= 0) return;
-      applyingRemoteScrollRef.current = true;
-      el.scrollTop = ratio * max;
-      window.requestAnimationFrame(() => {
-        applyingRemoteScrollRef.current = false;
-      });
-      return;
-    }
-    if (effectiveReadOnly) return;
+    if (applyingRemoteScrollRef.current || Date.now() < suppressScrollPublishUntilRef.current) return;
     const el = overflowRef.current;
-    const max = el.scrollHeight - el.clientHeight;
-    if (max <= 0) return;
-    const ratio = el.scrollTop / max;
+    const ratio = serializeScrollRatio(el.scrollTop, el.scrollHeight, el.clientHeight);
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
     scrollDebounce.current = setTimeout(() => {
-      saveScrollRatio(classId, ratio).catch(() => {});
-    }, 300);
+      saveParticipantScroll(classId, userId, {
+        surfaceMode: surfaceModeRef.current,
+        pageId: activePageIdRef.current,
+        ratio,
+        updatedAt: Date.now(),
+        updatedBy: userId,
+      }).catch(() => {});
+    }, 160);
   };
 
-  const normalizeExecCommandFontSize = useCallback((root: HTMLElement | null, size: number) => {
+  const normalizeExecCommandFontSize = useCallback((
+    root: HTMLElement | null,
+    size: number,
+    preexisting: Set<Element>,
+  ) => {
     root?.querySelectorAll('font[size="7"]').forEach((el) => {
+      if (preexisting.has(el)) return;
       (el as HTMLElement).removeAttribute('size');
       (el as HTMLElement).style.fontSize = `${size}px`;
     });
+  }, []);
+
+  const updateToolbarFromRange = useCallback((root: HTMLElement, range: Range) => {
+    const elements: HTMLElement[] = [];
+    if (range.collapsed) {
+      const boundaryNode = range.startContainer.nodeType === Node.TEXT_NODE
+        ? range.startContainer.parentElement
+        : range.startContainer instanceof HTMLElement
+          ? range.startContainer
+          : range.startContainer.parentElement;
+      elements.push(boundaryNode ?? root);
+    } else {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let current = walker.nextNode();
+      while (current) {
+        try {
+          if ((current.nodeValue?.length ?? 0) > 0 && range.intersectsNode(current)) {
+            elements.push(current.parentElement ?? root);
+          }
+        } catch {
+          // The DOM may change between a remote snapshot and this measurement.
+        }
+        current = walker.nextNode();
+      }
+    }
+
+    const uniqueElements = Array.from(new Set(elements));
+    const styles = uniqueElements.map((element) => window.getComputedStyle(element));
+    const sizes = styles
+      .map((style) => parseEffectiveFontSize(style.fontSize))
+      .filter((value): value is number => value !== null);
+    const boldValues = styles.map((style) => {
+      const numericWeight = Number.parseInt(style.fontWeight, 10);
+      return style.fontWeight === 'bold' || (Number.isFinite(numericWeight) && numericWeight >= 600);
+    });
+    const italicValues = styles.map((style) => style.fontStyle === 'italic' || style.fontStyle === 'oblique');
+    const underlineValues = styles.map((style) => style.textDecorationLine.includes('underline'));
+
+    setFontSize(summarizeFormattingValues(sizes) ?? 16);
+    setBoldState(summarizeFormattingValues(boldValues) ?? false);
+    setItalicState(summarizeFormattingValues(italicValues) ?? false);
+    setUnderlineState(summarizeFormattingValues(underlineValues) ?? false);
   }, []);
 
   const captureCurrentSelection = useCallback(() => {
@@ -3598,33 +3743,46 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       return;
     }
     savedSelectionRangeRef.current = range.cloneRange();
+    savedSelectionRootRef.current = root;
+    savedSelectionItemIdRef.current = root === activeFloatingElRef.current
+      ? activeFloatingIdRef.current
+      : null;
+    updateToolbarFromRange(root, range);
     captureSharedSelection();
-  }, [captureSharedSelection, clearPublishedSelection]);
+  }, [captureSharedSelection, clearPublishedSelection, updateToolbarFromRange]);
+
+  useEffect(() => {
+    const updateFromNativeSelection = () => window.setTimeout(captureCurrentSelection, 0);
+    document.addEventListener('selectionchange', updateFromNativeSelection);
+    return () => document.removeEventListener('selectionchange', updateFromNativeSelection);
+  }, [captureCurrentSelection]);
 
   const restoreSavedSelection = useCallback(() => {
     const selection = window.getSelection();
     const savedRange = savedSelectionRangeRef.current;
-    const root = activeFloatingElRef.current ?? docRef.current;
-    if (!selection || !savedRange || !root) return;
+    const root = savedSelectionRootRef.current;
+    if (!selection || !savedRange || !root) return false;
     const startContainer = savedRange.startContainer;
     const endContainer = savedRange.endContainer;
-    if (!startContainer.isConnected || !endContainer.isConnected) return;
-    if (!root.contains(startContainer) || !root.contains(endContainer)) return;
+    if (!startContainer.isConnected || !endContainer.isConnected) return false;
+    if (!root.contains(startContainer) || !root.contains(endContainer)) return false;
     selection.removeAllRanges();
     selection.addRange(savedRange);
+    return true;
   }, []);
 
   const execFmt = useCallback((cmd: string, value?: string) => {
-    captureCurrentSelection();
-    if (activeFloatingIdRef.current && activeFloatingElRef.current) {
+    const savedRoot = savedSelectionRootRef.current;
+    const savedItemId = savedSelectionItemIdRef.current;
+    if (savedItemId && savedRoot) {
       // -- Floating block is the active editor -------------------------------
       // e.preventDefault() on toolbar buttons already prevented the button from
       // stealing focus, so the contentEditable still owns the selection.
       // Re-focus it (no-op if already focused) to be safe, then apply the command.
-      const floatingEl = activeFloatingElRef.current;
-      const floatingId = activeFloatingIdRef.current;
+      const floatingEl = savedRoot;
+      const floatingId = savedItemId;
       floatingEl.focus();
-      restoreSavedSelection();
+      if (!restoreSavedSelection()) return;
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       document.execCommand(cmd, false, value ?? undefined);
       // execCommand may or may not fire an `input` event; save explicitly.
@@ -3642,7 +3800,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     } else {
       // -- Main document editor ----------------------------------------------
       docRef.current?.focus();
-      restoreSavedSelection();
+      if (!restoreSavedSelection()) return;
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       document.execCommand(cmd, false, value ?? undefined);
       setTimeout(() => {
@@ -3652,17 +3810,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         scheduleDocSave(html);
       }, 50);
     }
+    window.setTimeout(captureCurrentSelection, 0);
   }, [captureCurrentSelection, restoreSavedSelection, scheduleDocSave, scheduleItemsSave, userId, userName]);
 
   const applyFont = (family: string) => { setFontFamily(family); execFmt('fontName', family); };
   const applySize = (size: number) => {
     setFontSize(size);
+    const formattingRoot = savedSelectionRootRef.current;
+    const formattingItemId = savedSelectionItemIdRef.current;
+    const preexisting = new Set(formattingRoot?.querySelectorAll('font[size="7"]') ?? []);
     execFmt('fontSize', '7');
     setTimeout(() => {
-      if (activeFloatingIdRef.current && activeFloatingElRef.current) {
-        const floatingId = activeFloatingIdRef.current;
-        const floatingEl = activeFloatingElRef.current;
-        normalizeExecCommandFontSize(floatingEl, size);
+      if (!formattingRoot?.isConnected) return;
+      if (formattingItemId) {
+        const floatingId = formattingItemId;
+        const floatingEl = formattingRoot;
+        normalizeExecCommandFontSize(floatingEl, size, preexisting);
         const html = floatingEl.innerHTML;
         setItems((prev) => {
           const next = prev.map((it) =>
@@ -3673,14 +3836,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           scheduleItemsSave(next, { dirtyItemIds: [floatingId] });
           return next;
         });
+        captureCurrentSelection();
         return;
       }
 
-      normalizeExecCommandFontSize(docRef.current, size);
-      if (!docRef.current) return;
-      const html = docRef.current.innerHTML;
+      if (formattingRoot !== docRef.current) return;
+      normalizeExecCommandFontSize(formattingRoot, size, preexisting);
+      const html = formattingRoot.innerHTML;
       setDocHtml(html);
       scheduleDocSave(html);
+      captureCurrentSelection();
     }, 20);
   };
   const markSelectionToRevealOnClick = useCallback(() => {
@@ -5930,8 +6095,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           <>
             <select
               value={fontFamily}
-              onMouseDownCapture={captureCurrentSelection}
-              onFocus={captureCurrentSelection}
+              onPointerDownCapture={captureCurrentSelection}
               onChange={(e) => applyFont(e.target.value)}
               disabled={toolbarDisabled}
               className="h-7 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
@@ -5943,22 +6107,22 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             </select>
 
             <select
-              value={fontSize}
-              onMouseDownCapture={captureCurrentSelection}
-              onFocus={captureCurrentSelection}
+              value={fontSize ?? 'mixed'}
+              onPointerDownCapture={captureCurrentSelection}
               onChange={(e) => applySize(Number(e.target.value))}
               disabled={toolbarDisabled}
               className="h-7 w-14 text-xs border border-slate-200 rounded px-1 bg-white text-slate-700 focus:outline-none disabled:opacity-50"
             >
+              <option value="mixed" disabled>Mixed</option>
               {FONT_SIZES.map((s) => (<option key={s} value={s}>{s}</option>))}
             </select>
 
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
             <div className="flex items-center">
-              <button onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm font-bold text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.bold}>B</button>
-              <button onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm italic text-slate-700 transition hover:bg-slate-100 disabled:opacity-40" title={wsl.italic}>I</button>
-              <button onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 text-sm text-slate-700 underline transition hover:bg-slate-100 disabled:opacity-40" title={wsl.underline}>U</button>
+              <button aria-pressed={boldState === true} onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm font-bold transition disabled:opacity-40 ${boldState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : boldState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.bold}>B</button>
+              <button aria-pressed={italicState === true} onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm italic transition disabled:opacity-40 ${italicState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : italicState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.italic}>I</button>
+              <button aria-pressed={underlineState === true} onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm underline transition disabled:opacity-40 ${underlineState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : underlineState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.underline}>U</button>
               {isSlidesMode && (
                 <button
                   onMouseDown={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
@@ -6564,7 +6728,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 }`}
                 style={{
                   fontFamily,
-                  fontSize: `${fontSize}px`,
+                  fontSize: '16px',
                   color: '#000000',
                   wordBreak: 'break-word',
                   backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',

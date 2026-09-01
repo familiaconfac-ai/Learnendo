@@ -5,6 +5,23 @@ export interface SerializedSelectionRange {
   endOffset: number;
 }
 
+export function isSerializedRangeCollapsed(range: SerializedSelectionRange): boolean {
+  return range.startOffset === range.endOffset
+    && range.startPath.length === range.endPath.length
+    && range.startPath.every((value, index) => value === range.endPath[index]);
+}
+
+export function serializeScrollRatio(scrollTop: number, scrollHeight: number, clientHeight: number): number {
+  const maximum = Math.max(scrollHeight - clientHeight, 0);
+  if (maximum === 0) return 0;
+  return Math.max(0, Math.min(1, scrollTop / maximum));
+}
+
+export function restoreScrollTop(ratio: number, scrollHeight: number, clientHeight: number): number {
+  const maximum = Math.max(scrollHeight - clientHeight, 0);
+  return Math.max(0, Math.min(1, ratio)) * maximum;
+}
+
 type TreeNode = {
   childNodes: ArrayLike<TreeNode>;
   parentNode: TreeNode | null;
@@ -65,7 +82,7 @@ export function restoreDomRange(root: Node, serialized: SerializedSelectionRange
     const range = document.createRange();
     range.setStart(startNode, clampBoundaryOffset(startNode as unknown as TreeNode, serialized.startOffset));
     range.setEnd(endNode, clampBoundaryOffset(endNode as unknown as TreeNode, serialized.endOffset));
-    return range.collapsed ? null : range;
+    return range;
   } catch {
     return null;
   }

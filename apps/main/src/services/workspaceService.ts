@@ -28,6 +28,14 @@ export interface WorkspaceSelectionSnapshot {
   updatedByName: string;
 }
 
+export interface WorkspaceScrollSnapshot {
+  surfaceMode: WorkspaceSurfaceMode;
+  pageId: string;
+  ratio: number;
+  updatedAt: number;
+  updatedBy: string;
+}
+
 /** A single page within a workspace material or live session. */
 export interface WorkspacePage {
   id: string;
@@ -92,6 +100,8 @@ export interface WorkspaceDoc {
   scrollRatio?: number;
   /** Ephemeral text selections keyed by participant UID. */
   participantSelections?: Record<string, WorkspaceSelectionSnapshot>;
+  /** Ephemeral logical scroll positions keyed by participant UID. */
+  participantScroll?: Record<string, WorkspaceScrollSnapshot>;
   /** All pages (Fase 2). Active page content is always mirrored in docContent/items for real-time sync. */
   pages?: WorkspacePage[];
   /** ID of the currently active page (Fase 2). */
@@ -253,6 +263,23 @@ export async function saveParticipantSelection(
   } catch {
     if (selection) {
       await setDoc(workspaceRef(classId), { participantSelections: { [participantId]: selection } }, { merge: true });
+    }
+  }
+}
+
+export async function saveParticipantScroll(
+  classId: string,
+  participantId: string,
+  scroll: WorkspaceScrollSnapshot | null,
+): Promise<void> {
+  if (!db) return;
+  const { deleteField, updateDoc, setDoc } = await import('firebase/firestore');
+  const field = `participantScroll.${participantId}`;
+  try {
+    await updateDoc(workspaceRef(classId), { [field]: scroll ?? deleteField() });
+  } catch {
+    if (scroll) {
+      await setDoc(workspaceRef(classId), { participantScroll: { [participantId]: scroll } }, { merge: true });
     }
   }
 }

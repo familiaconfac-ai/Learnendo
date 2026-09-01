@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import {
   clampBoundaryOffset,
   getNodePath,
+  isSerializedRangeCollapsed,
   resolveNodePath,
+  restoreScrollTop,
+  serializeScrollRatio,
 } from './workspaceSelectionAwareness.ts';
 
 type FakeNode = {
@@ -33,5 +36,12 @@ assert.equal(resolveNodePath(root, [1]), null, 'a selection is cleared when its 
 assert.equal(clampBoundaryOffset(word, 7), 7);
 assert.equal(clampBoundaryOffset(word, 99), 7, 'stale offsets cannot escape the text node');
 assert.equal(clampBoundaryOffset(paragraph, 99), 3, 'element offsets are bounded by child count');
+assert.equal(isSerializedRangeCollapsed({ startPath: [0, 0], startOffset: 3, endPath: [0, 0], endOffset: 3 }), true,
+  'recognizes a serialized caret');
+assert.equal(isSerializedRangeCollapsed({ startPath: [0, 0], startOffset: 0, endPath: [0, 0], endOffset: 7 }), false,
+  'keeps a non-collapsed selection');
+assert.equal(serializeScrollRatio(450, 1100, 200), 0.5, 'serializes logical scroll position');
+assert.equal(restoreScrollTop(0.5, 600, 100), 250, 'restores the same logical region in another viewport');
+assert.equal(restoreScrollTop(2, 600, 100), 500, 'clamps remote scroll ratios');
 
 console.log('workspace selection awareness tests passed');
