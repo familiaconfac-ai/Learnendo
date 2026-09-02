@@ -6,6 +6,7 @@ import {
 import { createGrammarFocusReport } from '../../services/grammarFocusReportService';
 
 interface GrammarFocusReportModalProps {
+  courseId: string;
   userId: string;
   userName: string | null;
   userEmail: string | null;
@@ -32,6 +33,7 @@ export const GrammarFocusReportModal: React.FC<GrammarFocusReportModalProps> = (
     try {
       const result = await createGrammarFocusReport({
         reporterRole: 'teacher',
+        courseId: props.courseId,
         userId: props.userId,
         userName: props.userName,
         userEmail: props.userEmail,

@@ -256,7 +256,7 @@ export function filterRows(rows: TeacherStudentRow[], query: string): TeacherStu
 }
 
 // ─────────────────────────────────────────────────────────────
-// Course → language code mapping (mirrors App.tsx COURSE_TO_LANGUAGE)
+// Course target language is resolved centrally by dashboardMetrics.
 // Used to match legacy Firestore docs that stored languageCode instead of courseId.
 // ─────────────────────────────────────────────────────────────
 // ─────────────────────────────────────────────────────────────

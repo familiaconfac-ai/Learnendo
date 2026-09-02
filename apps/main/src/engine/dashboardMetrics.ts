@@ -1,15 +1,9 @@
+import { COURSE_TARGET_LANGUAGE } from '../models/languageContext.ts';
 type DashboardProgress = Record<string, any>;
 export const DASHBOARD_TIME_ZONE = 'America/Sao_Paulo';
 export const LAST_PEDAGOGICAL_ACTIVITY_FIELD = 'lastPedagogicalActivityAt';
 
-const COURSE_LANGUAGE_CODES: Record<string, string> = {
-  english: 'en',
-  portuguese_foreigners: 'pt',
-  portuguese_native: 'pt',
-  spanish: 'es',
-  greek_koine: 'el',
-  hebrew_biblical: 'he',
-};
+const COURSE_LANGUAGE_CODES: Readonly<Record<string, string>> = COURSE_TARGET_LANGUAGE;
 
 /** The active course is authoritative when a legacy language field disagrees. */
 export function resolveDashboardLanguageCode(courseId: unknown, ...fallbacks: unknown[]): string | undefined {

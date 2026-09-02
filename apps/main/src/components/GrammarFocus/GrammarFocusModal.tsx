@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   canonicalGrammarFocusLessonId,
+  grammarFocusDocumentId,
   emptyGrammarFocusContent,
   GRAMMAR_FOCUS_LANGUAGES,
   GRAMMAR_FOCUS_MAX_BODY_LENGTH,
@@ -13,7 +14,7 @@ import {
   type GrammarFocusDocument,
   type GrammarFocusLanguage,
 } from '../../models/grammarFocus';
-import { saveGrammarFocus, subscribeGrammarFocus } from '../../services/grammarFocusService';
+import { saveGrammarFocus, subscribeGrammarFocus, subscribeLegacyGrammarFocus } from '../../services/grammarFocusService';
 import { getGrammarFocusActions } from '../../services/grammarFocusPermissions';
 import type { UserRole } from '../../services/userRoles';
 import { parseControlledMarkdown } from '../../utils/controlledMarkdown';
@@ -26,6 +27,7 @@ interface GrammarFocusLessonOption {
 }
 
 interface GrammarFocusModalProps {
+  courseId: string;
   workbookId: number;
   lessonId: string | null;
   lessonNumber: number | null;
@@ -45,8 +47,8 @@ interface GrammarFocusModalProps {
   onSelectLesson: (lessonNumber: number) => void;
   onOpenOverview: () => void;
   onClose: () => void;
-  onOpenBoard?: (content: { title: string; body: string; lessonNumber: number }) => Promise<void>;
-  onOpenSlides?: (content: { title: string; body: string; lessonNumber: number }) => Promise<void>;
+  onOpenBoard?: (content: { title: string; body: string; lessonNumber: number; grammarDocumentId: string }) => Promise<void>;
+  onOpenSlides?: (content: { title: string; body: string; lessonNumber: number; grammarDocumentId: string }) => Promise<void>;
   onOpenPractice?: (lessonId: string) => void;
   onContentViewed?: (title: string, lessonId: string) => void;
 }
@@ -127,7 +129,7 @@ const ControlledMarkdown: React.FC<{ body: string }> = ({ body }) => {
 };
 
 export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
-  workbookId, lessonId, lessonNumber, lessonTitle, lessons, workbookOptions = [], highlightedLessonId, onSelectWorkbook, activeLanguage, userRole, userId, userName, userEmail, workbookTitle,
+  courseId, workbookId, lessonId, lessonNumber, lessonTitle, lessons, workbookOptions = [], highlightedLessonId, onSelectWorkbook, activeLanguage, userRole, userId, userName, userEmail, workbookTitle,
   scrollRef, onScroll, onSelectLesson, onOpenOverview, onClose,
   onOpenBoard, onOpenSlides, onOpenPractice, onContentViewed,
 }) => {
@@ -135,6 +137,8 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   const canonicalLessonId = lessonId ? canonicalGrammarFocusLessonId(lessonId) : null;
   const copy = COPY[displayLanguage];
   const [documentValue, setDocumentValue] = useState<GrammarFocusDocument | null>(null);
+  const [legacyContent, setLegacyContent] = useState<GrammarFocusContent | null>(null);
+  const [legacyError, setLegacyError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -173,7 +177,8 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     }
     setLoading(true);
     setLoadError(false);
-    return subscribeGrammarFocus(workbookId, canonicalLessonId, (next) => {
+    setDocumentValue(null);
+    return subscribeGrammarFocus(courseId, workbookId, canonicalLessonId, (next) => {
       setDocumentValue(next);
       setDraft(next?.content ?? emptyGrammarFocusContent());
       setBaseline(next?.content ?? emptyGrammarFocusContent());
@@ -182,7 +187,16 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
       setLoadError(true);
       setLoading(false);
     });
-  }, [canonicalLessonId, isOverview, workbookId]);
+  }, [courseId, canonicalLessonId, isOverview, workbookId]);
+
+  useEffect(() => {
+    setLegacyContent(null);
+    setLegacyError(false);
+    if (isOverview || !canonicalLessonId) return;
+    return subscribeLegacyGrammarFocus(workbookId, canonicalLessonId, setLegacyContent, () => setLegacyError(true));
+  }, [courseId, workbookId, canonicalLessonId, isOverview]);
+  const legacyLocale = getLocalizedGrammarFocusContent(legacyContent, activeLanguage);
+  const legacyLabel = { en: 'Unassigned legacy notes (read only)', pt: 'Notas legadas sem curso confirmado (somente leitura)', es: 'Notas anteriores sin curso confirmado (solo lectura)' }[displayLanguage];
 
   const confirmDiscard = () => !dirty || window.confirm(copy.unsaved);
   const requestClose = () => {
@@ -231,7 +245,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     setSaving(true);
     setSaveError('');
     try {
-      const saved = await saveGrammarFocus({ workbookId, lessonId: canonicalLessonId, content: draft, updatedBy: userId });
+      const saved = await saveGrammarFocus({ courseId, workbookId, lessonId: canonicalLessonId, content: draft, updatedBy: userId });
       setDocumentValue(saved);
       setBaseline(draft);
       setEditing(false);
@@ -255,6 +269,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     try {
       await handler({
         title: activeLocale.title.trim() || lessonTitle || `Lesson ${lessonNumber}`,
+        grammarDocumentId: grammarFocusDocumentId(courseId, workbookId, lessonId!),
         body: activeLocale.body,
         lessonNumber,
       });
@@ -284,6 +299,15 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
         </header>
 
         <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
+          {!isOverview && !editing && (hasGrammarFocusContent(legacyContent) || legacyError) && (
+            <details className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+              <summary className="cursor-pointer font-bold">{legacyLabel}</summary>
+              {legacyError ? <p role="alert">{copy.loadError}</p> : <>
+                <p className="my-3 text-sm">{legacyLocale.title}</p>
+                <ControlledMarkdown body={legacyLocale.body} />
+              </>}
+            </details>
+          )}
           {savedMessage && <div role="status" className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{savedMessage}</div>}
           {isOverview ? (
             <div>
@@ -345,13 +369,14 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
       </section>
       {reporting && lessonId && userId && (
         <GrammarFocusReportModal
+          courseId={courseId}
           userId={userId}
           userName={userName}
           userEmail={userEmail}
           language={displayLanguage}
           workbookId={workbookId}
           workbookTitle={workbookTitle || `Workbook ${workbookId}`}
-          lessonId={canonicalLessonId || lessonId}
+          lessonId={lessonId}
           lessonTitle={lessonTitle || `Lesson ${lessonNumber}`}
           grammarFocusTitle={activeLocale.title.trim() || lessonTitle || `Lesson ${lessonNumber}`}
           onClose={() => setReporting(false)}

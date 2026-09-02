@@ -4,7 +4,7 @@ import type { Workbook } from '../types.ts';
 import {
   courseIdForReportLanguage, findReportedExercise, loadReportedExerciseFromPublishedSequence,
   normalizeReportedLocationId, normalizeReportedWorkbookId, PublishedSequenceSourceError,
-  reportedWorkbookCandidates, resolveWorkbookModule,
+  reportedWorkbookCandidates, resolveWorkbookModule, resolveReportedExerciseIdentity,
 } from './exerciseReportCurriculum.ts';
 
 const workbook = {
@@ -29,13 +29,39 @@ test('resolves a workbook export from a dynamic module', () => {
   assert.equal(resolveWorkbookModule({ default: workbook }, 1), workbook);
 });
 
-test('prefers the stable exercise IDs when the recorded workbook number is wrong', () => {
+test('tries the report workbook first and retains stable IDs for legacy lookup fallback', () => {
   assert.deepEqual(reportedWorkbookCandidates({
     workbookId: 2,
     lessonId: 'wb1_l1',
     dayId: 'wb1_l1_d6',
     exerciseId: 'wb1_l1_speak_number_12',
-  }, [1, 2, 3]), [1, 2, 3]);
+  }, [1, 2, 3]), [2, 1, 3]);
+});
+
+test('editor prioritizes report metadata for EN/ES/PT and shares a validated identity with publication', () => {
+  for (const language of ['en', 'es', 'pt']) {
+    const prefix = language === 'en' ? '' : `${language}_`;
+    const book = { ...structuredClone(workbook), id: `${prefix}wb1` };
+    book.lessons[0].id = `${prefix}wb1_l3`;
+    book.lessons[0].days[0].id = `${prefix}wb1_l3_d4`;
+    const location = { workbook: book, lesson: book.lessons[0], day: book.lessons[0].days[0], exerciseIndex: 0 };
+    assert.equal(resolveReportedExerciseIdentity(location, { workbookId: 2 }, language)?.workbookId, 2);
+    assert.deepEqual(resolveReportedExerciseIdentity(location, { workbookId: 1 }, language), {
+      workbookId: 1, exerciseId: 'first', lessonId: `${prefix}wb1_l3`, dayId: `${prefix}wb1_l3_d4`, language, exerciseType: 'writing',
+    });
+    assert.equal(resolveReportedExerciseIdentity(location, null, language)?.workbookId, 1);
+    book.id = 'unavailable';
+    assert.equal(resolveReportedExerciseIdentity(location, { workbookId: NaN }, language)?.workbookId, 1);
+    location.lesson.id = 'unavailable';
+    assert.equal(resolveReportedExerciseIdentity(location, null, language)?.workbookId, 1);
+    location.day.id = 'unavailable';
+    location.day.exercises[0].id = `${prefix}wb1_l3_d4_e1`;
+    assert.equal(resolveReportedExerciseIdentity(location, null, language)?.workbookId, 1);
+    location.day.exercises[0].id = 'unavailable';
+    assert.equal(resolveReportedExerciseIdentity(location, null, language), null);
+    assert.equal(resolveReportedExerciseIdentity({ ...location, exerciseIndex: 99 }, { workbookId: 1 }, language), null);
+    assert.deepEqual(reportedWorkbookCandidates({ workbookId: NaN, lessonId: `${prefix}wb1_l1`, dayId: '', exerciseId: '' }, [0, 101, 2]), [1, 2]);
+  }
 });
 
 test('normalizes workbook identifiers from number, numeric string and wb prefix', () => {

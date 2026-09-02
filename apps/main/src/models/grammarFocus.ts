@@ -1,4 +1,5 @@
-export const GRAMMAR_FOCUS_LANGUAGES = ['en', 'pt', 'es'] as const;
+import { BASE_LANGUAGES, getCourseTargetLanguage, type TargetLanguage } from './languageContext.ts';
+export const GRAMMAR_FOCUS_LANGUAGES = BASE_LANGUAGES;
 export type GrammarFocusLanguage = (typeof GRAMMAR_FOCUS_LANGUAGES)[number];
 
 export const GRAMMAR_FOCUS_MAX_TITLE_LENGTH = 160;
@@ -12,10 +13,12 @@ export interface GrammarFocusLocaleContent {
 export type GrammarFocusContent = Record<GrammarFocusLanguage, GrammarFocusLocaleContent>;
 
 export interface GrammarFocusDocument {
+  courseId: string;
+  targetLanguage: TargetLanguage;
   workbookId: number;
   lessonId: string;
   content: GrammarFocusContent;
-  schemaVersion: 1;
+  schemaVersion: 2;
   updatedAt?: unknown;
   updatedBy: string;
 }
@@ -33,12 +36,26 @@ export function canonicalGrammarFocusLessonId(lessonId: string): string {
     .replace(/[^A-Za-z0-9_-]/g, '_');
 }
 
-export function grammarFocusDocumentId(workbookId: number, lessonId: string): string {
+/** Only for locating unassigned legacy notes; never a curricular write destination. */
+export function legacyGrammarFocusDocumentId(workbookId: number, lessonId: string): string {
   const normalizedLessonId = canonicalGrammarFocusLessonId(lessonId);
   const workbookPrefix = `wb${workbookId}_`;
   return normalizedLessonId.toLowerCase().startsWith(workbookPrefix)
     ? normalizedLessonId
     : `${workbookPrefix}${normalizedLessonId}`;
+}
+
+export function grammarFocusDocumentId(courseId: string, workbookId: number, lessonId: string): string {
+  if (!getCourseTargetLanguage(courseId)) throw new Error('Unknown grammar course.');
+  if (!Number.isInteger(workbookId) || workbookId < 1 || workbookId > 100) throw new Error('Invalid workbook.');
+  if (!/^[A-Za-z0-9_-]{1,120}$/.test(lessonId)) throw new Error('Invalid lesson.');
+  return courseId + '__' + legacyGrammarFocusDocumentId(workbookId, lessonId);
+}
+
+export function matchesGrammarFocusIdentity(value: Record<string, unknown>, courseId: string, workbookId: number, lessonId: string): boolean {
+  return value.schemaVersion === 2 && value.courseId === courseId
+    && value.targetLanguage === getCourseTargetLanguage(courseId)
+    && value.workbookId === workbookId && value.lessonId === canonicalGrammarFocusLessonId(lessonId);
 }
 
 export function normalizeGrammarFocusLanguage(language?: string): GrammarFocusLanguage {

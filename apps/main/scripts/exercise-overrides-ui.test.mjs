@@ -57,7 +57,9 @@ test('admin workflow exposes manual search, drafts, preview, publishing, restore
   assert.match(editor, /Voltar ao exercício original/);
   assert.match(service, /alterado por outro administrador/);
   assert.match(service, /transaction\.set\(doc\(canonicalRef, 'versions'/);
-  assert.match(editor, /workbookId: normalizeExerciseWorkbookId\(location\.workbook\.id\)/);
+  assert.match(editor, /resolveReportedExerciseIdentity\(props\.location, props\.report, props\.language\)/);
+  assert.match(editor, /if \(!identity\) return/);
+  assert.match(editor, /<ResolvedExerciseEditorModal \{\.\.\.props\} identity=\{identity\}/);
   assert.match(editor, /Texto exibido ao aluno \(aparece no corpo do exercício\)/);
   assert.doesNotMatch(editor, /original\.type !== 'speaking'.*displayValue/);
   assert.match(editor, /Perguntas alternativas aceitas/);

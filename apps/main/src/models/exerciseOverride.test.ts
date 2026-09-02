@@ -110,7 +110,19 @@ test('normalizes curriculum workbook ids to the integer required by Firestore ru
   assert.equal(normalizeExerciseWorkbookId('wb1'), 1);
   assert.equal(normalizeExerciseWorkbookId('9'), 9);
   assert.equal(normalizeExerciseWorkbookId(3), 3);
-  assert.ok(Number.isNaN(normalizeExerciseWorkbookId('workbook-one')));
+  assert.equal(normalizeExerciseWorkbookId('workbook-one'), null);
+});
+
+test('parses multilingual workbook, lesson, day and exercise ids with the same bounds as publication', () => {
+  for (const prefix of ['', 'en_', 'es_', 'pt_', 'el_', 'he_']) {
+    for (const suffix of ['', '_l1', '_l1_d1', '_l1_d1_e9']) {
+      assert.equal(normalizeExerciseWorkbookId(` ${prefix}wb1${suffix} `), 1);
+    }
+  }
+  assert.equal(normalizeExerciseWorkbookId('ES_WB100_L2_D3'), 100);
+  for (const invalid of [undefined, null, true, '', 'invalid', 'xx_wb1', 'wb1.5', 'es_wb', 'prefix_es_wb1', 0, -1, 101, 1.5, NaN, Infinity, 'pt_wb101_l1', 'wb0']) {
+    assert.equal(normalizeExerciseWorkbookId(invalid), null, String(invalid));
+  }
 });
 
 test('rejects a runtime string workbook id before contacting Firestore', () => {

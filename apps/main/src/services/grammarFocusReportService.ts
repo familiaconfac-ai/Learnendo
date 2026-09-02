@@ -6,6 +6,7 @@ import {
 import type { UserRole } from './userRoles';
 
 export interface CreateGrammarFocusReportInput {
+  courseId: string;
   reporterRole: UserRole;
   userId: string;
   userName: string | null;
@@ -48,7 +49,7 @@ export async function createGrammarFocusReport(input: CreateGrammarFocusReportIn
     lessonTitle: input.lessonTitle,
     dayId: 'grammar-focus',
     dayNumber: null,
-    exerciseId: grammarFocusDocumentId(input.workbookId, input.lessonId),
+    exerciseId: grammarFocusDocumentId(input.courseId, input.workbookId, input.lessonId),
     exerciseType: 'grammar-focus',
     exerciseMode: null,
     sessionPhase: 'grammar-focus',

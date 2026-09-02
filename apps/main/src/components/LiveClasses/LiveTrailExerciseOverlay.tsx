@@ -1,3 +1,4 @@
+import type { GrammarNavigatorSurfaceContent } from '../GrammarFocus/GrammarNavigatorModal';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { PracticeSection } from '../UI';
@@ -1270,10 +1271,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
 
   const openLiveGrammarSurface = useCallback(async (
     mode: 'document' | 'slides',
-    content: { title: string; body: string; workbookId: number; lessonNumber: number },
+    content: GrammarNavigatorSurfaceContent,
   ) => {
     if (!canPresentGrammar) throw new Error('Only teachers can present Grammar Focus.');
     await appendGrammarFocusWorkspacePage({
+      courseId: content.courseId, workbookId: content.workbookId, lessonId: content.lessonId, grammarDocumentId: content.grammarDocumentId,
       classId,
       mode,
       title: content.title,

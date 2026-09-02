@@ -1,3 +1,5 @@
+import { COURSE_TARGET_LANGUAGE, PRIMARY_COURSE_FOR_TARGET, createLanguageContext, resolveLegacyBaseLanguage } from './models/languageContext';
+import { getPlacementBank } from './models/placementIdentity';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, setDoc, updateDoc, serverTimestamp, increment, onSnapshot } from 'firebase/firestore';
@@ -17,7 +19,7 @@ import { PronunciationTrainer } from './components/PronunciationTrainer/Pronunci
 import { TeacherDashboard } from './components/TeacherDashboard/TeacherDashboard';
 import { ProblemReportsDashboard } from './components/ProblemReports/ProblemReportsDashboard';
 import { GeneralProblemReportModal } from './components/ProblemReports/GeneralProblemReportModal';
-import { GrammarNavigatorModal, type GrammarNavigatorSelection } from './components/GrammarFocus/GrammarNavigatorModal';
+import { GrammarNavigatorModal, type GrammarNavigatorSelection, type GrammarNavigatorSurfaceContent } from './components/GrammarFocus/GrammarNavigatorModal';
 import { ConversionModal } from './components/AnonymousConversion/ConversionModal';
 import { LanguageSelector } from './components/LanguageSelector';
 import { NotificationSettings } from './components/NotificationSettings';
@@ -83,22 +85,9 @@ const DEFAULT_LANGUAGE = 'en' as LessonLanguageCode;
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
 
 // Map courses to language codes
-const COURSE_TO_LANGUAGE: Record<string, LessonLanguageCode> = {
-  'english': 'en',
-  'portuguese_foreigners': 'pt',
-  'portuguese_native': 'pt',
-  'spanish': 'es',
-  'greek_koine': 'el',
-  'hebrew_biblical': 'he',
-};
+const COURSE_TO_LANGUAGE: Readonly<Record<string, LessonLanguageCode>> = COURSE_TARGET_LANGUAGE;
 
-const LANGUAGE_TO_PRIMARY_COURSE: Record<LessonLanguageCode, string> = {
-  en: 'english',
-  pt: 'portuguese_foreigners',
-  es: 'spanish',
-  el: 'greek_koine',
-  he: 'hebrew_biblical',
-};
+const LANGUAGE_TO_PRIMARY_COURSE = PRIMARY_COURSE_FOR_TARGET;
 
 const COURSE_ID_ALIASES: Record<string, string> = {
   en: 'english',
@@ -338,20 +327,18 @@ const App: React.FC = () => {
     console.log('[App] Language changed:', newLanguage);
     setLanguageState(newLanguage);
     setScopedStorageItem(USER_LANGUAGE_STORAGE_KEY, newLanguage, true);
-    // Persist base UI language (non-biblical) so Greek/Hebrew courses can inherit it.
-    if (newLanguage !== 'el' && newLanguage !== 'he') {
-      setScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY, newLanguage, true);
-    }
+
   }, []);
 
-  // UI language: Greek and Hebrew are content-only languages; the app shell stays
-  // in the last modern language the user had (or English as fallback).
-  const uiLanguage: 'en' | 'pt' | 'es' = (() => {
-    if (language !== 'el' && language !== 'he') return language as 'en' | 'pt' | 'es';
-    const stored = getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY);
-    if (stored === 'pt' || stored === 'es') return stored;
-    return 'en';
-  })();
+  // Bootstrap the legacy preference once; course selection/restoration only changes the target.
+  const [baseLanguage] = useState(() => resolveLegacyBaseLanguage(
+    getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY), initialStoredLanguage,
+  ));
+  useEffect(() => {
+    setScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY, baseLanguage, true);
+  }, [baseLanguage]);
+  const languageContext = createLanguageContext({ targetLanguage: language, baseLanguage });
+  const { uiLanguage } = languageContext;
 
   // ===== APP STATE =====
   const [progress, setProgress] = useState<UserProgress>({
@@ -467,7 +454,7 @@ const App: React.FC = () => {
     hasPlacementReport ||
     localPlacementDone
   );
-  const shouldPromptPlacementTest = effectiveRole === 'student';
+  const shouldPromptPlacementTest = effectiveRole === 'student' && getPlacementBank(language) !== null;
   const showPlacementBanner = progressLoaded && shouldPromptPlacementTest && !hasPlacementResult &&
     !([SectionType.PLACEMENT_TEST, SectionType.PRACTICE, SectionType.LESSON, SectionType.LIVE_CLASSES] as string[]).includes(currentSection);
   const isInLiveRoom =
@@ -1685,12 +1672,13 @@ const App: React.FC = () => {
 
   const openGrammarInWorkspace = async (
     mode: 'document' | 'slides',
-    content: { title: string; body: string; lessonNumber: number },
+    content: GrammarNavigatorSurfaceContent,
   ) => {
     if (!activeOnlineClass?.id || !user?.uid || !canManageLiveClasses) {
       throw new Error('Open a live class before sending Grammar Focus to the classroom.');
     }
     await appendGrammarFocusWorkspacePage({
+      courseId: content.courseId, workbookId: content.workbookId, lessonId: content.lessonId, grammarDocumentId: content.grammarDocumentId,
       classId: activeOnlineClass.id,
       mode,
       title: content.title,
@@ -1713,12 +1701,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     if (!pendingGrammarPractice || !currentWorkbook) return;
-    if (Number(currentWorkbook.id) !== pendingGrammarPractice.workbookId) return;
+    if (pendingGrammarPractice.courseId !== (currentCourseId ?? DEFAULT_COURSE_ID)) {
+      setPendingGrammarPractice(null);
+      return;
+    }
+    if (currentWorkbookId !== pendingGrammarPractice.workbookId) return;
     const lesson = currentWorkbook.lessons?.find((item: Lesson) => item.id === pendingGrammarPractice.lessonId);
     if (!lesson) return;
     setPendingGrammarPractice(null);
     openLesson(lesson.id, { force: canManageLiveClasses, syncToSession: false });
-  }, [canManageLiveClasses, currentWorkbook, pendingGrammarPractice]);
+  }, [canManageLiveClasses, currentCourseId, currentWorkbookId, currentWorkbook, pendingGrammarPractice]);
 
   const handleGrammarModalScroll = useCallback(() => {
     const element = grammarModalScrollRef.current;
@@ -1978,6 +1970,7 @@ const App: React.FC = () => {
   }, []);
 
   const handlePlacementComplete = (result: PlacementTestCompletionPayload) => {
+    if (result.languageCode !== language || result.bankId !== getPlacementBank(language)?.bankId) return;
     const workbook = result.recommendedBook ?? 9;
     const updated = { ...progress, currentWorkbook: workbook, placementScore: result.percentage };
     setProgress(updated);
@@ -2844,7 +2837,7 @@ const App: React.FC = () => {
         );
       }
       case SectionType.PLACEMENT_TEST:
-        return <PlacementTest currentLanguage={language} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
+        return <PlacementTest key={language} currentLanguage={language} uiLanguage={uiLanguage} onComplete={handlePlacementComplete} onTriggerConversion={triggerConversion} />;
       case SectionType.WORKBOOK_PDF: {
         const workbookRegistry = COURSE_WORKBOOKS[currentCourseId ?? DEFAULT_COURSE_ID] ?? COURSE_WORKBOOKS[DEFAULT_COURSE_ID];
         const availableWorkbookIds = Object.keys(workbookRegistry)
@@ -3488,7 +3481,7 @@ const App: React.FC = () => {
             initialWorkbookId={grammarWorkbookId}
             currentLessonId={currentLessonId}
             currentLessonNumber={activeGrammarLessonNumber}
-            activeLanguage={language}
+            activeLanguage={baseLanguage}
             userRole={effectiveRole}
             user={user}
             scrollRef={grammarModalScrollRef}

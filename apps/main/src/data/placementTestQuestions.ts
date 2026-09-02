@@ -1,3 +1,4 @@
+import { getPlacementBank } from '../models/placementIdentity.ts';
 export type PlacementConfidence = 'sure' | 'maybe' | 'guess';
 
 export interface PlacementQuestion {
@@ -222,8 +223,8 @@ const BASE_PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = [
 
 export const PLACEMENT_TEST_QUESTIONS: PlacementQuestion[] = buildBalancedQuestions(BASE_PLACEMENT_TEST_QUESTIONS);
 
-export function getQuestionsForLanguage(_languageCode: string): PlacementQuestion[] {
-  return PLACEMENT_TEST_QUESTIONS;
+export function getQuestionsForLanguage(languageCode: string): PlacementQuestion[] {
+  return getPlacementBank(languageCode) ? PLACEMENT_TEST_QUESTIONS : [];
 }
 
 export function getPlacementOutcomeByBook(book: number): PlacementOutcome {

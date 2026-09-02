@@ -38,6 +38,7 @@ export interface WorkspaceScrollSnapshot {
 
 /** A single page within a workspace material or live session. */
 export interface WorkspacePage {
+  grammarSource?: { courseId: string; workbookId: number; lessonId: string; documentId: string };
   id: string;
   name: string;
   backgroundColor?: string;
@@ -179,6 +180,7 @@ export function normalizeWorkspacePages(
   raw: Partial<WorkspacePage>[],
 ): WorkspacePage[] {
   return (raw ?? []).map((p, i) => ({
+    ...(p.grammarSource ? { grammarSource: p.grammarSource } : {}),
     id: p.id ?? `pg_${i}_${Math.random().toString(36).slice(2, 6)}`,
     name: p.name ?? `Página ${i + 1}`,
     backgroundColor: p.backgroundColor ?? '#ffffff',

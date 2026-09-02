@@ -39,16 +39,30 @@ service cloud.firestore {
         && locale.body.matches('[^<>]*');
     }
 
-    function validGrammarFocus(data) {
+    function validGrammarCourseTarget(courseId, target) {
+      return (courseId == 'english' && target == 'en')
+        || (courseId in ['portuguese_foreigners', 'portuguese_native'] && target == 'pt')
+        || (courseId == 'spanish' && target == 'es')
+        || (courseId == 'greek_koine' && target == 'el')
+        || (courseId == 'hebrew_biblical' && target == 'he');
+    }
+
+    function validGrammarFocus(data, grammarFocusId) {
       return data.keys().hasOnly([
-          'workbookId', 'lessonId', 'content', 'schemaVersion', 'updatedAt', 'updatedBy'
+          'workbookId', 'lessonId', 'content', 'schemaVersion', 'updatedAt', 'updatedBy', 'courseId', 'targetLanguage'
         ])
         && data.workbookId is int
         && data.workbookId >= 1
         && data.workbookId <= 100
         && data.lessonId is string
         && data.lessonId.matches('[A-Za-z0-9_-]{1,120}')
-        && data.schemaVersion == 1
+        && ((data.schemaVersion == 1 && !grammarFocusId.matches('.*__.*')
+              && !data.keys().hasAny(['courseId', 'targetLanguage']))
+          || (data.schemaVersion == 2
+              && validGrammarCourseTarget(data.courseId, data.targetLanguage)
+              && grammarFocusId == data.courseId + '__' +
+                (data.lessonId.matches('wb' + string(data.workbookId) + '_.*')
+                  ? data.lessonId : 'wb' + string(data.workbookId) + '_' + data.lessonId)))
         && data.updatedAt is timestamp
         && data.updatedBy == request.auth.uid
         && data.content is map
@@ -544,7 +558,7 @@ service cloud.firestore {
 
     match /grammarFocus/{grammarFocusId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin() && validGrammarFocus(request.resource.data);
+      allow create, update: if isAdmin() && validGrammarFocus(request.resource.data, grammarFocusId);
       allow delete: if isAdmin();
     }
 

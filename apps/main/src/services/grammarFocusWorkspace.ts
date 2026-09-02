@@ -1,3 +1,4 @@
+import { grammarFocusDocumentId } from '../models/grammarFocus';
 import { doc, runTransaction } from 'firebase/firestore';
 import { parseControlledMarkdown } from '../utils/controlledMarkdown';
 import type { WorkspaceDoc, WorkspacePage, WorkspaceSurfaceMode, WorkspaceSurfaceState } from './workspaceService';
@@ -78,6 +79,10 @@ export function buildGrammarFocusSurfaceState(
 }
 
 export async function appendGrammarFocusWorkspacePage(input: {
+  courseId: string;
+  workbookId: number;
+  lessonId: string;
+  grammarDocumentId: string;
   classId: string;
   mode: WorkspaceSurfaceMode;
   title: string;
@@ -87,6 +92,7 @@ export async function appendGrammarFocusWorkspacePage(input: {
   userName: string;
 }): Promise<string> {
   if (!db || !input.classId || !input.userId) throw new Error('An active live class is required.');
+  if (input.grammarDocumentId !== grammarFocusDocumentId(input.courseId, input.workbookId, input.lessonId)) throw new Error('Grammar source identity mismatch.');
   const reference = doc(db, 'liveClasses', input.classId, 'shared', 'workspace');
   const pageId = `grammar_${input.lessonNumber}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   const html = renderGrammarFocusWorkspaceHtml(input.title, input.markdown);
@@ -100,6 +106,7 @@ export async function appendGrammarFocusWorkspacePage(input: {
       : null;
     const page: WorkspacePage = {
       id: pageId,
+      grammarSource: { courseId: input.courseId, workbookId: input.workbookId, lessonId: input.lessonId, documentId: input.grammarDocumentId },
       name: input.title.trim() || `Lesson ${input.lessonNumber} Grammar Focus`,
       backgroundColor: '#ffffff',
       docContent: html,

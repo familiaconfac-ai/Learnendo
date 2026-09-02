@@ -342,6 +342,7 @@ const TeacherStage: React.FC<{
     content: GrammarNavigatorSurfaceContent,
   ) => {
     await appendGrammarFocusWorkspacePage({
+      courseId: content.courseId, workbookId: content.workbookId, lessonId: content.lessonId, grammarDocumentId: content.grammarDocumentId,
       classId: liveClass.id,
       mode,
       title: content.title,

@@ -1,4 +1,6 @@
+// Legacy selection key stores the TARGET language; it is not a user/base preference.
 export const USER_LANGUAGE_STORAGE_KEY = 'learnendo_user_language';
+// Legacy local support/UI preference, bootstrapped once and never changed by course selection.
 export const BASE_UI_LANGUAGE_STORAGE_KEY = 'learnendo_base_ui_lang';
 export const TAB_APP_CONTEXT_STORAGE_KEY = 'learnendo_tab_app_context_v1';
 

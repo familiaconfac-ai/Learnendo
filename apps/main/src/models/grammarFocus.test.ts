@@ -5,6 +5,8 @@ import {
   emptyGrammarFocusContent,
   GRAMMAR_FOCUS_LANGUAGES,
   grammarFocusDocumentId,
+  legacyGrammarFocusDocumentId,
+  matchesGrammarFocusIdentity,
   getLocalizedGrammarFocusContent,
   hasGrammarFocusContent,
   mergeGrammarFocusContent,
@@ -14,12 +16,20 @@ import {
   validateGrammarFocusContent,
 } from './grammarFocus.ts';
 
-test('uses a stable workbook-qualified Firestore document id', () => {
-  assert.equal(grammarFocusDocumentId(1, 'wb1_l1'), 'wb1_l1');
-  assert.equal(grammarFocusDocumentId(2, 'lesson_1'), 'wb2_lesson_1');
-  assert.equal(grammarFocusDocumentId(1, 'pt_wb1_l1'), 'wb1_l1');
-  assert.equal(grammarFocusDocumentId(1, 'es_wb1_l1'), 'wb1_l1');
-  assert.equal(canonicalGrammarFocusLessonId('el_wb1_l1'), 'wb1_l1');
+test('course-scoped identities never share the legacy document', () => {
+  const courses = ['english', 'spanish', 'portuguese_foreigners', 'portuguese_native', 'greek_koine', 'hebrew_biblical'];
+  const ids = courses.map(course => grammarFocusDocumentId(course, 1, 'wb1_l1'));
+  assert.equal(new Set(ids).size, courses.length);
+  assert.equal(grammarFocusDocumentId('spanish', 1, 'es_wb1_l1'), 'spanish__wb1_l1');
+  assert.equal(grammarFocusDocumentId('english', 2, 'lesson_1'), 'english__wb2_lesson_1');
+  assert.equal(legacyGrammarFocusDocumentId(1, 'es_wb1_l1'), 'wb1_l1');
+  assert.ok(ids.every(id => id !== legacyGrammarFocusDocumentId(1, 'wb1_l1')));
+  assert.throws(() => grammarFocusDocumentId('unknown', 1, 'wb1_l1'));
+  assert.throws(() => grammarFocusDocumentId('english', NaN, 'wb1_l1'));
+  const doc = { schemaVersion: 2, courseId: 'spanish', targetLanguage: 'es', workbookId: 1, lessonId: 'wb1_l1' };
+  assert.ok(matchesGrammarFocusIdentity(doc, 'spanish', 1, 'es_wb1_l1'));
+  assert.equal(matchesGrammarFocusIdentity(doc, 'english', 1, 'wb1_l1'), false);
+  assert.equal(matchesGrammarFocusIdentity({ ...doc, schemaVersion: 1 }, 'spanish', 1, 'wb1_l1'), false);
 });
 
 test('normalizes the three supported locales and active language', () => {

@@ -11,11 +11,11 @@ const reportModal = await readFile(new URL('../src/components/GrammarFocus/Gramm
 const teacherRoom = await readFile(new URL('../src/components/LiveClasses/Teacher/TeacherRoomView.tsx', import.meta.url), 'utf8');
 
 test('students receive the active locale without administrative controls', () => {
-  assert.match(app, /activeLanguage=\{language\}/);
+  assert.match(app, /activeLanguage=\{baseLanguage\}/);
   assert.match(component, /normalizeGrammarFocusLanguage\(activeLanguage\)/);
   assert.match(component, /getLocalizedGrammarFocusContent\(documentValue\?\.content, activeLanguage\)/);
-  assert.match(component, /\[canonicalLessonId, isOverview, workbookId\]/,
-    'changing the global language must select another locale without resubscribing to a language-prefixed document');
+  assert.match(component, /\[courseId, canonicalLessonId, isOverview, workbookId\]/,
+    'support locale is independent; curriculum changes resubscribe to their own document');
   assert.match(component, /getGrammarFocusActions\(userRole\)/);
   assert.match(component, /\{actions\.edit && <button[^>]+onClick=\{beginEditing\}/);
   assert.match(component, /hasActiveContent \? <div/);

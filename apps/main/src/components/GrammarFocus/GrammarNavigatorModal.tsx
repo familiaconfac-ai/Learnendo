@@ -9,6 +9,7 @@ import type { Workbook } from '../../types';
 import { GrammarFocusModal } from './GrammarFocusModal';
 
 export interface GrammarNavigatorSelection {
+  courseId: string;
   workbookId: number;
   workbookTitle: string;
   lessonId: string;
@@ -17,6 +18,7 @@ export interface GrammarNavigatorSelection {
 }
 
 export interface GrammarNavigatorSurfaceContent extends GrammarNavigatorSelection {
+  grammarDocumentId: string;
   title: string;
   body: string;
 }
@@ -70,16 +72,18 @@ export const GrammarNavigatorModal: React.FC<GrammarNavigatorModalProps> = ({
     ? initialWorkbookId
     : workbookOptions[0]?.id ?? 1;
   const [workbookId, setWorkbookId] = useState(allowedInitialWorkbook);
-  const [workbook, setWorkbook] = useState<Workbook | null>(null);
+  const [loaded, setLoaded] = useState<{ scope: string; workbook: Workbook | null } | null>(null);
+  const scope = courseId + ':' + workbookId;
+  const workbook = loaded?.scope === scope ? loaded.workbook : null;
   const [selectedLessonNumber, setSelectedLessonNumber] = useState<number | null>(null);
 
   useEffect(() => {
     let active = true;
-    setWorkbook(null);
+    setLoaded(null);
     loadWorkbookForWhiteboard(courseId, workbookId).then((next) => {
-      if (active) setWorkbook(next);
+      if (active) setLoaded({ scope: courseId + ":" + workbookId, workbook: next });
     }).catch(() => {
-      if (active) setWorkbook(null);
+      if (active) setLoaded(null);
     });
     return () => { active = false; };
   }, [courseId, workbookId]);
@@ -122,6 +126,7 @@ export const GrammarNavigatorModal: React.FC<GrammarNavigatorModalProps> = ({
     onSelectionChange?.({ workbookId, lessonNumber: null });
   };
   const selection = selectedLesson ? {
+    courseId,
     workbookId,
     workbookTitle: workbook?.title || `Workbook ${workbookId}`,
     lessonId: selectedLesson.id,
@@ -131,6 +136,8 @@ export const GrammarNavigatorModal: React.FC<GrammarNavigatorModalProps> = ({
 
   return (
     <GrammarFocusModal
+      key={`${courseId}:${workbookId}:${selectedLesson?.id ?? "overview"}`}
+      courseId={courseId}
       workbookId={workbookId}
       lessonId={selectedLesson?.id ?? null}
       lessonNumber={selectedLessonNumber}

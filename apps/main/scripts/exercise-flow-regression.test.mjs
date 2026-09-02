@@ -12,7 +12,7 @@ const lesson4Source = await readFile(new URL('../src/data/workbook1/lesson4.ts',
 const lesson8Source = await readFile(new URL('../src/data/workbook1/lesson8.ts', import.meta.url), 'utf8');
 
 test('resolves the prompt audio before deriving speaking state', () => {
-  const declaration = uiSource.indexOf('const promptAudioText = resolvePromptAudioText(item);');
+  const declaration = uiSource.indexOf('const promptAudioText = resolvePromptAudioText(item, exerciseSpeechLocale);');
   const firstUse = uiSource.indexOf('const isQuestionDrivenSpeaking =');
 
   assert.notEqual(declaration, -1, 'promptAudioText declaration was not found');
@@ -111,7 +111,7 @@ test('Review Mode is visibly identified only while the mastery phase is review',
 
 test('every exercise instruction has its own audio control', () => {
   assert.match(uiSource, /aria-label="Play instruction"/);
-  assert.match(uiSource, /speak\(instructionAudioText, 1, promptVoice\)/);
+  assert.match(uiSource, /speak\(instructionAudioText, 1, promptVoice, 'interaction', \{\}, 'instruction'\)/);
 });
 
 test('mobile feedback keeps contextual help inside the footer instead of floating over Continue', () => {

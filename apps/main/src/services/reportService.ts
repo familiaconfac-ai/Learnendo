@@ -1,3 +1,4 @@
+import { COURSE_TARGET_LANGUAGE } from '../models/languageContext';
 /**
  * reportService.ts
  *
@@ -27,15 +28,7 @@ const COURSE_LABELS: Record<string, string> = {
   'hebrew_biblical':       'Hebrew (Biblical)',
 };
 
-const COURSE_LANGUAGE_CODES: Record<string, string> = {
-  english: 'en',
-  'english-native': 'en',
-  spanish: 'es',
-  portuguese_foreigners: 'pt',
-  portuguese_native: 'pt',
-  greek_koine: 'el',
-  hebrew_biblical: 'he',
-};
+const COURSE_LANGUAGE_CODES: Readonly<Record<string, string>> = { ...COURSE_TARGET_LANGUAGE, 'english-native': COURSE_TARGET_LANGUAGE.english };
 
 // ─────────────────────────────────────────────────────────────
 // Layout constants

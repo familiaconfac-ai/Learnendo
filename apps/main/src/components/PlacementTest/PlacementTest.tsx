@@ -1,3 +1,5 @@
+import { requirePlacementIdentity, getPlacementBank } from '../../models/placementIdentity';
+import type { UiLanguage } from '../../models/languageContext';
 import React, { useMemo, useState } from 'react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import {
@@ -15,17 +17,20 @@ import { LessonLanguageCode, PlacementAnswerItem } from '../../types';
 import { auth, db, ensureAnonAuth } from '../../services/firebase';
 import { speak } from '../../services/ttsService';
 
-type PlacementUILanguage = 'en' | 'pt' | 'es';
+type PlacementUILanguage = UiLanguage;
 type PlacementStage = 'intro' | 'form' | 'test' | 'final';
 type PlacementConfidenceOption = PlacementConfidence;
 
 interface PlacementTestProps {
   currentLanguage?: LessonLanguageCode;
+  uiLanguage?: UiLanguage;
   onComplete: (result: PlacementTestCompletionPayload) => void;
   onTriggerConversion?: (reason?: string) => void;
 }
 
 export interface PlacementTestCompletionPayload {
+  languageCode: 'en';
+  bankId: string;
   percentage: number;
   recommendedBook: number | null;
   recommendedEntryPoint: string;
@@ -242,21 +247,25 @@ Puntuacion por libro: ${blockScores}`,
   },
 } as const;
 
-function resolveUiLanguage(language: LessonLanguageCode): PlacementUILanguage {
-  if (language === 'pt' || language === 'es') return language;
-  return 'en';
-}
-
 function getQuestionNumberInsideBook(question: PlacementQuestion, questions: PlacementQuestion[]): number {
   return questions.filter((item) => item.book === question.book).findIndex((item) => item.id === question.id) + 1;
 }
 
-export const PlacementTest: React.FC<PlacementTestProps> = ({
+export const PlacementTest: React.FC<PlacementTestProps> = (props) => {
+  if (!getPlacementBank(props.currentLanguage ?? 'en')) {
+    const copy = { en: 'Placement is currently available only for English.', pt: 'O nivelamento está disponível apenas para inglês no momento.', es: 'La prueba de nivel está disponible solo para inglés por ahora.' };
+    return <div role="status" className="p-8 text-center">{copy[props.uiLanguage ?? 'en']}</div>;
+  }
+  return <EnglishPlacementTest {...props} key={props.currentLanguage ?? 'en'} />;
+};
+
+const EnglishPlacementTest: React.FC<PlacementTestProps> = ({
   currentLanguage = 'en',
+  uiLanguage = 'en',
   onComplete,
   onTriggerConversion,
 }) => {
-  const uiLanguage = resolveUiLanguage(currentLanguage);
+  const bank = requirePlacementIdentity(currentLanguage);
   const ui = UI[uiLanguage];
   const questions = useMemo(() => getQuestionsForLanguage(currentLanguage), [currentLanguage]);
 
@@ -354,6 +363,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({
     evaluation: PlacementEvaluation,
     completedAllBooks: boolean,
   ) => {
+    const identity = requirePlacementIdentity(currentLanguage);
     const answerBreakdown = buildAnswerBreakdown(confirmedResponses, questions, ui.confidence);
     let attemptNumber = 1;
 
@@ -371,7 +381,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({
       try {
         const resolvedProgressRef = doc(db, 'progress', authUser.uid);
         const progressSnap = await getDoc(resolvedProgressRef);
-        const existingPlacement = progressSnap.data()?.tests?.placements?.[currentLanguage]
+        const existingPlacement = progressSnap.data()?.tests?.placements?.[bank.languageCode]
           ?? progressSnap.data()?.tests?.placement;
         attemptNumber = typeof existingPlacement?.attemptNumber === 'number'
           ? existingPlacement.attemptNumber + 1
@@ -381,7 +391,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({
           score: evaluation.percentage,
           level: evaluation.level,
           date: new Date().toISOString(),
-          languageCode: currentLanguage,
+          ...identity,
           correctAnswers: evaluation.correctAnswers,
           totalQuestions: evaluation.totalQuestions,
           fullName: studentName.trim(),
@@ -400,7 +410,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({
         await setDoc(resolvedProgressRef, {
           tests: {
             placement: placementRecord,
-            placements: { [currentLanguage]: placementRecord },
+            placements: { [identity.languageCode]: placementRecord },
           },
         }, { merge: true });
 
@@ -605,7 +615,7 @@ export const PlacementTest: React.FC<PlacementTestProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => onComplete({
+                  onClick={() => onComplete({ languageCode: bank.languageCode, bankId: bank.bankId,
                     percentage: finalResult.percentage,
                     recommendedBook: finalResult.recommendedBook,
                     recommendedEntryPoint: finalResult.recommendedEntryPoint,

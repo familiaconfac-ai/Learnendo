@@ -1,3 +1,4 @@
+import type { TargetLanguage } from './models/languageContext';
 import type { SavedBattleTemplate } from './components/LiveClasses/Battle/battleTypes';
 
 export interface Course {
@@ -553,7 +554,8 @@ export interface OldUserProgress {
   sentToTeacher?: boolean;
 }
 
-export type LessonLanguageCode = 'en' | 'pt' | 'es' | 'el' | 'he';
+/** Legacy name for the target language of curriculum content. */
+export type LessonLanguageCode = TargetLanguage;
 
 export interface LessonLanguageContent {
   title: string;
