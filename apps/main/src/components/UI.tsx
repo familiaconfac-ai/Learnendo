@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useLayoutEffect } from 'react';
+import { createExerciseAudioRecorder, type ExerciseRuntimeReader, type ExerciseRuntimeAudio } from '../models/exerciseRuntimeSnapshot';
 import { speak as ttsSpeakImpl, exerciseVoices, getVoiceCount, onVoicesReady, type TtsPlaybackHandle } from '../services/ttsService';
 import { WORKBOOK_NUMBER } from '../constants';
 import { PracticeItem, AnswerLog, OldUserProgress, PracticeModuleType } from '../types';
@@ -472,6 +473,7 @@ export const PracticeSection: React.FC<{
   dayNumber?: number;
   totalDays?: number;
   currentLanguage?: string;
+  runtimeReaderRef?: React.MutableRefObject<ExerciseRuntimeReader>;
   onAttempt?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
     onContinue?: (payload: { answer: string; isCorrect: boolean; attemptNumber: number }) => void;
     actionLocked?: boolean;
@@ -506,6 +508,7 @@ export const PracticeSection: React.FC<{
     dayNumber,
     totalDays,
     currentLanguage = 'en',
+    runtimeReaderRef,
     onAttempt,
       onContinue,
       actionLocked = false,
@@ -533,7 +536,9 @@ export const PracticeSection: React.FC<{
     const [localWrongFooterLocked, setLocalWrongFooterLocked] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const PL = getPL(copyLanguage || currentLanguage || uiLanguage);
+    const copyLocale = (copyLanguage || currentLanguage || uiLanguage || 'en').toLowerCase().split('-')[0];
+    const feedbackLanguage = copyLocale in PRACTICE_LABELS ? copyLocale : 'en';
+    const PL = getPL(feedbackLanguage);
     const exerciseSpeechLocale = resolveExerciseSpeechLocale(item, currentLanguage, uiLanguage);
     const instructionAudioText = item.instruction.trim();
     // Deterministic voice pair for this exercise: odd #→ female prompt, even #→ male prompt
@@ -560,12 +565,16 @@ export const PracticeSection: React.FC<{
 
     const translation = item.translation ? fixPortugueseSupportText(item.translation) : '';
     const displayCorrectValue = fixPortugueseSupportText(item.correctValue);
-    const promptAudioText = resolvePromptAudioText(item);
+    const promptAudioText = resolvePromptAudioText(item, exerciseSpeechLocale);
     const exerciseActionLocked = actionLocked || (isDictationWriting && audioStatus === 'loading');
     const speakingMode = item.type === 'speaking' ? classifySpeakingExercise(item) : null;
     const isShadowing = speakingMode === 'shadowing';
     const isRepeat = speakingMode === 'repeat';
     const isModeledSpeaking = isShadowing || isRepeat;
+    const acceptedAnswers = requiresExactListeningWriting
+      ? [item.correctValue, ...(item.acceptedAnswers ?? [])]
+      : getAcceptedAnswers(item);
+    const acceptedSpeakingTargets = isModeledSpeaking ? speakingTargets(item) : acceptedAnswers;
     const isInformalEnglish = item.pedagogicalTopic === 'informal-aint-recognition';
     const informalDialogueTitle = isInformalEnglish && item.displayValue?.startsWith('Dialogue 18')
       ? item.displayValue.split('\n')[0]
@@ -580,7 +589,7 @@ export const PracticeSection: React.FC<{
     const isFillInBlank = isFillInBlankExercise(item);
     const isFillInBlankWriting = item.type === 'writing' && isFillInBlank;
     const fullSentenceAfterAnswer = item.fullSentenceAfterAnswer?.trim()
-      || (isFillInBlank ? resolveFullSentenceAfterAnswer(item) : '');
+      || (isFillInBlank ? resolveFullSentenceAfterAnswer(item, exerciseSpeechLocale) : '');
     const activeAudioText =
       showFooter && feedback === 'correct' && fullSentenceAfterAnswer
         ? fullSentenceAfterAnswer
@@ -619,6 +628,21 @@ export const PracticeSection: React.FC<{
     const lastAttemptMetaRef = useRef<{ answer: string; isCorrect: boolean; attemptNumber: number } | null>(null);
     const previousFeedbackActionLockedRef = useRef(feedbackActionLocked);
     const previousRetryReleaseVersionRef = useRef(retryReleaseVersion);
+    const runtimeShellRef = useRef<HTMLDivElement>(null);
+    const audioRecorder = useMemo(() => createExerciseAudioRecorder(), [item.id]);
+    useLayoutEffect(() => {
+      if (!runtimeReaderRef) return;
+      const read = () => ({
+        exerciseId: item.id,
+        ...audioRecorder.snapshot(),
+        renderedText: runtimeShellRef.current?.innerText ?? null,
+        displayedOptions: [...shuffledOptions],
+        resolvedAcceptedAnswers: [...(item.type === 'speaking' ? acceptedSpeakingTargets : acceptedAnswers)],
+        studentAnswer: selectedOption ?? (userInput || null),
+      });
+      runtimeReaderRef.current = read;
+      return () => { if (runtimeReaderRef.current === read) runtimeReaderRef.current = null; };
+    });
 
     useEffect(() => {
       // Cancel any ongoing STT from the previous exercise so its callbacks can't
@@ -768,18 +792,21 @@ export const PracticeSection: React.FC<{
       voicePref?: 'male' | 'female',
       origin = 'interaction',
       lifecycle: { onStart?: () => void; onEnd?: () => void; onError?: (errorCode?: string) => void } = {},
+      role: ExerciseRuntimeAudio['role'] = 'feedback',
     ) {
       const vc = getVoiceCount();
+      const speechLocale = role === 'feedback' ? resolveExerciseSpeechLocale(null, feedbackLanguage) : exerciseSpeechLocale;
       console.log(
-        `[EXERCISE SPEAK] ex#${currentIdx} lang=${exerciseSpeechLocale}` +
+        `[EXERCISE SPEAK] ex#${currentIdx} lang=${speechLocale}` +
         ` | voicePair=(prompt:${promptVoice}, feedback:${feedbackVoice})` +
         ` | requested=${voicePref ?? 'any'} | rate=${rate}` +
         ` | voiceCount=${vc} | origin=${origin}` +
         ` | text="${text.slice(0, 50)}${text.length > 50 ? '\u2026' : ''}"`
       );
-      return ttsSpeakImpl(text, exerciseSpeechLocale, {
+      return ttsSpeakImpl(text, speechLocale, {
         rate, voicePreference: voicePref, ...lifecycle,
         diagnostics: { exerciseType: item.assessmentMode ?? item.type, speechLanguage: item.speechLanguage },
+        onSynthesis: (audio) => audioRecorder.record({ ...audio, role, origin }),
       });
     }
 
@@ -791,7 +818,7 @@ export const PracticeSection: React.FC<{
         onStart: () => { setAudioStatus('ready'); if (isRepeat) setRepeatPhase((state) => reduceRepeatPlayback(state, 'playStarted')); },
         onEnd: () => { setAudioStatus('ready'); if (isRepeat) setRepeatPhase((state) => reduceRepeatPlayback(state, 'playCompleted')); },
         onError: () => { setAudioStatus('error'); if (isRepeat) setRepeatPhase((state) => reduceRepeatPlayback(state, 'playFailed')); },
-      });
+      }, 'prompt');
       promptPlaybackRef.current = playback;
       void playback.promise.then((result) => {
         if (promptPlaybackRef.current !== playback) return;
@@ -856,10 +883,6 @@ export const PracticeSection: React.FC<{
       }
       // Exact Final Test transcription must use only authored targets. General
       // variant expansion can introduce contractions or paraphrases not heard.
-      const acceptedAnswers = requiresExactListeningWriting
-        ? [item.correctValue, ...(item.acceptedAnswers ?? [])]
-        : getAcceptedAnswers(item);
-      const acceptedSpeakingTargets = isModeledSpeaking ? speakingTargets(item) : acceptedAnswers;
       const nextAttemptNumber = (lastAttemptMetaRef.current?.attemptNumber ?? 0) + 1;
       const reportAttempt = (answer: string, isCorrect: boolean) => {
         const payload = { answer, isCorrect, attemptNumber: nextAttemptNumber };
@@ -1032,7 +1055,7 @@ export const PracticeSection: React.FC<{
         if (wrongFooterLocked) return;
         if (clickTranslatorMode && onTranslatorWordSelect) return;
         setSelectedOption(opt);
-        speak(resolveSpokenOptionText(opt), 1, promptVoice);
+        speak(resolveSpokenOptionText(opt), 1, promptVoice, 'interaction', {}, 'option');
         if (feedback === 'wrong') {
           setShowFooter(false);
           setFeedback('none');
@@ -1230,6 +1253,7 @@ export const PracticeSection: React.FC<{
     return (
       <div
         data-practice-shell="true"
+        ref={runtimeShellRef}
         className={`${embedded ? 'relative h-[min(72vh,720px)]' : fullScreen ? 'fixed inset-x-0 bottom-0' : 'fixed inset-x-0 top-[68px] bottom-[56px]'} no-scrollbar bg-slate-900 z-30 flex min-h-0 flex-col items-center overflow-y-auto overscroll-y-contain outline-none`}
         style={fullScreen ? { top: viewportTopOffset } : undefined}
       >
@@ -1269,7 +1293,7 @@ export const PracticeSection: React.FC<{
               title="Play instruction"
               onClick={(event) => {
                 event.stopPropagation();
-                speak(instructionAudioText, 1, promptVoice);
+                speak(instructionAudioText, 1, promptVoice, 'interaction', {}, 'instruction');
               }}
               className="absolute right-0 top-0 z-10 flex h-8 w-8 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-white shadow active:translate-y-0.5"
             >

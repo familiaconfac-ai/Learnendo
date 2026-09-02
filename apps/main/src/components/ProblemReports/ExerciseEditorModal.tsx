@@ -1,3 +1,4 @@
+import { exerciseRuntimeReportRows } from '../../utils/exerciseRuntimeReportRows';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Exercise } from '../../types';
 import type { ExerciseReport } from '../../services/exerciseReportsService';
@@ -38,7 +39,7 @@ const REPORT_STATUS_STYLE = {
 const stamp = (value: any) => value?.toDate?.().toLocaleString('pt-BR') ?? '—';
 const reportSnapshotRows = (report: ExerciseReport) => [
   ['Instrução', report.instruction], ['Texto exibido', report.displayedText],
-  ['Texto do áudio / TTS', report.audioText], ['Resposta esperada', report.expectedAnswer],
+  ['Texto original do áudio', report.audioText], ...exerciseRuntimeReportRows(report), ['Resposta esperada', report.expectedAnswer],
   ['Respostas aceitas', report.acceptedAnswers.join(' · ')], ['Alternativas', report.options.join(' · ')],
 ] as const;
 

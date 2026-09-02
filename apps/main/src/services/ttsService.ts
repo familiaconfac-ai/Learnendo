@@ -1,4 +1,6 @@
 import { createTtsPlaybackSession, type TtsPlaybackResult, type TtsPlaybackState } from './ttsPlaybackLifecycle.ts';
+import type { RuntimeAudio } from '../models/exerciseRuntimeSnapshot.ts';
+import { normalizeTranslateLang } from '../utils/remoteTtsLanguage.ts';
 
 /**
  * ttsService.ts
@@ -52,6 +54,7 @@ const TTS_DEBUG = Boolean(import.meta.env?.DEV || import.meta.env?.VITE_DEBUG_TT
 // ─────────────────────────────────────────────────────────────
 
 let _voices: SpeechSynthesisVoice[] = [];
+let synthesisRequestId = 0;
 let _activeRemoteAudio: HTMLAudioElement | null = null;
 let _activeRemoteAudioUrl: string | null = null;
 let _remoteTtsAbortController: AbortController | null = null;
@@ -80,7 +83,7 @@ function canUseRemoteTts(langCode: string): boolean {
   return lower.startsWith('en') || lower.startsWith('es') || lower.startsWith('pt') || lower.startsWith('el') || lower.startsWith('he');
 }
 
-async function playRemoteTts(text: string, langCode: string, options: SpeakOptions, session: ReturnType<typeof createTtsPlaybackSession>): Promise<void> {
+async function playRemoteTts(text: string, langCode: string, options: SpeakOptions, session: ReturnType<typeof createTtsPlaybackSession>, register: (audio: Omit<RuntimeAudio, 'requestId' | 'state' | 'capturedAt'>) => void): Promise<void> {
   stopRemoteAudio();
   session.transition('loading', 'remote');
 
@@ -90,6 +93,11 @@ async function playRemoteTts(text: string, langCode: string, options: SpeakOptio
   const requestTimeout = setTimeout(() => { requestTimedOut = true; controller.abort(); }, 10000);
   let response: Response;
   try {
+    // Match the provider request exactly, including server-side whitespace/locale normalization.
+    text = text.trim();
+    langCode = normalizeTranslateLang(langCode);
+    register({ resolvedAudioText: text, audioLanguage: langCode, audioVoice: null, audioVoiceLanguage: null,
+      audioProvider: 'google-translate', audioSource: 'text-to-speech', audioRate: options.rate ?? 1 });
     response = await fetch('/api/tts', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -357,6 +365,8 @@ function pickVoice(bcp47: string, genderPref: 'male' | 'female' | 'any' = 'any')
 // ─────────────────────────────────────────────────────────────
 
 export interface SpeakOptions {
+  /** Exact request and playback state for this call only (including remote fallback). */
+  onSynthesis?: (audio: RuntimeAudio) => void;
   /** Playback rate — 0.1 to 10, default 1 */
   rate?: number;
   /** Pitch — 0 to 2, default 1 */
@@ -414,8 +424,22 @@ export function cancelSpeechPlayback(): void {
 export function speak(text: string, langCode = 'en', options: SpeakOptions = {}): TtsPlaybackHandle {
   stopActivePlayback('superseded');
   const bcp47 = appLangToTts(langCode);
+  let synthesis: RuntimeAudio | null = null;
+  const notifySynthesis = () => {
+    // Diagnostics must never break playback.
+    try { if (synthesis) options.onSynthesis?.({ ...synthesis }); } catch { /* non-blocking observer */ }
+  };
+  const registerSynthesis = (audio: Omit<RuntimeAudio, 'requestId' | 'state' | 'capturedAt'>) => {
+    if (synthesis && synthesis.state !== 'completed') {
+      synthesis = { ...synthesis, state: 'error' };
+      notifySynthesis();
+    }
+    synthesis = { ...audio, requestId: ++synthesisRequestId, state: 'loading', capturedAt: new Date().toISOString() };
+    notifySynthesis();
+  };
   const session = createTtsPlaybackSession({
     onStateChange: (state) => {
+      if (synthesis) { synthesis = { ...synthesis, state }; notifySynthesis(); }
       options.onStateChange?.(state);
       if (state === 'playing') options.onStart?.();
       if (TTS_DEBUG) console.info('[TTS lifecycle]', JSON.stringify({ type: options.diagnostics?.exerciseType ?? 'unspecified', speechLanguage: options.diagnostics?.speechLanguage ?? langCode, locale: bcp47, state }));
@@ -451,7 +475,7 @@ export function speak(text: string, langCode = 'en', options: SpeakOptions = {})
       if (!session.settled) session.fail('browser-voice-error', 'browser');
       return;
     }
-    void playRemoteTts(text, bcp47, options, session).catch((error) => {
+    void playRemoteTts(text, bcp47, options, session, registerSynthesis).catch((error) => {
       const code = summarizedErrorCode(error);
       if (code === 'cancelled') session.cancel('cancelled');
       else session.fail(code, 'remote');
@@ -489,6 +513,9 @@ export function speak(text: string, langCode = 'en', options: SpeakOptions = {})
     if (code === 'canceled' || code === 'interrupted') session.cancel(code);
     else startRemote();
   };
+  registerSynthesis({ resolvedAudioText: utterance.text, audioLanguage: utterance.lang,
+    audioVoice: utterance.voice?.name ?? null, audioVoiceLanguage: utterance.voice?.lang ?? null,
+    audioProvider: 'browser-speech-synthesis', audioSource: 'text-to-speech', audioRate: utterance.rate });
   window.speechSynthesis.speak(utterance);
   const browserStartTimeout = setTimeout(() => {
     if (session.state !== 'loading') return;
@@ -585,6 +612,10 @@ export function getVoiceCount(): number {
  * Does NOT touch pickVoice / detectVoiceGender / exerciseVoices.
  */
 export function onVoicesReady(cb: () => void): () => void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+    cb();
+    return () => {};
+  }
   if (_voices.length > 0) {
     cb();
     return () => {};

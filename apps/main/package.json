@@ -35,7 +35,8 @@
     "test:day-sequence-rules": "firebase emulators:exec --project learnendo-6f4d3 --only auth,firestore \"node scripts/firestore-day-sequences.integration.mjs\"",
     "test:editorial-rules-local": "firebase emulators:exec --project demo-learnendo-validation --only auth,firestore \"node scripts/firestore-editorial.integration.mjs\"",
     "audit:workbook1-rendered": "esbuild scripts/workbook1-rendered-audit-entry.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/workbook1-rendered-audit-bundle.mjs && node scripts/workbook1-rendered-audit.mjs",
-    "deploy": "npm run build && vercel --prod"
+    "deploy": "npm run build && vercel --prod",
+    "test:runtime-audio": "esbuild src/services/exerciseRuntimeAudio.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/runtime-audio-test.mjs && node node_modules/.cache/runtime-audio-test.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",

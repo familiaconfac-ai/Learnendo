@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { ExerciseRuntimeReader, ExerciseRuntimeSnapshot } from '../../models/exerciseRuntimeSnapshot';
 import { Day, UserProgress, LessonLanguageCode, Workbook } from '../../types';
 import { getUnitNumberFromLessonNumber } from '../../utils/workbookUnits';
 import {
@@ -142,6 +143,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const [technicalHelpOpen, setTechnicalHelpOpen] = useState(false);
   const [contextualHelpOpen, setContextualHelpOpen] = useState(false);
   const [reportFormOpen, setReportFormOpen] = useState(false);
+  const runtimeReaderRef = useRef<ExerciseRuntimeReader>(null);
+  const [reportPreview, setReportPreview] = useState<ExerciseRuntimeSnapshot | null>(null);
   const [reportCategory, setReportCategory] = useState<ExerciseReportCategory>(EXERCISE_REPORT_CATEGORIES[0]);
   const [reportComment, setReportComment] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
@@ -526,6 +529,8 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       const browser = /Edg\//.test(userAgent) ? 'Microsoft Edge' : /OPR\//.test(userAgent) ? 'Opera' : /Chrome\//.test(userAgent) ? 'Chrome' : /Firefox\//.test(userAgent) ? 'Firefox' : /Safari\//.test(userAgent) ? 'Safari' : 'Outro';
       const operatingSystem = /Windows/.test(userAgent) ? 'Windows' : /Android/.test(userAgent) ? 'Android' : /iPhone|iPad|iPod/.test(userAgent) ? 'iOS/iPadOS' : /Mac OS/.test(userAgent) ? 'macOS' : /Linux/.test(userAgent) ? 'Linux' : 'Outro';
       const deviceType = /Mobi|Android|iPhone/.test(userAgent) ? 'mobile' : /iPad|Tablet/.test(userAgent) ? 'tablet' : 'desktop';
+      const observed = runtimeReaderRef.current?.();
+      const runtime = observed?.exerciseId === currentExercise.id ? observed : null;
       const result = await createExerciseReport({
         source: 'exercise-practice',
         userId,
@@ -546,11 +551,20 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         instruction: currentExercise.instruction,
         displayedText: currentExercise.displayValue ?? null,
         audioText: currentExercise.audioValue || null,
-        audioSource: currentExercise.audioValue ? 'text-to-speech' : null,
+        audioSource: runtime?.audioSource ?? null,
+        resolvedAudioText: runtime?.resolvedAudioText ?? null,
+        audioLanguage: runtime?.audioLanguage ?? null,
+        audioVoice: runtime?.audioVoice ?? null,
+        audioVoiceLanguage: runtime?.audioVoiceLanguage ?? null,
+        audioProvider: runtime?.audioProvider ?? null,
+        audioHistory: runtime?.audioHistory ?? [],
+        renderedText: runtime?.renderedText ?? null,
+        displayedOptions: runtime?.displayedOptions ?? [],
+        resolvedAcceptedAnswers: runtime?.resolvedAcceptedAnswers ?? [],
         options: currentExercise.options ?? [],
         expectedAnswer: currentExercise.correctValue,
         acceptedAnswers: [currentExercise.correctValue, ...(currentExercise.acceptedAnswers ?? [])],
-        studentAnswer: lastStudentAnswer,
+        studentAnswer: runtime ? runtime.studentAnswer : lastStudentAnswer,
         attemptCount: lastAttemptCount,
         problemCategory: reportCategory,
         studentComment: reportComment.trim(),
@@ -620,6 +634,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         </div>
       )}
       <PracticeSection
+        runtimeReaderRef={runtimeReaderRef}
         key={`${currentExercise.id}:${mastery.items[currentExercise.id]?.reviewPresentation ?? 0}`}
         item={practiceItem as any}
         onResult={handleResult}
@@ -651,7 +666,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
               </div>
             )}
             <button type="button" onClick={() => setContextualHelpOpen(false)} className="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-black text-white">Voltar ao exercício</button>
-            <button type="button" onClick={() => { setContextualHelpOpen(false); setReportFormOpen(true); }} className="mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold text-slate-300 underline decoration-slate-500 underline-offset-4">Reportar problema</button>
+            <button type="button" onClick={() => { setReportPreview(runtimeReaderRef.current?.() ?? null); setContextualHelpOpen(false); setReportFormOpen(true); }} className="mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold text-slate-300 underline decoration-slate-500 underline-offset-4">Reportar problema</button>
           </section>
         </div>
       )}
@@ -660,6 +675,16 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
           <form className="w-full max-w-md rounded-3xl border border-slate-600 bg-slate-900 p-5 text-left shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); void submitProblemReport(); }}>
             <h2 className="text-xl font-black text-white">Reportar problema</h2>
             <p className="mt-1 text-sm text-slate-300">O exercício e seu progresso permanecerão exatamente como estão.</p>
+            <details className="mt-3 text-xs text-slate-300">
+              <summary className="cursor-pointer">Áudio registrado para diagnóstico</summary>
+              <pre className="mt-2 max-h-36 overflow-auto whitespace-pre-wrap">{JSON.stringify({
+                audioText: currentExercise.audioValue ?? null,
+                resolvedAudioText: reportPreview?.resolvedAudioText ?? null,
+                audioLanguage: reportPreview?.audioLanguage ?? null,
+                audioVoice: reportPreview?.audioVoice ?? null,
+                audioProvider: reportPreview?.audioProvider ?? null,
+              }, null, 2)}</pre>
+            </details>
             <label className="mt-4 block text-sm font-bold text-slate-200">Categoria
               <select value={reportCategory} onChange={(event) => setReportCategory(event.target.value as ExerciseReportCategory)} disabled={reportSubmitting} className="mt-1 w-full rounded-xl border border-slate-600 bg-slate-800 p-3 text-white">
                 {EXERCISE_REPORT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}

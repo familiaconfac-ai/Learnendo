@@ -1,3 +1,4 @@
+import { exerciseRuntimeReportRows } from '../../utils/exerciseRuntimeReportRows';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { QueryDocumentSnapshot, DocumentData } from 'firebase/firestore';
 import {
@@ -470,6 +471,11 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
       exerciseType: report.exerciseType, exerciseMode: report.exerciseMode,
       instruction: report.instruction, displayedText: report.displayedText,
       audioText: report.audioText, audioSource: report.audioSource,
+      resolvedAudioText: report.resolvedAudioText ?? null, audioLanguage: report.audioLanguage ?? null,
+      audioVoice: report.audioVoice ?? null, audioVoiceLanguage: report.audioVoiceLanguage ?? null,
+      audioProvider: report.audioProvider ?? null, audioHistory: report.audioHistory ?? [],
+      renderedText: report.renderedText ?? null, displayedOptions: report.displayedOptions ?? [],
+      resolvedAcceptedAnswers: report.resolvedAcceptedAnswers ?? [],
       options: report.options, expectedAnswer: report.expectedAnswer,
       acceptedAnswers: report.acceptedAnswers, studentAnswer: report.studentAnswer,
       attemptCount: report.attemptCount, problemCategory: report.problemCategory,
@@ -581,7 +587,7 @@ export const ProblemReportsDashboard: React.FC<ProblemReportsDashboardProps> = (
               ['Livro', `${selected.workbookTitle} (${selected.workbookId})`], ['Lição', `${selected.lessonTitle} (${selected.lessonId})`], ['Dia', `${selected.dayNumber ?? ''} (${selected.dayId})`], ['Exercício', selected.exerciseId], ['Tipo', selected.exerciseType], ['Modo', selected.exerciseMode], ['Fase', selected.sessionPhase],
             ]} />
             <DetailSection title="Conteúdo no momento da denúncia (snapshot histórico)" rows={[
-              ['Instrução', selected.instruction], ['Texto exibido', selected.displayedText], ['Texto do áudio', selected.audioText], ['Fonte do áudio', selected.audioSource], ['Alternativas', selected.options.join(' · ')],
+              ['Instrução', selected.instruction], ['Texto exibido', selected.displayedText], ['Texto original do áudio', selected.audioText], ...exerciseRuntimeReportRows(selected), ['Fonte do áudio', selected.audioSource], ['Alternativas', selected.options.join(' · ')],
               ['Resposta esperada', selected.expectedAnswer], ['Respostas aceitas', selected.acceptedAnswers.join(' · ')], ['Resposta do aluno', selected.studentAnswer], ['Tentativas', selected.attemptCount], ['Categoria', selected.problemCategory], ['Comentário', selected.studentComment],
             ]} />
             <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-950">Este snapshot é imutável e pode ser diferente do conteúdo atual, do rascunho ou da versão publicada. O editor mostra essas fontes separadamente.</p>

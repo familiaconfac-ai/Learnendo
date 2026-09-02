@@ -1,3 +1,4 @@
+import { normalizeTranslateLang } from './src/utils/remoteTtsLanguage.ts';
 import path from 'path';
 import { defineConfig, loadEnv, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -50,20 +51,6 @@ function safeParseMetadata(metadata?: string) {
 
 function getExpectedExpirationIso(nowMs: number, ttlSeconds: number) {
   return new Date(nowMs + ttlSeconds * 1000).toISOString();
-}
-
-function normalizeTranslateLang(langCode?: string) {
-  const value = (langCode || 'en-US').trim();
-  if (!value) return 'en';
-
-  const lower = value.toLowerCase();
-  if (lower.startsWith('en')) return 'en';
-  if (lower.startsWith('es')) return 'es';
-  if (lower.startsWith('pt-br')) return 'pt-BR';
-  if (lower.startsWith('pt')) return 'pt';
-  if (lower.startsWith('el')) return 'el';
-  if (lower.startsWith('he')) return 'he';
-  return value;
 }
 
 function buildTranslateTtsUrl(text: string, langCode: string, rate?: number) {

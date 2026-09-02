@@ -110,6 +110,18 @@ const createUrl = `${documentsUrl}/exerciseReports/${reportId}`;
 const create = await request(createUrl, { method: 'PATCH', token: student.idToken, data: validReport });
 assert.equal(create.status, 200, `Student should create a valid report: ${create.body}`);
 
+const runtimeReportId = 'er_rules_runtime_snapshot';
+const runtimeReport = await request(`${documentsUrl}/exerciseReports/${runtimeReportId}`, {
+  method: 'PATCH', token: student.idToken,
+  data: { ...validReport, reportId: runtimeReportId,
+    audioText: 'R', resolvedAudioText: 'Esta es la letra R.', audioLanguage: 'es-ES',
+    audioVoice: null, audioVoiceLanguage: null, audioProvider: 'browser-speech-synthesis',
+    audioHistory: [{ resolvedAudioText: 'Esta es la letra R.', role: 'prompt', state: 'completed' }],
+    renderedText: 'Escucha y elige la letra correcta.', displayedOptions: ['R', 'L', 'A'], resolvedAcceptedAnswers: ['R'],
+  },
+});
+assert.equal(runtimeReport.status, 200, `Runtime snapshot fields should be accepted: ${runtimeReport.body}`);
+
 const duplicate = await request(createUrl, { method: 'PATCH', token: student.idToken, data: validReport });
 assert.notEqual(duplicate.status, 200, 'A repeated deterministic document write must not create/update a duplicate');
 

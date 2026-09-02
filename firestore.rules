@@ -682,6 +682,8 @@ service cloud.firestore {
           'lessonId', 'lessonTitle', 'dayId', 'dayNumber', 'exerciseId', 'exerciseType',
           'exerciseMode', 'sessionPhase', 'currentExerciseIndex', 'instruction',
           'displayedText', 'audioText', 'audioSource', 'options', 'expectedAnswer',
+          'resolvedAudioText', 'audioLanguage', 'audioVoice', 'audioVoiceLanguage',
+          'audioProvider', 'audioHistory', 'renderedText', 'displayedOptions', 'resolvedAcceptedAnswers',
           'acceptedAnswers', 'studentAnswer', 'attemptCount', 'problemCategory',
           'studentComment', 'route', 'appVersion', 'browser', 'operatingSystem',
           'deviceType', 'screenSize', 'adminNote', 'reviewedBy', 'reviewedAt',

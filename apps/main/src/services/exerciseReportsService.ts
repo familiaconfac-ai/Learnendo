@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { attachEditorialOperationDiagnostic } from './editorialFirebaseError';
 import { db } from './firebase';
+import type { ExerciseRuntimeAudio } from '../models/exerciseRuntimeSnapshot';
 import { ACTIVE_EXERCISE_REPORT_STATUSES, isActiveExerciseReport, isVisibleExerciseReport } from './exerciseReportStatus';
 
 export { isActiveExerciseReport, isVisibleExerciseReport } from './exerciseReportStatus';
@@ -77,6 +78,15 @@ export interface ExerciseReport {
   displayedText: string | null;
   audioText: string | null;
   audioSource: string | null;
+  resolvedAudioText?: string | null;
+  audioLanguage?: string | null;
+  audioVoice?: string | null;
+  audioVoiceLanguage?: string | null;
+  audioProvider?: string | null;
+  audioHistory?: ExerciseRuntimeAudio[];
+  renderedText?: string | null;
+  displayedOptions?: string[];
+  resolvedAcceptedAnswers?: string[];
   options: string[];
   expectedAnswer: string;
   acceptedAnswers: string[];
@@ -212,7 +222,7 @@ export function filterAndSortExerciseReports(reports: ExerciseReport[], filters:
     if (user && !`${report.userName ?? ''} ${report.userEmail ?? ''} ${report.userId}`.toLowerCase().includes(user)) return false;
     if (text && ![
       report.reportId, report.workbookTitle, report.lessonTitle, report.exerciseId, report.instruction,
-      report.displayedText, report.expectedAnswer, report.studentAnswer, report.problemCategory, report.studentComment,
+      report.displayedText, report.resolvedAudioText, report.renderedText, report.expectedAnswer, report.studentAnswer, report.problemCategory, report.studentComment,
     ].join(' ').toLowerCase().includes(text)) return false;
     return true;
   });

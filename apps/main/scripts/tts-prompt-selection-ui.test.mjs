@@ -11,7 +11,7 @@ const [resolver, practiceUi, studentPractice, authoringSandbox, overrideSandbox]
 ]);
 
 test('student and both administrative sandboxes share the central prompt resolver', () => {
-  assert.match(practiceUi, /const promptAudioText = resolvePromptAudioText\(item\)/);
+  assert.match(practiceUi, /const promptAudioText = resolvePromptAudioText\(item, exerciseSpeechLocale\)/);
   assert.match(studentPractice, /<PracticeSection/);
   assert.match(authoringSandbox, /<PracticeSection item=\{\{ \.\.\.exercise, moduleType: 'authoring-sandbox'/);
   assert.match(overrideSandbox, /<PracticeSection item=\{\{ \.\.\.exercise, moduleType: 'override-sandbox'/);
