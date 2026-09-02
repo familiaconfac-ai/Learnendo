@@ -15,6 +15,51 @@ import {
   normalizeGrammarFocusLanguage,
   validateGrammarFocusContent,
 } from './grammarFocus.ts';
+import {
+  legacyGrammarFocusDocumentIds, readLegacyGrammarFocus, legacyGrammarFocusAssignmentError,
+  availableGrammarFocusLanguages, visibleGrammarFocusLanguage, legacyGrammarFocusRevision,
+} from './legacyGrammarFocus.ts';
+
+test('both historical key algorithms remain discoverable without changing scoped identity', () => {
+  for (const lesson of ['wb1_l1', 'es_wb1_l1', 'pt_wb1_l1']) {
+    const ids = legacyGrammarFocusDocumentIds(1, lesson);
+    for (const historical of ['wb1_l1', 'wb1_es_wb1_l1', 'wb1_pt_wb1_l1']) assert.ok(ids.includes(historical));
+    assert.ok(ids.every(id => !id.includes('__')));
+  }
+  assert.ok(legacyGrammarFocusDocumentIds(2, 'es_lesson_1').includes('wb2_es_lesson_1'));
+});
+
+test('legacy aliases and other locales stay visible without assigning a curriculum', () => {
+  const mixed = normalizeGrammarFocusDocumentContent({
+    content: { en: { title: '', body: '' } },
+    translations: { pt: { title: 'Histórico', content: 'Texto preservado' }, es: 'Texto anterior' },
+    title: 'Original', body: 'Original body',
+  });
+  assert.deepEqual(mixed.en, { title: 'Original', body: 'Original body' });
+  assert.equal(mixed.pt.body, 'Texto preservado');
+  assert.equal(mixed.es.body, 'Texto anterior');
+  const ptOnly = normalizeGrammarFocusDocumentContent({ locale: 'pt-BR', title: 'Título', content: 'Somente português' });
+  assert.deepEqual(availableGrammarFocusLanguages(ptOnly), ['pt']);
+  assert.equal(visibleGrammarFocusLanguage(ptOnly, 'en'), 'pt');
+  const source = readLegacyGrammarFocus('wb1_l1', { content: ptOnly });
+  assert.equal(source.assignment, null);
+  // Text language cannot establish whether this belongs to EN, ES, or either Portuguese course.
+  for (const course of ['english', 'spanish', 'portuguese_native', 'portuguese_foreigners']) {
+    assert.equal(legacyGrammarFocusAssignmentError(source, course, 1, 'wb1_l1'), null);
+  }
+});
+
+test('explicit provenance and historical prefixes constrain admin assignment', () => {
+  const source = readLegacyGrammarFocus('wb1_l1', { courseId: 'english', workbookId: 1, lessonId: 'wb1_l1' });
+  assert.equal(legacyGrammarFocusAssignmentError(source, 'english', 1, 'wb1_l1'), null);
+  assert.match(legacyGrammarFocusAssignmentError(source, 'spanish', 1, 'es_wb1_l1')!, /course metadata/);
+  const prefixed = readLegacyGrammarFocus('wb1_pt_wb1_l1', {});
+  assert.match(legacyGrammarFocusAssignmentError(prefixed, 'english', 1, 'wb1_l1')!, /prefix/);
+  assert.equal(legacyGrammarFocusAssignmentError(prefixed, 'portuguese_foreigners', 1, 'pt_wb1_l1'), null);
+  assert.equal(legacyGrammarFocusAssignmentError(prefixed, 'portuguese_native', 1, 'pt_wb1_l1'), null);
+  assert.equal(legacyGrammarFocusRevision({ a: 1, b: { y: 1, x: 2 } }), legacyGrammarFocusRevision({ b: { x: 2, y: 1 }, a: 1 }));
+  assert.notEqual(legacyGrammarFocusRevision({ body: 'old' }), legacyGrammarFocusRevision({ body: 'changed' }));
+});
 
 test('course-scoped identities never share the legacy document', () => {
   const courses = ['english', 'spanish', 'portuguese_foreigners', 'portuguese_native', 'greek_koine', 'hebrew_biblical'];

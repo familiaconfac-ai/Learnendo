@@ -10,8 +10,9 @@ test('Grammar Focus rules require authentication for reads and admin for writes'
   const block = rules.slice(start, end);
   assert.ok(start >= 0 && end > start);
   assert.match(block, /allow read: if signedIn\(\)/);
-  assert.match(block, /allow create, update: if isAdmin\(\) && validGrammarFocus/);
-  assert.match(block, /allow delete: if isAdmin\(\)/);
+  assert.match(block, /allow create: if isAdmin\(\) && validGrammarFocus/);
+  assert.match(block, /allow update: if isAdmin\(\) && validGrammarFocus/);
+  assert.match(block, /allow delete: if isAdmin\(\) && resource.data.schemaVersion == 2/);
 });
 
 test('Grammar Focus rules validate locales, metadata, field types and limits', () => {

@@ -38,6 +38,7 @@
     "deploy": "npm run build && vercel --prod",
     "test:runtime-audio": "esbuild src/services/exerciseRuntimeAudio.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/runtime-audio-test.mjs && node node_modules/.cache/runtime-audio-test.mjs",
     "test:editor-publication": "firebase emulators:exec --project demo-learnendo-editor --only auth,firestore \"node scripts/exercise-editor-publication.integration.mjs\"",
+    "test:grammar-upgrade": "firebase emulators:exec --project demo-learnendo-grammar-upgrade --only auth,firestore \"node scripts/language-phase1.integration.mjs grammar-focus-upgrade.integration.tsx\"",
     "test:language-context": "node --experimental-strip-types src/models/languageContext.test.ts",
     "test:placement": "node --experimental-strip-types src/models/placementIdentity.test.ts",
     "test:language-integrity": "firebase emulators:exec --project demo-learnendo-language --only auth,firestore \"node scripts/language-phase1.integration.mjs\""

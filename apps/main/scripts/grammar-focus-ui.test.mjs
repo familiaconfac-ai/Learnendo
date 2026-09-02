@@ -13,7 +13,8 @@ const teacherRoom = await readFile(new URL('../src/components/LiveClasses/Teache
 test('students receive the active locale without administrative controls', () => {
   assert.match(app, /activeLanguage=\{baseLanguage\}/);
   assert.match(component, /normalizeGrammarFocusLanguage\(activeLanguage\)/);
-  assert.match(component, /getLocalizedGrammarFocusContent\(documentValue\?\.content, activeLanguage\)/);
+  assert.match(component, /getLocalizedGrammarFocusContent\(documentValue\?\.content, visibleLanguage\)/);
+  assert.match(component, /availableGrammarFocusLanguages\(documentValue\?\.content\)/, 'the displayed fallback locale is explicitly selectable and labeled');
   assert.match(component, /\[courseId, canonicalLessonId, isOverview, workbookId\]/,
     'support locale is independent; curriculum changes resubscribe to their own document');
   assert.match(component, /getGrammarFocusActions\(userRole\)/);

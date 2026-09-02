@@ -7,9 +7,11 @@ if (!projectId.startsWith('demo-') || !process.env.FIRESTORE_EMULATOR_HOST || !p
   throw new Error('Run this integration test inside Auth/Firestore emulators with a demo-* project.');
 }
 const root = resolve(import.meta.dirname, '..');
-const outfile = resolve(root, 'node_modules/.cache/language-phase1.integration.mjs');
+const entry = process.argv[2] ?? 'language-phase1.integration.ts';
+if (!['language-phase1.integration.ts', 'grammar-focus-upgrade.integration.tsx'].includes(entry)) throw new Error('Unknown integration entry.');
+const outfile = resolve(root, 'node_modules/.cache/' + entry.replace(/\.tsx?$/, '.mjs'));
 await build({
-  absWorkingDir: root, entryPoints: ['scripts/language-phase1.integration.ts'],
+  absWorkingDir: root, entryPoints: ['scripts/' + entry],
   outfile, bundle: true, platform: 'node', format: 'esm', packages: 'external',
   plugins: [{ name: 'demo-firebase-initialization', setup(builder) {
     builder.onResolve({ filter: /\/firebase$/ }, () => ({ path: 'demo-firebase', namespace: 'demo-test' }));

@@ -42,7 +42,7 @@ try {
   }
   assert.deepEqual((await adminDb.doc('grammarFocus/wb1_l1').get()).data(), legacy);
   const legacyPreview: any = await firstSnapshot((done, fail) => subscribeLegacyGrammarFocus(1, 'wb1_l1', done, fail));
-  assert.equal(legacyPreview.en.body, 'Keep this verbatim.');
+  assert.equal(legacyPreview.find((source: any) => source.documentId === 'wb1_l1').content.en.body, 'Keep this verbatim.');
 
   const englishRef = doc(db, 'grammarFocus', grammarFocusDocumentId('english', 1, 'wb1_l1'));
   const english = (await getDoc(englishRef)).data()!;

@@ -21,6 +21,7 @@ export interface GrammarFocusDocument {
   schemaVersion: 2;
   updatedAt?: unknown;
   updatedBy: string;
+  legacySourceId?: string;
 }
 
 export const emptyGrammarFocusContent = (): GrammarFocusContent => ({
@@ -89,7 +90,7 @@ export function normalizeGrammarFocusContent(value: unknown): GrammarFocusConten
       : {};
     normalized[language] = {
       title: typeof locale.title === 'string' ? locale.title : '',
-      body: typeof locale.body === 'string'
+      body: typeof source[language] === 'string' ? source[language] as string : typeof locale.body === 'string'
         ? locale.body
         : typeof locale.content === 'string'
           ? locale.content
@@ -103,17 +104,20 @@ export function normalizeGrammarFocusDocumentContent(value: unknown): GrammarFoc
   const documentValue = value && typeof value === 'object'
     ? value as Record<string, unknown>
     : {};
-  const localizedSource = documentValue.content && typeof documentValue.content === 'object'
-    ? documentValue.content
-    : documentValue.translations;
-  const normalized = normalizeGrammarFocusContent(localizedSource);
+  const normalized = mergeGrammarFocusContent(
+    normalizeGrammarFocusContent(documentValue.translations),
+    normalizeGrammarFocusContent(documentValue.content),
+  );
+  // Top-level fields historically defaulted to English. Respect an explicit locale when present.
+  const language = normalizeGrammarFocusLanguage(typeof documentValue.locale === 'string'
+    ? documentValue.locale : typeof documentValue.language === 'string' ? documentValue.language : 'en');
 
-  if (!normalized.en.title && typeof documentValue.title === 'string') {
-    normalized.en.title = documentValue.title;
+  if (!normalized[language].title && typeof documentValue.title === 'string') {
+    normalized[language].title = documentValue.title;
   }
-  if (!normalized.en.body) {
-    if (typeof documentValue.body === 'string') normalized.en.body = documentValue.body;
-    else if (typeof documentValue.content === 'string') normalized.en.body = documentValue.content;
+  if (!normalized[language].body) {
+    if (typeof documentValue.body === 'string') normalized[language].body = documentValue.body;
+    else if (typeof documentValue.content === 'string') normalized[language].body = documentValue.content;
   }
   return normalized;
 }

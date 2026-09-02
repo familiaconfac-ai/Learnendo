@@ -14,7 +14,11 @@ import {
   type GrammarFocusDocument,
   type GrammarFocusLanguage,
 } from '../../models/grammarFocus';
-import { saveGrammarFocus, subscribeGrammarFocus, subscribeLegacyGrammarFocus } from '../../services/grammarFocusService';
+import { assignLegacyGrammarFocus, saveGrammarFocus, subscribeGrammarFocus, subscribeLegacyGrammarFocus } from '../../services/grammarFocusService';
+import {
+  availableGrammarFocusLanguages, visibleGrammarFocusLanguage,
+  legacyGrammarFocusAssignmentError, type LegacyGrammarFocus,
+} from '../../models/legacyGrammarFocus';
 import { getGrammarFocusActions } from '../../services/grammarFocusPermissions';
 import type { UserRole } from '../../services/userRoles';
 import { parseControlledMarkdown } from '../../utils/controlledMarkdown';
@@ -86,6 +90,73 @@ const COPY = {
   },
 };
 
+const LEGACY_COPY = {
+  en: { label: 'Legacy / unassigned — read only', language: 'Content language', review: 'Review assignment',
+    explanation: 'These historical notes have no confirmed curriculum. Their text language does not identify the course. Board/Slides become available after assignment.',
+    confirm: 'Confirm assignment', cancel: 'Cancel', assigned: 'Legacy archive — assigned to', raw: 'Original fields',
+    empty: 'This document exists but its fields need manual review.', destination: 'Destination',
+    notice: 'All available languages will be copied. The original is preserved. Confirm only if this is the correct course and lesson.',
+    pending: 'Historical notes are shown above. No official notes have been assigned to this course yet.', exists: 'An official document already exists; automatic replacement is blocked.' },
+  pt: { label: 'Legacy / sem curso confirmado — somente leitura', language: 'Idioma do conteúdo', review: 'Revisar atribuição',
+    explanation: 'Estas notas antigas não têm currículo confirmado. O idioma do texto não identifica o curso. Board/Slides ficam disponíveis após a atribuição.',
+    confirm: 'Confirmar atribuição', cancel: 'Cancelar', assigned: 'Arquivo legado — atribuído a', raw: 'Campos originais',
+    empty: 'Este documento existe, mas seus campos precisam de revisão manual.', destination: 'Destino',
+    notice: 'Todos os idiomas disponíveis serão copiados. O original será preservado. Confirme somente se este for o curso e a lição corretos.',
+    pending: 'As notas antigas estão acima. Ainda não há notas oficiais atribuídas a este curso.', exists: 'Já existe um documento oficial; a substituição automática está bloqueada.' },
+  es: { label: 'Legacy / sin curso confirmado — solo lectura', language: 'Idioma del contenido', review: 'Revisar asignación',
+    explanation: 'Estas notas anteriores no tienen currículo confirmado. El idioma del texto no identifica el curso. Board/Slides estarán disponibles después de la asignación.',
+    confirm: 'Confirmar asignación', cancel: 'Cancelar', assigned: 'Archivo anterior — asignado a', raw: 'Campos originales',
+    empty: 'Este documento existe, pero sus campos requieren revisión manual.', destination: 'Destino',
+    notice: 'Se copiarán todos los idiomas disponibles. Se conservará el original. Confirma solo si este es el curso y la lección correctos.',
+    pending: 'Las notas anteriores se muestran arriba. Aún no hay notas oficiales asignadas a este curso.', exists: 'Ya existe un documento oficial; se bloqueó la sustitución automática.' },
+};
+
+export function LegacyGrammarFocusCard({ source, activeLanguage, courseId, workbookId, lessonId, canAssign, destinationExists, onAssign }: {
+  source: LegacyGrammarFocus; activeLanguage: string; courseId: string; workbookId: number; lessonId: string;
+  canAssign: boolean; destinationExists: boolean; onAssign: (source: LegacyGrammarFocus) => Promise<void>;
+}) {
+  const copy = LEGACY_COPY[normalizeGrammarFocusLanguage(activeLanguage)];
+  const [selectedLanguage, setSelectedLanguage] = useState('');
+  const [reviewSource, setReviewSource] = useState<LegacyGrammarFocus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const displayed = reviewSource ?? source;
+  const language = visibleGrammarFocusLanguage(displayed.content, selectedLanguage || activeLanguage);
+  const languages = availableGrammarFocusLanguages(displayed.content);
+  const locale = displayed.content[language];
+  const conflict = legacyGrammarFocusAssignmentError(source, courseId, workbookId, lessonId);
+  const confirm = async () => {
+    if (!reviewSource || busy) return;
+    setBusy(true); setError('');
+    try { await onAssign(reviewSource); setReviewSource(null); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setReviewSource(null); }
+    finally { setBusy(false); }
+  };
+  return <section className="mb-5 rounded-2xl border border-amber-300 bg-amber-50 p-5" aria-label={copy.label}>
+    <h3 className="font-bold">{source.assignment ? `${copy.assigned} ${source.assignment.courseId}` : copy.label}</h3>
+    <p className="my-2 text-sm">{source.assignment ? source.assignment.destinationId : copy.explanation}</p>
+    <p className="break-all text-xs text-slate-600">grammarFocus/{source.documentId}</p>
+    {languages.length > 0 ? <>
+      <label className="my-3 block text-sm font-semibold">{copy.language}: <select aria-label={copy.language} value={language} onChange={event => setSelectedLanguage(event.target.value)} className="rounded border p-1">
+        {languages.map(value => <option key={value} value={value}>{LANGUAGE_LABELS[value]}</option>)}
+      </select></label>
+      <h4 className="my-3 text-lg font-bold">{locale.title}</h4><ControlledMarkdown body={locale.body} />
+    </> : <p role="status">{copy.empty}</p>}
+    {canAssign && <>
+      <details className="my-3"><summary>{copy.raw}</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(displayed.sourceData, null, 2)}</pre></details>
+      {!source.assignment && (destinationExists ? <p>{copy.exists}</p> : conflict ? <p role="status">{conflict}</p> : languages.length > 0 && (
+        reviewSource ? <div className="mt-4 space-y-3 rounded border border-amber-400 p-3">
+          <p className="font-bold">{copy.destination}: {courseId} / Workbook {workbookId} / {lessonId}</p>
+          <p>{grammarFocusDocumentId(courseId, workbookId, lessonId)}</p><p>{copy.notice}</p>
+          <button type="button" disabled={busy} className="rounded bg-blue-700 px-4 py-2 text-white disabled:opacity-50" onClick={() => void confirm()}>{copy.confirm}</button>{' '}
+          <button type="button" disabled={busy} onClick={() => setReviewSource(null)}>{copy.cancel}</button>
+        </div> : <button type="button" className="mt-4 rounded border border-amber-500 px-4 py-2 font-bold" onClick={() => { setError(''); setReviewSource(source); }}>{copy.review}</button>
+      ))}
+    </>}
+    {error && <p role="alert" className="mt-3 text-red-700">{error}</p>}
+  </section>;
+}
+
 function renderInlineMarkdown(text: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
@@ -137,7 +208,8 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   const canonicalLessonId = lessonId ? canonicalGrammarFocusLessonId(lessonId) : null;
   const copy = COPY[displayLanguage];
   const [documentValue, setDocumentValue] = useState<GrammarFocusDocument | null>(null);
-  const [legacyContent, setLegacyContent] = useState<GrammarFocusContent | null>(null);
+  const [legacyDocuments, setLegacyDocuments] = useState<LegacyGrammarFocus[]>([]);
+  const [legacyLoading, setLegacyLoading] = useState(false);
   const [legacyError, setLegacyError] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
@@ -151,11 +223,13 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   const [savedMessage, setSavedMessage] = useState('');
   const [openingSurface, setOpeningSurface] = useState<'board' | 'slides' | null>(null);
   const [reporting, setReporting] = useState(false);
+  const [readingLanguage, setReadingLanguage] = useState('');
   const actions = getGrammarFocusActions(userRole);
 
   const dirty = editing && JSON.stringify(draft) !== JSON.stringify(baseline);
   const isOverview = lessonNumber == null || lessonId == null;
-  const activeLocale = getLocalizedGrammarFocusContent(documentValue?.content, activeLanguage);
+  const visibleLanguage = visibleGrammarFocusLanguage(documentValue?.content, readingLanguage || activeLanguage);
+  const activeLocale = getLocalizedGrammarFocusContent(documentValue?.content, visibleLanguage);
   const hasDocumentContent = hasGrammarFocusContent(documentValue?.content);
   const hasActiveContent = Boolean(activeLocale.title.trim() || activeLocale.body.trim());
 
@@ -169,6 +243,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     setPreviewing(false);
     setSaveError('');
     setSavedMessage('');
+    setReadingLanguage('');
     setEditorLanguage(displayLanguage);
     if (isOverview || !canonicalLessonId) {
       setDocumentValue(null);
@@ -190,13 +265,14 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   }, [courseId, canonicalLessonId, isOverview, workbookId]);
 
   useEffect(() => {
-    setLegacyContent(null);
+    setLegacyDocuments([]);
     setLegacyError(false);
-    if (isOverview || !canonicalLessonId) return;
-    return subscribeLegacyGrammarFocus(workbookId, canonicalLessonId, setLegacyContent, () => setLegacyError(true));
-  }, [courseId, workbookId, canonicalLessonId, isOverview]);
-  const legacyLocale = getLocalizedGrammarFocusContent(legacyContent, activeLanguage);
-  const legacyLabel = { en: 'Unassigned legacy notes (read only)', pt: 'Notas legadas sem curso confirmado (somente leitura)', es: 'Notas anteriores sin curso confirmado (solo lectura)' }[displayLanguage];
+    setLegacyLoading(!isOverview);
+    if (isOverview || !lessonId) return;
+    return subscribeLegacyGrammarFocus(workbookId, lessonId, documents => {
+      setLegacyDocuments(documents); setLegacyLoading(false);
+    }, () => { setLegacyError(true); setLegacyLoading(false); });
+  }, [courseId, workbookId, lessonId, isOverview]);
 
   const confirmDiscard = () => !dirty || window.confirm(copy.unsaved);
   const requestClose = () => {
@@ -299,15 +375,16 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
         </header>
 
         <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
-          {!isOverview && !editing && (hasGrammarFocusContent(legacyContent) || legacyError) && (
-            <details className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <summary className="cursor-pointer font-bold">{legacyLabel}</summary>
-              {legacyError ? <p role="alert">{copy.loadError}</p> : <>
-                <p className="my-3 text-sm">{legacyLocale.title}</p>
-                <ControlledMarkdown body={legacyLocale.body} />
-              </>}
-            </details>
-          )}
+          {!isOverview && !editing && <>
+            {legacyLoading && <p role="status">Loading legacy…</p>}
+            {legacyError && <p role="alert">Legacy: {copy.loadError}</p>}
+            {legacyDocuments.map(source => <LegacyGrammarFocusCard key={source.documentId} source={source}
+              activeLanguage={activeLanguage} courseId={courseId} workbookId={workbookId} lessonId={lessonId!}
+              canAssign={actions.edit && Boolean(userId) && !loading && !loadError && !legacyError}
+              destinationExists={Boolean(documentValue)} onAssign={async reviewedSource => {
+                await assignLegacyGrammarFocus({ source: reviewedSource, courseId, workbookId, lessonId: lessonId!, updatedBy: userId! });
+              }} />)}
+          </>}
           {savedMessage && <div role="status" className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">{savedMessage}</div>}
           {isOverview ? (
             <div>
@@ -354,7 +431,10 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
             </div>
           ) : (
             <div className="mx-auto max-w-3xl">
-              {hasActiveContent ? <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7"><h3 className="mb-5 text-2xl font-black text-slate-900">{activeLocale.title || lessonTitle || copy.grammarNotes}</h3>{activeLocale.body.trim() && <ControlledMarkdown body={activeLocale.body} />}</div> : <p className="text-sm text-slate-500">{copy.noNotes}</p>}
+              {hasDocumentContent && <label className="mb-3 block text-sm">{LEGACY_COPY[displayLanguage].language}: <select value={visibleLanguage} onChange={event => setReadingLanguage(event.target.value)}>
+                {availableGrammarFocusLanguages(documentValue?.content).map(language => <option key={language} value={language}>{LANGUAGE_LABELS[language]}</option>)}
+              </select></label>}
+              {hasActiveContent ? <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7"><h3 className="mb-5 text-2xl font-black text-slate-900">{activeLocale.title || lessonTitle || copy.grammarNotes}</h3>{activeLocale.body.trim() && <ControlledMarkdown body={activeLocale.body} />}</div> : <p className="text-sm text-slate-500">{legacyDocuments.length ? LEGACY_COPY[displayLanguage].pending : legacyLoading || legacyError ? '' : copy.noNotes}</p>}
               {saveError && <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{saveError}</div>}
               <div className="mt-6 flex flex-wrap gap-2">
                 {actions.edit && <button type="button" onClick={beginEditing} className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{hasDocumentContent ? copy.edit : copy.add}</button>}

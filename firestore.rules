@@ -49,20 +49,18 @@ service cloud.firestore {
 
     function validGrammarFocus(data, grammarFocusId) {
       return data.keys().hasOnly([
-          'workbookId', 'lessonId', 'content', 'schemaVersion', 'updatedAt', 'updatedBy', 'courseId', 'targetLanguage'
+          'workbookId', 'lessonId', 'content', 'schemaVersion', 'updatedAt', 'updatedBy', 'courseId', 'targetLanguage', 'legacySourceId'
         ])
         && data.workbookId is int
         && data.workbookId >= 1
         && data.workbookId <= 100
         && data.lessonId is string
         && data.lessonId.matches('[A-Za-z0-9_-]{1,120}')
-        && ((data.schemaVersion == 1 && !grammarFocusId.matches('.*__.*')
-              && !data.keys().hasAny(['courseId', 'targetLanguage']))
-          || (data.schemaVersion == 2
+        && (data.schemaVersion == 2
               && validGrammarCourseTarget(data.courseId, data.targetLanguage)
               && grammarFocusId == data.courseId + '__' +
                 (data.lessonId.matches('wb' + string(data.workbookId) + '_.*')
-                  ? data.lessonId : 'wb' + string(data.workbookId) + '_' + data.lessonId)))
+                  ? data.lessonId : 'wb' + string(data.workbookId) + '_' + data.lessonId))
         && data.updatedAt is timestamp
         && data.updatedBy == request.auth.uid
         && data.content is map
@@ -558,8 +556,43 @@ service cloud.firestore {
 
     match /grammarFocus/{grammarFocusId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin() && validGrammarFocus(request.resource.data, grammarFocusId);
-      allow delete: if isAdmin();
+      allow create: if isAdmin() && validGrammarFocus(request.resource.data, grammarFocusId)
+        && (!request.resource.data.keys().hasAny(['legacySourceId'])
+          || (request.resource.data.legacySourceId is string
+            && getAfter(/databases/$(database)/documents/grammarFocusLegacyAssignments/$(request.resource.data.legacySourceId)).data.destinationId == grammarFocusId));
+      allow update: if isAdmin() && validGrammarFocus(request.resource.data, grammarFocusId)
+        && resource.data.schemaVersion == 2
+        && request.resource.data.get('legacySourceId', '') == resource.data.get('legacySourceId', '');
+      // Historical sources and their migration provenance are immutable through the client.
+      allow delete: if isAdmin() && resource.data.schemaVersion == 2
+        && !resource.data.keys().hasAny(['legacySourceId']);
+    }
+
+    function validGrammarAssignment(sourceId, receipt) {
+      let source = get(/databases/$(database)/documents/grammarFocus/$(sourceId)).data;
+      let destination = getAfter(/databases/$(database)/documents/grammarFocus/$(receipt.destinationId)).data;
+      let wbPrefix = 'wb' + string(destination.workbookId) + '_';
+      let legacyKey = destination.lessonId.matches(wbPrefix + '.*') ? destination.lessonId : wbPrefix + destination.lessonId;
+      return receipt.keys().hasOnly(['sourceId', 'destinationId', 'courseId', 'sourceData', 'content', 'assignedAt', 'assignedBy'])
+        && receipt.sourceId == sourceId && !sourceId.matches('.*__.*')
+        && source.get('schemaVersion', 0) != 2
+        && receipt.sourceData == source
+        && receipt.assignedBy == request.auth.uid && receipt.assignedAt == request.time
+        && !exists(/databases/$(database)/documents/grammarFocus/$(receipt.destinationId))
+        && destination.legacySourceId == sourceId
+        && validGrammarFocus(destination, receipt.destinationId)
+        && receipt.courseId == destination.courseId && receipt.content == destination.content
+        && source.get('courseId', destination.courseId) == destination.courseId
+        && source.get('targetLanguage', destination.targetLanguage) == destination.targetLanguage
+        && source.get('workbookId', destination.workbookId) == destination.workbookId
+        && source.get('lessonId', destination.lessonId) in [destination.lessonId, destination.targetLanguage + '_' + destination.lessonId]
+        && sourceId in [legacyKey, wbPrefix + destination.targetLanguage + '_' + destination.lessonId];
+    }
+
+    match /grammarFocusLegacyAssignments/{sourceId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() && validGrammarAssignment(sourceId, request.resource.data);
+      allow update, delete: if false;
     }
 
     match /publishedExerciseOverrides/{exerciseId} {
