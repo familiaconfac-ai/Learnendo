@@ -2,13 +2,13 @@ import { exerciseRuntimeReportRows } from '../../utils/exerciseRuntimeReportRows
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Exercise } from '../../types';
 import type { ExerciseReport } from '../../services/exerciseReportsService';
-import type { ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
+import { resolveReportedExerciseIdentity, type ReportExerciseLocation } from '../../utils/exerciseReportCurriculum';
 import {
   getExerciseEditorialState, listExerciseVersions, publishExerciseOverride,
   removePublishedExerciseOverride, restoreExerciseVersion, saveExerciseDraft,
 } from '../../services/exerciseOverrideService';
 import {
-  applyExerciseOverride, EXERCISE_OPTION_LIMITS, normalizeExerciseWorkbookId, parseExerciseOptions,
+  applyExerciseOverride, EXERCISE_OPTION_LIMITS, parseExerciseOptions,
   validateExerciseOverride, type ExerciseEditorialDocument, type ExerciseIdentity, type ExerciseOverrideFields,
 } from '../../models/exerciseOverride';
 import { resolveExercisePublicationReason, validateExerciseChangeReason } from '../../models/exerciseChangeReason';
@@ -57,12 +57,19 @@ const ExerciseSandbox: React.FC<{ exercise: Exercise; language: string; onClose:
   </div>;
 };
 
-export const ExerciseEditorModal: React.FC<Props> = ({ report, location, language, reviewer, onClose, onDraftSaved, onPublished }) => {
+export const ExerciseEditorModal: React.FC<Props> = (props) => {
+  const identity = resolveReportedExerciseIdentity(props.location, props.report, props.language);
+  if (!identity) return <div role="dialog" aria-modal="true" aria-label="Editar exercício" className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-950/70 p-4">
+    <div className="max-w-lg rounded-2xl bg-white p-6">
+      <p role="alert">Não foi possível identificar um livro válido (1 a 100). Localize novamente o exercício antes de salvar ou publicar.</p>
+      <button type="button" onClick={props.onClose} className="mt-4 rounded-xl bg-blue-600 px-4 py-2 font-bold text-white">Fechar</button>
+    </div>
+  </div>;
+  return <ResolvedExerciseEditorModal {...props} identity={identity} />;
+};
+
+const ResolvedExerciseEditorModal: React.FC<Props & { identity: ExerciseIdentity }> = ({ report, location, language, reviewer, onClose, onDraftSaved, onPublished, identity }) => {
   const original = location.day.exercises[location.exerciseIndex];
-  const identity: ExerciseIdentity = {
-    exerciseId: original.id, workbookId: normalizeExerciseWorkbookId(location.workbook.id), lessonId: location.lesson.id,
-    dayId: location.day.id, language, exerciseType: original.type,
-  };
   const [fields, setFields] = useState<ExerciseOverrideFields>({});
   const [optionsText, setOptionsText] = useState('');
   const [state, setState] = useState<{ draft: ExerciseEditorialDocument | null; published: ExerciseEditorialDocument | null }>({ draft: null, published: null });

@@ -1,6 +1,6 @@
 import type { Day, Exercise, Lesson, Workbook } from '../types.ts';
 import type { ExerciseReport } from '../services/exerciseReportsService.ts';
-import { normalizeExerciseWorkbookId } from '../models/exerciseOverride.ts';
+import { normalizeExerciseWorkbookId, type ExerciseIdentity } from '../models/exerciseOverride.ts';
 
 export type ReportExerciseLocation = {
   workbook: Workbook;
@@ -81,16 +81,26 @@ export function resolveWorkbookModule(module: Record<string, unknown>, workbookI
   return Array.isArray(workbook.lessons) ? workbook : null;
 }
 
-function workbookIdFromStableId(value?: string): number | null {
-  const match = value?.match(/^wb(\d+)(?:_|$)/i);
-  if (!match) return null;
-  const workbookId = Number(match[1]);
-  return Number.isInteger(workbookId) && workbookId > 0 ? workbookId : null;
+export function normalizeReportedWorkbookId(value: unknown): number | null {
+  return normalizeExerciseWorkbookId(value);
 }
 
-export function normalizeReportedWorkbookId(value: unknown): number | null {
-  const workbookId = normalizeExerciseWorkbookId(value);
-  return Number.isInteger(workbookId) && workbookId > 0 ? workbookId : null;
+/** One identity for the editor header, draft, publication and report resolution. */
+export function resolveReportedExerciseIdentity(
+  location: Pick<ReportExerciseLocation, 'lesson' | 'day' | 'exerciseIndex'> & { workbook: { id: unknown } },
+  report: Pick<ExerciseReport, 'workbookId'> | null | undefined,
+  language: string,
+): ExerciseIdentity | null {
+  const exercise = location.day.exercises[location.exerciseIndex];
+  if (!exercise) return null;
+  const workbookId = normalizeReportedWorkbookId(report?.workbookId)
+    ?? normalizeReportedWorkbookId(location.workbook.id)
+    ?? normalizeReportedWorkbookId(location.lesson.id)
+    ?? normalizeReportedWorkbookId(location.day.id)
+    ?? normalizeReportedWorkbookId(exercise.id);
+  if (workbookId === null) return null;
+  return { workbookId, exerciseId: exercise.id, lessonId: location.lesson.id,
+    dayId: location.day.id, language, exerciseType: exercise.type };
 }
 
 export function normalizeReportedLocationId(value: unknown): string {
@@ -111,12 +121,12 @@ export function reportedWorkbookCandidates(report: Pick<ExerciseReport,
   'workbookId' | 'lessonId' | 'dayId' | 'exerciseId'
 >, availableWorkbookIds: number[]): number[] {
   return [...new Set([
-    workbookIdFromStableId(report.exerciseId),
-    workbookIdFromStableId(report.dayId),
-    workbookIdFromStableId(report.lessonId),
     normalizeReportedWorkbookId(report.workbookId),
-    ...availableWorkbookIds,
-  ].filter((workbookId): workbookId is number => Number.isInteger(workbookId) && Number(workbookId) > 0))];
+    normalizeReportedWorkbookId(report.exerciseId),
+    normalizeReportedWorkbookId(report.dayId),
+    normalizeReportedWorkbookId(report.lessonId),
+    ...availableWorkbookIds.map(normalizeReportedWorkbookId),
+  ].filter((workbookId): workbookId is number => workbookId !== null))];
 }
 
 export function findReportedExercise(workbook: Workbook, report: Pick<ExerciseReport,

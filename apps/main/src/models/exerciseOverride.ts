@@ -45,13 +45,16 @@ export interface PublishedExerciseOverride extends ExerciseIdentity {
   publishedAt?: unknown;
 }
 
-export function normalizeExerciseWorkbookId(value: unknown): number {
-  if (typeof value === 'number' && Number.isInteger(value)) return value;
+export function normalizeExerciseWorkbookId(value: unknown): number | null {
+  let workbookId: number | null = typeof value === 'number' ? value : null;
   if (typeof value === 'string') {
-    const match = value.trim().match(/^(?:wb)?(\d+)$/i);
-    if (match) return Number(match[1]);
+    const text = value.trim();
+    const match = text.match(/^(?:(?:en|es|pt|el|he)_)?wb(\d+)(?:_[a-z0-9][a-z0-9_-]*)?$/i)
+      ?? text.match(/^(\d+)$/);
+    if (match) workbookId = Number(match[1]);
   }
-  return Number.NaN;
+  return workbookId !== null && Number.isInteger(workbookId) && workbookId >= 1 && workbookId <= 100
+    ? workbookId : null;
 }
 
 const ALLOWED_KEYS = new Set<keyof ExerciseOverrideFields>([
