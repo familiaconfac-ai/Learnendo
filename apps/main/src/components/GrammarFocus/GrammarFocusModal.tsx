@@ -1,3 +1,6 @@
+import { createPortal } from 'react-dom';
+import { useUiLanguage } from '../../i18n/UiLanguageContext';
+import { getUiLabels, curricularLessonTitle, type UiLanguage } from '../../i18n/uiLabels';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   canonicalGrammarFocusLessonId,
@@ -111,11 +114,11 @@ const LEGACY_COPY = {
     pending: 'Las notas anteriores se muestran arriba. Aún no hay notas oficiales asignadas a este curso.', exists: 'Ya existe un documento oficial; se bloqueó la sustitución automática.' },
 };
 
-export function LegacyGrammarFocusCard({ source, activeLanguage, courseId, workbookId, lessonId, canAssign, destinationExists, onAssign }: {
-  source: LegacyGrammarFocus; activeLanguage: string; courseId: string; workbookId: number; lessonId: string;
+export function LegacyGrammarFocusCard({ source, activeLanguage, uiLanguage, courseId, workbookId, lessonId, canAssign, destinationExists, onAssign }: {
+  source: LegacyGrammarFocus; activeLanguage: string; uiLanguage?: UiLanguage; courseId: string; workbookId: number; lessonId: string;
   canAssign: boolean; destinationExists: boolean; onAssign: (source: LegacyGrammarFocus) => Promise<void>;
 }) {
-  const copy = LEGACY_COPY[normalizeGrammarFocusLanguage(activeLanguage)];
+  const copy = LEGACY_COPY[uiLanguage ?? normalizeGrammarFocusLanguage(activeLanguage)];
   const [selectedLanguage, setSelectedLanguage] = useState('');
   const [reviewSource, setReviewSource] = useState<LegacyGrammarFocus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -146,7 +149,7 @@ export function LegacyGrammarFocusCard({ source, activeLanguage, courseId, workb
       <details className="my-3"><summary>{copy.raw}</summary><pre className="max-h-64 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(displayed.sourceData, null, 2)}</pre></details>
       {!source.assignment && (destinationExists ? <p>{copy.exists}</p> : conflict ? <p role="status">{conflict}</p> : languages.length > 0 && (
         reviewSource ? <div className="mt-4 space-y-3 rounded border border-amber-400 p-3">
-          <p className="font-bold">{copy.destination}: {courseId} / Workbook {workbookId} / {lessonId}</p>
+          <p className="font-bold">{copy.destination}: {courseId} / {getUiLabels(uiLanguage ?? activeLanguage).workbook} {workbookId} / {lessonId}</p>
           <p>{grammarFocusDocumentId(courseId, workbookId, lessonId)}</p><p>{copy.notice}</p>
           <button type="button" disabled={busy} className="rounded bg-blue-700 px-4 py-2 text-white disabled:opacity-50" onClick={() => void confirm()}>{copy.confirm}</button>{' '}
           <button type="button" disabled={busy} onClick={() => setReviewSource(null)}>{copy.cancel}</button>
@@ -204,9 +207,11 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   scrollRef, onScroll, onSelectLesson, onOpenOverview, onClose,
   onOpenBoard, onOpenSlides, onOpenPractice, onContentViewed,
 }) => {
+  const { uiLanguage } = useUiLanguage();
+  const ui = getUiLabels(uiLanguage);
   const displayLanguage = normalizeGrammarFocusLanguage(activeLanguage);
   const canonicalLessonId = lessonId ? canonicalGrammarFocusLessonId(lessonId) : null;
-  const copy = COPY[displayLanguage];
+  const copy = COPY[uiLanguage];
   const [documentValue, setDocumentValue] = useState<GrammarFocusDocument | null>(null);
   const [legacyDocuments, setLegacyDocuments] = useState<LegacyGrammarFocus[]>([]);
   const [legacyLoading, setLegacyLoading] = useState(false);
@@ -355,17 +360,18 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
       setOpeningSurface(null);
     }
   };
-  return (
-    <div className="fixed inset-0 z-[1001] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={requestClose}>
-      <section role="dialog" aria-modal="true" aria-labelledby="grammar-focus-title" className="flex h-full w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-[92vh] sm:max-w-5xl sm:rounded-3xl" onClick={(event) => event.stopPropagation()}>
-        <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 sm:px-8 sm:py-5">
+  // The fixed Live shell forms a stacking context below app chrome. Portal out of it.
+  return createPortal(
+    <div data-grammar-focus-root lang={uiLanguage} className="font-sans text-base leading-normal text-slate-900 fixed inset-0 z-[1001] flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={requestClose}>
+      <section role="dialog" aria-modal="true" aria-labelledby="grammar-focus-title" className="flex h-full max-h-[100dvh] min-h-0 w-full flex-col overflow-hidden bg-white shadow-2xl sm:h-[92dvh] sm:max-w-5xl sm:rounded-3xl" onClick={(event) => event.stopPropagation()}>
+        <header className="sticky top-0 z-10 flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 bg-white px-5 py-4 sm:px-8 sm:py-5">
           <div className="min-w-0">
             {isOverview && workbookOptions.length > 0 && onSelectWorkbook ? (
-              <select value={workbookId} onChange={(event) => onSelectWorkbook(Number(event.target.value))} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-black text-blue-700" aria-label="Workbook">
-                {workbookOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+              <select value={workbookId} onChange={(event) => onSelectWorkbook(Number(event.target.value))} className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-black text-blue-700" aria-label={ui.workbook}>
+                {workbookOptions.map((option) => <option key={option.id} value={option.id}>{ui.workbook} {option.id}</option>)}
               </select>
-            ) : <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-500">{isOverview ? `Workbook ${workbookId}` : `Lesson ${lessonNumber}`}</p>}
-            <h2 id="grammar-focus-title" className="mt-1 text-2xl font-black text-slate-900 sm:text-3xl">Grammar Focus</h2>
+            ) : <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-500">{isOverview ? `${ui.workbook} ${workbookId}` : `${ui.lesson} ${lessonNumber}`}</p>}
+            <h2 id="grammar-focus-title" className="mt-1 text-2xl font-black text-slate-900 sm:text-3xl">{ui.grammarFocus}</h2>
             {!isOverview && <p className="mt-2 truncate text-lg font-semibold text-slate-700 sm:text-xl">{copy.grammarNotes}</p>}
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -374,12 +380,12 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
           </div>
         </header>
 
-        <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
+        <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
           {!isOverview && !editing && <>
-            {legacyLoading && <p role="status">Loading legacy…</p>}
+            {legacyLoading && <p role="status">{ui.loadingLegacy}</p>}
             {legacyError && <p role="alert">Legacy: {copy.loadError}</p>}
             {legacyDocuments.map(source => <LegacyGrammarFocusCard key={source.documentId} source={source}
-              activeLanguage={activeLanguage} courseId={courseId} workbookId={workbookId} lessonId={lessonId!}
+              activeLanguage={activeLanguage} uiLanguage={uiLanguage} courseId={courseId} workbookId={workbookId} lessonId={lessonId!}
               canAssign={actions.edit && Boolean(userId) && !loading && !loadError && !legacyError}
               destinationExists={Boolean(documentValue)} onAssign={async reviewedSource => {
                 await assignLegacyGrammarFocus({ source: reviewedSource, courseId, workbookId, lessonId: lessonId!, updatedBy: userId! });
@@ -390,11 +396,11 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
             <div>
               <p className="mb-5 text-sm text-slate-500">{copy.noWorkbookNotes}</p>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {lessons.map((lesson) => <button type="button" key={lesson.id} onClick={() => onSelectLesson(lesson.lessonNumber)} className={`rounded-3xl border p-5 text-left transition hover:border-blue-300 hover:bg-blue-50 ${highlightedLessonId === lesson.id ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200' : 'border-slate-200 bg-slate-50'}`}><p className="text-xs font-black uppercase tracking-[0.26em] text-blue-500">Lesson {lesson.lessonNumber}</p><p className="mt-2 text-lg font-bold text-slate-900">{lesson.title || copy.grammarNotes}</p>{highlightedLessonId === lesson.id && <span className="mt-3 inline-block rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">Current lesson</span>}</button>)}
+                {lessons.map((lesson) => <button type="button" key={lesson.id} onClick={() => onSelectLesson(lesson.lessonNumber)} className={`rounded-3xl border p-5 text-left transition hover:border-blue-300 hover:bg-blue-50 ${highlightedLessonId === lesson.id ? 'border-blue-400 bg-blue-50 ring-2 ring-blue-200' : 'border-slate-200 bg-slate-50'}`}><p className="text-xs font-black uppercase tracking-[0.26em] text-blue-500">{ui.lesson} {lesson.lessonNumber}</p><p className="mt-2 text-lg font-bold text-slate-900">{curricularLessonTitle(lesson.title || '') || copy.grammarNotes}</p>{highlightedLessonId === lesson.id && <span className="mt-3 inline-block rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">{ui.currentLesson}</span>}</button>)}
               </div>
             </div>
           ) : loading ? (
-            <div role="status" className="py-10 text-center font-semibold text-slate-500">Loading…</div>
+            <div role="status" className="py-10 text-center font-semibold text-slate-500">{ui.loading}</div>
           ) : editing ? (
             <div className="mx-auto max-w-3xl">
               <div className="mb-5 flex gap-2 overflow-x-auto pb-1" role="tablist">
@@ -431,17 +437,17 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
             </div>
           ) : (
             <div className="mx-auto max-w-3xl">
-              {hasDocumentContent && <label className="mb-3 block text-sm">{LEGACY_COPY[displayLanguage].language}: <select value={visibleLanguage} onChange={event => setReadingLanguage(event.target.value)}>
+              {hasDocumentContent && <label className="mb-3 block text-sm">{LEGACY_COPY[uiLanguage].language}: <select value={visibleLanguage} onChange={event => setReadingLanguage(event.target.value)}>
                 {availableGrammarFocusLanguages(documentValue?.content).map(language => <option key={language} value={language}>{LANGUAGE_LABELS[language]}</option>)}
               </select></label>}
-              {hasActiveContent ? <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7"><h3 className="mb-5 text-2xl font-black text-slate-900">{activeLocale.title || lessonTitle || copy.grammarNotes}</h3>{activeLocale.body.trim() && <ControlledMarkdown body={activeLocale.body} />}</div> : <p className="text-sm text-slate-500">{legacyDocuments.length ? LEGACY_COPY[displayLanguage].pending : legacyLoading || legacyError ? '' : copy.noNotes}</p>}
+              {hasActiveContent ? <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7"><h3 className="mb-5 text-2xl font-black text-slate-900">{activeLocale.title || lessonTitle || copy.grammarNotes}</h3>{activeLocale.body.trim() && <ControlledMarkdown body={activeLocale.body} />}</div> : <p className="text-sm text-slate-500">{legacyDocuments.length ? LEGACY_COPY[uiLanguage].pending : legacyLoading || legacyError ? '' : copy.noNotes}</p>}
               {saveError && <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{saveError}</div>}
               <div className="mt-6 flex flex-wrap gap-2">
                 {actions.edit && <button type="button" onClick={beginEditing} className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{hasDocumentContent ? copy.edit : copy.add}</button>}
-                {actions.board && hasActiveContent && onOpenBoard && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('board')} className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 disabled:opacity-50">{openingSurface === 'board' ? 'Opening...' : 'Board'}</button>}
-                {actions.slides && hasActiveContent && onOpenSlides && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('slides')} className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-3 font-black text-violet-700 disabled:opacity-50">{openingSurface === 'slides' ? 'Opening...' : 'Slides'}</button>}
-                {actions.practice && lessonId && onOpenPractice && <button type="button" onClick={() => onOpenPractice(lessonId)} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 font-black text-emerald-700">Practice</button>}
-                {actions.report && lessonId && userId && <button type="button" onClick={() => setReporting(true)} className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 font-black text-amber-700">Report</button>}
+                {actions.board && hasActiveContent && onOpenBoard && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('board')} className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 disabled:opacity-50">{openingSurface === 'board' ? ui.opening : ui.board}</button>}
+                {actions.slides && hasActiveContent && onOpenSlides && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('slides')} className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-3 font-black text-violet-700 disabled:opacity-50">{openingSurface === 'slides' ? ui.opening : ui.slides}</button>}
+                {actions.practice && lessonId && onOpenPractice && <button type="button" onClick={() => onOpenPractice(lessonId)} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 font-black text-emerald-700">{ui.practice}</button>}
+                {actions.report && lessonId && userId && <button type="button" onClick={() => setReporting(true)} className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 font-black text-amber-700">{ui.report}</button>}
               </div>
             </div>
           )}
@@ -462,6 +468,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
           onClose={() => setReporting(false)}
         />
       )}
-    </div>
+    </div>,
+    document.body,
   );
 };

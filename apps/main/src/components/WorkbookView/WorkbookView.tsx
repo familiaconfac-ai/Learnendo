@@ -1,3 +1,4 @@
+import { getUiLabels, curricularLessonTitle, lessonUiTitle } from '../../i18n/uiLabels';
 import React from 'react';
 import { Lesson, UserProgress } from '../../types';
 import { getPedagogicalLessonStatus } from '../../engine/lessonProgressionEngine';
@@ -41,6 +42,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
   uiLanguage = 'en',
   onBack,
 }) => {
+  const ui = getUiLabels(uiLanguage);
   const completed = progress.completedActivities || [];
   const totalIslands = workbookId === 1 ? 12 : Math.max(lessons.length, 1);
 
@@ -70,8 +72,8 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
   };
 
   const firstUnlockedIndex = islandSlots.findIndex((_, index) => getLessonStatus(index) === 'in-progress');
-  const backLabel = uiLanguage === 'pt' ? 'Cursos' : uiLanguage === 'es' ? 'Cursos' : 'Courses';
-  const workbookLabel = uiLanguage === 'pt' ? 'Caderno' : uiLanguage === 'es' ? 'Libro' : 'Workbook';
+  const backLabel = ui.courses;
+  const workbookLabel = ui.workbook;
 
   return (
     <div className="workbook-view min-h-screen w-full overflow-x-hidden bg-slate-900 pb-28">
@@ -87,7 +89,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
         <div className="mb-6 flex flex-col items-center sm:mb-8">
           <img
             src={`/islands/workbook${workbookId}.gif`}
-            alt={`Workbook ${workbookId}`}
+            alt={`${ui.workbook} ${workbookId}`}
             style={{ width: '156px' }}
             className="h-[156px] w-[156px] object-contain drop-shadow-[0_18px_30px_rgba(0,0,0,0.45)]"
           />
@@ -96,7 +98,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
               onClick={onOpenGrammarOverview}
               className="mt-4 inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-3 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95"
             >
-              <span>Grammar</span>
+              <span>{ui.grammar}</span>
             </button>
           )}
           <p className="mt-3 text-center text-sm font-black uppercase tracking-[0.24em] text-yellow-300">
@@ -110,13 +112,10 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
             const isLocked = status === 'locked';
             const isCompleted = status === 'completed';
             const visibleLessonNumber = getVisibleLessonNumber(lesson, index);
-            const cleanTitle = lesson.title
-              .replace(/^Workbook\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
-              .replace(/^Lesson\s*\d+\s*[:\u2014\u2013-]\s*/i, '')
-              .trim();
+            const cleanTitle = curricularLessonTitle(lesson.title);
             const displayTitle = /^placeholder$/i.test(cleanTitle) ? '' : cleanTitle;
             const isCurrent = status === 'in-progress' && index === firstUnlockedIndex;
-            const lessonLabel = displayTitle ? `Lesson ${visibleLessonNumber} - ${displayTitle}` : `Lesson ${visibleLessonNumber}`;
+            const lessonLabel = lessonUiTitle(uiLanguage, visibleLessonNumber, displayTitle);
             const offsetClass = (['ml-[-50px] sm:ml-[-60px]', 'ml-0', 'ml-[50px] sm:ml-[60px]', 'ml-0'] as const)[index % 4];
 
             return (
@@ -144,7 +143,7 @@ export const WorkbookView: React.FC<WorkbookViewProps> = ({
                 >
                   <img
                     src="/islands/ilhaLesson1.png"
-                    alt={`Lesson ${visibleLessonNumber}`}
+                    alt={`${ui.lesson} ${visibleLessonNumber}`}
                     className={`absolute inset-0 h-full w-full rounded-full object-cover ${isLocked ? 'opacity-10' : 'opacity-30'}`}
                     onError={(e) => {
                       (e.currentTarget as HTMLImageElement).style.display = 'none';

@@ -43,7 +43,9 @@
     "test:language-profile-integration": "firebase emulators:exec --project demo-learnendo-language-profile --only auth,firestore \"node scripts/language-phase1.integration.mjs language-phase2.integration.tsx\"",
     "test:language-context": "node --experimental-strip-types src/models/languageContext.test.ts",
     "test:placement": "node --experimental-strip-types src/models/placementIdentity.test.ts",
-    "test:language-integrity": "firebase emulators:exec --project demo-learnendo-language --only auth,firestore \"node scripts/language-phase1.integration.mjs\""
+    "test:language-integrity": "firebase emulators:exec --project demo-learnendo-language --only auth,firestore \"node scripts/language-phase1.integration.mjs\"",
+    "test:language-smoke": "esbuild scripts/language-smoke.test.tsx --bundle --platform=node --format=esm --packages=external --outfile=node_modules/.cache/language-smoke-test.mjs && node node_modules/.cache/language-smoke-test.mjs",
+    "test:language-smoke-browser": "node scripts/smoke-ui.serve.mjs"
   },
   "dependencies": {
     "@excalidraw/excalidraw": "^0.18.0",

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../i18n/UiLanguageContext';
+import { getUiLabels, curricularLessonTitle } from '../../i18n/uiLabels';
 import React from 'react';
 import { Day, Lesson, UserProgress, LessonLanguageCode } from '../../types';
 import { LessonProgress } from '../../engine/courseProgressEngine';
@@ -28,29 +30,6 @@ interface LessonViewProps {
 
 const LESSON_TEST_PREFIX = 'lesson_test_passed_';
 
-/** Localized label for a completed exercise button (the green circle). */
-function getDoneLabel(lang: string): string {
-  if (lang === 'pt') return 'Feito';
-  if (lang === 'es') return 'Hecho';
-  return 'Done';
-}
-
-/**
- * Returns the localised label for an exercise ("Exercise" / "Exercício" / "Ejercicio").
- * 'el' and 'he' are biblical study languages with no UI text — they fall back to
- * the browser's language, then default to English.
- */
-function getExerciseLabel(lang: LessonLanguageCode | string, plural = false): string {
-  let uiLang: string = lang;
-  if (lang === 'el' || lang === 'he') {
-    const nav = typeof navigator !== 'undefined' ? navigator.language.toLowerCase() : '';
-    uiLang = nav.startsWith('pt') ? 'pt' : nav.startsWith('es') ? 'es' : 'en';
-  }
-  if (uiLang === 'pt') return plural ? 'Exercícios' : 'Exercício';
-  if (uiLang === 'es') return plural ? 'Ejercicios' : 'Ejercicio';
-  return plural ? 'Exercises' : 'Exercise';
-}
-
 export const LessonView: React.FC<LessonViewProps> = ({
   lesson,
   lessonNumber,
@@ -68,6 +47,8 @@ export const LessonView: React.FC<LessonViewProps> = ({
   onBack,
   onGrammar,
 }) => {
+  const { uiLanguage } = useUiLanguage();
+  const ui = getUiLabels(uiLanguage);
   const unitNumber = getUnitNumberFromLessonNumber(lessonNumber);
   const completed = progress.completedActivities || [];
   const completedFromMap = Object.keys(progress.days ?? {}).filter((id) => progress.days?.[id] === true);
@@ -138,34 +119,26 @@ export const LessonView: React.FC<LessonViewProps> = ({
   return (
     <div className="lesson-view min-h-screen bg-slate-900 pb-28 w-full overflow-x-hidden">
       <div className="w-full max-w-full mx-auto px-3 sm:px-4 pt-6 sm:pt-8">
-        <button onClick={onBack} className="mb-4 text-white font-bold text-base flex items-center gap-1" aria-label="Back">← Back</button>
+        <button onClick={onBack} className="mb-4 text-white font-bold text-base flex items-center gap-1" aria-label={ui.back}>← {ui.back}</button>
         {onGrammar && (
           <button
             onClick={onGrammar}
             className="mb-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-500 px-4 py-3 text-sm font-black uppercase tracking-[0.18em] text-slate-950 shadow-[0_10px_30px_rgba(56,189,248,0.35)] transition-transform active:scale-95"
           >
             <span>📖</span>
-            <span>Grammar</span>
+            <span>{ui.grammar}</span>
           </button>
         )}
         {(() => {
-          const colonIdx = lesson.title.indexOf(':');
-          const rawMainTitle = colonIdx > -1 ? lesson.title.slice(0, colonIdx) : lesson.title;
-          const rawSubtitle = colonIdx > -1 ? lesson.title.slice(colonIdx + 1).trim() : '';
-          const strippedMainTitle = rawMainTitle.replace(/^Lesson\s+\d+\s*:?\s*/i, '').trim();
-          const mainTitle = strippedMainTitle || rawSubtitle || rawMainTitle;
-          const subtitle = strippedMainTitle && rawSubtitle ? rawSubtitle : null;
+          const mainTitle = curricularLessonTitle(lesson.title);
           return (
             <div className="text-center mb-6 sm:mb-8">
-              <p className="text-xs font-black uppercase tracking-[0.35em] text-cyan-300 mb-2">Unit {unitNumber}</p>
-              <p className="text-lg sm:text-xl font-black text-yellow-400 leading-tight">Lesson {lessonNumber}</p>
+              <p className="text-xs font-black uppercase tracking-[0.35em] text-cyan-300 mb-2">{ui.unit} {unitNumber}</p>
+              <p className="text-lg sm:text-xl font-black text-yellow-400 leading-tight">{ui.lesson} {lessonNumber}</p>
               <h1 className="text-2xl sm:text-3xl font-black text-white leading-tight mt-1">{mainTitle}</h1>
-              {subtitle && (
-                <p className="text-base sm:text-lg font-semibold text-slate-300 mt-1 leading-snug">{subtitle}</p>
-              )}
               {!!wordCount && (
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2">
-                  🦉 {wordCount} words
+                  🦉 {wordCount} {ui.words}
                 </p>
               )}
             </div>
@@ -204,16 +177,16 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 >
                   <img
                     src={`/islands/days/day${dayNumber}.png`}
-                    alt={`${getExerciseLabel(currentLanguage)} ${dayNumber}`}
+                    alt={`${ui.exercise} ${dayNumber}`}
                     className={`absolute inset-0 w-full h-full object-cover rounded-full ${isLocked ? 'opacity-10' : 'opacity-30'}`}
                     onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                   />
                   <span className="relative z-10">
-                    {isCompleted ? getDoneLabel(currentLanguage) : isLocked ? '🔒' : dayNumber}
+                    {isCompleted ? ui.done : isLocked ? '🔒' : dayNumber}
                   </span>
                 </button>
                 <p className={`text-center text-xs mt-2 leading-tight ${isLocked ? 'text-slate-600' : 'text-slate-300'}`}>
-                  {`${getExerciseLabel(currentLanguage)} ${dayNumber}`}
+                  {`${ui.exercise} ${dayNumber}`}
                 </p>
               </div>
             );
@@ -236,24 +209,24 @@ export const LessonView: React.FC<LessonViewProps> = ({
             >
               <img
                 src="/islands/days/day7.png"
-                alt={`${getExerciseLabel(currentLanguage)} 7`}
+                alt={`${ui.exercise} 7`}
                 className={`absolute inset-0 w-full h-full object-cover rounded-full ${!testUnlocked || hasPassedTest ? 'opacity-10' : 'opacity-30'}`}
                 onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
               />
               <span className="relative z-10">
-                {hasPassedTest ? 'Done' : `Test ${lessonNumber}`}
+                {hasPassedTest ? ui.done : `${ui.test} ${lessonNumber}`}
               </span>
             </button>
             <p className={`text-center text-xs mt-2 leading-tight ${!testUnlocked || hasPassedTest ? 'text-slate-600' : 'text-slate-300'}`}>
-              {`Test ${lessonNumber}`}
+              {`${ui.test} ${lessonNumber}`}
             </p>
           </div>
         </div>
 
         {testCompleted && typeof testScore === 'number' && (
           <div className="mt-8 rounded-2xl border border-slate-700 bg-slate-800 p-4 text-center shadow-sm">
-            <p className="text-lg font-bold text-white">Score: {testScore}%</p>
-            <p className="mt-2 text-sm text-slate-400">{testScore === 100 ? 'Lesson Complete' : 'Try again'}</p>
+            <p className="text-lg font-bold text-white">{ui.score}: {testScore}%</p>
+            <p className="mt-2 text-sm text-slate-400">{testScore === 100 ? ui.lessonComplete : ui.tryAgain}</p>
             {testScore < 100 && (
               <button
                 type="button"
@@ -263,7 +236,7 @@ export const LessonView: React.FC<LessonViewProps> = ({
                 }}
                 className="mt-4 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-[0_3px_0_0_#1d4ed8] active:translate-y-0.5"
               >
-                Try again
+                {ui.tryAgain}
               </button>
             )}
           </div>

@@ -1,3 +1,5 @@
+import { useUiLanguage } from '../../i18n/UiLanguageContext';
+import { getUiLabels } from '../../i18n/uiLabels';
 /**
  * TeacherDashboard.tsx
  *
@@ -115,6 +117,8 @@ const StudentsTab: React.FC<{
   onSelectedGroupIdChange: (value: string) => void;
   onStudentDeleted: (uid: string, result: StudentDeletionResult) => void;
 }> = ({ rows, allRows, user, canManageUsers, groups, membershipRows, selectedGroupId, onSelectedGroupIdChange, onStudentDeleted }) => {
+  const { uiLanguage } = useUiLanguage();
+  const ui = getUiLabels(uiLanguage);
   const [search, setSearch]         = useState('');
   const [sortCol, setSortCol]       = useState<SortColumn>('path');
   const [sortDir, setSortDir]       = useState<'asc' | 'desc'>('desc');
@@ -218,12 +222,12 @@ const StudentsTab: React.FC<{
           className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-400 lg:max-w-xs"
           aria-label="Filter by class"
         >
-          <option value="all">All students</option>
+          <option value="all">{ui.students}</option>
           {groups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
           {canManageUsers && <option value="ungrouped">No class</option>}
         </select>
         <span className="text-sm text-slate-500 whitespace-nowrap">
-          {visible.length} of {rows.length} student{rows.length !== 1 ? 's' : ''}
+          {ui.students}: {visible.length} / {rows.length}
         </span>
         <div className="flex flex-wrap gap-2 lg:ml-auto">
           {canManageUsers && (
@@ -238,7 +242,7 @@ const StudentsTab: React.FC<{
 
       {selectedGroupId !== 'all' && (
         <div className="mb-4 rounded-2xl border border-blue-100 bg-white p-4 shadow-sm">
-          <div className="mb-3"><h2 className="font-black text-slate-800">Class: {selectedGroup?.name ?? 'No class'}</h2><p className="text-sm text-slate-500">{rows.length} student{rows.length !== 1 ? 's' : ''}</p></div>
+          <div className="mb-3"><h2 className="font-black text-slate-800">Class: {selectedGroup?.name ?? 'No class'}</h2><p className="text-sm text-slate-500">{ui.students}: {rows.length}</p></div>
           <div className={`grid grid-cols-2 gap-3 text-sm ${canManageUsers ? 'sm:grid-cols-6' : 'sm:grid-cols-5'}`}>
             <div><span className="block text-xs text-slate-500">Recently active</span><b>{activeRecently}</b></div>
             <div><span className="block text-xs text-slate-500">No recent activity</span><b>{rows.length - activeRecently}</b></div>
@@ -269,7 +273,7 @@ const StudentsTab: React.FC<{
             <table className="w-full text-sm">
               <thead className="bg-gradient-to-r from-blue-600 to-blue-700">
                 <tr>
-                  <SortHeader col="name"         label="Student"      activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                  <SortHeader col="name"         label={ui.student}      activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   {canManageUsers && <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Notifications</th>}
                   <SortHeader col="path"         label="Progress"     activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                   <th className="px-3 py-3 text-left text-sm font-semibold text-white whitespace-nowrap">Work</th>
@@ -487,6 +491,8 @@ const SummaryCard: React.FC<{
 // ─────────────────────────────────────────────────────────────
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canManageUsers = false, teacherUid = null }) => {
+  const { uiLanguage } = useUiLanguage();
+  const ui = getUiLabels(uiLanguage);
   const [tab, setTab]               = useState<Tab>('students');
   const [rows, setRows]             = useState<TeacherStudentRow[]>([]);
   const [administrativeRows, setAdministrativeRows] = useState<TeacherStudentRow[]>([]);
@@ -562,7 +568,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
       <div className="min-h-screen bg-gradient-to-b from-blue-50 to-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mb-4" />
-          <p className="text-slate-600">Loading students…</p>
+          <p className="text-slate-600">{ui.loading}</p>
         </div>
       </div>
     );
@@ -578,7 +584,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
             className="bg-red-600 text-white px-6 py-2 rounded-xl font-medium hover:bg-red-700"
             onClick={() => setRefreshKey(k => k + 1)}
           >
-            Retry
+            {ui.retry}
           </button>
         </div>
       </div>
@@ -599,19 +605,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
         {/* ── Header ──────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-black text-slate-800">📊 Teacher Dashboard</h1>
+            <h1 className="text-2xl font-black text-slate-800">📊 {ui.teacherDashboard}</h1>
             <p className="text-sm text-slate-500 mt-1">
               {canManageUsers
-                ? `${totalStudents} student${totalStudents !== 1 ? 's' : ''} registered`
-                : `${totalStudents} assigned student${totalStudents !== 1 ? 's' : ''}`}
+                ? `${ui.registeredStudents}: ${totalStudents}`
+                : `${ui.assignedStudents}: ${totalStudents}`}
             </p>
           </div>
           <button
             onClick={() => setRefreshKey(k => k + 1)}
-            title="Refresh data"
+            title={ui.refresh}
             className="bg-white border border-slate-200 text-slate-600 px-4 py-2 rounded-xl text-sm font-medium hover:bg-slate-50 shadow-sm"
           >
-            ↻ Refresh
+            ↻ {ui.refresh}
           </button>
         </div>
 
@@ -623,9 +629,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
 
         {/* ── Summary cards ─────────────────────────── */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-          <SummaryCard emoji="🎓" label="Total Students" value={String(totalStudents)} colour="bg-blue-500" />
-          <SummaryCard emoji="⚠️" label="Need Attention"  value={String(alertedCount)}  colour="bg-red-500"  />
-          <SummaryCard emoji="🎯" label="Avg Accuracy"    value={`${avgAccuracyAll}%`}  colour="bg-green-500" />
+          <SummaryCard emoji="🎓" label={ui.totalStudents} value={String(totalStudents)} colour="bg-blue-500" />
+          <SummaryCard emoji="⚠️" label={ui.needAttention}  value={String(alertedCount)}  colour="bg-red-500"  />
+          <SummaryCard emoji="🎯" label={ui.avgAccuracy}    value={`${avgAccuracyAll}%`}  colour="bg-green-500" />
         </div>
 
         {/* ── Tabs ────────────────────────────────────── */}
@@ -645,10 +651,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ user, canMan
               }`}
             >
               {t === 'students'
-                ? '👥 Students'
+                ? `👥 ${ui.students}`
                 : t === 'ranking'
-                  ? '🏆 Ranking'
-                  : '🔐 Access'}
+                  ? `🏆 ${ui.ranking}`
+                  : `🔐 ${ui.access}`}
             </button>
           ))}
         </div>

@@ -1,3 +1,5 @@
+import { UiLanguageProvider } from './i18n/UiLanguageContext';
+import { getUiLabels } from './i18n/uiLabels';
 import { COURSE_TARGET_LANGUAGE, PRIMARY_COURSE_FOR_TARGET, getCourseTargetLanguage } from './models/languageContext';
 import { useRuntimeLanguageContext } from './hooks/useRuntimeLanguageContext';
 import { LanguagePreferencesSettings } from './components/LanguagePreferencesSettings';
@@ -118,11 +120,7 @@ const COURSE_SELECTOR_OPTIONS = [
 
 const VALID_LANGUAGES = new Set<LessonLanguageCode>(['en', 'pt', 'es', 'el', 'he']);
 const VALID_SECTIONS = new Set<SectionType>(Object.values(SectionType));
-const VIEW_MODE_LABELS: Record<UserViewMode, string> = {
-  student: 'Student',
-  teacher: 'Teacher',
-  admin: 'Admin',
-};
+
 
 const buildTabViewModeStorageKey = (uid: string) => `learnendo_tab_view_mode:${uid}`;
 
@@ -378,6 +376,7 @@ const App: React.FC = () => {
   const languageContext = useRuntimeLanguageContext(user?.uid ?? null, userAccountProfile,
     getCourseTargetLanguage(currentCourseId) ? currentCourseId! : PRIMARY_COURSE_FOR_TARGET[language]);
   const { baseLanguage, uiLanguage } = languageContext;
+  const ui = getUiLabels(uiLanguage);
   const [userViewMode, setUserViewMode] = useState<UserViewMode>('student');
   const [authReady, setAuthReady] = useState(false);
   /** True once the Firestore courseProgress/main snapshot has responded (even if empty).
@@ -3299,6 +3298,7 @@ const App: React.FC = () => {
   }
 
   return (
+    <UiLanguageProvider value={{ uiLanguage, baseLanguage }}>
     <div className="app overflow-x-hidden bg-slate-900 min-h-screen">
       <style>{`
         body[data-workspace-presentation="true"] [data-app-chrome="header"],
@@ -3317,10 +3317,10 @@ const App: React.FC = () => {
             type="button"
             className="flex h-10 items-center rounded-lg sm:rounded-xl bg-slate-800 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold text-slate-200 shadow-sm active:scale-95 flex-shrink-0"
             onClick={goToWorkbookList}
-            aria-label="Go to lesson list"
+            aria-label={ui.lessonList}
           >
             <span className="text-base leading-none">🏠</span>
-            <span className="ml-1">Home</span>
+            <span className="ml-1">{ui.home}</span>
           </button>
 
           <div className="flex items-center gap-1 text-[11px] font-semibold text-slate-200 flex-shrink-0">
@@ -3329,7 +3329,7 @@ const App: React.FC = () => {
             </div>
             {isGuestAccount && (
               <span className="rounded-lg border border-amber-400/50 bg-amber-400/15 px-1.5 py-1 text-amber-200">
-                Guest
+                {ui.guest}
               </span>
             )}
             <span className="rounded-lg bg-slate-800 px-1.5 py-1">🔥 {currentLessonId ? Math.min(1, lessonScore.completed) : (score?.streak ?? 0)}</span>
@@ -3341,7 +3341,7 @@ const App: React.FC = () => {
           <button
             onClick={toggleMenu}
             className="flex h-10 w-10 items-center justify-center rounded-lg sm:rounded-xl bg-slate-800 text-[22px] sm:text-[26px] leading-none text-slate-200 shadow-sm active:scale-95 flex-shrink-0"
-            aria-label="Open menu"
+            aria-label={ui.openMenu}
           >
             ☰
           </button>
@@ -3367,7 +3367,7 @@ const App: React.FC = () => {
                           : 'bg-white text-slate-600 hover:bg-slate-200'
                       }`}
                     >
-                      {VIEW_MODE_LABELS[mode]}
+                      {ui[mode]}
                     </button>
                   ))}
                 </div>
@@ -3375,16 +3375,16 @@ const App: React.FC = () => {
             ) : null}
             {isGuestAccount ? (
               <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-700">Guest mode</p>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-700">{ui.guestMode}</p>
                 <p className="mt-2 text-sm text-amber-900">
-                  You are using Learnendo without a saved account. Create one to keep your name, email, and progress.
+                  {ui.guestDescription}
                 </p>
                 <button
                   type="button"
                   onClick={openGuestConversion}
                   className="mt-3 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-white transition-colors hover:bg-amber-600"
                 >
-                  Create account
+                  {ui.createAccount}
                 </button>
               </div>
             ) : (
@@ -3396,22 +3396,22 @@ const App: React.FC = () => {
               </div>
             )}
             <div className="space-y-2">
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { goToWorkbookList(); setMenuOpen(false); }}>Workbooks</button>
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>Courses</button>
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>Placement Test</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { goToWorkbookList(); setMenuOpen(false); }}>{ui.workbooks}</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.COURSES); setMenuOpen(false); }}>{ui.courses}</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.PLACEMENT_TEST); setMenuOpen(false); }}>{ui.placement}</button>
               {canAccessTeacherDashboard && (
-                <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 Teacher Dashboard</button>
+                <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-purple-50 text-purple-600 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.TEACHER_DASHBOARD); setMenuOpen(false); }}>📊 {ui.teacherDashboard}</button>
               )}
               {menuVisibility.problemReports && (
                 <button className="flex w-full items-center justify-between rounded-xl px-4 py-3 text-left font-medium text-rose-700 transition-colors hover:bg-rose-50" onClick={() => { setCurrentSection(SectionType.PROBLEM_REPORTS); setMenuOpen(false); }}>
-                  <span>Relatórios de problemas</span>
+                  <span>{ui.reports}</span>
                   {pendingProblemReports > 0 && <span className="min-w-6 rounded-full bg-rose-600 px-2 py-0.5 text-center text-xs font-black text-white">{pendingProblemReports}</span>}
                 </button>
               )}
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>Settings</button>
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>Help</button>
-              {menuVisibility.generalProblemReport && <button className="block w-full rounded-xl px-4 py-3 text-left font-medium text-amber-700 transition-colors hover:bg-amber-50" onClick={() => { setMenuOpen(false); setGeneralReportOpen(true); }}>⚠ Reportar problema</button>}
-              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 font-medium transition-colors" onClick={handleLogout}>Logout</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.SETTINGS); setMenuOpen(false); }}>{ui.settings}</button>
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-blue-50 font-medium transition-colors" onClick={() => { setCurrentSection(SectionType.HELP); setMenuOpen(false); }}>{ui.help}</button>
+              {menuVisibility.generalProblemReport && <button className="block w-full rounded-xl px-4 py-3 text-left font-medium text-amber-700 transition-colors hover:bg-amber-50" onClick={() => { setMenuOpen(false); setGeneralReportOpen(true); }}>⚠ {ui.reportProblem}</button>}
+              <button className="block w-full text-left px-4 py-3 rounded-xl hover:bg-red-50 text-red-600 font-medium transition-colors" onClick={handleLogout}>{ui.logout}</button>
             </div>
           </div>
         </div>
@@ -3533,6 +3533,7 @@ const App: React.FC = () => {
         />
       )}
     </div>
+    </UiLanguageProvider>
   );
 };
 

@@ -1,3 +1,4 @@
+import { useUiLanguage } from '../../i18n/UiLanguageContext';
 import type { GrammarNavigatorSurfaceContent } from '../GrammarFocus/GrammarNavigatorModal';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
@@ -850,6 +851,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   onOpenSessionPanel,
   onStartTrailBattle,
 }) => {
+  const { baseLanguage } = useUiLanguage();
   const [blocks, setBlocks] = useState<LiveExerciseBlock[]>([]);
   const [blocksError, setBlocksError] = useState<string | null>(null);
   const [exerciseSession, setExerciseSession] = useState<{ currentBlockId: string | null }>({
@@ -2083,7 +2085,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           currentLessonId={lesson?.id ?? lessonId}
           currentLessonNumber={lessonNumber}
           synchronizedLessonNumber={session.sharedGrammarOpen ? session.sharedGrammarLessonNumber ?? null : null}
-          activeLanguage={effectiveUiLanguage}
+          activeLanguage={baseLanguage}
           userRole={userRole}
           user={user}
           scrollRef={grammarModalScrollRef}

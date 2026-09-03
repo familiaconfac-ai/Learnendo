@@ -1,3 +1,4 @@
+import { getUiLabels } from '../../i18n/uiLabels';
 import React from 'react';
 import { Course, LessonLanguageCode } from '../../types';
 import { learnendoLogoTransparent } from '../../assets/branding';
@@ -22,13 +23,7 @@ const CATEGORY_LABELS: Record<UILang, Record<CategoryKey, string>> = {
 };
 
 // ── "Choose your language" prompt ─────────────────────────────────────────────
-const CHOOSE_LABEL: Record<LessonLanguageCode, string> = {
-  en: 'Choose your language',
-  pt: 'Escolha seu idioma',
-  es: 'Elige tu idioma',
-  el: 'Επιλέξτε γλώσσα',
-  he: 'בחר שפה',
-};
+
 
 // ── Localized display for the three main courses ──────────────────────────────
 const COURSE_DISPLAY: Record<UILang, Record<string, { title: string; subtitle: string }>> = {
@@ -93,7 +88,7 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
               />
             )}
           </button>
-          <p className="text-slate-400 font-semibold text-xs sm:text-sm mt-1">{CHOOSE_LABEL[currentLanguage]}</p>
+          <p className="text-slate-400 font-semibold text-xs sm:text-sm mt-1">{getUiLabels(uiLang).chooseCourse}</p>
         </div>
 
         {/* Category sections */}

@@ -28,7 +28,8 @@ import { getLiveClassMeetLink } from '../../../services/liveClassesService';
 import { sanitizeMainStageMode } from '../../../services/liveClassStage';
 import type { SavedBattleTemplate } from '../Battle/battleTypes';
 import type { LiveClass, LiveClassPresence, LiveClassSession, LiveTrailCompletion } from '../../../types';
-import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
+import { useUiLanguage } from '../../../i18n/UiLanguageContext';
+import { getUiLabels } from '../../../i18n/uiLabels';
 import type { UserRole } from '../../../services/userRoles';
 import { appendGrammarFocusWorkspacePage } from '../../../services/grammarFocusWorkspace';
 
@@ -186,13 +187,7 @@ const TeacherStage: React.FC<{
   const showStageQuickControls = showStageMicrophoneControl && !chatOpen;
   const stageQuickControlsZClass = isBattleStage ? 'z-[10050]' : 'z-[160]';
 
-  const uiLang: 'en' | 'pt' | 'es' = (() => {
-    try {
-      return (getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY) as 'en' | 'pt' | 'es') ?? 'pt';
-    } catch {
-      return 'pt';
-    }
-  })();
+  const { uiLanguage: uiLang, baseLanguage } = useUiLanguage();
 
   const labels = {
     exit: uiLang === 'en' ? 'Log out' : uiLang === 'es' ? 'Salir' : 'Sair',
@@ -561,7 +556,7 @@ const TeacherStage: React.FC<{
                         onClick={() => setShowWorkspaceGrammar(true)}
                         className="flex h-7 items-center justify-center rounded border border-violet-300 bg-violet-50 px-2 text-[10px] font-black uppercase tracking-wide text-violet-700 transition hover:bg-violet-100"
                       >
-                        Grammar
+                        {getUiLabels(uiLang).grammar}
                       </button>
                       <button
                         type="button"
@@ -980,7 +975,7 @@ const TeacherStage: React.FC<{
               courseId={liveClass.courseId ?? 'english'}
               initialWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
               currentLessonId={session.activeLessonId ?? liveClass.lessonId ?? null}
-              activeLanguage={uiLang}
+              activeLanguage={baseLanguage}
               userRole={effectiveRole}
               user={user}
               scrollRef={grammarScrollRef}

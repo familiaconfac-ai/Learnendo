@@ -39,7 +39,7 @@ test('the Grammar navigator covers every configured workbook and highlights the 
   assert.doesNotMatch(navigator, /updateLiveSession|handleUpdateSession/,
     'browsing another workbook must not mutate the active Live session');
   assert.match(component, /workbookOptions\.map/);
-  assert.match(component, /Current lesson/);
+  assert.match(component, /ui\.currentLesson/);
 });
 
 test('Grammar actions stay individual outside Live and use the collective panel inside Live', () => {

@@ -1,3 +1,4 @@
+import { getUiLabels } from '../../i18n/uiLabels';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassGroup, LiveClassGroupInput, LiveClassInput } from '../../types';
@@ -512,7 +513,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
 
   return (
     <div className="min-h-screen bg-slate-900 px-3 pb-28 pt-6 sm:px-4">
-      <button onClick={onBack} className="mb-4 text-sm font-bold text-slate-200" type="button">&larr; Back</button>
+      <button onClick={onBack} className="mb-4 text-sm font-bold text-slate-200" type="button">&larr; {getUiLabels(uiLanguage).back}</button>
 
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
@@ -640,7 +641,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
                   ) : null}
                   {getAssignedStudentLabels(liveClass).length > 0 ? (
                     <p className="mt-1 text-xs text-slate-400">
-                      <span className="font-semibold text-slate-300">Students: </span>
+                      <span className="font-semibold text-slate-300">{getUiLabels(uiLanguage).students}: </span>
                       {getAssignedStudentLabels(liveClass).join(', ')}
                     </p>
                   ) : null}
