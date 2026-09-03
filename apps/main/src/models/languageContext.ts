@@ -54,3 +54,27 @@ export function createLanguageContext(input: {
 export function resolveLegacyBaseLanguage(storedBase: unknown, storedSelection: unknown): BaseLanguage {
   return isBaseLanguage(storedBase) ? storedBase : isBaseLanguage(storedSelection) ? storedSelection : 'en';
 }
+
+/** Self-study context. Neither course selection nor view mode owns personal preferences. */
+export function resolveRuntimeLanguageContext(input: {
+  uid: string | null;
+  profile?: { uid: string; baseLanguage?: unknown; uiLanguage?: unknown } | null;
+  cachedBaseLanguage?: unknown;
+  legacyBaseLanguage?: unknown;
+  courseId: string;
+}): LanguageContext & { needsLanguageSetup: boolean; suggestedBaseLanguage: BaseLanguage; baseLanguageSource: 'profile' | 'uid-cache' | 'fallback' } {
+  const targetLanguage = getCourseTargetLanguage(input.courseId);
+  if (!targetLanguage) throw new Error('Unknown curriculum for language context.');
+  const profile = input.uid && input.profile?.uid === input.uid ? input.profile : null;
+  const persisted = isBaseLanguage(profile?.baseLanguage) ? profile.baseLanguage : null;
+  const cached = input.uid && isBaseLanguage(input.cachedBaseLanguage) ? input.cachedBaseLanguage : null;
+  const baseLanguage = persisted ?? cached ?? 'en';
+  return {
+    targetLanguage, baseLanguage, instructionLanguage: baseLanguage,
+    uiLanguage: isBaseLanguage(profile?.uiLanguage) ? profile.uiLanguage : baseLanguage,
+    baseLanguageSource: persisted ? 'profile' : cached ? 'uid-cache' : 'fallback',
+    needsLanguageSetup: Boolean(input.uid && !persisted),
+    // Unscoped legacy storage may preselect the form, but never drives another account's runtime or writes.
+    suggestedBaseLanguage: persisted ?? cached ?? (isBaseLanguage(input.legacyBaseLanguage) ? input.legacyBaseLanguage : 'en'),
+  };
+}

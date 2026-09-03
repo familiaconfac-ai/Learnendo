@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+const app = read('../src/App.tsx');
+const hook = read('../src/hooks/useRuntimeLanguageContext.ts');
+const form = read('../src/components/LanguagePreferencesSettings.tsx');
+assert.match(app, /profileSnapshot\?\.uid === user\?\.uid/);
+assert.match(app, /languageContext\.needsLanguageSetup && !activeOnlineClass/);
+assert.match(app, /\[SectionType\.COURSES, SectionType\.DASHBOARD, SectionType\.WORKBOOK_LIST\]/);
+assert.match(app, /activeLanguage=\{baseLanguage\}/, 'Grammar locale must start from the personal base');
+assert.match(app, /case SectionType\.SETTINGS:[\s\S]*?<LanguagePreferencesSettings/);
+assert.doesNotMatch(app, /setScopedStorageItem\(BASE_UI_LANGUAGE_STORAGE_KEY/);
+assert.doesNotMatch(hook, /setLanguage|setCurrentCourse|setCurrentWorkbook|setCurrentLesson|setProgress|updateDoc|setDoc/);
+assert.doesNotMatch(form, /doc\([^\n]*['"]progress['"]|courseProgress|setCurrentCourse|instructionLanguage:/);
+assert.match(form, /onSubmit=\{submit\}/);
+assert.match(hook, /profile\?\.uid === uid/);
+console.log('Language profile UI: UID boundary, safe setup routes, explicit confirmation and unchanged navigation/Grammar contracts passed.');

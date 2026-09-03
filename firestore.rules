@@ -689,17 +689,49 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    function validUserLanguagePreferences(data) {
+      return (!data.keys().hasAny(['baseLanguage']) || data.baseLanguage in ['en', 'pt', 'es'])
+        && (!data.keys().hasAny(['learningLanguages']) || (data.learningLanguages is list
+          && data.learningLanguages.size() <= 5
+          && data.learningLanguages.hasOnly(['en', 'pt', 'es', 'el', 'he'])
+          && data.learningLanguages.toSet().size() == data.learningLanguages.size()))
+        && (!data.keys().hasAny(['languagePreferencesVersion']) || data.languagePreferencesVersion == 1)
+        && (!data.keys().hasAny(['languagePreferencesUpdatedAt']) || data.languagePreferencesUpdatedAt is timestamp)
+        && (!data.keys().hasAny(['languagePreferencesUpdatedBy']) || data.languagePreferencesUpdatedBy == request.auth.uid);
+    }
+
+    function languagePreferenceKeys() {
+      return ['baseLanguage', 'learningLanguages', 'languagePreferencesVersion', 'languagePreferencesUpdatedAt', 'languagePreferencesUpdatedBy'];
+    }
+
     match /users/{uid} {
       allow read: if isOwner(uid) || isAdmin() || isTeacherAccount();
-      allow create: if isAdmin()
+      allow create: if (isAdmin() && validUserLanguagePreferences(request.resource.data))
         || (isOwner(uid)
+          && request.resource.data.keys().hasOnly(['uid', 'name', 'displayName', 'email', 'role',
+            'isAnonymous', 'wasAnonymous', 'createdAt', 'lastLoginAt', 'lastActive', 'difficultyLevel', 'totalStudyTime'])
+          && request.resource.data.get('uid', uid) == uid
           && (!request.resource.data.keys().hasAny(['role']) || request.resource.data.role == 'student'));
-      allow update: if isAdmin()
-        || (isOwner(uid)
-          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']));
-      allow delete: if isOwner(uid) || isAdmin();
+      allow update: if (isAdmin()
+          && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(languagePreferenceKeys())
+            || validUserLanguagePreferences(request.resource.data)))
+        || (isOwner(uid) && (
+          (request.resource.data.diff(resource.data).affectedKeys().hasOnly(languagePreferenceKeys())
+            && validUserLanguagePreferences(request.resource.data)
+            && request.resource.data.baseLanguage in ['en', 'pt', 'es']
+            && request.resource.data.languagePreferencesVersion == 1
+            && request.resource.data.languagePreferencesUpdatedAt == request.time
+            && request.resource.data.languagePreferencesUpdatedBy == request.auth.uid)
+          || (request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'uid', 'isAnonymous', 'wasAnonymous', 'lastLoginAt', 'lastActive', 'lastUpdated',
+            'totalStudyTime', 'difficultyLevel', 'totalDiamonds', 'totalFire', 'totalIce',
+            'placementScore', 'placementLevel', 'placementCompletedAt'])
+            && request.resource.data.get('uid', uid) == uid)
+        ));
+      allow delete: if isAdmin();
 
-      match /{document=**} {
+      // A recursive wildcard alone can match zero segments in Rules v2 and bypass the parent policy.
+      match /{collectionId}/{document=**} {
         allow read, create, update, delete: if isOwner(uid) || isAdmin();
       }
     }

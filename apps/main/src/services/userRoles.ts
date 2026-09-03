@@ -7,8 +7,10 @@ import {
   serverTimestamp,
   setDoc,
   writeBatch,
+  updateDoc,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { mapUserLanguagePreferences, validateUserLanguagePreferences, type UserLanguagePreferences } from '../models/userLanguagePreferences';
 import {
   getAllowedViewModes,
   getDefaultViewMode,
@@ -28,7 +30,7 @@ export {
 };
 export type { UserRole, UserViewMode };
 
-export interface UserAccountProfile {
+export interface UserAccountProfile extends UserLanguagePreferences {
   uid: string;
   name: string;
   email: string | null;
@@ -75,7 +77,7 @@ export function getUserViewModeStorageKey(uid: string): string {
   return `learnendo_user_view_mode_${uid}`;
 }
 
-function mapUserAccountProfile(
+export function mapUserAccountProfile(
   uid: string,
   data: Record<string, any> | undefined,
   emailFallback?: string | null,
@@ -88,6 +90,7 @@ function mapUserAccountProfile(
       : 'default-student';
 
   return {
+    ...mapUserLanguagePreferences(data),
     uid,
     name: data?.name ?? data?.displayName ?? email?.split('@')[0] ?? 'User',
     email,
@@ -100,6 +103,24 @@ function mapUserAccountProfile(
     lastActive: data?.lastActive,
     lastLoginAt: data?.lastLoginAt,
   };
+}
+
+/** Explicit owner/admin confirmation. Never called from login or profile hydration. */
+export async function updateUserLanguagePreferences(
+  uid: string,
+  preferences: Pick<UserLanguagePreferences, 'baseLanguage' | 'learningLanguages'>,
+  updatedByUid: string,
+): Promise<void> {
+  validateUserLanguagePreferences(preferences);
+  if (!uid || !updatedByUid) throw new Error('User identity is required.');
+  // Construct the allowlist; runtime callers cannot smuggle administrative fields into the write.
+  await updateDoc(doc(db, 'users', uid), {
+    baseLanguage: preferences.baseLanguage,
+    ...(preferences.learningLanguages !== undefined ? { learningLanguages: [...preferences.learningLanguages] } : {}),
+    languagePreferencesVersion: 1,
+    languagePreferencesUpdatedAt: serverTimestamp(),
+    languagePreferencesUpdatedBy: updatedByUid,
+  });
 }
 
 export function subscribeUserAccountProfile(
@@ -116,7 +137,11 @@ export function subscribeUserAccountProfile(
   const userRef = doc(db, 'users', uid);
   return onSnapshot(
     userRef,
+    { includeMetadataChanges: true },
     (snapshot) => {
+      // A local optimistic write is not a confirmed profile preference. Wait for commit/rollback
+      // before updating runtime or UID cache, including when older deployed Rules reject a save.
+      if (snapshot.metadata.hasPendingWrites) return;
       onData(mapUserAccountProfile(uid, snapshot.data() as Record<string, any> | undefined, emailFallback));
     },
     (error) => {

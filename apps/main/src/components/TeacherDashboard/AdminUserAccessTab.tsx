@@ -8,6 +8,7 @@ import {
   UserRole,
 } from '../../services/userRoles';
 import { deleteAdminStudent, updateAdminStudent } from '../../services/adminStudents';
+import { LanguagePreferencesSettings } from '../LanguagePreferencesSettings';
 
 interface AdminUserAccessTabProps {
   user: User;
@@ -30,6 +31,8 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
   const [savingUid, setSavingUid] = useState<string | null>(null);
   const [profileSaveStates, setProfileSaveStates] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'failed'>>({});
   const [search, setSearch] = useState('');
+  const [languageAccountUid, setLanguageAccountUid] = useState<string | null>(null);
+  const languageAccount = accounts.find(account => account.uid === languageAccountUid);
   const [drafts, setDrafts] = useState<Record<string, { name: string; email: string }>>({});
 
   useEffect(() => {
@@ -227,6 +230,13 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
 
   return (
     <div className="space-y-4">
+      {languageAccount && <div className="rounded-2xl bg-slate-900 p-4 text-white">
+        <p className="font-bold">Language preferences: {languageAccount.name} ({languageAccount.uid})</p>
+        <button type="button" onClick={() => setLanguageAccountUid(null)}>Close</button>
+        <LanguagePreferencesSettings key={languageAccount.uid} profile={languageAccount} updatedByUid={user.uid}
+          suggestedBaseLanguage={languageAccount.baseLanguage ?? 'en'}
+          targetLanguage={languageAccount.learningLanguages?.[0] ?? 'en'} uiLanguage="en" />
+      </div>}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-2xl bg-white px-4 py-4 shadow-sm">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Admins</p>
@@ -352,6 +362,7 @@ export const AdminUserAccessTab: React.FC<AdminUserAccessTabProps> = ({ user }) 
                       </td>
                       <td className="px-3 py-3">
                         <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => setLanguageAccountUid(account.uid)} className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">Languages</button>
                           <button
                             type="button"
                             disabled={isSaving || !hasProfileChanges}

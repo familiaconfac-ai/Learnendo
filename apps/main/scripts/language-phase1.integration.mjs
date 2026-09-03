@@ -8,7 +8,7 @@ if (!projectId.startsWith('demo-') || !process.env.FIRESTORE_EMULATOR_HOST || !p
 }
 const root = resolve(import.meta.dirname, '..');
 const entry = process.argv[2] ?? 'language-phase1.integration.ts';
-if (!['language-phase1.integration.ts', 'grammar-focus-upgrade.integration.tsx'].includes(entry)) throw new Error('Unknown integration entry.');
+if (!['language-phase1.integration.ts', 'grammar-focus-upgrade.integration.tsx', 'language-phase2.integration.tsx'].includes(entry)) throw new Error('Unknown integration entry.');
 const outfile = resolve(root, 'node_modules/.cache/' + entry.replace(/\.tsx?$/, '.mjs'));
 await build({
   absWorkingDir: root, entryPoints: ['scripts/' + entry],

@@ -189,7 +189,7 @@ const firestoreRules = fs.readFileSync(path.resolve('../../firestore.rules'), 'u
 assert.match(firestoreRules, /match \/users\/\{uid\}[\s\S]*isOwner\(uid\)/);
 assert.match(firestoreRules, /match \/notificationDeliveries\/\{deliveryId\}[\s\S]*allow read, write: if false/);
 assert.match(firestoreRules, /match \/notificationDeviceOwners\/\{deviceId\}[\s\S]*allow read, write: if false/);
-assert.match(firestoreRules, /match \/users\/\{uid\}[\s\S]*match \/\{document=\*\*\}[\s\S]*isOwner\(uid\) \|\| isAdmin\(\)/);
+assert.match(firestoreRules, /match \/users\/\{uid\}[\s\S]*match \/\{collectionId\}\/\{document=\*\*\}[\s\S]*isOwner\(uid\) \|\| isAdmin\(\)/);
 
 const notificationApi = fs.readFileSync(path.resolve('api/notifications.ts'), 'utf8');
 assert.match(notificationApi, /const admin = await requireAdmin\(authorization\)/);

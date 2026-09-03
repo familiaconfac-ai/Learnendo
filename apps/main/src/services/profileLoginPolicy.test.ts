@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { resolveLoginProfileFields } from './profileLoginPolicy.ts';
+import { buildLoginProfilePatch, resolveLoginProfileFields } from './profileLoginPolicy.ts';
 
 assert.deepEqual(
   resolveLoginProfileFields(
@@ -38,6 +38,9 @@ let usersDocument: Record<string, unknown> = {
   role: 'student',
   status: 'active',
   group: 'Turma A',
+  baseLanguage: 'es',
+  learningLanguages: ['en', 'he'],
+  assignedTeacherUid: 'teacher-1',
 };
 let progressDocument: Record<string, unknown> = {
   displayName: 'Nome Novo',
@@ -50,7 +53,9 @@ for (const event of ['bootstrap', 'refresh', 'logout/login', 'second refresh']) 
     authProfile.displayName,
     authProfile.email,
   );
-  usersDocument = { ...usersDocument, name: resolved.name, displayName: resolved.name, email: resolved.email };
+  const patch = buildLoginProfilePatch(usersDocument, { uid: 'A', ...authProfile, isAnonymous: false }, 123);
+  assert.deepEqual(Object.keys(patch).sort(), ['isAnonymous', 'lastLoginAt', 'wasAnonymous']);
+  usersDocument = { ...usersDocument, ...patch };
   progressDocument = { ...progressDocument, displayName: resolved.name, email: resolved.email };
   const pedagogicalProgressWrite = { totalAttempts: 12, totalErrors: 2 };
   progressDocument = { ...progressDocument, ...pedagogicalProgressWrite };
@@ -60,7 +65,16 @@ for (const event of ['bootstrap', 'refresh', 'logout/login', 'second refresh']) 
   assert.equal(usersDocument.role, 'student', `${event}: role must remain untouched`);
   assert.equal(usersDocument.status, 'active', `${event}: status must remain untouched`);
   assert.equal(usersDocument.group, 'Turma A', `${event}: group must remain untouched`);
+  assert.equal(usersDocument.baseLanguage, 'es');
+  assert.deepEqual(usersDocument.learningLanguages, ['en', 'he']);
+  assert.equal(usersDocument.assignedTeacherUid, 'teacher-1');
 }
+
+const separateNames = { name: 'Official Name', displayName: 'Separate Display', email: null, baseLanguage: 'pt' };
+const afterLogin = { ...separateNames, ...buildLoginProfilePatch(separateNames, { uid: 'A', displayName: 'Old auth', email: 'old@example.test', isAnonymous: false }, 124) };
+assert.equal(afterLogin.displayName, 'Separate Display');
+assert.equal(afterLogin.email, null);
+assert.equal(afterLogin.baseLanguage, 'pt');
 
 const appSource = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
 const flatProgressPayload = appSource.match(/const flatProgressPayload = \{([\s\S]*?)\n\s+\};/)?.[1] ?? '';

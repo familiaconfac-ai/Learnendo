@@ -1,10 +1,10 @@
 
-import { collection, addDoc, serverTimestamp, doc, setDoc, updateDoc, getDoc, query, where, getDocs, increment } from "firebase/firestore";
+import { collection, addDoc, serverTimestamp, doc, setDoc, updateDoc, getDoc, query, where, getDocs, increment, runTransaction } from "firebase/firestore";
 import { db } from "./firebase";
 import { auth } from "./firebase";
 import { AnswerLog, UserProgress } from "../types";
 import type { User } from "firebase/auth";
-import { resolveLoginProfileFields } from "./profileLoginPolicy";
+import { buildLoginProfilePatch, resolveLoginProfileFields } from "./profileLoginPolicy";
 
 // ==========================================
 // PRODUCTION-READY FIRESTORE ARCHITECTURE
@@ -59,37 +59,20 @@ export async function createOrUpdateUserProfile(user: User, emailOverride?: stri
 
   try {
     const userDoc = doc(db, 'users', user.uid);
-    const existingSnapshot = await getDoc(userDoc);
-    const existingData = existingSnapshot.data() || {};
-    const { name: nameToUse, email: emailToUse } = resolveLoginProfileFields(
-      existingData,
-      user.displayName,
-      user.email,
-      emailOverride,
-    );
-    const wasAnonymous =
-      Boolean(existingData.wasAnonymous) ||
-      Boolean(existingData.isAnonymous) ||
-      /^Player_[A-Za-z0-9]{4,}$/.test(nameToUse);
-    
-    await setDoc(userDoc, {
-      uid: user.uid,
-      name: nameToUse,
-      displayName: nameToUse,
-      email: emailToUse,
-      isAnonymous: user.isAnonymous,
-      wasAnonymous,
-      ...(!existingSnapshot.exists() ? { createdAt: serverTimestamp() } : {}),
-      lastLoginAt: serverTimestamp(),
-    }, { merge: true });
+    const progressRef = doc(db, 'progress', user.uid);
+    await runTransaction(db, async transaction => {
+      const existingSnapshot = await transaction.get(userDoc);
+      const progressSnapshot = await transaction.get(progressRef);
+      const existing = existingSnapshot.exists() ? existingSnapshot.data() : null;
+      transaction.set(userDoc, buildLoginProfilePatch(existing, user, serverTimestamp(), emailOverride), { merge: true });
+      // Initialize the compatibility mirror only once. Existing administrative identity is never replayed by login.
+      if (!progressSnapshot.exists()) {
+        const identity = resolveLoginProfileFields(existing ?? {}, user.displayName, user.email, emailOverride);
+        transaction.set(progressRef, { displayName: identity.name, email: identity.email, lastUpdated: new Date().toISOString() }, { merge: true });
+      }
+    });
 
-    await setDoc(doc(db, 'progress', user.uid), {
-      displayName: nameToUse,
-      email: emailToUse,
-      lastUpdated: new Date().toISOString(),
-    }, { merge: true });
-
-    console.log('[DB] User profile created/updated:', user.uid, { email: emailToUse });
+    console.log('[DB] User login metadata recorded:', user.uid);
   } catch (error) {
     console.error('[DB] Error creating user profile:', error);
     throw error;
@@ -501,27 +484,24 @@ export async function createStudentProfile(uid: string, email: string, displayNa
 
   try {
     const userDocRef = doc(db, "users", uid);
-    const existingSnapshot = await getDoc(userDocRef);
-    if (existingSnapshot.exists()) {
-      console.log("Student profile already exists; preserving Firestore profile:", uid);
-      return;
-    }
-
     const { name: resolvedName, email: resolvedEmail } = resolveLoginProfileFields(
       {},
       displayName,
       email,
     );
-    await setDoc(userDocRef, {
-      uid,
-      email: resolvedEmail,
-      name: resolvedName,
-      displayName: resolvedName,
-      createdAt: serverTimestamp(),
-      lastActive: serverTimestamp(),
-      difficultyLevel: "normal",
-      totalStudyTime: 0,
-    }, { merge: true });
+    await runTransaction(db, async transaction => {
+      if ((await transaction.get(userDocRef)).exists()) return;
+      transaction.set(userDocRef, {
+        uid,
+        email: resolvedEmail,
+        name: resolvedName,
+        displayName: resolvedName,
+        createdAt: serverTimestamp(),
+        lastActive: serverTimestamp(),
+        difficultyLevel: "normal",
+        totalStudyTime: 0,
+      }, { merge: true });
+    });
     console.log("Student profile created/updated for:", uid);
   } catch (e) {
     console.error("Error creating student profile:", e);

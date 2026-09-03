@@ -1,4 +1,6 @@
-import { COURSE_TARGET_LANGUAGE, PRIMARY_COURSE_FOR_TARGET, createLanguageContext, resolveLegacyBaseLanguage } from './models/languageContext';
+import { COURSE_TARGET_LANGUAGE, PRIMARY_COURSE_FOR_TARGET, getCourseTargetLanguage } from './models/languageContext';
+import { useRuntimeLanguageContext } from './hooks/useRuntimeLanguageContext';
+import { LanguagePreferencesSettings } from './components/LanguagePreferencesSettings';
 import { getPlacementBank } from './models/placementIdentity';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { User, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -60,7 +62,6 @@ import {
   UserViewMode,
 } from './services/userRoles';
 import {
-  BASE_UI_LANGUAGE_STORAGE_KEY,
   TabAppContext,
   USER_LANGUAGE_STORAGE_KEY,
   getScopedStorageItem,
@@ -330,16 +331,6 @@ const App: React.FC = () => {
 
   }, []);
 
-  // Bootstrap the legacy preference once; course selection/restoration only changes the target.
-  const [baseLanguage] = useState(() => resolveLegacyBaseLanguage(
-    getScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY), initialStoredLanguage,
-  ));
-  useEffect(() => {
-    setScopedStorageItem(BASE_UI_LANGUAGE_STORAGE_KEY, baseLanguage, true);
-  }, [baseLanguage]);
-  const languageContext = createLanguageContext({ targetLanguage: language, baseLanguage });
-  const { uiLanguage } = languageContext;
-
   // ===== APP STATE =====
   const [progress, setProgress] = useState<UserProgress>({
     userId: 'user1',
@@ -382,7 +373,11 @@ const App: React.FC = () => {
   const [lessonTestCompleted, setLessonTestCompleted] = useState<Record<number, boolean>>({});
   const [lessonTestScores, setLessonTestScores] = useState<Record<number, number>>({});
   const [user, setUser] = useState<User | null>(null);
-  const [userAccountProfile, setUserAccountProfile] = useState<UserAccountProfile | null>(null);
+  const [profileSnapshot, setUserAccountProfile] = useState<UserAccountProfile | null>(null);
+  const userAccountProfile = profileSnapshot?.uid === user?.uid ? profileSnapshot : null;
+  const languageContext = useRuntimeLanguageContext(user?.uid ?? null, userAccountProfile,
+    getCourseTargetLanguage(currentCourseId) ? currentCourseId! : PRIMARY_COURSE_FOR_TARGET[language]);
+  const { baseLanguage, uiLanguage } = languageContext;
   const [userViewMode, setUserViewMode] = useState<UserViewMode>('student');
   const [authReady, setAuthReady] = useState(false);
   /** True once the Firestore courseProgress/main snapshot has responded (even if empty).
@@ -552,6 +547,8 @@ const App: React.FC = () => {
       return;
     }
 
+    let active = true;
+    setUserAccountProfile(null);
     const storageKey = getUserViewModeStorageKey(user.uid);
     const tabStorageKey = buildTabViewModeStorageKey(user.uid);
     let pendingMode = getSessionStorageItem(PENDING_VIEW_MODE_STORAGE_KEY);
@@ -566,6 +563,7 @@ const App: React.FC = () => {
       user.uid,
       user.email,
       (profile) => {
+        if (!active) return;
         setUserAccountProfile(profile);
         setUserViewMode((currentMode) => {
           const requestedMode = initialRequestedMode ?? currentMode;
@@ -589,7 +587,7 @@ const App: React.FC = () => {
       },
     );
 
-    return unsubscribe;
+    return () => { active = false; unsubscribe(); };
   }, [user?.email, user?.uid]);
 
   useEffect(() => {
@@ -789,6 +787,7 @@ const App: React.FC = () => {
         // Create or update user profile in Firestore
         console.log('[App] Recording user profile...');
         await createOrUpdateUserProfile(authenticatedUser);
+        if (auth.currentUser?.uid !== authenticatedUser.uid) return;
 
         // Create session entry
         console.log('[App] Creating session...');
@@ -805,6 +804,7 @@ const App: React.FC = () => {
         // Do NOT return - continue even if tracking fails
       }
 
+      if (auth.currentUser?.uid !== authenticatedUser.uid) return;
       // ========== STEP 3: SET UID & DEFAULTS ==========
       // Progress is driven SOLELY by the onSnapshot listener on courseProgress/main.
       // We only stamp userId here so that any Firestore write before the snapshot
@@ -3011,13 +3011,11 @@ const App: React.FC = () => {
         );
       }
       case SectionType.SETTINGS:
-        return user && !user.isAnonymous
-          ? <NotificationSettings user={user} />
-          : (
-            <div className="min-h-screen bg-slate-900 flex items-center justify-center px-6 text-center">
-              <p className="text-slate-300 font-semibold">Create an account to manage notifications.</p>
-            </div>
-          );
+        return <div className="min-h-screen bg-slate-900 px-4 py-6">
+          {userAccountProfile && <LanguagePreferencesSettings key={userAccountProfile.uid} profile={userAccountProfile}
+            suggestedBaseLanguage={languageContext.suggestedBaseLanguage} targetLanguage={languageContext.targetLanguage} uiLanguage={uiLanguage} />}
+          {user && !user.isAnonymous ? <NotificationSettings user={user} /> : <p className="text-center text-slate-300">Create an account to manage notifications.</p>}
+        </div>;
       case SectionType.HELP:
         return (
           <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center px-6 text-center gap-6">
@@ -3430,7 +3428,14 @@ const App: React.FC = () => {
           initialDayId={currentDay?.id}
         />
       )}
-      <main data-app-chrome="main" className="pt-[68px] pb-[56px]">{renderSection()}</main>
+      <main data-app-chrome="main" className="pt-[68px] pb-[56px]">
+        {userAccountProfile && languageContext.needsLanguageSetup && !activeOnlineClass &&
+          ([SectionType.COURSES, SectionType.DASHBOARD, SectionType.WORKBOOK_LIST].includes(currentSection)
+            || (currentSection === SectionType.WORKBOOK && !currentLessonId && !currentDay)) &&
+          <LanguagePreferencesSettings key={userAccountProfile.uid} profile={userAccountProfile}
+            suggestedBaseLanguage={languageContext.suggestedBaseLanguage} targetLanguage={languageContext.targetLanguage} uiLanguage={uiLanguage} />}
+        {renderSection()}
+      </main>
       {weekCompletionResult && (
         <WeekCompletionPopup
           result={weekCompletionResult}
