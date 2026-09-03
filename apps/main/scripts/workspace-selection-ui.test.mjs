@@ -24,12 +24,7 @@ assert.match(awarenessWriter, /participantSelections\.\$\{participantId\}/);
 assert.match(awarenessWriter, /selection \?\? deleteField\(\)/, 'collapsed selections must clear awareness');
 assert.doesNotMatch(awarenessWriter, /docContent|innerHTML|pages/, 'awareness must not change persisted page HTML');
 assert.doesNotMatch(scrollWriter, /docContent|innerHTML|pages/, 'scroll awareness must not change persisted page HTML');
-assert.match(canvas, /selection\.pageId === remoteCurrentPageId/, 'only selections from the active page may render');
-assert.match(canvas, /\[activePageId,[^\]]*clearPublishedSelection,[^\]]*surfaceMode/, 'page and surface changes must clear awareness');
-assert.match(canvas, /selection\.updatedBy !== userId/, 'a participant must never render their own remote decoration');
 assert.match(canvas, /isSerializedRangeCollapsed\(selection\.range\)/, 'collapsed ranges must render as remote carets');
-assert.match(canvas, /saveParticipantScroll\(classId, userId/, 'every participant can publish logical scroll awareness');
-assert.match(canvas, /restoreScrollTop\(newestRemoteScroll\.ratio/, 'remote scroll must adapt to the receiving viewport');
 assert.match(canvas, /applyingRemoteScrollRef\.current \|\| Date\.now\(\) < suppressScrollPublishUntilRef\.current/,
   'applied remote scroll must not be published back');
 assert.doesNotMatch(canvas, /if \(viewerIsStudent\) \{[\s\S]{0,500}lastRemoteScrollRatioRef/,
@@ -44,3 +39,11 @@ assert.match(canvas, /fontSize: '16px'/, 'toolbar inspection must not resize the
 assert.match(canvas, /serializedLocalRange[\s\S]+restoredLocalRange/, 'remote content refresh must preserve a valid local caret/selection');
 
 console.log('workspace selection UI tests passed');
+
+assert.match(canvas, /restoreDomRange\(root, selected\.range\)/);
+assert.match(canvas, /selection\?\.addRange\(range\)/, 'the authoritative Range must be native, not decoration only');
+assert.match(canvas, /if \(!board\.ownRef\.current/, 'followers cannot publish');
+assert.match(canvas, /composingRef\.current/, 'IME composition defers remote application');
+assert.match(canvas, /view\.pageId !== activePageIdRef\.current/);
+assert.match(canvas, /restoreScrollTop\(view\.scrollRatio/);
+assert.doesNotMatch(canvas, /newestRemoteScroll|saveParticipantScroll\(/);

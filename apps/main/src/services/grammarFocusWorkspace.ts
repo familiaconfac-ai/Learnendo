@@ -1,5 +1,7 @@
+import { boardControlRef } from './boardControlService';
+import type { BoardControl } from '../models/boardControl';
 import { grammarFocusDocumentId } from '../models/grammarFocus';
-import { doc, runTransaction } from 'firebase/firestore';
+import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
 import { parseControlledMarkdown } from '../utils/controlledMarkdown';
 import type { WorkspaceDoc, WorkspacePage, WorkspaceSurfaceMode, WorkspaceSurfaceState } from './workspaceService';
 import { db } from './firebase';
@@ -98,6 +100,10 @@ export async function appendGrammarFocusWorkspacePage(input: {
   const html = renderGrammarFocusWorkspaceHtml(input.title, input.markdown);
   await runTransaction(db, async (transaction) => {
     const snapshot = await transaction.get(reference);
+    const controlReference = boardControlRef(input.classId);
+    const previousControl = (await transaction.get(controlReference)).data() as BoardControl | undefined;
+    const epoch = (previousControl?.epoch ?? 0) + 1;
+    const controllerClientId = `grammar-${pageId}`;
     const workspace = (snapshot.data() ?? {}) as Partial<WorkspaceDoc>;
     const key = surfaceStateKey(input.mode);
     const activeMode = workspace.surfaceMode ?? 'document';
@@ -114,7 +120,13 @@ export async function appendGrammarFocusWorkspacePage(input: {
     };
     const state = buildGrammarFocusSurfaceState(workspace, input.mode, page);
     const pages = state.pages;
+    transaction.set(controlReference, {
+      designatedStudentId: previousControl?.designatedStudentId ?? null,
+      controllerId: input.userId, controllerClientId, epoch, teacherLeaseAt: serverTimestamp(),
+      view: null, updatedAt: serverTimestamp(),
+    });
     transaction.set(reference, {
+      controlEpoch: epoch, controlClientId: controllerClientId,
       ...(legacyActiveState ? { [surfaceStateKey(activeMode)]: legacyActiveState } : {}),
       surfaceMode: input.mode,
       presentationMode: false,

@@ -1,3 +1,4 @@
+import { boardWriteStamp, commitBoardWorkspace } from './boardControlService';
 /**
  * materialsService.ts
  *
@@ -243,6 +244,7 @@ export async function loadMaterialToWorkspace(
 
   console.log(`[Materials] LOAD TO WORKSPACE START — materialId=${materialId} classId=${classId} uid=${uid.slice(0, 8)}`);
   
+  const capability = boardWriteStamp(classId, uid);
   const snap = await getDoc(materialDocRef(materialId));
   if (!snap.exists()) {
     console.error(`[Materials] Material not found: ${materialId}`);
@@ -260,7 +262,6 @@ export async function loadMaterialToWorkspace(
   }
 
   const firstPage = pages[0];
-  const workspaceRef = doc(db, 'liveClasses', classId, 'shared', 'workspace');
   const targetState: WorkspaceSurfaceState = {
     pages,
     currentPageId: firstPage.id,
@@ -270,9 +271,10 @@ export async function loadMaterialToWorkspace(
   const surfaceKey = targetSurfaceMode === 'slides' ? 'slidesState' : 'boardState';
   
   console.log(`[Materials] Writing to workspace: pages=${pages.length} currentPageId=${firstPage.id}`);
-  await setDoc(
-    workspaceRef,
+  await commitBoardWorkspace(
+    classId,
     {
+      ...capability,
       surfaceMode: targetSurfaceMode,
       [surfaceKey]: targetState,
       pages,
@@ -285,7 +287,6 @@ export async function loadMaterialToWorkspace(
       updatedBy: uid,
       updatedByName: name,
     },
-    { merge: true },
   );
   console.log(`[Materials] LOAD TO WORKSPACE SUCCESS ✅ — materialId=${materialId} written to classId=${classId}`);
   return { pages, currentPageId: firstPage.id, surfaceMode: targetSurfaceMode, title: material.title };

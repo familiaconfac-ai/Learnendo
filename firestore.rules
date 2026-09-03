@@ -426,6 +426,95 @@ service cloud.firestore {
         );
     }
 
+    // Directed Board: designation, arbitration and visual state are separate from content.
+    function boardControlDoc(classId) {
+      return getAfter(/databases/$(database)/documents/liveClasses/$(classId)/shared/boardControl);
+    }
+    function validBoardControl(value, leaseValid) {
+      return value.keys().hasOnly(['designatedStudentId', 'controllerId', 'controllerClientId', 'epoch', 'teacherLeaseAt', 'view', 'updatedAt'])
+        && (value.designatedStudentId == null || value.designatedStudentId is string)
+        && value.controllerId is string && value.controllerClientId is string
+        && value.controllerClientId.size() > 0 && value.controllerClientId.size() < 100
+        && value.epoch is int && value.epoch > 0
+        && leaseValid
+        && value.updatedAt == request.time
+        && (value.view == null || (value.view is map
+          && value.view.keys().hasOnly(['surfaceMode', 'pageId', 'scrollRatio', 'selection'])
+          && value.view.surfaceMode in ['document', 'slides'] && value.view.pageId is string
+          && value.view.scrollRatio is number && value.view.scrollRatio >= 0 && value.view.scrollRatio <= 1
+          && (value.view.selection == null || (value.view.selection is map
+            && value.view.selection.keys().hasOnly(['target', 'itemId', 'range', 'fingerprint'])
+            && value.view.selection.target in ['document', 'item']
+            && value.view.selection.fingerprint is string && value.view.selection.fingerprint.size() < 100
+            && value.view.selection.range is map
+            && value.view.selection.range.startPath is list && value.view.selection.range.endPath is list
+            && value.view.selection.range.startPath.size() <= 64 && value.view.selection.range.endPath.size() <= 64
+            && value.view.selection.range.startOffset is int && value.view.selection.range.startOffset >= 0
+            && value.view.selection.range.endOffset is int && value.view.selection.range.endOffset >= 0))));
+    }
+    function boardLeaseFree(value) {
+      return value.teacherLeaseAt == null || request.time >= value.teacherLeaseAt + duration.value(5, 's');
+    }
+    function validBoardDesignation(classId, value) {
+      return value == null || value in liveClassDoc(classId).data.assignedStudentIds
+        || (exists(/databases/$(database)/documents/users/$(value))
+          && get(/databases/$(database)/documents/users/$(value)).data.email in liveClassDoc(classId).data.assignedStudentIds);
+    }
+    function canUpdateBoardControl(classId) {
+      let previous = resource.data;
+      let next = request.resource.data;
+      let sameController = next.controllerId == previous.controllerId && next.controllerClientId == previous.controllerClientId;
+      // A lease renewal may preserve the current generation; visual state has its own document.
+      return validBoardControl(next, true)
+        && (isTeacherForClass(classId)
+          ? (next.controllerId == request.auth.uid && validBoardDesignation(classId, next.designatedStudentId)
+            && (next.teacherLeaseAt == null || next.teacherLeaseAt == request.time || next.teacherLeaseAt == previous.teacherLeaseAt)
+            && (next.epoch == previous.epoch + 1 || (sameController && next.epoch == previous.epoch && next.designatedStudentId == previous.designatedStudentId)))
+          : (isStudentAssignedToClass(classId) && previous.designatedStudentId == request.auth.uid
+            && next.designatedStudentId == previous.designatedStudentId && boardLeaseFree(previous)
+            && next.controllerId == request.auth.uid && next.teacherLeaseAt == null
+            && next.epoch == previous.epoch + 1
+            && (next.view == previous.view || (get(/databases/$(database)/documents/liveClasses/$(classId)/shared/boardView).data.epoch == previous.epoch
+              && next.view == get(/databases/$(database)/documents/liveClasses/$(classId)/shared/boardView).data.view))));
+    }
+    function canPublishDirectedBoardView(classId) {
+      let authority = boardControlDoc(classId).data;
+      let value = request.resource.data;
+      return canAccessLiveClassRoom(classId)
+        && value.keys().hasOnly(['epoch', 'controllerId', 'controllerClientId', 'view', 'updatedAt'])
+        && value.epoch == authority.epoch && value.controllerId == request.auth.uid
+        && value.controllerId == authority.controllerId && value.controllerClientId == authority.controllerClientId
+        && value.updatedAt == request.time
+        && value.view is map && value.view.keys().hasOnly(['surfaceMode', 'pageId', 'scrollRatio', 'selection'])
+        && value.view.surfaceMode in ['document', 'slides'] && value.view.pageId is string
+        && value.view.scrollRatio is number && value.view.scrollRatio >= 0 && value.view.scrollRatio <= 1
+        && (value.view.selection == null || (value.view.selection is map
+          && value.view.selection.keys().hasOnly(['target', 'itemId', 'range', 'fingerprint'])
+          && value.view.selection.target in ['document', 'item']
+          && (value.view.selection.itemId == null || value.view.selection.itemId is string)
+          && value.view.selection.fingerprint is string && value.view.selection.fingerprint.size() < 100
+          && value.view.selection.range is map
+          && value.view.selection.range.startPath is list && value.view.selection.range.startPath.size() <= 64
+          && value.view.selection.range.endPath is list && value.view.selection.range.endPath.size() <= 64
+          && value.view.selection.range.startOffset is int && value.view.selection.range.startOffset >= 0
+          && value.view.selection.range.endOffset is int && value.view.selection.range.endOffset >= 0))
+        && (isTeacherForClass(classId) || (authority.designatedStudentId == request.auth.uid && boardLeaseFree(authority)));
+    }
+
+    function canWriteDirectedWorkspace(classId) {
+      let control = boardControlDoc(classId).data;
+      let value = request.resource.data;
+      return canAccessLiveClassRoom(classId)
+        && control.controllerId == request.auth.uid
+        && value.controlEpoch == control.epoch && value.controlClientId == control.controllerClientId
+        && value.updatedBy == request.auth.uid
+        && (isTeacherForClass(classId) || (control.designatedStudentId == request.auth.uid && boardLeaseFree(control)))
+        && value.diff(resource.data).affectedKeys().hasOnly([
+          'docContent', 'docUpdatedBy', 'items', 'itemsUpdatedBy', 'pages', 'currentPageId',
+          'boardState', 'slidesState', 'surfaceMode', 'presentationMode', 'updatedAt', 'updatedBy', 'updatedByName', 'controlEpoch', 'controlClientId'
+        ]);
+    }
+
     function exerciseSessionDoc(classId) {
       return get(/databases/$(database)/documents/liveClasses/$(classId)/session/exerciseSession);
     }
@@ -899,17 +988,25 @@ service cloud.firestore {
 
       match /shared/{docId} {
         allow read: if canAccessLiveClassRoom(classId);
-        allow create: if isTeacherForClass(classId)
+        allow create: if (isTeacherForClass(classId) && docId != 'boardControl' && docId != 'boardView')
+          || (docId == 'boardView' && canPublishDirectedBoardView(classId))
+          || (docId == 'boardControl' && isTeacherForClass(classId)
+            && validBoardControl(request.resource.data, request.resource.data.teacherLeaseAt == null || request.resource.data.teacherLeaseAt == request.time)
+            && request.resource.data.controllerId == request.auth.uid
+            && request.resource.data.epoch == 1
+            && validBoardDesignation(classId, request.resource.data.designatedStudentId))
           || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId))
           || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId))
-          || (docId == 'editor' && canAccessLiveClassRoom(classId))
-          || (docId == 'workspace' && signedIn() && liveClassExists(classId));
-        allow update: if isTeacherForClass(classId)
+          || (docId == 'editor' && canAccessLiveClassRoom(classId));
+        allow update: if (isTeacherForClass(classId) && docId != 'boardControl' && docId != 'boardView' && docId != 'workspace')
+          || (docId == 'boardView' && canPublishDirectedBoardView(classId))
+          || (docId == 'boardControl' && canUpdateBoardControl(classId))
+          || (docId == 'workspace' && (canWriteDirectedWorkspace(classId)
+            || (isTeacherForClass(classId) && !exists(/databases/$(database)/documents/liveClasses/$(classId)/shared/boardControl) && request.resource.data.updatedBy == request.auth.uid)))
           || (docId == 'whiteboard' && canParticipantUpdateWhiteboard(classId))
           || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId))
-          || (docId == 'editor' && canAccessLiveClassRoom(classId))
-          || (docId == 'workspace' && signedIn() && liveClassExists(classId));
-        allow delete: if isTeacherForClass(classId);
+          || (docId == 'editor' && canAccessLiveClassRoom(classId));
+        allow delete: if docId != 'boardControl' && docId != 'boardView' && isTeacherForClass(classId);
       }
 
       match /exerciseBlocks/{blockId} {

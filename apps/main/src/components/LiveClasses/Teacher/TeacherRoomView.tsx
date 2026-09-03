@@ -595,26 +595,7 @@ const TeacherStage: React.FC<{
                           T
                         </button>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextValue = !studentEditingEnabled;
-                          setStudentEditingEnabled(nextValue);
-                          void handleUpdateSession({
-                            studentEditingEnabled: nextValue,
-                            allowStudentWhiteboardEdit: nextValue,
-                          });
-                        }}
-                        className={`flex h-7 w-7 items-center justify-center rounded border text-sm transition ${
-                          studentEditingEnabled
-                            ? 'border-green-600 bg-green-600 text-white'
-                            : 'border-slate-200 text-slate-600 hover:bg-slate-100'
-                        }`}
-                        title={studentEditingEnabled ? 'Student editing on' : 'Student editing off'}
-                        aria-label={studentEditingEnabled ? 'Student editing on' : 'Student editing off'}
-                      >
-                        &#x1F512;
-                      </button>
+
                       {camError || micError ? (
                         <span className="flex items-center text-[10px] text-red-500" title={camError ?? micError ?? undefined}>
                           &#x26A0;&#xFE0F;

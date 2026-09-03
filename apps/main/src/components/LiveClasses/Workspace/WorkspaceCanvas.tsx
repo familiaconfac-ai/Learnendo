@@ -1,3 +1,6 @@
+import { useBoardControl } from './useBoardControl';
+import { BoardControlToolbar } from './BoardControlToolbar';
+import { boardContentFingerprint, type BoardView } from '../../../models/boardControl';
 ﻿/**
  * WorkspaceCanvas ï¿½ collaborative document editor for live classes.
  *
@@ -28,8 +31,6 @@ import {
   saveWorkspace,
   saveWorkspaceItem,
   saveDocContent,
-  saveParticipantSelection,
-  saveParticipantScroll,
   savePageSwitch,
   saveWorkspaceSurfaceTransition,
   saveWorkspacePresentationMode,
@@ -923,6 +924,7 @@ interface WorkspaceUndoSnapshot {
 }
 
 interface WorkspaceViewerContext {
+  boardController?: boolean;
   classId: string;
   userId: string;
   userEmail?: string | null;
@@ -1030,6 +1032,7 @@ function isItemLockActive(item: WorkspaceItem, now = Date.now()): boolean {
 }
 
 function canViewerOverrideItemLock(viewer: WorkspaceViewerContext, item: WorkspaceItem): boolean {
+  if (viewer.boardController) return true; // Transient locks never outrank directed authority; ownership is checked separately.
   if (!isItemLockActive(item)) return true;
 
   const viewerRole = getViewerLockRole(viewer);
@@ -1304,6 +1307,7 @@ const PageTab: React.FC<PageTabProps> = ({
 
   return (
     <div
+      data-board-page
       className={`relative flex items-center flex-shrink-0 border-b-2 select-none transition-colors ${
         isActive
           ? 'bg-white border-blue-500'
@@ -1840,12 +1844,12 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       viewerContext.userEmail &&
       getEmailLocalPart(resolvedOwnerEmail) === getEmailLocalPart(viewerContext.userEmail)
     );
-  const canBypassReadonlyForBox = canManageThisBox || isOwner;
-  const canEditThisContent = (canManageThisBox || isOwner) && (!readOnly || canBypassReadonlyForBox);
+
+  const canEditThisContent = (canManageThisBox || isOwner) && !readOnly;
   const canRenameThisBox = canRenameBox(viewerContext, item);
   const canAssignThisBox = canAssignBoxOwner(viewerContext, item);
-  const canMoveThisBox = canMoveBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
-  const canResizeThisBox = canResizeBox(viewerContext, item) && (!readOnly || canBypassReadonlyForBox);
+  const canMoveThisBox = canMoveBox(viewerContext, item) && !readOnly;
+  const canResizeThisBox = canResizeBox(viewerContext, item) && !readOnly;
   const isOwnedByOther = Boolean(
     !canManageThisBox &&
       (
@@ -2022,7 +2026,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         width: `${(item.w / 100) * width}px`,
         height: `${(item.h / 100) * height}px`,
         zIndex: isSelected ? 50 : 10,
-        pointerEvents: readOnly && !canBypassReadonlyForBox ? 'none' : 'auto',
+        pointerEvents: readOnly && !canManageThisBox && !canEditThisContent ? 'none' : 'auto',
         boxSizing: 'border-box',
         border: isSlidesMode && item.type === 'text'
           ? (isSelected ? '2px dashed rgba(37,99,235,0.7)' : 'none')
@@ -2042,7 +2046,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
     const obs = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
     if (obs && canvasRef.current) obs.observe(canvasRef.current);
     return () => obs?.disconnect();
-  }, [canvasRef, canBypassReadonlyForBox, canMoveThisBox, getCanvasMetrics, isSelected, item, readOnly]);
+  }, [canvasRef, canEditThisContent, canMoveThisBox, getCanvasMetrics, isSelected, item, readOnly]);
 
   const saveLabel = () => {
     if (!canRenameThisBox) {
@@ -2283,6 +2287,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       ) : null}
       <div
         ref={contentRef}
+        data-board-item-editor={item.id}
         contentEditable={canEditThisContent && !isBlockedByLock}
         suppressContentEditableWarning
         spellCheck
@@ -2340,7 +2345,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   userEmail,
   readOnly = false,
   isTeacher: isTeacherView = false,
-  studentEditingEnabled = true,
+  studentEditingEnabled: _studentEditingEnabled = true,
   classTeacherUserId,
   assignedRoster = [],
   toolbarLeading,
@@ -2360,17 +2365,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsTeacher = isTeacher(viewerContext);
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
-  const canPublishSelection = viewerCanManageWorkspace || viewerIsStudent;
-  const viewerCanUseStudentTools = !readOnly && (viewerIsAdmin || viewerIsTeacher || viewerIsStudent);
-  const effectiveReadOnly = readOnly || (viewerIsStudent && !studentEditingEnabled);
+  const board = useBoardControl(classId, userId, viewerCanManageWorkspace);
+  viewerContext.boardController = board.own;
+  const canPublishSelection = board.own;
+  const viewerCanUseStudentTools = board.own && !readOnly && (viewerIsAdmin || viewerIsTeacher || viewerIsStudent);
+  const effectiveReadOnly = readOnly || !board.own;
   const viewerCanEditSharedDocument = !effectiveReadOnly && (viewerCanManageWorkspace || viewerIsStudent);
-  const viewerCanManagePages = viewerCanManageWorkspace && !readOnly;
+  const viewerCanManagePages = board.own && !readOnly;
+  const viewerCanShowPages = !readOnly && (viewerCanManageWorkspace || board.own);
   const viewerCanBrowseSavedLibraries = viewerCanUseStudentTools;
-  const viewerCanApplySavedLibraryEntries = viewerCanManageWorkspace && !readOnly;
-  const viewerCanDeleteSavedLibraryEntries = viewerCanManageWorkspace && !readOnly;
+  const viewerCanApplySavedLibraryEntries = viewerCanManageWorkspace && !effectiveReadOnly;
+  const viewerCanDeleteSavedLibraryEntries = viewerCanManageWorkspace && !effectiveReadOnly;
   const viewerCanUseReferenceTools = viewerCanUseStudentTools;
   const viewerCanExportWorkspacePdf = viewerCanUseStudentTools;
-  const toolbarDisabled = effectiveReadOnly;
+  const toolbarDisabled = readOnly || !board.connected || (!viewerCanManageWorkspace && !board.own);
 
   if (!userId) {
     console.error('[WorkspaceCanvas] userId is null/undefined! This will break save/load functionality');
@@ -2979,6 +2987,127 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const deletedItemTimestampsRef = useRef<Record<string, number>>({});
   const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
   const [remoteSelections, setRemoteSelections] = useState<WorkspaceSelectionSnapshot[]>([]);
+  const composingRef = useRef(false);
+  const compositionLeaseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => () => { if (compositionLeaseTimerRef.current) clearInterval(compositionLeaseTimerRef.current); }, []);
+  const remoteDocHtmlRef = useRef('');
+  const remoteItemsRef = useRef<WorkspaceItem[]>([]);
+  const applyingRemoteSelectionRef = useRef(false);
+  const authoritativeViewRef = useRef<BoardView | null>(null);
+  const lastAppliedViewRef = useRef('');
+  const pendingTeacherActionRef = useRef<(() => void) | null>(null);
+  const pendingTeacherRootRef = useRef<HTMLElement | null>(null);
+  const pendingTeacherRangeRef = useRef<Range | null>(null);
+  const pendingTeacherScrollRef = useRef<number | null>(null);
+  useEffect(() => {
+    const root = overflowRef.current;
+    if (!root) return;
+    const blockFollowerScroll = (event: Event) => { if (!board.ownRef.current && !viewerCanManageWorkspace) event.preventDefault(); };
+    root.addEventListener('wheel', blockFollowerScroll, { passive: false });
+    root.addEventListener('touchmove', blockFollowerScroll, { passive: false });
+    return () => { root.removeEventListener('wheel', blockFollowerScroll); root.removeEventListener('touchmove', blockFollowerScroll); };
+  }, [viewerCanManageWorkspace]);
+
+  const getScrollElement = () => surfaceModeRef.current === 'slides' && docRef.current && docRef.current.scrollHeight > docRef.current.clientHeight
+    ? docRef.current : overflowRef.current;
+  const applyAuthoritativeView = useCallback((force = false) => {
+    if (composingRef.current) return;
+    const view = authoritativeViewRef.current;
+    if (!view || view.pageId !== activePageIdRef.current || view.surfaceMode !== surfaceModeRef.current) return;
+    const signature = JSON.stringify([board.ref.current?.epoch, view]);
+    if (!force && (board.ownRef.current || signature === lastAppliedViewRef.current)) return;
+    const scroll = getScrollElement();
+    if (scroll) {
+      applyingRemoteScrollRef.current = true;
+      suppressScrollPublishUntilRef.current = Date.now() + 300;
+      scroll.scrollTop = restoreScrollTop(view.scrollRatio, scroll.scrollHeight, scroll.clientHeight);
+      requestAnimationFrame(() => { applyingRemoteScrollRef.current = false; });
+    }
+    const selected = view.selection;
+    if (!selected) { lastAppliedViewRef.current = signature; return; }
+    const root = selected.target === 'document' ? docRef.current
+      : canvasRef.current?.querySelector<HTMLElement>(`[data-board-item-editor="${CSS.escape(selected.itemId ?? '')}"]`);
+    if (!root || boardContentFingerprint(root.innerHTML) !== selected.fingerprint) return;
+    const focused = document.activeElement;
+    // Do not steal focus from an open modal, toolbar input or an IME session.
+    if (focused && focused !== document.body && !canvasRef.current?.contains(focused) && /^(INPUT|TEXTAREA|SELECT)$/.test(focused.tagName)) return;
+    const range = restoreDomRange(root, selected.range);
+    if (!range) return;
+    applyingRemoteSelectionRef.current = true;
+    if (board.ownRef.current && document.hasFocus() && root.isContentEditable) root.focus({ preventScroll: true });
+    const selection = window.getSelection(); selection?.removeAllRanges(); selection?.addRange(range);
+    savedSelectionRangeRef.current = range.cloneRange(); savedSelectionRootRef.current = root;
+    savedSelectionItemIdRef.current = selected.itemId;
+    activeFloatingElRef.current = selected.target === 'item' ? root : null;
+    activeFloatingIdRef.current = selected.itemId;
+    lastAppliedViewRef.current = signature;
+    requestAnimationFrame(() => { applyingRemoteSelectionRef.current = false; });
+  }, []);
+  const queueBoardView = useCallback(() => {
+    if (!board.ownRef.current || applyingRemoteSelectionRef.current || composingRef.current) return;
+    if (selectionAwarenessDebounce.current) return;
+    selectionAwarenessDebounce.current = setTimeout(() => {
+      selectionAwarenessDebounce.current = null;
+      if (!board.ownRef.current || composingRef.current) return;
+      const native = window.getSelection(); const range = native?.rangeCount ? native.getRangeAt(0) : null;
+      const floating = activeFloatingElRef.current;
+      const root = range && floating?.contains(range.commonAncestorContainer) ? floating : docRef.current;
+      const serialized = root && range && root.contains(range.commonAncestorContainer) ? serializeDomRange(root, range) : null;
+      const scroll = getScrollElement();
+      const view: BoardView = {
+        surfaceMode: surfaceModeRef.current, pageId: activePageIdRef.current,
+        scrollRatio: scroll ? serializeScrollRatio(scroll.scrollTop, scroll.scrollHeight, scroll.clientHeight) : 0,
+        selection: serialized && root ? { target: root === docRef.current ? 'document' : 'item', itemId: root === docRef.current ? null : activeFloatingIdRef.current,
+          range: serialized, fingerprint: boardContentFingerprint(root.innerHTML) } : null,
+      };
+      const signature = JSON.stringify(view);
+      if (lastPublishedSelectionRef.current === signature) return;
+      lastPublishedSelectionRef.current = signature;
+      void board.publish(view);
+    }, 120);
+  }, [board.publish]);
+  useEffect(() => {
+    authoritativeViewRef.current = board.control?.view ?? null;
+    // Cancel every stale local buffer before accepting another epoch.
+    pendingItemsSaveRef.current = null; pendingSingleItemSaveRef.current = {}; pendingDocSaveRef.current = null;
+    lastDocInputRef.current = 0; lastItemEditRef.current = 0;
+    dirtyItemTimestampsRef.current = {}; deletedItemTimestampsRef.current = {};
+    lastPublishedSelectionRef.current = 'initial';
+    const frame = requestAnimationFrame(() => {
+      if (!board.own && !composingRef.current) {
+        dragRef.current = null;
+        setDocHtml(remoteDocHtmlRef.current);
+        if (docRef.current && docRef.current.innerHTML !== remoteDocHtmlRef.current) docRef.current.innerHTML = remoteDocHtmlRef.current;
+        itemsRef.current = remoteItemsRef.current; setItems(remoteItemsRef.current);
+      }
+      if (board.own && pendingTeacherRangeRef.current) {
+        const range = pendingTeacherRangeRef.current; pendingTeacherRangeRef.current = null;
+        const root = pendingTeacherRootRef.current ?? docRef.current; pendingTeacherRootRef.current = null;
+        const selection = window.getSelection();
+        if (root?.isConnected && range.startContainer.isConnected && root.contains(range.commonAncestorContainer)) {
+          root.focus({ preventScroll: true }); selection?.removeAllRanges(); selection?.addRange(range);
+          activeFloatingElRef.current = root === docRef.current ? null : root;
+          activeFloatingIdRef.current = root.dataset.boardItemEditor ?? null;
+        }
+        captureCurrentSelection(); queueBoardView();
+      } else if (board.own && pendingTeacherScrollRef.current !== null) {
+        const scroll = getScrollElement();
+        if (scroll) scroll.scrollTop = restoreScrollTop(pendingTeacherScrollRef.current, scroll.scrollHeight, scroll.clientHeight);
+        pendingTeacherScrollRef.current = null; queueBoardView();
+      } else applyAuthoritativeView(true);
+      if (board.own && pendingTeacherActionRef.current) {
+        const action = pendingTeacherActionRef.current; pendingTeacherActionRef.current = null;
+        action();
+      }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [board.control?.epoch, board.own]);
+  useEffect(() => {
+    authoritativeViewRef.current = board.control?.view ?? null;
+    const frame = requestAnimationFrame(() => applyAuthoritativeView());
+    return () => cancelAnimationFrame(frame);
+  }, [board.control?.view, docHtml, items, activePageId, surfaceMode, applyAuthoritativeView]);
+
 
   useEffect(() => {
     if (assignedRoster.length === 0) {
@@ -3012,6 +3141,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const canEditResolvedBoxContent = useCallback(
     (item: WorkspaceItem) => {
+      if (!board.ownRef.current) return false;
       if (canManageBox(viewerContext, item)) return true;
       const resolvedOwner = resolveAssignableOwner(item, assignableStudents);
       if (resolvedOwner?.uid && resolvedOwner.uid === userId) return true;
@@ -3034,71 +3164,15 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     };
   }, []);
 
-  const publishSelection = useCallback((selection: WorkspaceSelectionSnapshot | null) => {
-    if (!canPublishSelection) return;
-    const nextSignature = buildSelectionSignature(selection);
-    if (lastPublishedSelectionRef.current === nextSignature) return;
-    lastPublishedSelectionRef.current = nextSignature;
-    if (selectionAwarenessDebounce.current) {
-      clearTimeout(selectionAwarenessDebounce.current);
-    }
-    selectionAwarenessDebounce.current = setTimeout(() => {
-      saveParticipantSelection(classId, userId, selection).catch(() => {});
-    }, selection ? 80 : 0);
-  }, [canPublishSelection, classId, userId]);
-
-  const clearPublishedSelection = useCallback(() => {
-    publishSelection(null);
-  }, [publishSelection]);
-
-  const captureSharedSelection = useCallback(() => {
-    if (!canPublishSelection) return;
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-      clearPublishedSelection();
-      return;
-    }
-
-    const range = selection.getRangeAt(0);
-    const container = range.commonAncestorContainer;
-    const floatingRoot = activeFloatingElRef.current;
-    const documentRoot = docRef.current;
-    const itemId = activeFloatingIdRef.current ?? undefined;
-
-    let root: HTMLElement | null = null;
-    let target: WorkspaceSelectionSnapshot['target'] = 'document';
-
-    if (floatingRoot && floatingRoot.contains(container)) {
-      root = floatingRoot;
-      target = 'item';
-    } else if (documentRoot && documentRoot.contains(container)) {
-      root = documentRoot;
-    }
-
-    if (!root) {
-      clearPublishedSelection();
-      return;
-    }
-
-    const serializedRange = serializeDomRange(root, range);
-    if (!serializedRange) {
-      clearPublishedSelection();
-      return;
-    }
-
-    publishSelection({
-      surfaceMode,
-      pageId: activePageIdRef.current,
-      target,
-      itemId: target === 'item' ? itemId : undefined,
-      range: serializedRange,
-      text: selection.toString().replace(/\s+/g, ' ').trim().slice(0, 160) || undefined,
-      updatedAt: Date.now(),
-      updatedBy: userId,
-      updatedByName: userName,
-    });
-  }, [canPublishSelection, clearPublishedSelection, publishSelection, surfaceMode, userId, userName]);
+  const captureSharedSelection = queueBoardView;
+  useEffect(() => {
+    const resize = () => { if (!board.ownRef.current) applyAuthoritativeView(true); };
+    window.addEventListener('resize', resize);
+    const observer = new ResizeObserver(resize);
+    if (docRef.current) observer.observe(docRef.current);
+    return () => { window.removeEventListener('resize', resize); observer.disconnect(); };
+  }, [applyAuthoritativeView]);
+  const clearPublishedSelection = () => {};
 
   const pruneItemSyncGuards = useCallback((now = Date.now()) => {
     const maxAgeMs = ITEM_GUARD_MS * 4;
@@ -3193,6 +3267,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
+      // Handoff alone does not erase Undo; another writer's actual content does.
+      if (data && data.controlClientId !== board.clientId) undoSnapshotRef.current = null;
       const remoteSurfaceMode = data?.surfaceMode ?? 'document';
       const remoteBoardState: WorkspaceSurfaceState = (() => {
         if (data?.boardState?.pages?.length) {
@@ -3239,8 +3315,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const remoteCurrentPageId = remoteState.currentPageId ?? activePageIdRef.current;
       const remoteActivePage = remotePages?.find((page) => page.id === remoteCurrentPageId) ?? null;
       const normalizedItems = (remoteActivePage?.items ?? remoteState.items ?? []).map(normalizeItemScope);
-      const mergedItems = mergeRemoteItemsWithLocal(normalizedItems);
+      const mergedItems = board.ownRef.current ? mergeRemoteItemsWithLocal(normalizedItems) : normalizedItems;
       const nextDocContent = remoteActivePage?.docContent ?? remoteState.docContent ?? '';
+      remoteDocHtmlRef.current = nextDocContent; remoteItemsRef.current = normalizedItems;
       const remotePresentationMode = Boolean(data?.presentationMode) && remoteSurfaceMode === 'slides';
       console.log('[LIVECLASS WORKSPACE] snapshot', {
         role: viewerIsTeacher ? 'teacher' : viewerIsStudent ? 'student' : 'viewer',
@@ -3356,14 +3433,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       // edit. While a floating box is actively being typed locally, hold off on
       // remote item application for a brief guard window so another student's
       // keystrokes do not keep re-rendering this editor mid-input.
-      if (dragRef.current === null && !isLocallyEditingFloating) {
+      if (!board.ownRef.current || (dragRef.current === null && !isLocallyEditingFloating)) {
         itemsRef.current = mergedItems;
         setItems(mergedItems);
         syncActivePageItemsRef(mergedItems, true);
       }
 
       // Doc: suppress remote DOM writes while there is active local typing.
-      const isLocallyTyping = Date.now() - lastDocInputRef.current < TYPING_GUARD_MS;
+      const isLocallyTyping = composingRef.current || (board.ownRef.current && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS);
       if (!isLocallyTyping) {
         setDocHtml(nextDocContent);
         if (docRef.current && docRef.current.innerHTML !== nextDocContent) {
@@ -3387,35 +3464,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         syncActivePageDocRef(nextDocContent);
       }
 
-      const nextRemoteSelections = Object.values(data?.participantSelections ?? {}).filter(
-        (selection) =>
-          selection.updatedBy !== userId &&
-          selection.surfaceMode === remoteSurfaceMode &&
-          selection.pageId === remoteCurrentPageId,
-      );
-      setRemoteSelections(nextRemoteSelections);
+      setRemoteSelections([]);
+      requestAnimationFrame(() => applyAuthoritativeView());
 
-      const newestRemoteScroll = Object.values(data?.participantScroll ?? {})
-        .filter((scroll) =>
-          scroll.updatedBy !== userId &&
-          scroll.surfaceMode === remoteSurfaceMode &&
-          scroll.pageId === remoteCurrentPageId,
-        )
-        .sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null;
-      if (
-        newestRemoteScroll &&
-        newestRemoteScroll.updatedAt > lastRemoteScrollUpdateRef.current &&
-        overflowRef.current
-      ) {
-        const el = overflowRef.current;
-        lastRemoteScrollUpdateRef.current = newestRemoteScroll.updatedAt;
-        applyingRemoteScrollRef.current = true;
-        suppressScrollPublishUntilRef.current = Date.now() + 250;
-        el.scrollTop = restoreScrollTop(newestRemoteScroll.ratio, el.scrollHeight, el.clientHeight);
-        window.requestAnimationFrame(() => {
-          applyingRemoteScrollRef.current = false;
-        });
-      }
     });
     return unsub;
   }, [
@@ -3434,36 +3485,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   ]);
 
   useEffect(() => {
-    if (!canPublishSelection) return undefined;
-
-    const handleSelectionChange = () => {
-      window.setTimeout(() => {
-        captureSharedSelection();
-      }, 0);
-    };
-
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => {
-      document.removeEventListener('selectionchange', handleSelectionChange);
-      if (selectionAwarenessDebounce.current) {
-        clearTimeout(selectionAwarenessDebounce.current);
-        selectionAwarenessDebounce.current = null;
-      }
-      lastPublishedSelectionRef.current = 'none';
-      saveParticipantSelection(classId, userId, null).catch(() => {});
-      saveParticipantScroll(classId, userId, null).catch(() => {});
-    };
-  }, [canPublishSelection, captureSharedSelection, classId, userId]);
-
-  useEffect(() => {
-    clearPublishedSelection();
-    setRemoteSelections([]);
-    savedSelectionRangeRef.current = null;
-    savedSelectionRootRef.current = null;
-    savedSelectionItemIdRef.current = null;
-    lastRemoteScrollUpdateRef.current = 0;
-    saveParticipantScroll(classId, userId, null).catch(() => {});
-  }, [activePageId, classId, clearPublishedSelection, surfaceMode, userId]);
+    document.addEventListener('selectionchange', captureSharedSelection);
+    return () => document.removeEventListener('selectionchange', captureSharedSelection);
+  }, [captureSharedSelection]);
 
   useEffect(() => () => {
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
@@ -3477,6 +3501,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, []);
 
   const flushPendingItemsSave = useCallback(() => {
+    if (!board.ownRef.current || composingRef.current) return;
     const pending = pendingItemsSaveRef.current;
     if (!pending) return;
     pendingItemsSaveRef.current = null;
@@ -3493,6 +3518,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [classId, userId, userName]);
 
   const flushPendingSingleItemSaves = useCallback(() => {
+    if (!board.ownRef.current || composingRef.current) return;
     const pendingEntries = Object.values(pendingSingleItemSaveRef.current);
     if (pendingEntries.length === 0) return;
     pendingSingleItemSaveRef.current = {};
@@ -3521,6 +3547,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [flushPendingSingleItemSaves]);
 
   const flushPendingDocSave = useCallback(() => {
+    if (!board.ownRef.current || composingRef.current) return;
     const pending = pendingDocSaveRef.current;
     if (!pending) return;
     pendingDocSaveRef.current = null;
@@ -3541,7 +3568,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       nextItems: WorkspaceItem[],
       options?: { forceSave?: boolean; dirtyItemIds?: string[]; deletedItemIds?: string[] }
     ) => {
-      if (effectiveReadOnly && !options?.forceSave) return;
+      if (!board.ownRef.current || effectiveReadOnly) return;
       const editTimestamp = Date.now();
       if (options?.dirtyItemIds?.length) {
         markItemsDirty(options.dirtyItemIds, editTimestamp);
@@ -3582,7 +3609,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const scheduleSingleItemSave = useCallback(
     (item: WorkspaceItem, options?: { forceSave?: boolean }) => {
-      if (effectiveReadOnly && !options?.forceSave) return;
+      if (!board.ownRef.current || effectiveReadOnly) return;
       markItemDirty(item.id);
       const scopedItem = normalizeItemScope(item);
       pendingSingleItemSaveRef.current[scopedItem.id] = {
@@ -3639,11 +3666,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   );
 
   const onDocInput = () => {
-    if (!docRef.current) return;
+    if (!docRef.current || !board.ownRef.current || composingRef.current) return;
+    board.intent(); queueBoardView();
     lastDocInputRef.current = Date.now();
     sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });
   };
   const onDocBlur = () => {
+    if (!board.ownRef.current || composingRef.current) return;
     // On blur, flush any pending doc content immediately
     if (!docRef.current) return;
     sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });
@@ -3655,20 +3684,15 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   };
 
   const onScrollSync = () => {
-    if (!overflowRef.current) return;
     if (applyingRemoteScrollRef.current || Date.now() < suppressScrollPublishUntilRef.current) return;
-    const el = overflowRef.current;
-    const ratio = serializeScrollRatio(el.scrollTop, el.scrollHeight, el.clientHeight);
-    if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
-    scrollDebounce.current = setTimeout(() => {
-      saveParticipantScroll(classId, userId, {
-        surfaceMode: surfaceModeRef.current,
-        pageId: activePageIdRef.current,
-        ratio,
-        updatedAt: Date.now(),
-        updatedBy: userId,
-      }).catch(() => {});
-    }, 160);
+    if (!board.ownRef.current) {
+      if (viewerCanManageWorkspace) {
+        const scroll = getScrollElement();
+        if (scroll) pendingTeacherScrollRef.current = serializeScrollRatio(scroll.scrollTop, scroll.scrollHeight, scroll.clientHeight);
+      } else applyAuthoritativeView(true);
+      return;
+    }
+    queueBoardView();
   };
 
   const normalizeExecCommandFontSize = useCallback((
@@ -3772,6 +3796,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, []);
 
   const execFmt = useCallback((cmd: string, value?: string) => {
+    if (!board.ownRef.current) return;
     const savedRoot = savedSelectionRootRef.current;
     const savedItemId = savedSelectionItemIdRef.current;
     if (savedItemId && savedRoot) {
@@ -3965,6 +3990,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const deleteItem = useCallback(
     (id: string) => {
+      if (!board.ownRef.current) return;
       captureUndoSnapshot();
       setItems((prev) => {
         const next = prev.filter((it) => it.id !== id);
@@ -4835,10 +4861,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const onPointerDown = (e: ReactPointerEvent<HTMLElement>, itemId: string, mode: 'move' | 'resize') => {
     const item = items.find((candidate) => candidate.id === itemId);
     if (!item) return;
-    const canBypassReadonlyForBox = canManageBox(viewerContext, item) || isBoxOwner(viewerContext, item);
+    const canEditThisContent = canManageBox(viewerContext, item) || isBoxOwner(viewerContext, item);
     const hasPermission = mode === 'move'
-      ? canMoveBox(viewerContext, item) && (!effectiveReadOnly || canBypassReadonlyForBox)
-      : canResizeBox(viewerContext, item) && (!effectiveReadOnly || canBypassReadonlyForBox);
+      ? canMoveBox(viewerContext, item) && (!effectiveReadOnly || canEditThisContent)
+      : canResizeBox(viewerContext, item) && (!effectiveReadOnly || canEditThisContent);
     if (!hasPermission) return;
     e.preventDefault();
     e.stopPropagation();
@@ -4861,13 +4887,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       origY: dragItem.y,
       origW: dragItem.w,
       origH: dragItem.h,
-      forceSave: effectiveReadOnly && canBypassReadonlyForBox,
+      forceSave: effectiveReadOnly && canEditThisContent,
     };
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    if (!drag || !canvasRef.current) return;
+    if (!drag || !canvasRef.current || !board.ownRef.current) return;
     const { width, height } = getCanvasMetrics();
     const dx = ((e.clientX - drag.startPx) / width) * 100;
     const dy = ((e.clientY - drag.startPy) / height) * 100;
@@ -4980,7 +5006,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   function restoreUndoSnapshot() {
     const snapshot = undoSnapshotRef.current;
-    if (!snapshot) return;
+    if (!board.ownRef.current || !snapshot) return;
     const restoredPages = snapshot.pages.map((page) => ({
       ...page,
       items: page.items.map((item) => normalizeItemScope({ ...item })),
@@ -5633,10 +5659,10 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     const [blockStyle, setBlockStyle] = useState<React.CSSProperties>({});
 
     const canManageThisBox = canManageBox(viewerContext, item);
-    const canEditThisContent = canEditBoxContent(viewerContext, item) && (!readOnly || canManageThisBox);
+    const canEditThisContent = canEditBoxContent(viewerContext, item) && !readOnly;
     const canRenameThisBox = canRenameBox(viewerContext, item);
     const canAssignThisBox = canAssignBoxOwner(viewerContext, item);
-    const canMoveThisBox = canMoveBox(viewerContext, item) && (!readOnly || canManageThisBox);
+    const canMoveThisBox = canMoveBox(viewerContext, item) && !readOnly;
     const canResizeThisBox = canResizeBox(viewerContext, item);
     const isOwnedByOther = Boolean(item.ownerUserId && item.ownerUserId !== currentUserId && !canManageThisBox);
 
@@ -5982,7 +6008,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         </div>
         <div
           ref={contentRef}
-          contentEditable={canEditThisContent && !isLockedByOther}
+          data-board-item-editor={item.id}
+        contentEditable={canEditThisContent && !isLockedByOther}
           suppressContentEditableWarning
           spellCheck
           onFocus={(e) => {
@@ -6023,9 +6050,62 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   return (
     <div
+      data-directed-board
+      onPointerDownCapture={event => {
+        if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
+        if (viewerCanManageWorkspace) {
+          if (!board.ownRef.current && (event.target as HTMLElement).closest('[data-board-document], [data-board-item-editor]')) {
+            pendingTeacherRootRef.current = (event.target as HTMLElement).closest<HTMLElement>('[data-board-document], [data-board-item-editor]');
+            pendingTeacherRangeRef.current = document.caretRangeFromPoint?.(event.clientX, event.clientY)?.cloneRange() ?? null;
+          }
+          board.intent();
+        } else if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); }
+      }}
+      onPointerMoveCapture={event => { if (viewerCanManageWorkspace && event.buttons !== 0) board.intent(); }}
+      onPointerUpCapture={() => {
+        if (!viewerCanManageWorkspace || !pendingTeacherRangeRef.current) return;
+        const selection = window.getSelection(); const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+        if (range && !range.collapsed && pendingTeacherRootRef.current?.contains(range.commonAncestorContainer)) pendingTeacherRangeRef.current = range.cloneRange();
+      }}
+      onClickCapture={event => {
+        if (viewerCanManageWorkspace && !board.ownRef.current && !(event.target as HTMLElement).closest('[data-board-control-ui]')) {
+          const target = (event.target as HTMLElement).closest<HTMLElement>('button, [role="button"], [data-board-page]');
+          if (target) {
+            event.preventDefault(); event.stopPropagation();
+            pendingTeacherActionRef.current = () => { if (target.isConnected) target.click(); };
+            board.intent(); return;
+          }
+        }
+        if (!viewerCanManageWorkspace && !board.ownRef.current && !(event.target as HTMLElement).closest('[data-board-control-ui]')) { event.preventDefault(); event.stopPropagation(); }
+      }}
+      onChangeCapture={event => {
+        if (!viewerCanManageWorkspace || board.ownRef.current || (event.target as HTMLElement).closest('[data-board-control-ui]')) return;
+        const target = event.target;
+        if (target instanceof HTMLSelectElement) {
+          const value = target.value; event.stopPropagation();
+          pendingTeacherActionRef.current = () => { if (target.isConnected) { target.value = value; target.dispatchEvent(new Event('change', { bubbles: true })); } };
+          board.intent();
+        }
+      }}
+      onKeyDownCapture={event => {
+        if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
+        if (viewerCanManageWorkspace) board.intent();
+        if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); }
+      }}
+      onBeforeInputCapture={event => { if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); } }}
+      onWheelCapture={() => { if (viewerCanManageWorkspace) board.intent(); }}
+      onTouchMoveCapture={() => { if (viewerCanManageWorkspace) board.intent(); }}
+      onCompositionStartCapture={() => {
+        composingRef.current = true; board.intent();
+        if (viewerCanManageWorkspace && !compositionLeaseTimerRef.current) compositionLeaseTimerRef.current = setInterval(board.intent, 1600);
+      }}
+      onCompositionUpdateCapture={() => { if (viewerCanManageWorkspace) board.intent(); }}
+      onCompositionEndCapture={() => { composingRef.current = false; if (compositionLeaseTimerRef.current) clearInterval(compositionLeaseTimerRef.current); compositionLeaseTimerRef.current = null; if (board.ownRef.current) { onDocInput(); flushPendingSingleItemSaves(); flushPendingItemsSave(); queueBoardView(); } else { if (docRef.current) docRef.current.innerHTML = remoteDocHtmlRef.current; setDocHtml(remoteDocHtmlRef.current); setItems(remoteItemsRef.current); applyAuthoritativeView(true); } }}
       className={`group flex h-full w-full flex-col overflow-hidden ${presentationMode ? 'fixed inset-0 z-[12000] bg-slate-950' : 'bg-slate-100'}`}
       style={{ fontFamily: 'Arial, sans-serif' }}
     >
+
+      <BoardControlToolbar board={board} teacher={viewerCanManageWorkspace} uid={userId} students={assignableStudents} />
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
       {showToolbar && (
@@ -6120,12 +6200,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
 
             <div className="flex items-center">
-              <button aria-pressed={boldState === true} onMouseDown={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm font-bold transition disabled:opacity-40 ${boldState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : boldState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.bold}>B</button>
-              <button aria-pressed={italicState === true} onMouseDown={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm italic transition disabled:opacity-40 ${italicState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : italicState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.italic}>I</button>
-              <button aria-pressed={underlineState === true} onMouseDown={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm underline transition disabled:opacity-40 ${underlineState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : underlineState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.underline}>U</button>
+              <button aria-pressed={boldState === true} onClick={(e) => { e.preventDefault(); execFmt('bold'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm font-bold transition disabled:opacity-40 ${boldState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : boldState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.bold}>B</button>
+              <button aria-pressed={italicState === true} onClick={(e) => { e.preventDefault(); execFmt('italic'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm italic transition disabled:opacity-40 ${italicState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : italicState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.italic}>I</button>
+              <button aria-pressed={underlineState === true} onClick={(e) => { e.preventDefault(); execFmt('underline'); }} disabled={toolbarDisabled} className={`flex h-7 w-7 items-center justify-center rounded border text-sm underline transition disabled:opacity-40 ${underlineState === true ? 'border-blue-500 bg-blue-50 text-blue-700' : underlineState === 'mixed' ? 'border-dashed border-blue-400 text-blue-700' : 'border-slate-200 text-slate-700 hover:bg-slate-100'}`} title={wsl.underline}>U</button>
               {isSlidesMode && (
                 <button
-                  onMouseDown={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
+                  onClick={(e) => { e.preventDefault(); markSelectionToRevealOnClick(); }}
                   disabled={toolbarDisabled}
                   className="flex h-7 w-7 items-center justify-center rounded border border-amber-200 text-amber-700 transition hover:bg-amber-50 disabled:opacity-40"
                   title={wsl.revealOnClick}
@@ -6375,7 +6455,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       )}
 
       {/* -- Page tab bar ---------------------------------------------- */}
-      {viewerCanManagePages && !presentationMode && !isSlidesMode && (
+      {viewerCanShowPages && !presentationMode && !isSlidesMode && (
       <div
         className="flex-shrink-0 flex items-stretch gap-0 overflow-x-auto border-b bg-slate-50 border-slate-200"
         style={{ minHeight: '2rem', zIndex: 15 }}
@@ -6388,8 +6468,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             key={page.id}
             page={page}
             isActive={page.id === activePageId}
-            readOnly={!viewerCanManagePages}
-            canActivate={viewerCanManagePages}
+            readOnly={!viewerCanShowPages}
+            canActivate={viewerCanShowPages}
             canDelete={pages.length > 1}
             labels={surfaceLabels}
             onActivate={() => switchPage(page.id)}
@@ -6399,7 +6479,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             onDelete={() => deletePage(page.id)}
           />
         ))}
-        {viewerCanManagePages && (
+        {viewerCanShowPages && (
           <button
             onClick={addPage}
             className="flex-shrink-0 flex items-center justify-center w-8 h-full text-slate-400 hover:text-blue-600 hover:bg-white transition px-2"
@@ -6607,9 +6687,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       {/* -- Scrollable content ----------------------------------------------- */}
       <div
         ref={overflowRef}
+        onWheelCapture={event => { if (!board.ownRef.current && !viewerCanManageWorkspace) event.stopPropagation(); }}
         className={`flex-1 overflow-x-hidden ${presentationMode ? 'relative overflow-hidden p-0' : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
         onScroll={onScrollSync}
-        onWheel={viewerIsStudent ? (event) => event.preventDefault() : undefined}
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}
         style={viewerIsStudent ? { overscrollBehavior: 'contain' } : undefined}
@@ -6637,7 +6717,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
         >
-          {presentationMode && viewerCanManagePages && (
+          {presentationMode && viewerCanShowPages && (
             <>
             <div className="pointer-events-none fixed inset-x-0 top-0 z-[12040] flex justify-center">
               <div className="group/exit pointer-events-auto mt-2 flex h-16 min-w-[180px] items-start justify-center rounded-full">
@@ -6712,6 +6792,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <div className="relative h-full w-full">
               <div
                 ref={docRef}
+                data-board-document
+                onScroll={onScrollSync}
                 contentEditable={viewerCanEditSharedDocument}
                 suppressContentEditableWarning
                 spellCheck
@@ -6795,7 +6877,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
           {visibleItems.length > 0 && !isSlidesMode && <div className="h-40" />}
         </div>
-        {isSlidesMode && !presentationMode && viewerCanManagePages && slidePanelVisible && !showVocabModal && (
+        {isSlidesMode && !presentationMode && viewerCanShowPages && slidePanelVisible && !showVocabModal && (
           <aside
             id="workspace-slide-panel"
             className="fixed z-[12010] hidden lg:block"
