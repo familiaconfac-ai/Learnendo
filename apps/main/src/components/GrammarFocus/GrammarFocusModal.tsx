@@ -229,14 +229,34 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
   const [openingSurface, setOpeningSurface] = useState<'board' | 'slides' | null>(null);
   const [reporting, setReporting] = useState(false);
   const [readingLanguage, setReadingLanguage] = useState('');
+  const [conflictWarning, setConflictWarning] = useState(false);
   const actions = getGrammarFocusActions(userRole);
 
   const dirty = editing && JSON.stringify(draft) !== JSON.stringify(baseline);
   const isOverview = lessonNumber == null || lessonId == null;
-  const visibleLanguage = visibleGrammarFocusLanguage(documentValue?.content, readingLanguage || activeLanguage);
-  const activeLocale = getLocalizedGrammarFocusContent(documentValue?.content, visibleLanguage);
+  // Refs read inside the Firestore listener so the guard never sees a stale closure.
+  const editingRef = React.useRef(editing);
+  const dirtyRef = React.useRef(dirty);
+  const savingRef = React.useRef(saving);
+  useEffect(() => { editingRef.current = editing; }, [editing]);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty]);
+  useEffect(() => { savingRef.current = saving; }, [saving]);
   const hasDocumentContent = hasGrammarFocusContent(documentValue?.content);
+  // Legacy archives are a migration source, never a parallel surface. Readers without an
+  // official document fall back to the archived content inline until it is assigned.
+  const legacyFallback = !actions.edit && !hasDocumentContent
+    ? legacyDocuments.find((source) => hasGrammarFocusContent(source.content)) ?? null
+    : null;
+  const readingContent = legacyFallback ? legacyFallback.content : documentValue?.content;
+  const visibleLanguage = visibleGrammarFocusLanguage(readingContent, readingLanguage || activeLanguage);
+  const activeLocale = getLocalizedGrammarFocusContent(readingContent, visibleLanguage);
+  const hasReadingContent = hasGrammarFocusContent(readingContent);
   const hasActiveContent = Boolean(activeLocale.title.trim() || activeLocale.body.trim());
+  // Board/Slides publish only the official document, never an unassigned legacy archive.
+  const canonicalLocale = legacyFallback
+    ? getLocalizedGrammarFocusContent(documentValue?.content, visibleLanguage)
+    : activeLocale;
+  const hasCanonicalContent = Boolean(canonicalLocale.title.trim() || canonicalLocale.body.trim());
 
   useEffect(() => {
     if (!lessonId || !hasActiveContent || !onContentViewed) return;
@@ -259,6 +279,15 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     setLoadError(false);
     setDocumentValue(null);
     return subscribeGrammarFocus(courseId, workbookId, canonicalLessonId, (next) => {
+      // During an editing session the local text is the authority: a remote snapshot
+      // (cache/server round-trip, another device) must never overwrite unsaved input.
+      const isSelfSave = savingRef.current && JSON.stringify(next?.content ?? null) === JSON.stringify(draft);
+      if (editingRef.current || dirtyRef.current) {
+        setDocumentValue(next);
+        if (!isSelfSave) setConflictWarning(true);
+        setLoading(false);
+        return;
+      }
       setDocumentValue(next);
       setDraft(next?.content ?? emptyGrammarFocusContent());
       setBaseline(next?.content ?? emptyGrammarFocusContent());
@@ -291,13 +320,17 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
     setEditorLanguage(displayLanguage);
     setEditing(true);
     setPreviewing(false);
+    setConflictWarning(false);
     setSaveError('');
   };
   const cancelEditing = () => {
     if (!confirmDiscard()) return;
-    setDraft(baseline);
+    // Discard local work and resync to the latest persisted document.
+    setDraft(documentValue?.content ?? baseline);
+    setBaseline(documentValue?.content ?? baseline);
     setEditing(false);
     setPreviewing(false);
+    setConflictWarning(false);
     setSaveError('');
   };
   const updateLocale = (field: 'title' | 'body', value: string) => {
@@ -331,6 +364,7 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
       setBaseline(draft);
       setEditing(false);
       setPreviewing(false);
+      setConflictWarning(false);
       setSavedMessage(copy.saved);
       window.setTimeout(() => setSavedMessage(''), 4000);
     } catch (error) {
@@ -381,10 +415,12 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
         </header>
 
         <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
-          {!isOverview && !editing && <>
+          {!isOverview && !editing && actions.edit && <>
             {legacyLoading && <p role="status">{ui.loadingLegacy}</p>}
             {legacyError && <p role="alert">Legacy: {copy.loadError}</p>}
-            {legacyDocuments.map(source => <LegacyGrammarFocusCard key={source.documentId} source={source}
+            {/* Assigned archives stay preserved in Firestore but are never rendered:
+                the assigned canonical document is the single live source. */}
+            {legacyDocuments.filter((source) => !source.assignment).map(source => <LegacyGrammarFocusCard key={source.documentId} source={source}
               activeLanguage={activeLanguage} uiLanguage={uiLanguage} courseId={courseId} workbookId={workbookId} lessonId={lessonId!}
               canAssign={actions.edit && Boolean(userId) && !loading && !loadError && !legacyError}
               destinationExists={Boolean(documentValue)} onAssign={async reviewedSource => {
@@ -406,6 +442,15 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
               <div className="mb-5 flex gap-2 overflow-x-auto pb-1" role="tablist">
                 {GRAMMAR_FOCUS_LANGUAGES.map((language) => <button type="button" role="tab" aria-selected={editorLanguage === language} key={language} onClick={() => { setEditorLanguage(language); setPreviewing(false); }} className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-black transition ${editorLanguage === language ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>{LANGUAGE_LABELS[language]}</button>)}
               </div>
+              {conflictWarning && (
+                <div role="status" className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+                  {uiLanguage === 'pt'
+                    ? 'Este documento foi alterado em outra janela. Suas edições locais foram mantidas.'
+                    : uiLanguage === 'es'
+                    ? 'Este documento cambió en otra ventana. Tus ediciones locales se conservaron.'
+                    : 'This document changed in another window. Your local edits were kept.'}
+                </div>
+              )}
               {previewing ? (
                 <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7">
                   <h3 className="mb-5 text-2xl font-black text-slate-900">{previewLocale.title || copy.grammarNotes}</h3>
@@ -437,15 +482,15 @@ export const GrammarFocusModal: React.FC<GrammarFocusModalProps> = ({
             </div>
           ) : (
             <div className="mx-auto max-w-3xl">
-              {hasDocumentContent && <label className="mb-3 block text-sm">{LEGACY_COPY[uiLanguage].language}: <select value={visibleLanguage} onChange={event => setReadingLanguage(event.target.value)}>
-                {availableGrammarFocusLanguages(documentValue?.content).map(language => <option key={language} value={language}>{LANGUAGE_LABELS[language]}</option>)}
+              {hasReadingContent && <label className="mb-3 block text-sm">{LEGACY_COPY[uiLanguage].language}: <select value={visibleLanguage} onChange={event => setReadingLanguage(event.target.value)}>
+                {availableGrammarFocusLanguages(readingContent).map(language => <option key={language} value={language}>{LANGUAGE_LABELS[language]}</option>)}
               </select></label>}
-              {hasActiveContent ? <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7"><h3 className="mb-5 text-2xl font-black text-slate-900">{activeLocale.title || lessonTitle || copy.grammarNotes}</h3>{activeLocale.body.trim() && <ControlledMarkdown body={activeLocale.body} />}</div> : <p className="text-sm text-slate-500">{legacyDocuments.length ? LEGACY_COPY[uiLanguage].pending : legacyLoading || legacyError ? '' : copy.noNotes}</p>}
+              {hasActiveContent ? <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5 sm:p-7"><h3 className="mb-5 text-2xl font-black text-slate-900">{activeLocale.title || lessonTitle || copy.grammarNotes}</h3>{activeLocale.body.trim() && <ControlledMarkdown body={activeLocale.body} />}</div> : <p className="text-sm text-slate-500">{actions.edit && legacyDocuments.some((source) => !source.assignment) ? LEGACY_COPY[uiLanguage].pending : legacyLoading || legacyError ? '' : copy.noNotes}</p>}
               {saveError && <div role="alert" className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{saveError}</div>}
               <div className="mt-6 flex flex-wrap gap-2">
                 {actions.edit && <button type="button" onClick={beginEditing} className="rounded-2xl bg-blue-600 px-5 py-3 font-black text-white shadow-[0_3px_0_0_#1e40af]">{hasDocumentContent ? copy.edit : copy.add}</button>}
-                {actions.board && hasActiveContent && onOpenBoard && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('board')} className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 disabled:opacity-50">{openingSurface === 'board' ? ui.opening : ui.board}</button>}
-                {actions.slides && hasActiveContent && onOpenSlides && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('slides')} className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-3 font-black text-violet-700 disabled:opacity-50">{openingSurface === 'slides' ? ui.opening : ui.slides}</button>}
+                {actions.board && hasCanonicalContent && onOpenBoard && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('board')} className="rounded-2xl border border-blue-200 bg-blue-50 px-5 py-3 font-black text-blue-700 disabled:opacity-50">{openingSurface === 'board' ? ui.opening : ui.board}</button>}
+                {actions.slides && hasCanonicalContent && onOpenSlides && <button type="button" disabled={openingSurface !== null} onClick={() => void openSurface('slides')} className="rounded-2xl border border-violet-200 bg-violet-50 px-5 py-3 font-black text-violet-700 disabled:opacity-50">{openingSurface === 'slides' ? ui.opening : ui.slides}</button>}
                 {actions.practice && lessonId && onOpenPractice && <button type="button" onClick={() => onOpenPractice(lessonId)} className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 font-black text-emerald-700">{ui.practice}</button>}
                 {actions.report && lessonId && userId && <button type="button" onClick={() => setReporting(true)} className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-3 font-black text-amber-700">{ui.report}</button>}
               </div>

@@ -14,7 +14,13 @@ test('students receive the active locale without administrative controls', () =>
   assert.match(app, /activeLanguage=\{baseLanguage\}/);
   assert.match(component, /normalizeGrammarFocusLanguage\(activeLanguage\)/);
   assert.match(component, /getLocalizedGrammarFocusContent\(documentValue\?\.content, visibleLanguage\)/);
-  assert.match(component, /availableGrammarFocusLanguages\(documentValue\?\.content\)/, 'the displayed fallback locale is explicitly selectable and labeled');
+  assert.match(component, /availableGrammarFocusLanguages\(readingContent\)/, 'the displayed locale is explicitly selectable and labeled');
+  assert.match(component, /legacyDocuments\.filter\(\(source\) => !source\.assignment\)/,
+    'assigned legacy archives must never render as a parallel source');
+  assert.match(component, /!actions\.edit && !hasDocumentContent[\s\S]+legacyDocuments\.find/,
+    'legacy content reaches students and teachers only as an inline read-only fallback');
+  assert.match(component, /actions\.board && hasCanonicalContent && onOpenBoard/,
+    'Board and Slides publish only the official canonical document');
   assert.match(component, /\[courseId, canonicalLessonId, isOverview, workbookId\]/,
     'support locale is independent; curriculum changes resubscribe to their own document');
   assert.match(component, /getGrammarFocusActions\(userRole\)/);
@@ -66,7 +72,12 @@ test('admin editor supports all locales, preview, unsaved confirmation and retai
   assert.match(component, /setPreviewing/);
   assert.match(component, /window\.confirm\(copy\.unsaved\)/);
   assert.match(component, /disabled=\{saving \|\| !dirty\}/);
-  assert.match(component, /setSaveError\(error instanceof Error/);
+  assert.match(component, /if \(editingRef\.current \|\| dirtyRef\.current\)/,
+    'a remote snapshot must never overwrite an in-progress local draft');
+  assert.match(component, /const isSelfSave = savingRef\.current/,
+    'a save acknowledged by the server must not surface as a false conflict');
+  assert.match(component, /setDocumentValue\(saved\)/,
+    'saving still syncs the baseline from the persisted document');
   assert.doesNotMatch(component, /dangerouslySetInnerHTML/);
 });
 
