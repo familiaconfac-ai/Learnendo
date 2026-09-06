@@ -5,6 +5,7 @@ import {
   canonicalGrammarFocusLessonId,
   emptyGrammarFocusContent,
   grammarFocusDocumentId,
+  grammarFocusFamilyCourseId,
   matchesGrammarFocusIdentity,
   mergeGrammarFocusContent,
   normalizeGrammarFocusDocumentContent,
@@ -41,9 +42,10 @@ export function subscribeGrammarFocus(
       onError(new Error('Grammar Focus curriculum identity mismatch.'));
       return;
     }
+    const familyCourseId = grammarFocusFamilyCourseId(courseId);
     onValue({
-      courseId,
-      targetLanguage: getCourseTargetLanguage(courseId)!,
+      courseId: familyCourseId,
+      targetLanguage: getCourseTargetLanguage(familyCourseId)!,
       workbookId: Number(value.workbookId),
       lessonId: String(value.lessonId ?? lessonId),
       content: normalizeGrammarFocusDocumentContent(value),
@@ -115,15 +117,16 @@ export async function assignLegacyGrammarFocus(input: {
     if (!hasGrammarFocusContent(content)) throw new Error('No recognized legacy content. Inspect the original fields before migrating.');
     const validationError = validateGrammarFocusContent(content);
     if (validationError) throw new Error(validationError);
+    const familyCourseId = grammarFocusFamilyCourseId(input.courseId);
     const value: GrammarFocusDocument = {
-      courseId: input.courseId, targetLanguage: getCourseTargetLanguage(input.courseId)!,
+      courseId: familyCourseId, targetLanguage: getCourseTargetLanguage(familyCourseId)!,
       workbookId: input.workbookId, lessonId: canonicalGrammarFocusLessonId(input.lessonId),
       schemaVersion: 2, content, updatedAt: serverTimestamp(), updatedBy: input.updatedBy,
       legacySourceId: source.documentId,
     };
     transaction.set(destinationRef, value);
     transaction.set(assignmentRef, {
-      sourceId: source.documentId, destinationId, courseId: input.courseId,
+      sourceId: source.documentId, destinationId, courseId: familyCourseId,
       sourceData, content, assignedAt: serverTimestamp(), assignedBy: input.updatedBy,
     });
     return destinationId;
@@ -157,9 +160,10 @@ export async function saveGrammarFocus(input: {
     const validationError = validateGrammarFocusContent(content);
     if (validationError) throw new Error(validationError);
 
+    const familyCourseId = grammarFocusFamilyCourseId(input.courseId);
     const value: GrammarFocusDocument = {
-      courseId: input.courseId,
-      targetLanguage: getCourseTargetLanguage(input.courseId)!,
+      courseId: familyCourseId,
+      targetLanguage: getCourseTargetLanguage(familyCourseId)!,
       workbookId: input.workbookId,
       lessonId: canonicalLessonId,
       content,

@@ -61,19 +61,25 @@ test('explicit provenance and historical prefixes constrain admin assignment', (
   assert.notEqual(legacyGrammarFocusRevision({ body: 'old' }), legacyGrammarFocusRevision({ body: 'changed' }));
 });
 
-test('course-scoped identities never share the legacy document', () => {
-  const courses = ['english', 'spanish', 'portuguese_foreigners', 'portuguese_native', 'greek_koine', 'hebrew_biblical'];
-  const ids = courses.map(course => grammarFocusDocumentId(course, 1, 'wb1_l1'));
-  assert.equal(new Set(ids).size, courses.length);
-  assert.equal(grammarFocusDocumentId('spanish', 1, 'es_wb1_l1'), 'spanish__wb1_l1');
+test('English/Português/Español share one multilingual document; Greek/Hebrew keep their own', () => {
+  const sharedFamilyCourses = ['english', 'spanish', 'portuguese_foreigners', 'portuguese_native'];
+  const sharedIds = sharedFamilyCourses.map(course => grammarFocusDocumentId(course, 1, 'wb1_l1'));
+  assert.equal(new Set(sharedIds).size, 1);
+  assert.ok(sharedIds.every(id => id === 'english__wb1_l1'));
+  assert.equal(grammarFocusDocumentId('spanish', 1, 'es_wb1_l1'), 'english__wb1_l1');
   assert.equal(grammarFocusDocumentId('english', 2, 'lesson_1'), 'english__wb2_lesson_1');
+  assert.equal(grammarFocusDocumentId('greek_koine', 1, 'wb1_l1'), 'greek_koine__wb1_l1');
+  assert.equal(grammarFocusDocumentId('hebrew_biblical', 1, 'wb1_l1'), 'hebrew_biblical__wb1_l1');
   assert.equal(legacyGrammarFocusDocumentId(1, 'es_wb1_l1'), 'wb1_l1');
-  assert.ok(ids.every(id => id !== legacyGrammarFocusDocumentId(1, 'wb1_l1')));
+  assert.ok(sharedIds.every(id => id !== legacyGrammarFocusDocumentId(1, 'wb1_l1')));
   assert.throws(() => grammarFocusDocumentId('unknown', 1, 'wb1_l1'));
   assert.throws(() => grammarFocusDocumentId('english', NaN, 'wb1_l1'));
-  const doc = { schemaVersion: 2, courseId: 'spanish', targetLanguage: 'es', workbookId: 1, lessonId: 'wb1_l1' };
+  const doc = { schemaVersion: 2, courseId: 'english', targetLanguage: 'en', workbookId: 1, lessonId: 'wb1_l1' };
+  // Any course in the shared family resolves identity against the same canonical document.
   assert.ok(matchesGrammarFocusIdentity(doc, 'spanish', 1, 'es_wb1_l1'));
-  assert.equal(matchesGrammarFocusIdentity(doc, 'english', 1, 'wb1_l1'), false);
+  assert.ok(matchesGrammarFocusIdentity(doc, 'english', 1, 'wb1_l1'));
+  assert.ok(matchesGrammarFocusIdentity(doc, 'portuguese_foreigners', 1, 'wb1_l1'));
+  assert.equal(matchesGrammarFocusIdentity(doc, 'greek_koine', 1, 'wb1_l1'), false);
   assert.equal(matchesGrammarFocusIdentity({ ...doc, schemaVersion: 1 }, 'spanish', 1, 'wb1_l1'), false);
 });
 

@@ -46,16 +46,33 @@ export function legacyGrammarFocusDocumentId(workbookId: number, lessonId: strin
     : `${workbookPrefix}${normalizedLessonId}`;
 }
 
+/** English/Português/Español ("english", "portuguese_foreigners", "portuguese_native", "spanish")
+ * are localized tracks of the same workbook curriculum: the same lesson identity, translated.
+ * Grammar Focus already stores every translation on one document (content.en/pt/es), so all of
+ * these courses must resolve to the same canonical document — only the active course changes
+ * which locale opens first. Greek/Hebrew are unrelated curricula and keep their own family. */
+const GRAMMAR_FOCUS_FAMILY_COURSE: Readonly<Record<string, string>> = Object.freeze({
+  english: 'english',
+  portuguese_foreigners: 'english',
+  portuguese_native: 'english',
+  spanish: 'english',
+});
+
+export function grammarFocusFamilyCourseId(courseId: string): string {
+  return GRAMMAR_FOCUS_FAMILY_COURSE[courseId] ?? courseId;
+}
+
 export function grammarFocusDocumentId(courseId: string, workbookId: number, lessonId: string): string {
   if (!getCourseTargetLanguage(courseId)) throw new Error('Unknown grammar course.');
   if (!Number.isInteger(workbookId) || workbookId < 1 || workbookId > 100) throw new Error('Invalid workbook.');
   if (!/^[A-Za-z0-9_-]{1,120}$/.test(lessonId)) throw new Error('Invalid lesson.');
-  return courseId + '__' + legacyGrammarFocusDocumentId(workbookId, lessonId);
+  return grammarFocusFamilyCourseId(courseId) + '__' + legacyGrammarFocusDocumentId(workbookId, lessonId);
 }
 
 export function matchesGrammarFocusIdentity(value: Record<string, unknown>, courseId: string, workbookId: number, lessonId: string): boolean {
-  return value.schemaVersion === 2 && value.courseId === courseId
-    && value.targetLanguage === getCourseTargetLanguage(courseId)
+  const familyCourseId = grammarFocusFamilyCourseId(courseId);
+  return value.schemaVersion === 2 && value.courseId === familyCourseId
+    && value.targetLanguage === getCourseTargetLanguage(familyCourseId)
     && value.workbookId === workbookId && value.lessonId === canonicalGrammarFocusLessonId(lessonId);
 }
 
