@@ -121,8 +121,8 @@ export async function appendGrammarFocusWorkspacePage(input: {
     const state = buildGrammarFocusSurfaceState(workspace, input.mode, page);
     const pages = state.pages;
     transaction.set(controlReference, {
-      designatedStudentId: previousControl?.designatedStudentId ?? null,
-      controllerId: input.userId, controllerClientId, epoch, teacherLeaseAt: serverTimestamp(),
+      acquisitionOpen: false,
+      controllerId: input.userId, controllerName: input.userName.trim() || input.userId, controllerClientId, epoch, teacherLeaseAt: serverTimestamp(),
       view: null, updatedAt: serverTimestamp(),
     });
     transaction.set(reference, {

@@ -9,13 +9,12 @@ import {
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { isTrackReference } from '@livekit/components-core';
-import { ConnectionState, Room, RoomEvent, Track, createLocalAudioTrack, createLocalVideoTrack } from 'livekit-client';
+import { ConnectionState, RoomEvent, Track, createLocalAudioTrack, createLocalVideoTrack } from 'livekit-client';
 import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavigation';
 import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
-import { LiveClassChat } from '../LiveClassChat';
 import { LiveTrailExerciseOverlay } from '../LiveTrailExerciseOverlay';
 import {
   GrammarNavigatorModal,
@@ -32,6 +31,8 @@ import { useUiLanguage } from '../../../i18n/UiLanguageContext';
 import { getUiLabels } from '../../../i18n/uiLabels';
 import type { UserRole } from '../../../services/userRoles';
 import { appendGrammarFocusWorkspacePage } from '../../../services/grammarFocusWorkspace';
+import { useLiveLessonContext } from '../LiveLessonContext';
+import { disconnectPersistentTeacherRoom, getPersistentTeacherRoom } from '../../../services/persistentLiveMedia';
 
 function openExternalLink(rawUrl: string) {
   const trimmed = rawUrl.trim();
@@ -40,7 +41,6 @@ function openExternalLink(rawUrl: string) {
   window.open(target, '_blank', 'noopener,noreferrer');
 }
 
-const SHOW_LIVE_DEBUG_SHORTCUTS = import.meta.env.DEV;
 const TEACHER_TRAIL_BUTTON_LABEL = 'Trail';
 
 function hasActiveLiveTrailSession(session: LiveClassSession) {
@@ -121,11 +121,11 @@ const TeacherStage: React.FC<{
   ensureLiveRoomConnected,
   liveKitError,
 }) => {
+  const lessonContext = useLiveLessonContext();
   const stageMode = sanitizeMainStageMode(session.mainStageMode);
   const hasActiveTrailSession = hasActiveLiveTrailSession(session);
   const isTrailStage = stageMode === 'trail';
   const meetLink = getLiveClassMeetLink(liveClass);
-  const whatsappLink = (liveClass.whatsappLink ?? '').trim();
   const participants = useParticipants();
   const remoteParticipants = participants.filter((participant) => !participant.isLocal);
   const cameraTrackRefs = useTracks([{ source: Track.Source.Camera, withPlaceholder: false }]).filter(
@@ -144,7 +144,6 @@ const TeacherStage: React.FC<{
   const [cameraBusy, setCameraBusy] = useState(false);
   const [camError, setCamError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
-  const [chatOpen, setChatOpen] = useState(false);
   const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
   const [showWorkspaceGrammar, setShowWorkspaceGrammar] = useState(false);
   const [exercisePanelSelection, setExercisePanelSelection] = useState<GrammarNavigatorSelection | null>(null);
@@ -183,8 +182,7 @@ const TeacherStage: React.FC<{
 
   const isBattleStage = stageMode === 'battle';
   const showStageMicrophoneControl = isTrailStage || showExerciseSession || isBattleStage;
-  const showStageChatQuickControl = isTrailStage || showExerciseSession;
-  const showStageQuickControls = showStageMicrophoneControl && !chatOpen;
+  const showStageQuickControls = showStageMicrophoneControl;
   const stageQuickControlsZClass = isBattleStage ? 'z-[10050]' : 'z-[160]';
 
   const { uiLanguage: uiLang, baseLanguage } = useUiLanguage();
@@ -347,6 +345,9 @@ const TeacherStage: React.FC<{
       userName: teacherName,
     });
     await handleUpdateSession({
+      activeCourseId: content.courseId,
+      activeWorkbookId: content.workbookId,
+      activeLessonId: content.lessonId,
       mainStageMode: 'workspace',
       sharedGrammarOpen: false,
       sharedGrammarWorkbookId: content.workbookId,
@@ -573,29 +574,6 @@ const TeacherStage: React.FC<{
                       >
                         &#x1F4FA;
                       </button>
-                      {SHOW_LIVE_DEBUG_SHORTCUTS ? (
-                        <button
-                          type="button"
-                          onClick={() => onOpenPreviewTab('student')}
-                          className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
-                          title={labels.previewStudent}
-                          aria-label={labels.previewStudent}
-                        >
-                          S
-                        </button>
-                      ) : null}
-                      {SHOW_LIVE_DEBUG_SHORTCUTS ? (
-                        <button
-                          type="button"
-                          onClick={onOpenTrackTab}
-                          className="flex h-7 min-w-7 items-center justify-center rounded border border-slate-200 px-1.5 text-[10px] font-black text-slate-700 transition hover:bg-slate-100"
-                          title={labels.previewTeacher}
-                          aria-label={labels.previewTeacher}
-                        >
-                          T
-                        </button>
-                      ) : null}
-
                       {camError || micError ? (
                         <span className="flex items-center text-[10px] text-red-500" title={camError ?? micError ?? undefined}>
                           &#x26A0;&#xFE0F;
@@ -759,34 +737,6 @@ const TeacherStage: React.FC<{
             </svg>
           </button>
 
-          <button
-            type="button"
-            onClick={() => openExternalLink(meetLink)}
-            disabled={!meetLink}
-            className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-black shadow transition ${
-              meetLink
-                ? 'bg-cyan-500 text-slate-950 hover:bg-cyan-400'
-                : 'bg-slate-800 text-slate-500'
-            } disabled:cursor-not-allowed disabled:opacity-60`}
-            title={meetLink ? 'Abrir Meet em nova aba' : 'Configure o link fixo do Meet nesta aula'}
-          >
-            M
-          </button>
-
-          <button
-            type="button"
-            onClick={() => openExternalLink(whatsappLink)}
-            disabled={!whatsappLink}
-            className={`flex h-12 w-12 items-center justify-center rounded-full text-sm font-black shadow transition ${
-              whatsappLink
-                ? 'bg-emerald-500 text-slate-950 hover:bg-emerald-400'
-                : 'bg-slate-800 text-slate-500'
-            } disabled:cursor-not-allowed disabled:opacity-60`}
-            title={whatsappLink ? 'Abrir WhatsApp em nova aba' : 'Configure o grupo do WhatsApp desta aula'}
-          >
-            W
-          </button>
-
           <BottomNavigationBattleButton
             isActive={false}
             onClick={onOpenBattleHub}
@@ -816,45 +766,10 @@ const TeacherStage: React.FC<{
             {TEACHER_TRAIL_BUTTON_LABEL}
           </button>
 
-          <button
-            onClick={() => setChatOpen((current) => !current)}
-            className={`flex h-12 w-12 items-center justify-center rounded-full text-lg shadow transition ${
-              chatOpen
-                ? 'bg-violet-500 text-white hover:bg-violet-400'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-            }`}
-            title={chatOpen ? 'Fechar chat' : 'Abrir chat'}
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-            </svg>
-          </button>
         </div>
       }
       overlay={
         <>
-          {chatOpen ? (
-            <div className="fixed inset-x-0 bottom-16 top-0 z-[170] flex flex-col bg-slate-950/95">
-              <div className="flex items-center justify-between border-b border-slate-800 px-4 py-2">
-                <span className="text-sm font-bold text-white">Chat</span>
-                <button
-                  onClick={() => setChatOpen(false)}
-                  className="text-lg text-slate-400 hover:text-white"
-                >
-                  &times;
-                </button>
-              </div>
-              <div className="flex-1 overflow-hidden">
-                <LiveClassChat
-                  classId={liveClass.id}
-                  user={user}
-                  role="teacher"
-                  allowAudioNotes={session.audioNotesEnabled !== false}
-                  onAfterSend={() => setChatOpen(false)}
-                />
-              </div>
-            </div>
-          ) : null}
           {showStageQuickControls ? (
             <div className={`pointer-events-none fixed bottom-24 right-3 sm:bottom-28 sm:right-4 ${stageQuickControlsZClass}`}>
               <div className="pointer-events-auto flex flex-col gap-2 rounded-2xl border border-slate-700 bg-slate-950/92 p-2 shadow-2xl backdrop-blur-sm">
@@ -880,19 +795,6 @@ const TeacherStage: React.FC<{
                     {!isMicrophoneEnabled ? <line x1="1" y1="1" x2="23" y2="23" strokeLinecap="round" /> : null}
                   </svg>
                 </button>
-                {showStageChatQuickControl ? (
-                  <button
-                    type="button"
-                    onClick={() => setChatOpen(true)}
-                    className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-500 text-white shadow transition hover:bg-violet-400"
-                    title="Abrir chat"
-                    aria-label="Abrir chat"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z" />
-                    </svg>
-                  </button>
-                ) : null}
               </div>
             </div>
           ) : null}
@@ -939,9 +841,9 @@ const TeacherStage: React.FC<{
                   user={user}
                   isTeacher={true}
                   assignedRoster={assignedRoster}
-                  defaultCourseId={liveClass.courseId ?? 'english'}
-                  defaultWorkbookId={exercisePanelSelection?.workbookId ?? session.activeWorkbookId ?? liveClass.workbookId ?? 1}
-                  defaultLessonId={exercisePanelSelection?.lessonId ?? session.activeLessonId ?? liveClass.lessonId ?? ''}
+                  defaultCourseId={lessonContext.courseId}
+                  defaultWorkbookId={exercisePanelSelection?.workbookId ?? lessonContext.workbookId ?? 1}
+                  defaultLessonId={exercisePanelSelection?.lessonId ?? lessonContext.lessonId ?? ''}
                   onUpdateSession={handleUpdateSession}
                   onStarted={() => {
                     setExercisePanelSelection(null);
@@ -953,9 +855,9 @@ const TeacherStage: React.FC<{
           ) : null}
           {showWorkspaceGrammar ? (
             <GrammarNavigatorModal
-              courseId={liveClass.courseId ?? 'english'}
-              initialWorkbookId={session.activeWorkbookId ?? liveClass.workbookId ?? 1}
-              currentLessonId={session.activeLessonId ?? liveClass.lessonId ?? null}
+              courseId={lessonContext.courseId}
+              initialWorkbookId={lessonContext.workbookId ?? 1}
+              currentLessonId={lessonContext.lessonId}
               activeLanguage={baseLanguage}
               userRole={effectiveRole}
               user={user}
@@ -986,15 +888,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
   const [roomInstance] = useState(
     () => {
       const instanceNumber = nextLiveKitDebugCounter('teacher_room_instance');
-      const room = new Room({
-        adaptiveStream: true,
-        dynacast: true,
-        audioCaptureDefaults: {
-          autoGainControl: true,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
-      });
+      const room = getPersistentTeacherRoom(liveClass.id);
       logLiveKitDebug(`Room instance created #${instanceNumber}`, {
         source: 'TeacherRoomView',
         role: 'teacher',
@@ -1067,7 +961,8 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
 
     const connectKey = `${liveClass.id}|teacher|${wsUrl}|${token}`;
 
-    if (roomInstance.state === ConnectionState.Connected && lastConnectKeyRef.current === connectKey) {
+    if (roomInstance.state === ConnectionState.Connected) {
+      lastConnectKeyRef.current = connectKey;
       logLiveKitDebug('connect skipped: already connected', {
         source: 'TeacherRoomView',
         role: 'teacher',
@@ -1218,12 +1113,6 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
     void ensureLiveRoomConnected().catch(() => {});
   }, [ensureLiveRoomConnected, token, wsUrl]);
 
-  useEffect(() => {
-    return () => {
-      roomInstance.disconnect();
-    };
-  }, [roomInstance]);
-
   if (!liveClass?.id || !user?.uid) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-slate-950 px-6 text-center">
@@ -1261,7 +1150,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
           onStartTrailBattle={onStartTrailBattle}
           onOpenPreviewTab={onOpenPreviewTab}
           onOpenTrackTab={onOpenTrackTab}
-          onExit={onExit}
+          onExit={() => { disconnectPersistentTeacherRoom(liveClass.id); onExit(); }}
           ensureLiveRoomConnected={ensureLiveRoomConnected}
           liveKitError={liveKitError}
         />

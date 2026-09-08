@@ -19,7 +19,7 @@ export function subscribeBoardControl(classId: string, receive: (control: BoardC
   }, fail);
   return () => { stopControl(); stopView(); };
 }
-export async function acquireBoard(classId: string, uid: string, clientId: string, teacher: boolean, displayedView?: BoardView | null): Promise<number> {
+export async function acquireBoard(classId: string, uid: string, clientId: string, controllerName: string, teacher: boolean, displayedView?: BoardView | null): Promise<number> {
   return runTransaction(db, async transaction => {
     const ref = boardControlRef(classId);
     const snapshot = await transaction.get(ref);
@@ -28,8 +28,8 @@ export async function acquireBoard(classId: string, uid: string, clientId: strin
     const epoch = (previous?.epoch ?? 0) + (teacher && ownsBoard(previous, uid, clientId) ? 0 : 1);
     const lastView = teacher ? null : (await transaction.get(boardViewRef(classId))).data();
     transaction.set(ref, {
-      designatedStudentId: previous?.designatedStudentId ?? null,
-      controllerId: uid, controllerClientId: clientId, epoch,
+      acquisitionOpen: false,
+      controllerId: uid, controllerName: controllerName.trim() || uid, controllerClientId: clientId, epoch,
       teacherLeaseAt: teacher ? serverTimestamp() : null,
       view: teacher ? displayedView ?? previous?.view ?? null : lastView?.epoch === previous?.epoch ? lastView.view : previous?.view ?? null,
       updatedAt: serverTimestamp(),
@@ -37,14 +37,14 @@ export async function acquireBoard(classId: string, uid: string, clientId: strin
     return epoch;
   });
 }
-export async function designateBoardStudent(classId: string, uid: string, clientId: string, studentId: string | null) {
+export async function setBoardStudentAcquisition(classId: string, uid: string, clientId: string, controllerName: string, open: boolean) {
   await runTransaction(db, async transaction => {
     const ref = boardControlRef(classId);
     const snapshot = await transaction.get(ref);
     const previous = snapshot.data() as BoardControl | undefined;
     const lastView = (await transaction.get(boardViewRef(classId))).data();
     transaction.set(ref, {
-      designatedStudentId: studentId, controllerId: uid, controllerClientId: clientId,
+      acquisitionOpen: open, controllerId: uid, controllerName: controllerName.trim() || uid, controllerClientId: clientId,
       epoch: (previous?.epoch ?? 0) + 1, teacherLeaseAt: null,
       view: lastView?.epoch === previous?.epoch ? lastView.view : previous?.view ?? null, updatedAt: serverTimestamp(),
     });
@@ -71,15 +71,25 @@ export async function publishBoardView(classId: string, uid: string, clientId: s
 }
 
 // Per-canvas capability. Captured before any async save work; Rules reject stale epochs.
-const writers = new Map<string, { uid: string; stamp: () => { controlEpoch: number; controlClientId: string } }>();
+export interface BoardWriteStamp {
+  controlEpoch: number;
+  controlClientId: string;
+  workspaceMutationSeq: number;
+}
+
+const writers = new Map<string, {
+  uid: string;
+  nextMutationSeq: number;
+  stamp: () => { controlEpoch: number; controlClientId: string };
+}>();
 export function registerBoardWriter(classId: string, uid: string, stamp: () => { controlEpoch: number; controlClientId: string }) {
-  const entry = { uid, stamp }; writers.set(classId, entry);
+  const entry = { uid, stamp, nextMutationSeq: 0 }; writers.set(classId, entry);
   return () => { if (writers.get(classId) === entry) writers.delete(classId); };
 }
-export function boardWriteStamp(classId: string, uid: string) {
+export function boardWriteStamp(classId: string, uid: string): BoardWriteStamp {
   const writer = writers.get(classId);
   if (!writer || writer.uid !== uid) throw new Error('Board writer is not active');
-  return writer.stamp();
+  return { ...writer.stamp(), workspaceMutationSeq: ++writer.nextMutationSeq };
 }
 
 /** Revalidate the captured capability at commit; the writer also requires server-confirmed connectivity. */
@@ -87,6 +97,14 @@ export async function commitBoardWorkspace(classId: string, value: Record<string
   await runTransaction(db, async transaction => {
     const control = (await transaction.get(boardControlRef(classId))).data() as BoardControl | undefined;
     if (!control || control.epoch !== value.controlEpoch || control.controllerId !== value.updatedBy || control.controllerClientId !== value.controlClientId) throw new Error('Board authority changed');
-    transaction.set(doc(db, 'liveClasses', classId, 'shared', 'workspace'), value, { merge: true });
+    const workspace = doc(db, 'liveClasses', classId, 'shared', 'workspace');
+    const current = (await transaction.get(workspace)).data() as Record<string, unknown> | undefined;
+    const sameGeneration = current?.controlEpoch === value.controlEpoch
+      && current?.controlClientId === value.controlClientId;
+    if (sameGeneration
+      && typeof current?.workspaceMutationSeq === 'number'
+      && typeof value.workspaceMutationSeq === 'number'
+      && current.workspaceMutationSeq >= value.workspaceMutationSeq) return;
+    transaction.set(workspace, { ...value, updatedAt: serverTimestamp() }, { merge: true });
   });
 }

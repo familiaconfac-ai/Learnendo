@@ -2,20 +2,19 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { boardContentFingerprint, canAcquireBoard, ownsBoard, teacherLeaseActive, TEACHER_IDLE_MS, TEACHER_LEASE_MS, type BoardControl } from './boardControl.ts';
 
-const control: BoardControl = { designatedStudentId: 'joao', controllerId: 'teacher', controllerClientId: 'desktop', epoch: 10, teacherLeaseAt: { toMillis: () => 1000 }, view: null, updatedAt: null };
-test('designation never grants followers authority and teacher can always preempt', () => {
+const control: BoardControl = { acquisitionOpen: false, controllerId: 'teacher', controllerName: 'Professor Ana', controllerClientId: 'desktop', epoch: 10, teacherLeaseAt: null, view: null, updatedAt: null };
+test('a closed Board rejects followers and teacher can always preempt', () => {
   for (const uid of ['maria', 'pedro', 'ana']) {
     assert.equal(canAcquireBoard(control, uid, false, 20000), false);
   }
   assert.equal(canAcquireBoard(control, 'teacher', true, 1001), true);
   assert.equal(canAcquireBoard(null, 'joao', false, 1001), false);
 });
-test('designated student waits for teacher release/expiry; expiry does not clear designation', () => {
-  assert.equal(canAcquireBoard(control, 'joao', false, 5999), false);
+test('an open Board is available to any assigned student and closes after acquisition', () => {
+  assert.equal(canAcquireBoard({ ...control, acquisitionOpen: true }, 'joao', false, 1001), true);
+  assert.equal(canAcquireBoard({ ...control, controllerId: 'joao' }, 'joao', false, 1001), true);
+  assert.equal(canAcquireBoard(control, 'joao', false, 1001), false);
   assert.equal(teacherLeaseActive(control, 6000), false);
-  assert.equal(canAcquireBoard(control, 'joao', false, 6000), true);
-  assert.equal(canAcquireBoard({ ...control, teacherLeaseAt: null }, 'joao', false, 1001), true);
-  assert.equal(control.designatedStudentId, 'joao');
   assert.ok(TEACHER_IDLE_MS < TEACHER_LEASE_MS);
 });
 test('refresh/same UID in another client cannot reuse writer ownership', () => {

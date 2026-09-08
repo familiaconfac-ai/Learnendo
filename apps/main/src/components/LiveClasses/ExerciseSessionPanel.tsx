@@ -927,6 +927,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
 
       await onUpdateSession?.({
         sessionStatus: 'active',
+        activeCourseId: courseId,
         activeWorkbookId: workbookId,
         activeLessonId: selectedLesson.id,
         activeExerciseId: seeded.trailIds[0] ?? null,

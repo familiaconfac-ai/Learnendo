@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 
 const canvas = await readFile(new URL('../src/components/LiveClasses/Workspace/WorkspaceCanvas.tsx', import.meta.url), 'utf8');
 const service = await readFile(new URL('../src/services/workspaceService.ts', import.meta.url), 'utf8');
+const controlHook = await readFile(new URL('../src/components/LiveClasses/Workspace/useBoardControl.ts', import.meta.url), 'utf8');
+const controlToolbar = await readFile(new URL('../src/components/LiveClasses/Workspace/BoardControlToolbar.tsx', import.meta.url), 'utf8');
 
 const overlay = canvas.slice(
   canvas.indexOf('const RemoteSelectionOverlay'),
@@ -37,6 +39,17 @@ assert.doesNotMatch(canvas.match(/const execFmt = useCallback[\s\S]*?const apply
   'formatting must not overwrite the saved editor Range after toolbar focus');
 assert.match(canvas, /fontSize: '16px'/, 'toolbar inspection must not resize the whole document root');
 assert.match(canvas, /serializedLocalRange[\s\S]+restoredLocalRange/, 'remote content refresh must preserve a valid local caret/selection');
+assert.match(canvas, /reconstructRemoteSelection\(/, 'the controller selection must be reconstructed for followers');
+assert.match(canvas, /contentEditable=\{board\.own && viewerCanEditSharedDocument\}/, 'the document editor must follow effective ownership');
+assert.match(canvas, /requestFullscreen\(\)/, 'Board fullscreen should use the native API when available');
+assert.match(canvas, /orientation\.lock\('landscape'\)/, 'Board fullscreen should request landscape as best effort');
+assert.match(controlHook, /next\?\.controllerId === uid && !next\.acquisitionOpen/, 'the current student must rebind after refresh/reconnect');
+assert.match(controlHook, /!teacher \|\| !control\?\.acquisitionOpen/, 'teacher editing must stop while S is waiting');
+assert.match(controlToolbar, />T<\/[a-z]+>/, 'the teacher takeover control must remain visible');
+assert.match(controlToolbar, />S<\/[a-z]+>/, 'the open acquisition control must remain visible');
+assert.doesNotMatch(controlToolbar, /<select/, 'individual student designation must be removed');
+assert.match(service, /snap\.metadata\.hasPendingWrites/, 'pending local snapshots must not restore stale HTML');
+assert.match(service, /workspaceMutationSeq/, 'workspace writes must carry an ordering token');
 
 console.log('workspace selection UI tests passed');
 

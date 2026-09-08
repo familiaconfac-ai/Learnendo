@@ -617,6 +617,7 @@ export async function ensureLiveClassSession(classId: string): Promise<void> {
     sessionRef,
     {
       sessionStatus: 'idle',
+      activeCourseId: null,
       activeWorkbookId: null,
       activeLessonId: null,
       activeExerciseId: null,

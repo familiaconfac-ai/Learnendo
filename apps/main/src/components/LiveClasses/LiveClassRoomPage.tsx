@@ -23,6 +23,7 @@ import { StudentRoomView } from './Student/StudentRoomView';
 import { TeacherRoomView } from './Teacher/TeacherRoomView';
 import { resolveAssignedStudentRoster } from '../../services/liveClassesService';
 import type { UserRole } from '../../services/userRoles';
+import { LiveLessonContextProvider } from './LiveLessonContext';
 import {
   BASE_UI_LANGUAGE_STORAGE_KEY,
   TAB_APP_CONTEXT_STORAGE_KEY,
@@ -40,6 +41,8 @@ interface LiveClassRoomPageProps {
   onEditClass: (liveClass: LiveClass) => void;
   onOpenBattleHub: () => void;
   onExit: () => void;
+  availableClasses?: LiveClass[];
+  onSwitchClass?: (liveClass: LiveClass) => void;
 }
 
 type LiveClassPreviewRole = 'teacher' | 'student';
@@ -263,6 +266,7 @@ const LiveClassPreviewView: React.FC<{
 function buildInitialSession(liveClass: LiveClass): LiveClassSession {
   return {
     sessionStatus: 'idle',
+    activeCourseId: liveClass.courseId ?? 'english',
     activeWorkbookId: liveClass.workbookId ?? null,
     activeLessonId: liveClass.lessonId ?? null,
     liveAudioTransport: 'not-configured',
@@ -293,6 +297,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   })(),
   onOpenBattleHub,
   onExit,
+  availableClasses = [],
+  onSwitchClass,
 }) => {
   const previewRole = getPreviewRoleFromSearch();
   const isPreview = previewRole !== null;
@@ -658,7 +664,23 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
   if (role === 'teacher') {
     return (
       <LiveRoomErrorBoundary>
-        <>
+        <LiveLessonContextProvider liveClass={liveClass} session={session}>
+          {onSwitchClass && availableClasses.length > 1 ? (
+            <label className="fixed left-1/2 top-3 z-[13050] -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-950/90 px-2 py-1 text-[10px] font-bold text-slate-300 shadow-xl backdrop-blur-sm">
+              <span className="sr-only">Trocar turma da Live</span>
+              <select
+                aria-label="Trocar turma da Live"
+                value={liveClass.id}
+                onChange={(event) => {
+                  const nextClass = availableClasses.find((item) => item.id === event.target.value);
+                  if (nextClass && nextClass.id !== liveClass.id) onSwitchClass(nextClass);
+                }}
+                className="max-w-[42vw] bg-transparent text-xs font-black text-white outline-none"
+              >
+                {availableClasses.map((item) => <option key={item.id} value={item.id} className="bg-slate-950">{item.title}</option>)}
+              </select>
+            </label>
+          ) : null}
           <TeacherRoomView
             liveClass={liveClass}
             user={user}
@@ -700,13 +722,14 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
               initialSetupTemplate={pendingBattleTemplate}
             />
           ) : null}
-        </>
+        </LiveLessonContextProvider>
       </LiveRoomErrorBoundary>
     );
   }
 
   return (
     <LiveRoomErrorBoundary>
+      <LiveLessonContextProvider liveClass={liveClass} session={session}>
       <StudentRoomView
         liveClass={liveClass}
         user={user}
@@ -724,6 +747,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
         onExit={onExit}
         statusMessage={sessionLoadError}
       />
+      </LiveLessonContextProvider>
     </LiveRoomErrorBoundary>
   );
 };

@@ -9,8 +9,9 @@ export interface BoardView {
   selection: { target: 'document' | 'item'; itemId: string | null; range: SerializedSelectionRange; fingerprint: string } | null;
 }
 export interface BoardControl {
-  designatedStudentId: string | null;
+  acquisitionOpen: boolean;
   controllerId: string;
+  controllerName: string;
   controllerClientId: string;
   epoch: number;
   teacherLeaseAt: { toMillis(): number } | null;
@@ -21,7 +22,8 @@ export function teacherLeaseActive(control: BoardControl | null, now: number): b
   return !!control?.teacherLeaseAt && now < control.teacherLeaseAt.toMillis() + TEACHER_LEASE_MS;
 }
 export function canAcquireBoard(control: BoardControl | null, uid: string, teacher: boolean, now: number): boolean {
-  return teacher || (!!control && control.designatedStudentId === uid && !teacherLeaseActive(control, now));
+  void now;
+  return teacher || (!!control && (control.acquisitionOpen || control.controllerId === uid));
 }
 export function ownsBoard(control: BoardControl | null, uid: string, clientId: string): boolean {
   return !!control && control.controllerId === uid && control.controllerClientId === clientId;

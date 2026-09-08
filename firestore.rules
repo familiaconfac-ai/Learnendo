@@ -431,9 +431,9 @@ service cloud.firestore {
       return getAfter(/databases/$(database)/documents/liveClasses/$(classId)/shared/boardControl);
     }
     function validBoardControl(value, leaseValid) {
-      return value.keys().hasOnly(['designatedStudentId', 'controllerId', 'controllerClientId', 'epoch', 'teacherLeaseAt', 'view', 'updatedAt'])
-        && (value.designatedStudentId == null || value.designatedStudentId is string)
-        && value.controllerId is string && value.controllerClientId is string
+      return value.keys().hasOnly(['acquisitionOpen', 'controllerId', 'controllerName', 'controllerClientId', 'epoch', 'teacherLeaseAt', 'view', 'updatedAt'])
+        && value.acquisitionOpen is bool
+        && value.controllerId is string && value.controllerName is string && value.controllerName.size() > 0 && value.controllerName.size() < 200 && value.controllerClientId is string
         && value.controllerClientId.size() > 0 && value.controllerClientId.size() < 100
         && value.epoch is int && value.epoch > 0
         && leaseValid
@@ -455,11 +455,6 @@ service cloud.firestore {
     function boardLeaseFree(value) {
       return value.teacherLeaseAt == null || request.time >= value.teacherLeaseAt + duration.value(5, 's');
     }
-    function validBoardDesignation(classId, value) {
-      return value == null || value in liveClassDoc(classId).data.assignedStudentIds
-        || (exists(/databases/$(database)/documents/users/$(value))
-          && get(/databases/$(database)/documents/users/$(value)).data.email in liveClassDoc(classId).data.assignedStudentIds);
-    }
     function canUpdateBoardControl(classId) {
       let previous = resource.data;
       let next = request.resource.data;
@@ -467,12 +462,12 @@ service cloud.firestore {
       // A lease renewal may preserve the current generation; visual state has its own document.
       return validBoardControl(next, true)
         && (isTeacherForClass(classId)
-          ? (next.controllerId == request.auth.uid && validBoardDesignation(classId, next.designatedStudentId)
+          ? (next.controllerId == request.auth.uid
             && (next.teacherLeaseAt == null || next.teacherLeaseAt == request.time || next.teacherLeaseAt == previous.teacherLeaseAt)
-            && (next.epoch == previous.epoch + 1 || (sameController && next.epoch == previous.epoch && next.designatedStudentId == previous.designatedStudentId)))
-          : (isStudentAssignedToClass(classId) && previous.designatedStudentId == request.auth.uid
-            && next.designatedStudentId == previous.designatedStudentId && boardLeaseFree(previous)
-            && next.controllerId == request.auth.uid && next.teacherLeaseAt == null
+            && (next.epoch == previous.epoch + 1 || (sameController && next.epoch == previous.epoch && next.acquisitionOpen == previous.acquisitionOpen)))
+          : (isStudentAssignedToClass(classId)
+            && (previous.acquisitionOpen == true || previous.controllerId == request.auth.uid)
+            && next.acquisitionOpen == false && next.controllerId == request.auth.uid && next.teacherLeaseAt == null
             && next.epoch == previous.epoch + 1
             && (next.view == previous.view || (get(/databases/$(database)/documents/liveClasses/$(classId)/shared/boardView).data.epoch == previous.epoch
               && next.view == get(/databases/$(database)/documents/liveClasses/$(classId)/shared/boardView).data.view))));
@@ -498,7 +493,7 @@ service cloud.firestore {
           && value.view.selection.range.endPath is list && value.view.selection.range.endPath.size() <= 64
           && value.view.selection.range.startOffset is int && value.view.selection.range.startOffset >= 0
           && value.view.selection.range.endOffset is int && value.view.selection.range.endOffset >= 0))
-        && (isTeacherForClass(classId) || (authority.designatedStudentId == request.auth.uid && boardLeaseFree(authority)));
+        && (isTeacherForClass(classId) || (isStudentAssignedToClass(classId) && authority.acquisitionOpen == false));
     }
 
     function canWriteDirectedWorkspace(classId) {
@@ -508,10 +503,10 @@ service cloud.firestore {
         && control.controllerId == request.auth.uid
         && value.controlEpoch == control.epoch && value.controlClientId == control.controllerClientId
         && value.updatedBy == request.auth.uid
-        && (isTeacherForClass(classId) || (control.designatedStudentId == request.auth.uid && boardLeaseFree(control)))
+        && (isTeacherForClass(classId) || (isStudentAssignedToClass(classId) && control.acquisitionOpen == false))
         && value.diff(resource.data).affectedKeys().hasOnly([
           'docContent', 'docUpdatedBy', 'items', 'itemsUpdatedBy', 'pages', 'currentPageId',
-          'boardState', 'slidesState', 'surfaceMode', 'presentationMode', 'updatedAt', 'updatedBy', 'updatedByName', 'controlEpoch', 'controlClientId'
+          'boardState', 'slidesState', 'surfaceMode', 'presentationMode', 'updatedAt', 'updatedBy', 'updatedByName', 'controlEpoch', 'controlClientId', 'workspaceMutationSeq'
         ]);
     }
 
@@ -993,8 +988,7 @@ service cloud.firestore {
           || (docId == 'boardControl' && isTeacherForClass(classId)
             && validBoardControl(request.resource.data, request.resource.data.teacherLeaseAt == null || request.resource.data.teacherLeaseAt == request.time)
             && request.resource.data.controllerId == request.auth.uid
-            && request.resource.data.epoch == 1
-            && validBoardDesignation(classId, request.resource.data.designatedStudentId))
+            && request.resource.data.epoch == 1)
           || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId))
           || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId))
           || (docId == 'editor' && canAccessLiveClassRoom(classId));

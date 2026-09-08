@@ -283,6 +283,7 @@ export interface LiveClassPresence {
 
 export interface LiveClassSession {
   sessionStatus: 'idle' | 'active' | 'paused' | 'ended';
+  activeCourseId?: string | null;
   activeWorkbookId?: number | null;
   activeLessonId?: string | null;
   activeExerciseId?: string | null;

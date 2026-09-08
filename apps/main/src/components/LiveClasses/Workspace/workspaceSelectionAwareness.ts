@@ -5,6 +5,54 @@ export interface SerializedSelectionRange {
   endOffset: number;
 }
 
+export interface RemoteSelectionView {
+  surfaceMode: 'document' | 'slides';
+  pageId: string;
+  selection: {
+    target: 'document' | 'item';
+    itemId: string | null;
+    range: SerializedSelectionRange;
+    fingerprint: string;
+  } | null;
+}
+
+export interface RemoteSelectionSnapshot {
+  surfaceMode: 'document' | 'slides';
+  pageId: string;
+  target: 'document' | 'item';
+  itemId?: string;
+  range: SerializedSelectionRange;
+  updatedAt: number;
+  updatedBy: string;
+  updatedByName: string;
+}
+
+export function reconstructRemoteSelection(
+  view: RemoteSelectionView | null | undefined,
+  controllerId: string | null | undefined,
+  controllerClientId: string | null | undefined,
+  localUserId: string,
+  localClientId: string,
+  currentSurfaceMode: 'document' | 'slides',
+  currentPageId: string,
+  updatedAt: number,
+  controllerName?: string | null,
+): RemoteSelectionSnapshot | null {
+  if (!view?.selection || !controllerId || !controllerClientId) return null;
+  if (controllerId === localUserId && controllerClientId === localClientId) return null;
+  if (view.surfaceMode !== currentSurfaceMode || view.pageId !== currentPageId) return null;
+  return {
+    surfaceMode: view.surfaceMode,
+    pageId: view.pageId,
+    target: view.selection.target,
+    ...(view.selection.itemId ? { itemId: view.selection.itemId } : {}),
+    range: view.selection.range,
+    updatedAt,
+    updatedBy: controllerId,
+    updatedByName: controllerName?.trim() || controllerId,
+  };
+}
+
 export function isSerializedRangeCollapsed(range: SerializedSelectionRange): boolean {
   return range.startOffset === range.endOffset
     && range.startPath.length === range.endPath.length

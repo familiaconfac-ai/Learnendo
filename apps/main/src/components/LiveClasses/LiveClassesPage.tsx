@@ -469,6 +469,7 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
   if (roomClassId && activeRoomClass) {
     return (
       <LiveClassRoomPage
+        key={activeRoomClass.id}
         liveClass={activeRoomClass}
         user={user}
         accountRole={accountRole}
@@ -479,6 +480,8 @@ export const LiveClassesPage: React.FC<LiveClassesPageProps> = ({
         onEditClass={openEditFromRoom}
         onOpenBattleHub={onOpenBattleHub}
         onExit={leaveRoom}
+        availableClasses={canManageClasses ? sortedClasses : []}
+        onSwitchClass={enterRoom}
       />
     );
   }

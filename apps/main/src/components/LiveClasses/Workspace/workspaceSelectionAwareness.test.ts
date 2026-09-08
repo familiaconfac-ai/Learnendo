@@ -3,6 +3,7 @@ import {
   clampBoundaryOffset,
   getNodePath,
   isSerializedRangeCollapsed,
+  reconstructRemoteSelection,
   resolveNodePath,
   restoreScrollTop,
   serializeScrollRatio,
@@ -43,5 +44,24 @@ assert.equal(isSerializedRangeCollapsed({ startPath: [0, 0], startOffset: 0, end
 assert.equal(serializeScrollRatio(450, 1100, 200), 0.5, 'serializes logical scroll position');
 assert.equal(restoreScrollTop(0.5, 600, 100), 250, 'restores the same logical region in another viewport');
 assert.equal(restoreScrollTop(2, 600, 100), 500, 'clamps remote scroll ratios');
+
+const selectionRange = { startPath: [0, 0], startOffset: 1, endPath: [0, 0], endOffset: 4 };
+const remoteView = {
+  surfaceMode: 'document' as const,
+  pageId: 'page-1',
+  selection: { target: 'document' as const, itemId: null, range: selectionRange, fingerprint: '9:123' },
+};
+const remoteSelection = reconstructRemoteSelection(
+  remoteView, 'teacher-1', 'teacher-client', 'student-1', 'student-client', 'document', 'page-1', 42, 'Professor Ana',
+);
+assert.deepEqual(remoteSelection?.range, selectionRange, 'reconstructs the published DOM range');
+assert.equal(remoteSelection?.updatedBy, 'teacher-1', 'keeps the remote participant identity');
+assert.equal(remoteSelection?.updatedByName, 'Professor Ana', 'uses the participant display name for the remote caret');
+assert.equal(reconstructRemoteSelection(remoteView, 'student-1', 'student-client', 'student-1', 'student-client', 'document', 'page-1', 42), null,
+  'does not show the local selection as remote');
+assert.equal(reconstructRemoteSelection(remoteView, 'teacher-1', 'teacher-client', 'student-1', 'student-client', 'slides', 'page-1', 42), null,
+  'clears a selection from another surface');
+assert.equal(reconstructRemoteSelection({ ...remoteView, selection: null }, 'teacher-1', 'teacher-client', 'student-1', 'student-client', 'document', 'page-1', 42), null,
+  'clears when the publisher clears the selection');
 
 console.log('workspace selection awareness tests passed');

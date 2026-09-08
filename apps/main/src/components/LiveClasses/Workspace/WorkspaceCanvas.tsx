@@ -44,6 +44,7 @@ import {
 } from '../../../services/workspaceService';
 import {
   isSerializedRangeCollapsed,
+  reconstructRemoteSelection,
   restoreDomRange,
   restoreScrollTop,
   serializeDomRange,
@@ -2288,7 +2289,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
       <div
         ref={contentRef}
         data-board-item-editor={item.id}
-        contentEditable={canEditThisContent && !isBlockedByLock}
+        contentEditable={viewerContext.boardController && canEditThisContent && !isBlockedByLock}
         suppressContentEditableWarning
         spellCheck
         onMouseDown={(e) => e.stopPropagation()}
@@ -2365,7 +2366,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsTeacher = isTeacher(viewerContext);
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
-  const board = useBoardControl(classId, userId, viewerCanManageWorkspace);
+  const board = useBoardControl(classId, userId, userName, viewerCanManageWorkspace);
   viewerContext.boardController = board.own;
   const canPublishSelection = board.own;
   const viewerCanUseStudentTools = board.own && !readOnly && (viewerIsAdmin || viewerIsTeacher || viewerIsStudent);
@@ -2378,7 +2379,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerCanDeleteSavedLibraryEntries = viewerCanManageWorkspace && !effectiveReadOnly;
   const viewerCanUseReferenceTools = viewerCanUseStudentTools;
   const viewerCanExportWorkspacePdf = viewerCanUseStudentTools;
-  const toolbarDisabled = readOnly || !board.connected || (!viewerCanManageWorkspace && !board.own);
+  const toolbarDisabled = readOnly || !board.connected || !board.own;
 
   if (!userId) {
     console.error('[WorkspaceCanvas] userId is null/undefined! This will break save/load functionality');
@@ -2443,7 +2444,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [bgColor, setBgColor] = useState<string>('');
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
-  const showToolbar = !presentationMode && (Boolean(toolbarLeading) || viewerCanManageWorkspace || viewerCanUseStudentTools);
+  const [boardFullscreen, setBoardFullscreen] = useState(false);
+  const [fullscreenToolbarVisible, setFullscreenToolbarVisible] = useState(false);
+  const boardRootRef = useRef<HTMLDivElement>(null);
+  const fullscreenToolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isBoardFullscreen = boardFullscreen && !isSlidesMode;
+  const showToolbar = !presentationMode
+    && (!isBoardFullscreen || fullscreenToolbarVisible)
+    && (Boolean(toolbarLeading) || viewerCanManageWorkspace || viewerCanUseStudentTools);
   const [presentationRevealStep, setPresentationRevealStep] = useState(0);
   const [presentationViewport, setPresentationViewport] = useState<{ width: number; height: number }>({
     width: typeof window !== 'undefined' ? window.innerWidth : 1280,
@@ -2682,6 +2690,47 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     );
   }, [battleTemplatesList]);
 
+  const revealFullscreenToolbar = useCallback(() => {
+    setFullscreenToolbarVisible(true);
+    if (fullscreenToolbarTimerRef.current) clearTimeout(fullscreenToolbarTimerRef.current);
+    fullscreenToolbarTimerRef.current = setTimeout(() => setFullscreenToolbarVisible(false), 3200);
+  }, []);
+
+  const exitBoardFullscreen = useCallback(async () => {
+    setBoardFullscreen(false);
+    setFullscreenToolbarVisible(false);
+    if (document.fullscreenElement) {
+      try { await document.exitFullscreen(); } catch { /* CSS fallback remains safe. */ }
+    }
+    const orientation = window.screen?.orientation as ScreenOrientation & { unlock?: () => void };
+    try { orientation?.unlock?.(); } catch { /* Unsupported browser. */ }
+  }, []);
+
+  const enterBoardFullscreen = useCallback(async () => {
+    setBoardFullscreen(true);
+    revealFullscreenToolbar();
+    const root = boardRootRef.current;
+    if (root?.requestFullscreen) {
+      try { await root.requestFullscreen(); } catch { /* Keep the fixed-viewport fallback. */ }
+    }
+    const orientation = window.screen?.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> };
+    if (typeof orientation?.lock === 'function') {
+      try { await orientation.lock('landscape'); } catch { /* Best effort only. */ }
+    }
+  }, [revealFullscreenToolbar]);
+
+  useEffect(() => {
+    const syncNativeFullscreen = () => {
+      if (boardFullscreen && !document.fullscreenElement) setBoardFullscreen(false);
+    };
+    document.addEventListener('fullscreenchange', syncNativeFullscreen);
+    return () => document.removeEventListener('fullscreenchange', syncNativeFullscreen);
+  }, [boardFullscreen]);
+
+  useEffect(() => () => {
+    if (fullscreenToolbarTimerRef.current) clearTimeout(fullscreenToolbarTimerRef.current);
+  }, []);
+
   useEffect(() => {
     if (!isSlidesMode && presentationMode) {
       updatePresentationMode(false);
@@ -2690,7 +2739,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
-    if (!presentationMode) {
+    if (!presentationMode && !isBoardFullscreen) {
       delete document.body.dataset.workspacePresentation;
       document.body.style.overflow = '';
       document.body.style.overscrollBehavior = '';
@@ -2715,7 +2764,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       document.documentElement.style.overflow = previousDocumentOverflow;
       document.documentElement.style.overscrollBehavior = previousDocumentOverscroll;
     };
-  }, [presentationMode]);
+  }, [isBoardFullscreen, presentationMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !presentationMode || !isSlidesMode) return undefined;
@@ -3104,9 +3153,25 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [board.control?.epoch, board.own]);
   useEffect(() => {
     authoritativeViewRef.current = board.control?.view ?? null;
+    const controllerName = board.control?.controllerName
+      || assignedRoster.find((student) => student.uid === board.control?.controllerId)?.label
+      || userAccounts.find((account) => account.uid === board.control?.controllerId)?.name
+      || board.control?.controllerId;
+    const remoteSelection = reconstructRemoteSelection(
+      board.control?.view,
+      board.control?.controllerId,
+      board.control?.controllerClientId,
+      userId,
+      board.clientId,
+      surfaceMode,
+      activePageId,
+      Date.now(),
+      controllerName,
+    );
+    setRemoteSelections(remoteSelection ? [remoteSelection] : []);
     const frame = requestAnimationFrame(() => applyAuthoritativeView());
     return () => cancelAnimationFrame(frame);
-  }, [board.control?.view, docHtml, items, activePageId, surfaceMode, applyAuthoritativeView]);
+  }, [assignedRoster, board.clientId, board.control?.controllerClientId, board.control?.controllerId, board.control?.view, docHtml, items, activePageId, surfaceMode, applyAuthoritativeView, userAccounts, userId]);
 
 
   useEffect(() => {
@@ -3130,7 +3195,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           if (account && account.role !== 'student') return null;
           return {
             uid: rosterStudent.uid,
-            label: account?.name || rosterStudent.label || rosterStudent.uid,
+            label: rosterStudent.label || account?.name || rosterStudent.uid,
             email: account?.email ?? null,
             isOnline: rosterStudent.isOnline,
           };
@@ -3464,7 +3529,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         syncActivePageDocRef(nextDocContent);
       }
 
-      setRemoteSelections([]);
       requestAnimationFrame(() => applyAuthoritativeView());
 
     });
@@ -6009,7 +6073,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div
           ref={contentRef}
           data-board-item-editor={item.id}
-        contentEditable={canEditThisContent && !isLockedByOther}
+        contentEditable={board.own && canEditThisContent && !isLockedByOther}
           suppressContentEditableWarning
           spellCheck
           onFocus={(e) => {
@@ -6050,33 +6114,28 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
   return (
     <div
+      ref={boardRootRef}
       data-directed-board
-      onPointerDownCapture={event => {
-        if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
-        if (viewerCanManageWorkspace) {
-          if (!board.ownRef.current && (event.target as HTMLElement).closest('[data-board-document], [data-board-item-editor]')) {
-            pendingTeacherRootRef.current = (event.target as HTMLElement).closest<HTMLElement>('[data-board-document], [data-board-item-editor]');
-            pendingTeacherRangeRef.current = document.caretRangeFromPoint?.(event.clientX, event.clientY)?.cloneRange() ?? null;
-          }
-          board.intent();
-        } else if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); }
+      onPointerMove={event => {
+        if (isBoardFullscreen && event.clientY <= 56) revealFullscreenToolbar();
       }}
-      onPointerMoveCapture={event => { if (viewerCanManageWorkspace && event.buttons !== 0) board.intent(); }}
+      onPointerDownCapture={event => {
+        if (isBoardFullscreen && event.clientY <= 72) revealFullscreenToolbar();
+        if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
+        if (!board.ownRef.current) {
+          if (!viewerCanManageWorkspace) board.intent();
+          event.preventDefault(); event.stopPropagation(); return;
+        }
+        if (viewerCanManageWorkspace) board.intent();
+      }}
+      onPointerMoveCapture={event => { if (viewerCanManageWorkspace && board.ownRef.current && event.buttons !== 0) board.intent(); }}
       onPointerUpCapture={() => {
         if (!viewerCanManageWorkspace || !pendingTeacherRangeRef.current) return;
         const selection = window.getSelection(); const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
         if (range && !range.collapsed && pendingTeacherRootRef.current?.contains(range.commonAncestorContainer)) pendingTeacherRangeRef.current = range.cloneRange();
       }}
       onClickCapture={event => {
-        if (viewerCanManageWorkspace && !board.ownRef.current && !(event.target as HTMLElement).closest('[data-board-control-ui]')) {
-          const target = (event.target as HTMLElement).closest<HTMLElement>('button, [role="button"], [data-board-page]');
-          if (target) {
-            event.preventDefault(); event.stopPropagation();
-            pendingTeacherActionRef.current = () => { if (target.isConnected) target.click(); };
-            board.intent(); return;
-          }
-        }
-        if (!viewerCanManageWorkspace && !board.ownRef.current && !(event.target as HTMLElement).closest('[data-board-control-ui]')) { event.preventDefault(); event.stopPropagation(); }
+        if (!board.ownRef.current && !(event.target as HTMLElement).closest('[data-board-control-ui]')) { event.preventDefault(); event.stopPropagation(); }
       }}
       onChangeCapture={event => {
         if (!viewerCanManageWorkspace || board.ownRef.current || (event.target as HTMLElement).closest('[data-board-control-ui]')) return;
@@ -6089,29 +6148,42 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       }}
       onKeyDownCapture={event => {
         if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
-        if (viewerCanManageWorkspace) board.intent();
+        if (viewerCanManageWorkspace && board.ownRef.current) board.intent();
         if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); }
       }}
       onBeforeInputCapture={event => { if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); } }}
-      onWheelCapture={() => { if (viewerCanManageWorkspace) board.intent(); }}
-      onTouchMoveCapture={() => { if (viewerCanManageWorkspace) board.intent(); }}
+      onWheelCapture={event => { if (viewerCanManageWorkspace && board.ownRef.current) board.intent(); else if (!board.ownRef.current) event.preventDefault(); }}
+      onTouchMoveCapture={event => { if (viewerCanManageWorkspace && board.ownRef.current) board.intent(); else if (!board.ownRef.current) event.preventDefault(); }}
       onCompositionStartCapture={() => {
         composingRef.current = true; board.intent();
         if (viewerCanManageWorkspace && !compositionLeaseTimerRef.current) compositionLeaseTimerRef.current = setInterval(board.intent, 1600);
       }}
       onCompositionUpdateCapture={() => { if (viewerCanManageWorkspace) board.intent(); }}
       onCompositionEndCapture={() => { composingRef.current = false; if (compositionLeaseTimerRef.current) clearInterval(compositionLeaseTimerRef.current); compositionLeaseTimerRef.current = null; if (board.ownRef.current) { onDocInput(); flushPendingSingleItemSaves(); flushPendingItemsSave(); queueBoardView(); } else { if (docRef.current) docRef.current.innerHTML = remoteDocHtmlRef.current; setDocHtml(remoteDocHtmlRef.current); setItems(remoteItemsRef.current); applyAuthoritativeView(true); } }}
-      className={`group flex h-full w-full flex-col overflow-hidden ${presentationMode ? 'fixed inset-0 z-[12000] bg-slate-950' : 'bg-slate-100'}`}
+      className={`group flex h-full w-full flex-col overflow-hidden ${(presentationMode || isBoardFullscreen) ? 'fixed inset-0 z-[12000]' : ''} ${presentationMode ? 'bg-slate-950' : 'bg-slate-100'}`}
       style={{ fontFamily: 'Arial, sans-serif' }}
     >
 
-      <BoardControlToolbar board={board} teacher={viewerCanManageWorkspace} uid={userId} students={assignableStudents} />
+      {(!isBoardFullscreen || fullscreenToolbarVisible) && (
+        <div className={isBoardFullscreen ? 'fixed inset-x-0 top-0 z-[12050] shadow-lg' : ''}
+          onPointerEnter={isBoardFullscreen ? revealFullscreenToolbar : undefined}>
+          <BoardControlToolbar board={board} teacher={viewerCanManageWorkspace} uid={userId} students={assignableStudents}
+            onFullscreen={isSlidesMode || isBoardFullscreen ? undefined : () => void enterBoardFullscreen()} />
+        </div>
+      )}
+
+      {isBoardFullscreen && (
+        <button type="button" onClick={() => void exitBoardFullscreen()}
+          onFocus={revealFullscreenToolbar}
+          className={`fixed right-3 top-1 z-[12070] rounded-full bg-slate-950/75 px-3 py-2 text-sm font-bold text-white shadow-lg transition ${fullscreenToolbarVisible ? 'opacity-100' : 'opacity-40'}`}
+          aria-label="Exit Board fullscreen" title="Exit Board fullscreen">X</button>
+      )}
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
       {showToolbar && (
       <div
         ref={toolbarRef}
-        className="flex-shrink-0 flex flex-wrap items-center gap-0.5 px-1.5 py-1 border-b bg-white border-slate-200"
+        className={`flex-shrink-0 flex flex-wrap items-center gap-0.5 px-1.5 py-1 border-b bg-white border-slate-200 ${isBoardFullscreen ? 'fixed inset-x-0 top-9 z-[12060] max-h-[42vh] overflow-y-auto shadow-xl' : ''}`}
         style={{ minHeight: '2.5rem', zIndex: 20 }}
         onMouseDown={(e) => {
           const tag = (e.target as HTMLElement).tagName;
@@ -6455,7 +6527,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       )}
 
       {/* -- Page tab bar ---------------------------------------------- */}
-      {viewerCanShowPages && !presentationMode && !isSlidesMode && (
+      {viewerCanShowPages && !presentationMode && !isSlidesMode && !isBoardFullscreen && (
       <div
         className="flex-shrink-0 flex items-stretch gap-0 overflow-x-auto border-b bg-slate-50 border-slate-200"
         style={{ minHeight: '2rem', zIndex: 15 }}
@@ -6688,14 +6760,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       <div
         ref={overflowRef}
         onWheelCapture={event => { if (!board.ownRef.current && !viewerCanManageWorkspace) event.stopPropagation(); }}
-        className={`flex-1 overflow-x-hidden ${presentationMode ? 'relative overflow-hidden p-0' : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
+        className={`flex-1 overflow-x-hidden ${(presentationMode || isBoardFullscreen) ? 'relative overflow-hidden p-0' : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
         onScroll={onScrollSync}
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}
         style={viewerIsStudent ? { overscrollBehavior: 'contain' } : undefined}
       >
         <div
-          className={`${presentationMode ? 'h-full w-full' : 'mx-auto max-w-none'}`}
+          className={`${(presentationMode || isBoardFullscreen) ? 'h-full w-full' : 'mx-auto max-w-none'}`}
           style={
             shouldRotatePresentation
               ? {
@@ -6712,7 +6784,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         >
         <div
           ref={canvasRef}
-          className={`relative w-full ${presentationMode ? 'h-full' : ''} ${isSlidesMode ? (presentationMode ? 'mx-0 max-w-none' : 'mx-auto max-w-6xl') : ''}`}
+          className={`relative w-full ${(presentationMode || isBoardFullscreen) ? 'h-full' : ''} ${isSlidesMode ? (presentationMode ? 'mx-0 max-w-none' : 'mx-auto max-w-6xl') : ''}`}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerLeave={onPointerUp}
@@ -6764,7 +6836,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
           {/* Main shared document */}
           <div
-            className={`relative mb-6 w-full border ${
+             className={`relative w-full border ${isBoardFullscreen ? 'mb-0' : 'mb-6'} ${
               isSlidesMode
                 ? presentationMode
                   ? 'flex overflow-hidden rounded-none border-slate-700 bg-white shadow-none'
@@ -6772,7 +6844,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 : 'rounded-xl border-slate-200 bg-white shadow-sm'
             }`}
             style={{
-              minHeight: presentationMode
+               minHeight: isBoardFullscreen
+                 ? '100dvh'
+                 : presentationMode
                 ? `${shouldRotatePresentation ? presentationViewport.width : presentationViewport.height}px`
                 : isSlidesMode
                   ? 'min(72vh, 48rem)'
@@ -6794,7 +6868,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 ref={docRef}
                 data-board-document
                 onScroll={onScrollSync}
-                contentEditable={viewerCanEditSharedDocument}
+                contentEditable={board.own && viewerCanEditSharedDocument}
                 suppressContentEditableWarning
                 spellCheck
                 onFocus={captureCurrentSelection}

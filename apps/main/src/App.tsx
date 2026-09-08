@@ -29,6 +29,7 @@ import { LanguageSelector } from './components/LanguageSelector';
 import { NotificationSettings } from './components/NotificationSettings';
 import { RankScreen } from './components/RankScreen';
 import { LiveClassesPage } from './components/LiveClasses/LiveClassesPage';
+import { GlobalLiveShareButton } from './components/LiveClasses/GlobalLiveShareButton';
 import { MyVocabularyPage } from './components/MyVocabularyPage';
 import { ProgressEngine } from './engine/progressEngine';
 import { COURSES } from './courses/courseList';
@@ -1612,6 +1613,7 @@ const App: React.FC = () => {
     if (syncToSession && activeOnlineClass?.id && canManageLiveClasses) {
       void pushLiveSessionState({
         sessionStatus: 'active',
+        activeCourseId: courseId,
         activeWorkbookId: activeWorkbookNumber,
         activeLessonId: lessonId,
         activeExerciseId: null,
@@ -1687,8 +1689,12 @@ const App: React.FC = () => {
       userName: user.displayName || user.email || 'Teacher',
     });
     await updateLiveSession(activeOnlineClass.id, {
+      activeCourseId: content.courseId,
+      activeWorkbookId: content.workbookId,
+      activeLessonId: content.lessonId,
       mainStageMode: 'workspace',
       sharedGrammarOpen: false,
+      sharedGrammarWorkbookId: content.workbookId,
       sharedGrammarLessonNumber: content.lessonNumber,
       sharedGrammarScrollRatio: null,
     }, user.uid);
@@ -2685,9 +2691,9 @@ const App: React.FC = () => {
           <BattleHubPage
             uid={user?.uid ?? 'guest'}
             name={user?.displayName || user?.email || 'Player'}
-            courseId={currentCourseId ?? DEFAULT_COURSE_ID}
-            workbookId={currentWorkbookId || progress.currentWorkbook || 1}
-            lessonId={currentLessonId || null}
+            courseId={activeOnlineSession?.activeCourseId ?? activeOnlineClass?.courseId ?? currentCourseId ?? DEFAULT_COURSE_ID}
+            workbookId={activeOnlineSession?.activeWorkbookId ?? activeOnlineClass?.workbookId ?? currentWorkbookId ?? progress.currentWorkbook ?? 1}
+            lessonId={activeOnlineSession?.activeLessonId ?? activeOnlineClass?.lessonId ?? currentLessonId ?? null}
             uiLanguage={uiLanguage}
             fire={currentLessonId ? Math.min(1, lessonScore.completed) : (score?.streak ?? 0)}
             ice={currentLessonId ? lessonScore.missed : (score?.freeze ?? 0)}
@@ -3524,6 +3530,7 @@ const App: React.FC = () => {
           </button>
         </div>
       )}
+      {activeOnlineClass && canManageLiveClasses ? <GlobalLiveShareButton liveClass={activeOnlineClass} /> : null}
       {!isInLiveRoom && (
         <BottomNavigation
           currentSection={currentSection}

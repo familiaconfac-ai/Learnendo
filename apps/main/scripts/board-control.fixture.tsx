@@ -51,7 +51,7 @@ function Fixture() {
       <button onClick={() => { const el = document.querySelector('[data-directed-board]')!; for (let i = 0; i < 20; i++) el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, buttons: 0, clientX: i })); }}>Mouse move</button><button onClick={() => disableNetwork(db)}>Offline</button><button onClick={() => enableNetwork(db)}>Online</button>
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-board-document]')!; if (!el.isContentEditable) return; el.focus(); el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true })); document.execCommand('insertText', false, '漢'); }}>IME start</button>
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-board-document]')!; el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '漢' })); }}>IME end</button>
-      <p>Visual: {visualUpdates} · Updates: {updates} · Epoch: {control?.epoch} · Writer: {classData?.labels?.[control?.controllerId] ?? 'none'} · Designated: {classData?.labels?.[control?.designatedStudentId] ?? 'none'}</p>
+      <p>Visual: {visualUpdates} · Updates: {updates} · Epoch: {control?.epoch} · Writer: {classData?.labels?.[control?.controllerId] ?? 'none'} · Open: {control?.acquisitionOpen ? 'yes' : 'no'}</p>
     </header>
     {uid && classData && <div style={{ height: role === 'teacher' ? 620 : 480, width: role === 'teacher' ? '100%' : 390 }}>
       <WorkspaceCanvas classId={classId} userId={uid} userName={role} isTeacher={role === 'teacher'} classTeacherUserId={classData.teacherUid}

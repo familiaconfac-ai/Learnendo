@@ -93,6 +93,8 @@ export interface WorkspaceSurfaceState {
 export interface WorkspaceDoc {
   controlEpoch?: number;
   controlClientId?: string;
+  /** Monotonic within one control epoch/client; prevents late async saves winning. */
+  workspaceMutationSeq?: number;
   items: WorkspaceItem[];
   /** Author of the last items write (used for self-echo suppression per section) */
   itemsUpdatedBy?: string;
@@ -399,7 +401,9 @@ export function subscribeWorkspace(
   console.log(`[WS] subscribeWorkspace path=liveClasses/${classId}/shared/workspace`);
   return onSnapshot(
     workspaceRef(classId),
+    { includeMetadataChanges: true },
     (snap) => {
+      if (snap.metadata.hasPendingWrites) return;
       console.log(`[WS] snapshot received exists=${snap.exists()} by=${(snap.data() as WorkspaceDoc | undefined)?.updatedByName ?? '?'}`);
       callback(snap.exists() ? (snap.data() as WorkspaceDoc) : null);
     },
@@ -475,6 +479,9 @@ export async function saveWorkspaceItem(
       const ref = workspaceRef(classId);
       const snapshot = await transaction.get(ref);
       const currentData = snapshot.exists() ? (snapshot.data() as WorkspaceDoc) : null;
+      if (currentData?.controlEpoch === controlStamp.controlEpoch
+        && currentData?.controlClientId === controlStamp.controlClientId
+        && (currentData?.workspaceMutationSeq ?? 0) >= controlStamp.workspaceMutationSeq) return;
       const modeKey = surfaceStateKey(surfaceMode);
       const currentSurfaceState = currentData?.[modeKey];
       const currentItems = currentSurfaceState?.items ?? currentData?.items ?? [];

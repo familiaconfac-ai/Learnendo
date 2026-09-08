@@ -358,7 +358,9 @@ const StudentStage: React.FC<{
     (track) => track.participant && !track.participant.isLocal,
   );
   const isTeacherSharing = !!teacherScreenTrack && isTrackReference(teacherScreenTrack);
-  const shouldShowTeacherScreen = isTeacherSharing && isCameraStage;
+  // A published LiveKit screen track is global to the active Live. Do not hide it
+  // merely because the teacher navigated away from the camera stage.
+  const shouldShowTeacherScreen = isTeacherSharing;
 
   const uiLang: 'en' | 'pt' | 'es' = (() => {
     try {
@@ -697,7 +699,7 @@ const StudentStage: React.FC<{
           ) : null}
 
           {shouldShowTeacherScreen && teacherScreenTrack ? (
-            <div className="absolute inset-0 z-30 flex items-center justify-center bg-black">
+            <div className="fixed inset-0 z-[11000] flex items-center justify-center bg-black">
               <VideoTrack
                 trackRef={teacherScreenTrack}
                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}

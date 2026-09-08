@@ -144,6 +144,7 @@ function buildExercisePrompt(exercise: Exercise, index: number): string {
 
 const mapSession = (data: Record<string, any> | undefined): LiveClassSession => ({
   sessionStatus: (data?.sessionStatus ?? 'idle') as LiveClassSession['sessionStatus'],
+  activeCourseId: typeof data?.activeCourseId === 'string' ? data.activeCourseId : null,
   activeWorkbookId: data?.activeWorkbookId ?? null,
   activeLessonId: data?.activeLessonId ?? null,
   activeExerciseId: data?.activeExerciseId ?? null,
@@ -444,6 +445,7 @@ export async function updateLiveSession(
   };
 
   if ('sessionStatus' in patch) payload.sessionStatus = patch.sessionStatus ?? 'idle';
+  if ('activeCourseId' in patch) payload.activeCourseId = patch.activeCourseId ?? null;
   if ('activeWorkbookId' in patch) payload.activeWorkbookId = patch.activeWorkbookId ?? null;
   if ('activeLessonId' in patch) payload.activeLessonId = patch.activeLessonId ?? null;
   if ('activeExerciseId' in patch) payload.activeExerciseId = patch.activeExerciseId ?? null;
