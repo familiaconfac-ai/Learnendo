@@ -1630,7 +1630,8 @@ const StableResizeHandle: React.FC<StableResizeHandleProps> = ({ onPointerDown }
 const RemoteSelectionOverlay: React.FC<{
   selection: WorkspaceSelectionSnapshot;
   rootRef: React.RefObject<HTMLElement | null>;
-}> = ({ selection, rootRef }) => {
+  showLabel?: boolean;
+}> = ({ selection, rootRef, showLabel = true }) => {
   const [rects, setRects] = useState<Array<{ top: number; left: number; width: number; height: number }>>([]);
   const collapsed = isSerializedRangeCollapsed(selection.range);
   const label = selection.text?.trim() || (collapsed ? selection.updatedByName : '');
@@ -1750,7 +1751,7 @@ const RemoteSelectionOverlay: React.FC<{
           }}
         />
       ))}
-      {label ? (
+      {showLabel && label ? (
         <div
           className="absolute max-w-[min(18rem,calc(100%-1rem))] truncate rounded-full bg-blue-600/95 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-white shadow-lg"
           style={{
@@ -2332,6 +2333,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
           key={`${selection.updatedBy}:${selection.updatedAt}`}
           selection={selection}
           rootRef={contentRef}
+          showLabel={viewerContext.isTeacherView}
         />
       ))}
       {isSelected && canResizeThisBox ? <StableResizeHandle onPointerDown={onPointerDownResize} /> : null}
@@ -3063,6 +3065,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   useEffect(() => () => { if (compositionLeaseTimerRef.current) clearInterval(compositionLeaseTimerRef.current); }, []);
   const remoteDocHtmlRef = useRef('');
   const remoteItemsRef = useRef<WorkspaceItem[]>([]);
+  const lastAppliedWorkspaceRevisionRef = useRef(0);
   const applyingRemoteSelectionRef = useRef(false);
   const authoritativeViewRef = useRef<BoardView | null>(null);
   const lastAppliedViewRef = useRef('');
@@ -3373,6 +3376,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
+      const workspaceRevision = data?.workspaceRevision ?? 0;
+      if (workspaceRevision < lastAppliedWorkspaceRevisionRef.current) {
+        console.warn('[WS] ignoring stale workspace snapshot', {
+          workspaceRevision,
+          lastAppliedWorkspaceRevision: lastAppliedWorkspaceRevisionRef.current,
+          updatedBy: data?.updatedBy,
+          updatedByName: data?.updatedByName,
+        });
+        return;
+      }
+      lastAppliedWorkspaceRevisionRef.current = workspaceRevision;
       // Handoff alone does not erase Undo; another writer's actual content does.
       if (data && data.controlClientId !== board.clientId) undoSnapshotRef.current = null;
       const remoteSurfaceMode = data?.surfaceMode ?? 'document';
@@ -6954,6 +6968,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     key={`${selection.updatedBy}:${selection.updatedAt}`}
                     selection={selection}
                     rootRef={docRef}
+                    showLabel={viewerCanManageWorkspace}
                   />
                 ))}
             </div>

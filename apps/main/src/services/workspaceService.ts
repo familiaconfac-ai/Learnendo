@@ -95,6 +95,7 @@ export interface WorkspaceDoc {
   controlClientId?: string;
   /** Monotonic within one control epoch/client; prevents late async saves winning. */
   workspaceMutationSeq?: number;
+  workspaceRevision?: number;
   items: WorkspaceItem[];
   /** Author of the last items write (used for self-echo suppression per section) */
   itemsUpdatedBy?: string;
@@ -223,6 +224,7 @@ export async function saveDocContent(
   const modeKey = surfaceStateKey(surfaceMode);
   const payload = {
     ...controlStamp,
+    surfaceMode,
     docContent,
     docUpdatedBy: uid,
     ...(surfaceState ? { [modeKey]: surfaceState } : {}),
@@ -231,7 +233,7 @@ export async function saveDocContent(
     updatedByName: name,
     ...(remotePages ? { pages: remotePages } : {}),
   };
-  await commitBoardWorkspace(classId, payload);
+  await commitBoardWorkspace(classId, payload, 'document');
 
 }
 
@@ -317,7 +319,7 @@ export async function saveWorkspaceSurfaceMode(
     updatedBy: uid,
     updatedByName: name,
   };
-  await commitBoardWorkspace(classId, payload);
+  await commitBoardWorkspace(classId, payload, 'items');
 
 }
 
@@ -513,11 +515,13 @@ export async function saveWorkspaceItem(
             : currentSurfaceState?.docContent ?? currentData?.docContent ?? '';
       const nextCurrentPageId = activePageId ?? currentPageId ?? currentSurfaceState?.currentPageId ?? currentData?.currentPageId ?? '';
       const nextSurfaceState = buildSurfaceState(nextPages, nextCurrentPageId, nextDocContent, nextItems);
+      const currentRevision = typeof currentData?.workspaceRevision === 'number' ? currentData.workspaceRevision : 0;
 
       transaction.set(
         ref,
         {
           ...controlStamp,
+          workspaceRevision: currentRevision + 1,
           items: nextItems,
           itemsUpdatedBy: uid,
           [modeKey]: nextSurfaceState,
@@ -576,6 +580,6 @@ export async function savePageSwitch(
     updatedBy: uid,
     updatedByName: name,
   };
-  await commitBoardWorkspace(classId, payload);
+  await commitBoardWorkspace(classId, payload, 'structure');
 
 }

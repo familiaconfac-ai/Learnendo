@@ -509,10 +509,13 @@ service cloud.firestore {
         && control.controllerId == request.auth.uid
         && value.controlEpoch == control.epoch && value.controlClientId == control.controllerClientId
         && value.updatedBy == request.auth.uid
+        && value.workspaceRevision is int
+        && (resource.data.workspaceRevision == null
+          || value.workspaceRevision == resource.data.workspaceRevision + 1)
         && (isTeacherForClass(classId) || (isStudentAssignedToClass(classId) && control.acquisitionOpen == false))
         && value.diff(resource.data).affectedKeys().hasOnly([
           'docContent', 'docUpdatedBy', 'items', 'itemsUpdatedBy', 'pages', 'currentPageId',
-          'boardState', 'slidesState', 'surfaceMode', 'presentationMode', 'updatedAt', 'updatedBy', 'updatedByName', 'controlEpoch', 'controlClientId', 'workspaceMutationSeq'
+          'boardState', 'slidesState', 'surfaceMode', 'presentationMode', 'updatedAt', 'updatedBy', 'updatedByName', 'controlEpoch', 'controlClientId', 'workspaceMutationSeq', 'workspaceRevision'
         ]);
     }
 

@@ -1,6 +1,18 @@
 import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { canAcquireBoard, ownsBoard, type BoardControl, type BoardView } from '../models/boardControl';
+import type { WorkspaceItem, WorkspacePage, WorkspaceSurfaceMode, WorkspaceSurfaceState } from './workspaceService';
+
+function normalizeWorkspacePages(raw: Partial<WorkspacePage>[]): WorkspacePage[] {
+  return (raw ?? []).map((page, index) => ({
+    ...page,
+    id: page.id ?? `pg_${index}`,
+    name: page.name ?? `Page ${index + 1}`,
+    backgroundColor: page.backgroundColor ?? '#ffffff',
+    docContent: page.docContent ?? '',
+    items: page.items ?? [],
+  }));
+}
 
 export const boardControlRef = (classId: string) => doc(db, 'liveClasses', classId, 'shared', 'boardControl');
 export const boardViewRef = (classId: string) => doc(db, 'liveClasses', classId, 'shared', 'boardView');
@@ -98,6 +110,7 @@ export interface BoardWriteStamp {
   controlClientId: string;
   workspaceMutationSeq: number;
 }
+export type WorkspaceMutationKind = 'document' | 'items' | 'structure';
 export function subscribeBoardPresentation(classId: string, receive: (presentationMode: boolean) => void, fail: (error: Error) => void) {
   return onSnapshot(boardPresentationRef(classId), { includeMetadataChanges: true }, snapshot => {
     if (snapshot.metadata.hasPendingWrites) return;
@@ -124,7 +137,11 @@ export function boardWriteStamp(classId: string, uid: string): BoardWriteStamp {
 }
 
 /** Revalidate the captured capability at commit; the writer also requires server-confirmed connectivity. */
-export async function commitBoardWorkspace(classId: string, value: Record<string, unknown>) {
+export async function commitBoardWorkspace(
+  classId: string,
+  value: Record<string, unknown>,
+  mutationKind: WorkspaceMutationKind = 'structure',
+) {
   await runTransaction(db, async transaction => {
     const control = (await transaction.get(boardControlRef(classId))).data() as BoardControl | undefined;
     if (!control || control.epoch !== value.controlEpoch || control.controllerId !== value.updatedBy || control.controllerClientId !== value.controlClientId) throw new Error('Board authority changed');
@@ -136,6 +153,49 @@ export async function commitBoardWorkspace(classId: string, value: Record<string
       && typeof current?.workspaceMutationSeq === 'number'
       && typeof value.workspaceMutationSeq === 'number'
       && current.workspaceMutationSeq >= value.workspaceMutationSeq) return;
-    transaction.set(workspace, { ...value, updatedAt: serverTimestamp() }, { merge: true });
+    const currentRevision = typeof current?.workspaceRevision === 'number' ? current.workspaceRevision : 0;
+    const nextValue: Record<string, unknown> = {
+      ...value,
+      workspaceRevision: currentRevision + 1,
+      updatedAt: serverTimestamp(),
+    };
+    const incomingPages = value.pages
+      ? normalizeWorkspacePages(value.pages as Partial<WorkspacePage>[])
+      : [];
+    const surfaceMode = (value.surfaceMode ?? current?.surfaceMode ?? 'document') as WorkspaceSurfaceMode;
+    const modeKey = surfaceMode === 'slides' ? 'slidesState' : 'boardState';
+    const currentSurface = (current?.[modeKey] ?? {}) as Partial<WorkspaceSurfaceState>;
+    const incomingSurface = (value[modeKey] ?? {}) as Partial<WorkspaceSurfaceState>;
+    const currentPages = current?.pages
+      ? normalizeWorkspacePages(current.pages as Partial<WorkspacePage>[])
+      : currentSurface.pages
+        ? normalizeWorkspacePages(currentSurface.pages as Partial<WorkspacePage>[])
+        : [];
+    const currentDoc = typeof current?.docContent === 'string' ? current.docContent : '';
+    const currentItems = (current?.items ?? []) as WorkspaceItem[];
+    const currentPageId = (current?.currentPageId ?? currentSurface.currentPageId ?? '') as string;
+
+    if (mutationKind === 'document' && incomingPages.length > 0) {
+      const nextDoc = (value.docContent ?? incomingSurface.docContent ?? '') as string;
+      const pages = currentPages.length > 0
+        ? currentPages.map((page) => page.id === value.currentPageId ? { ...page, docContent: nextDoc } : page)
+        : incomingPages;
+      const items = (currentSurface.items ?? currentItems) as WorkspaceItem[];
+      nextValue.pages = pages;
+      nextValue.items = items;
+      nextValue[modeKey] = { ...currentSurface, pages, currentPageId: value.currentPageId ?? currentPageId, docContent: nextDoc, items };
+    } else if (mutationKind === 'items' && incomingPages.length > 0) {
+      const activePageId = (value.currentPageId ?? incomingSurface.currentPageId ?? currentPageId) as string;
+      const incomingActive = incomingPages.find((page) => page.id === activePageId);
+      const pages = currentPages.length > 0
+        ? currentPages.map((page) => page.id === activePageId && incomingActive ? { ...page, items: incomingActive.items } : page)
+        : incomingPages;
+      const docContent = (currentSurface.docContent ?? currentDoc) as string;
+      const items = (incomingActive?.items ?? value.items ?? currentSurface.items ?? currentItems) as WorkspaceItem[];
+      nextValue.pages = pages;
+      nextValue.docContent = docContent;
+      nextValue[modeKey] = { ...currentSurface, pages, currentPageId: activePageId, docContent, items };
+    }
+    transaction.set(workspace, nextValue, { merge: true });
   });
 }
