@@ -43,7 +43,12 @@ assert.match(canvas, /reconstructRemoteSelection\(/, 'the controller selection m
 assert.match(canvas, /contentEditable=\{board\.own && viewerCanEditSharedDocument\}/, 'the document editor must follow effective ownership');
 assert.match(canvas, /requestFullscreen\(\)/, 'Board fullscreen should use the native API when available');
 assert.match(canvas, /orientation\.lock\('landscape'\)/, 'Board fullscreen should request landscape as best effort');
+assert.match(canvas, /onTouchStartCapture=/, 'touch-only mobile browsers must reach the acquire intent');
+assert.match(canvas, /board\.intent\('touchstart'\)/, 'the mobile event source must be observable');
+assert.match(canvas, /forcedStudentPresentation/, 'teacher presentation must force the student CSS layout');
+assert.match(canvas, /Toque para tela cheia/, 'native fullscreen permission must have a local-gesture fallback');
 assert.match(controlHook, /next\?\.controllerId === uid && !next\.acquisitionOpen/, 'the current student must rebind after refresh/reconnect');
+assert.match(controlHook, /acquireError: \{ code, message \}/, 'acquire failures must preserve the Firebase code and message');
 assert.match(controlHook, /!teacher \|\| !control\?\.acquisitionOpen/, 'teacher editing must stop while S is waiting');
 assert.match(controlToolbar, />T<\/[a-z]+>/, 'the teacher takeover control must remain visible');
 assert.match(controlToolbar, />S<\/[a-z]+>/, 'the open acquisition control must remain visible');

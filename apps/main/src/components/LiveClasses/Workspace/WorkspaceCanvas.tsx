@@ -1091,6 +1091,8 @@ export interface WorkspaceCanvasProps {
   userId: string;
   userName: string;
   userEmail?: string | null;
+  actualRole?: string;
+  effectiveRole?: string;
   readOnly?: boolean;
   isTeacher?: boolean;
   studentEditingEnabled?: boolean;
@@ -2344,6 +2346,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   userId,
   userName,
   userEmail,
+  actualRole,
+  effectiveRole,
   readOnly = false,
   isTeacher: isTeacherView = false,
   studentEditingEnabled: _studentEditingEnabled = true,
@@ -2366,7 +2370,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsTeacher = isTeacher(viewerContext);
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
-  const board = useBoardControl(classId, userId, userName, viewerCanManageWorkspace);
+  const board = useBoardControl(classId, userId, userName, viewerCanManageWorkspace, {
+    actualRole,
+    effectiveRole,
+    membershipAssigned: viewerCanManageWorkspace || assignedRoster.some(student => student.uid === userId),
+  });
+  const lastLatencySnapshotRef = useRef<number | null>(null);
   viewerContext.boardController = board.own;
   const canPublishSelection = board.own;
   const viewerCanUseStudentTools = board.own && !readOnly && (viewerIsAdmin || viewerIsTeacher || viewerIsStudent);
@@ -2445,10 +2454,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [textAlign, setTextAlign] = useState<AlignValue>('left');
   const [presentationMode, setPresentationMode] = useState(false);
   const [boardFullscreen, setBoardFullscreen] = useState(false);
+  const [nativeBoardFullscreen, setNativeBoardFullscreen] = useState(false);
   const [fullscreenToolbarVisible, setFullscreenToolbarVisible] = useState(false);
   const boardRootRef = useRef<HTMLDivElement>(null);
   const fullscreenToolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isBoardFullscreen = boardFullscreen && !isSlidesMode;
+  const teacherBoardPresentation = board.presentationMode && !isSlidesMode;
+  const isBoardFullscreen = (boardFullscreen || teacherBoardPresentation) && !isSlidesMode;
+  const forcedStudentPresentation = teacherBoardPresentation && !viewerCanManageWorkspace;
   const showToolbar = !presentationMode
     && (!isBoardFullscreen || fullscreenToolbarVisible)
     && (Boolean(toolbarLeading) || viewerCanManageWorkspace || viewerCanUseStudentTools);
@@ -2697,18 +2709,21 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, []);
 
   const exitBoardFullscreen = useCallback(async () => {
+    if (forcedStudentPresentation) return;
     setBoardFullscreen(false);
     setFullscreenToolbarVisible(false);
+    if (viewerCanManageWorkspace) await board.setPresentation(false);
     if (document.fullscreenElement) {
       try { await document.exitFullscreen(); } catch { /* CSS fallback remains safe. */ }
     }
     const orientation = window.screen?.orientation as ScreenOrientation & { unlock?: () => void };
     try { orientation?.unlock?.(); } catch { /* Unsupported browser. */ }
-  }, []);
+  }, [board.setPresentation, forcedStudentPresentation, viewerCanManageWorkspace]);
 
   const enterBoardFullscreen = useCallback(async () => {
-    setBoardFullscreen(true);
+    if (!forcedStudentPresentation) setBoardFullscreen(true);
     revealFullscreenToolbar();
+    if (viewerCanManageWorkspace) await board.setPresentation(true);
     const root = boardRootRef.current;
     if (root?.requestFullscreen) {
       try { await root.requestFullscreen(); } catch { /* Keep the fixed-viewport fallback. */ }
@@ -2717,15 +2732,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (typeof orientation?.lock === 'function') {
       try { await orientation.lock('landscape'); } catch { /* Best effort only. */ }
     }
-  }, [revealFullscreenToolbar]);
+  }, [board.setPresentation, forcedStudentPresentation, revealFullscreenToolbar, viewerCanManageWorkspace]);
 
   useEffect(() => {
     const syncNativeFullscreen = () => {
-      if (boardFullscreen && !document.fullscreenElement) setBoardFullscreen(false);
+      setNativeBoardFullscreen(Boolean(document.fullscreenElement));
+      if (boardFullscreen && !document.fullscreenElement && !teacherBoardPresentation) setBoardFullscreen(false);
     };
     document.addEventListener('fullscreenchange', syncNativeFullscreen);
     return () => document.removeEventListener('fullscreenchange', syncNativeFullscreen);
-  }, [boardFullscreen]);
+  }, [boardFullscreen, teacherBoardPresentation]);
+
+  useEffect(() => {
+    if (!teacherBoardPresentation && !viewerCanManageWorkspace && !boardFullscreen && document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
+  }, [boardFullscreen, teacherBoardPresentation, viewerCanManageWorkspace]);
 
   useEffect(() => () => {
     if (fullscreenToolbarTimerRef.current) clearTimeout(fullscreenToolbarTimerRef.current);
@@ -2767,7 +2789,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [isBoardFullscreen, presentationMode]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !presentationMode || !isSlidesMode) return undefined;
+    if (typeof window === 'undefined' || (!presentationMode && !isBoardFullscreen)) return undefined;
 
     let rafId: number | null = null;
     const visualViewport = window.visualViewport;
@@ -2796,7 +2818,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       window.removeEventListener('orientationchange', syncViewportSize);
       visualViewport?.removeEventListener('resize', syncViewportSize);
     };
-  }, [isSlidesMode, presentationMode]);
+  }, [isBoardFullscreen, presentationMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -2813,8 +2835,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [isSlidesMode, presentationMode]);
 
   useEffect(() => {
-    onPresentationModeChange?.(presentationMode);
-  }, [onPresentationModeChange, presentationMode]);
+    onPresentationModeChange?.(presentationMode || isBoardFullscreen);
+  }, [isBoardFullscreen, onPresentationModeChange, presentationMode]);
 
   useEffect(() => {
     applyRevealStateToElement(docRef.current, presentationRevealStep, presentationMode);
@@ -3113,7 +3135,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (lastPublishedSelectionRef.current === signature) return;
       lastPublishedSelectionRef.current = signature;
       void board.publish(view);
-    }, 120);
+    }, 40);
   }, [board.publish]);
   useEffect(() => {
     authoritativeViewRef.current = board.control?.view ?? null;
@@ -3169,9 +3191,28 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       controllerName,
     );
     setRemoteSelections(remoteSelection ? [remoteSelection] : []);
-    const frame = requestAnimationFrame(() => applyAuthoritativeView());
+    const snapshotReceivedAt = board.control?.viewReceivedAtMs ?? null;
+    if (!board.own && snapshotReceivedAt && lastLatencySnapshotRef.current !== snapshotReceivedAt) {
+      lastLatencySnapshotRef.current = snapshotReceivedAt;
+      console.info('[BOARD_LATENCY_DEBUG]', JSON.stringify({
+        phase: 'follower-snapshot',
+        serverToSnapshotMs: board.control?.viewUpdatedAtMs ? snapshotReceivedAt - board.control.viewUpdatedAtMs : null,
+        epoch: board.control?.epoch ?? null,
+      }));
+    }
+    const frame = requestAnimationFrame(() => {
+      applyAuthoritativeView();
+      if (!board.own && snapshotReceivedAt) {
+        console.info('[BOARD_LATENCY_DEBUG]', JSON.stringify({
+          phase: 'follower-visual-applied',
+          snapshotToVisualMs: Date.now() - snapshotReceivedAt,
+          serverToVisualMs: board.control?.viewUpdatedAtMs ? Date.now() - board.control.viewUpdatedAtMs : null,
+          epoch: board.control?.epoch ?? null,
+        }));
+      }
+    });
     return () => cancelAnimationFrame(frame);
-  }, [assignedRoster, board.clientId, board.control?.controllerClientId, board.control?.controllerId, board.control?.view, docHtml, items, activePageId, surfaceMode, applyAuthoritativeView, userAccounts, userId]);
+  }, [assignedRoster, board.clientId, board.control?.controllerClientId, board.control?.controllerId, board.control?.epoch, board.control?.view, board.control?.viewReceivedAtMs, board.control?.viewUpdatedAtMs, board.own, docHtml, items, activePageId, surfaceMode, applyAuthoritativeView, userAccounts, userId]);
 
 
   useEffect(() => {
@@ -5654,6 +5695,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
   const isPortraitViewport = presentationViewport.height > presentationViewport.width + 4;
   const shouldRotatePresentation = presentationMode && isSlidesMode && isPortraitViewport;
+  const shouldRotateBoardPresentation = isBoardFullscreen && !isSlidesMode && isPortraitViewport;
   const getSlidePreviewText = useCallback((page: WorkspacePage) => {
     const docText = (page.docContent ?? '')
       .replace(/<[^>]+>/g, ' ')
@@ -6123,10 +6165,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         if (isBoardFullscreen && event.clientY <= 72) revealFullscreenToolbar();
         if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
         if (!board.ownRef.current) {
-          if (!viewerCanManageWorkspace) board.intent();
+          if (!viewerCanManageWorkspace) board.intent(`pointerdown:${event.pointerType || 'unknown'}`);
           event.preventDefault(); event.stopPropagation(); return;
         }
-        if (viewerCanManageWorkspace) board.intent();
+        if (viewerCanManageWorkspace) board.intent(`pointerdown:${event.pointerType || 'unknown'}`);
+      }}
+      onTouchStartCapture={event => {
+        if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
+        if (!board.ownRef.current && !viewerCanManageWorkspace) {
+          board.intent('touchstart');
+          event.preventDefault(); event.stopPropagation();
+        }
       }}
       onPointerMoveCapture={event => { if (viewerCanManageWorkspace && board.ownRef.current && event.buttons !== 0) board.intent(); }}
       onPointerUpCapture={() => {
@@ -6172,11 +6221,17 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         </div>
       )}
 
-      {isBoardFullscreen && (
+      {isBoardFullscreen && !forcedStudentPresentation && (
         <button type="button" onClick={() => void exitBoardFullscreen()}
           onFocus={revealFullscreenToolbar}
           className={`fixed right-3 top-1 z-[12070] rounded-full bg-slate-950/75 px-3 py-2 text-sm font-bold text-white shadow-lg transition ${fullscreenToolbarVisible ? 'opacity-100' : 'opacity-40'}`}
           aria-label="Exit Board fullscreen" title="Exit Board fullscreen">X</button>
+      )}
+
+      {forcedStudentPresentation && !nativeBoardFullscreen && (
+        <button type="button" data-board-fullscreen-gesture onClick={() => void enterBoardFullscreen()}
+          className="fixed bottom-4 left-1/2 z-[12080] -translate-x-1/2 rounded-full bg-slate-950/85 px-4 py-2 text-sm font-bold text-white shadow-xl"
+          aria-label="Toque para tela cheia" title="Toque para tela cheia">Toque para tela cheia</button>
       )}
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
@@ -6769,7 +6824,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div
           className={`${(presentationMode || isBoardFullscreen) ? 'h-full w-full' : 'mx-auto max-w-none'}`}
           style={
-            shouldRotatePresentation
+            (shouldRotatePresentation || shouldRotateBoardPresentation)
               ? {
                   position: 'absolute',
                   left: '50%',
@@ -6844,8 +6899,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 : 'rounded-xl border-slate-200 bg-white shadow-sm'
             }`}
             style={{
-               minHeight: isBoardFullscreen
-                 ? '100dvh'
+              minHeight: isBoardFullscreen
+                 ? (shouldRotateBoardPresentation ? `${presentationViewport.width}px` : '100dvh')
                  : presentationMode
                 ? `${shouldRotatePresentation ? presentationViewport.width : presentationViewport.height}px`
                 : isSlidesMode

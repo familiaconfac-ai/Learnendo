@@ -668,6 +668,8 @@ const StudentStage: React.FC<{
                 userId={user.uid}
                 userName={user.displayName || user.email || 'Aluno'}
                 userEmail={user.email}
+                actualRole={accountRole}
+                effectiveRole={effectiveRole}
                 readOnly={false}
                 isTeacher={false}
                 studentEditingEnabled={getStudentWorkspaceEditingEnabled(session)}

@@ -17,6 +17,8 @@ export interface BoardControl {
   teacherLeaseAt: { toMillis(): number } | null;
   view: BoardView | null;
   updatedAt: unknown;
+  viewUpdatedAtMs?: number | null;
+  viewReceivedAtMs?: number | null;
 }
 export function teacherLeaseActive(control: BoardControl | null, now: number): boolean {
   return !!control?.teacherLeaseAt && now < control.teacherLeaseAt.toMillis() + TEACHER_LEASE_MS;

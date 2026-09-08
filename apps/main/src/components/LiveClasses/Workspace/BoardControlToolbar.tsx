@@ -14,6 +14,7 @@ export function BoardControlToolbar({ board, teacher, uid, students, onFullscree
 }) {
   const { uiLanguage } = useUiLanguage(); const copy = COPY[uiLanguage];
   const name = board.control?.controllerName || students.find(student => student.uid === board.control?.controllerId)?.label || board.control?.controllerId || copy.teacher;
+  const debugVisible = typeof window !== 'undefined' && (new URLSearchParams(window.location.search).get('boardDebug') === '1' || window.localStorage.getItem('boardDebug') === '1');
   return <div data-board-control-ui className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-white px-2 py-1 text-xs text-slate-700">
     {teacher && <div className="flex overflow-hidden rounded border font-bold" aria-label="Board ownership">
       <button type="button" title={copy.take} aria-label={copy.take} disabled={!board.connected} onClick={() => void board.setStudentAcquisition(false)} className={`px-3 py-1 ${!board.control?.acquisitionOpen ? 'bg-slate-900 text-white' : 'bg-white'}`}>T</button>
@@ -23,5 +24,17 @@ export function BoardControlToolbar({ board, teacher, uid, students, onFullscree
     {!teacher && !board.own && <span>{copy.following}</span>}
     {onFullscreen && <button type="button" onClick={onFullscreen} className="ml-auto rounded border px-2 py-1" aria-label="Board fullscreen" title="Board fullscreen">⛶</button>}
     {board.error && <span role="alert" className="text-red-700">{copy.error}</span>}
+    {debugVisible && <pre data-board-acquire-debug className="w-full overflow-x-auto rounded bg-slate-950 p-2 text-[10px] text-emerald-300">{JSON.stringify({
+      uid,
+      ...board.debugIdentity,
+      connected: board.connected,
+      studentAcquireEnabled: !teacher && board.connected && Boolean(board.control?.acquisitionOpen || board.control?.controllerId === uid),
+      waitingForStudent: board.control?.acquisitionOpen === true,
+      controllerId: board.control?.controllerId ?? null,
+      controllerClientId: board.control?.controllerClientId ?? null,
+      controlEpoch: board.control?.epoch ?? null,
+      clientId: board.clientId,
+      ...board.acquireDebug,
+    }, null, 2)}</pre>}
   </div>;
 }

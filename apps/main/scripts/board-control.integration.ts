@@ -5,7 +5,7 @@ import { initializeApp, deleteApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore, doc, getDoc, setDoc, updateDoc, runTransaction, serverTimestamp, terminate, disableNetwork, enableNetwork } from 'firebase/firestore';
 import { auth, db, firebaseRuntimeConfig } from '../src/services/firebase';
-import { acquireBoard, boardWriteStamp, commitBoardWorkspace, setBoardStudentAcquisition, publishBoardView, boardControlRef, boardViewRef, registerBoardWriter, subscribeBoardControl } from '../src/services/boardControlService';
+import { acquireBoard, boardPresentationRef, boardWriteStamp, commitBoardWorkspace, setBoardPresentationMode, setBoardStudentAcquisition, publishBoardView, boardControlRef, boardViewRef, registerBoardWriter, subscribeBoardControl } from '../src/services/boardControlService';
 import { saveDocContent, savePageSwitch, saveWorkspaceItem } from '../src/services/workspaceService';
 import type { BoardControl, BoardView } from '../src/models/boardControl';
 
@@ -37,6 +37,10 @@ assert.match((await getDoc(ref)).data()!.docContent, /18px/);
 const view: BoardView = { surfaceMode: 'document', pageId: 'p1', scrollRatio: 0.9, selection: { target: 'document', itemId: null, fingerprint: 'fixture', range: { startPath: [0, 0], endPath: [0, 0], startOffset: 3, endOffset: 8 } } };
 await publishBoardView(classId, teacher, 'teacher-client', epoch, view);
 assert.deepEqual((await getDoc(boardViewRef(classId))).data()!.view, view);
+await setBoardPresentationMode(classId, true);
+assert.equal((await getDoc(boardPresentationRef(classId))).data()!.presentationMode, true);
+await assert.rejects(setDoc(doc(joao.db, 'liveClasses', classId, 'shared', 'boardPresentation'), { presentationMode: false, updatedAt: serverTimestamp() }));
+await setBoardPresentationMode(classId, false);
 
 const studentClaim = async (student: typeof joao) => runTransaction(student.db, async tx => {
   const r = doc(student.db, 'liveClasses', classId, 'shared', 'boardControl'); const old = (await tx.get(r)).data() as BoardControl;
@@ -105,5 +109,5 @@ await disableNetwork(db); await offlineSnapshot;
 await assert.rejects(saveDocContent(classId, 'offline content', teacher, 'Teacher', 'p2', [page, page2], 'slides'));
 await enableNetwork(db); assert.notEqual((await getDoc(ref)).data()!.docContent, 'offline content');
 stopConnectivity(); unregisterGuarded(); unregister();
-console.log('Open Board T/S: first-touch race, teacher revoke, reconnect, stale epochs, view, followers and offline guard passed.');
+console.log('Open Board T/S: first-touch race, teacher revoke, reconnect, stale epochs, view, teacher presentation, followers and offline guard passed.');
 await terminate(db); await Promise.all(clients.map(async c => { await terminate(c.db); await deleteApp(c.app); })); await deleteAdmin(admin);

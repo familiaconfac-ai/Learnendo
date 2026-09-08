@@ -1,29 +1,51 @@
-import { doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore';
+import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { canAcquireBoard, ownsBoard, type BoardControl, type BoardView } from '../models/boardControl';
 
 export const boardControlRef = (classId: string) => doc(db, 'liveClasses', classId, 'shared', 'boardControl');
 export const boardViewRef = (classId: string) => doc(db, 'liveClasses', classId, 'shared', 'boardView');
+export const boardPresentationRef = (classId: string) => doc(db, 'liveClasses', classId, 'shared', 'boardPresentation');
+export interface BoardAcquireTrace {
+  phase: 'transaction-read';
+  controllerId: string | null;
+  controllerClientId: string | null;
+  controlEpoch: number | null;
+  studentAcquireEnabled: boolean;
+  waitingForStudent: boolean;
+}
 export function subscribeBoardControl(classId: string, receive: (control: BoardControl | null, online: boolean) => void, fail: (error: Error) => void) {
   let control: BoardControl | null = null;
-  let view: { epoch: number; view: BoardView } | null = null;
+  let view: { epoch: number; view: BoardView; updatedAt?: { toMillis?: () => number }; receivedAtMs?: number } | null = null;
   let controlOnline = false; let viewOnline = false;
-  const emit = () => receive(control ? { ...control, view: view?.epoch === control.epoch ? view.view : control.view } : null, controlOnline && viewOnline);
+  const emit = () => receive(control ? {
+    ...control,
+    view: view?.epoch === control.epoch ? view.view : control.view,
+    viewUpdatedAtMs: view?.epoch === control.epoch ? view.updatedAt?.toMillis?.() ?? null : null,
+    viewReceivedAtMs: view?.epoch === control.epoch ? view.receivedAtMs ?? null : null,
+  } : null, controlOnline && viewOnline);
   const stopControl = onSnapshot(boardControlRef(classId), { includeMetadataChanges: true }, snapshot => {
     if (snapshot.metadata.hasPendingWrites) return;
     control = snapshot.exists() ? snapshot.data() as BoardControl : null; controlOnline = !snapshot.metadata.fromCache; emit();
   }, fail);
   const stopView = onSnapshot(boardViewRef(classId), { includeMetadataChanges: true }, snapshot => {
     if (snapshot.metadata.hasPendingWrites) return;
-    view = snapshot.exists() ? snapshot.data() as typeof view : null; viewOnline = !snapshot.metadata.fromCache; emit();
+    view = snapshot.exists() ? { ...snapshot.data(), receivedAtMs: Date.now() } as typeof view : null; viewOnline = !snapshot.metadata.fromCache; emit();
   }, fail);
   return () => { stopControl(); stopView(); };
 }
-export async function acquireBoard(classId: string, uid: string, clientId: string, controllerName: string, teacher: boolean, displayedView?: BoardView | null): Promise<number> {
+export async function acquireBoard(classId: string, uid: string, clientId: string, controllerName: string, teacher: boolean, displayedView?: BoardView | null, trace?: (entry: BoardAcquireTrace) => void): Promise<number> {
   return runTransaction(db, async transaction => {
     const ref = boardControlRef(classId);
     const snapshot = await transaction.get(ref);
     const previous = snapshot.exists() ? snapshot.data() as BoardControl : null;
+    trace?.({
+      phase: 'transaction-read',
+      controllerId: previous?.controllerId ?? null,
+      controllerClientId: previous?.controllerClientId ?? null,
+      controlEpoch: previous?.epoch ?? null,
+      studentAcquireEnabled: canAcquireBoard(previous, uid, teacher, Date.now()),
+      waitingForStudent: previous?.acquisitionOpen === true,
+    });
     if (!canAcquireBoard(previous, uid, teacher, Date.now())) throw new Error('Board control unavailable');
     const epoch = (previous?.epoch ?? 0) + (teacher && ownsBoard(previous, uid, clientId) ? 0 : 1);
     const lastView = teacher ? null : (await transaction.get(boardViewRef(classId))).data();
@@ -75,6 +97,15 @@ export interface BoardWriteStamp {
   controlEpoch: number;
   controlClientId: string;
   workspaceMutationSeq: number;
+}
+export function subscribeBoardPresentation(classId: string, receive: (presentationMode: boolean) => void, fail: (error: Error) => void) {
+  return onSnapshot(boardPresentationRef(classId), { includeMetadataChanges: true }, snapshot => {
+    if (snapshot.metadata.hasPendingWrites) return;
+    receive(snapshot.exists() && snapshot.data().presentationMode === true);
+  }, fail);
+}
+export async function setBoardPresentationMode(classId: string, presentationMode: boolean) {
+  await setDoc(boardPresentationRef(classId), { presentationMode, updatedAt: serverTimestamp() });
 }
 
 const writers = new Map<string, {

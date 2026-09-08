@@ -540,6 +540,8 @@ const TeacherStage: React.FC<{
                   userId={teacherUid}
                   userName={teacherName}
                   userEmail={teacherEmail}
+                  actualRole={accountRole}
+                  effectiveRole={effectiveRole}
                   readOnly={false}
                   toolbarLeading={
                     <>

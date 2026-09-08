@@ -495,6 +495,12 @@ service cloud.firestore {
           && value.view.selection.range.endOffset is int && value.view.selection.range.endOffset >= 0))
         && (isTeacherForClass(classId) || (isStudentAssignedToClass(classId) && authority.acquisitionOpen == false));
     }
+    function validBoardPresentation(classId) {
+      return isTeacherForClass(classId)
+        && request.resource.data.keys().hasOnly(['presentationMode', 'updatedAt'])
+        && request.resource.data.presentationMode is bool
+        && request.resource.data.updatedAt == request.time;
+    }
 
     function canWriteDirectedWorkspace(classId) {
       let control = boardControlDoc(classId).data;
@@ -983,7 +989,8 @@ service cloud.firestore {
 
       match /shared/{docId} {
         allow read: if canAccessLiveClassRoom(classId);
-        allow create: if (isTeacherForClass(classId) && docId != 'boardControl' && docId != 'boardView')
+        allow create: if (isTeacherForClass(classId) && docId != 'boardControl' && docId != 'boardView' && docId != 'boardPresentation')
+          || (docId == 'boardPresentation' && validBoardPresentation(classId))
           || (docId == 'boardView' && canPublishDirectedBoardView(classId))
           || (docId == 'boardControl' && isTeacherForClass(classId)
             && validBoardControl(request.resource.data, request.resource.data.teacherLeaseAt == null || request.resource.data.teacherLeaseAt == request.time)
@@ -992,7 +999,8 @@ service cloud.firestore {
           || (docId == 'whiteboard' && canParticipantCreateWhiteboard(classId))
           || (docId == 'tldrawBoard' && canAccessLiveClassRoom(classId))
           || (docId == 'editor' && canAccessLiveClassRoom(classId));
-        allow update: if (isTeacherForClass(classId) && docId != 'boardControl' && docId != 'boardView' && docId != 'workspace')
+        allow update: if (isTeacherForClass(classId) && docId != 'boardControl' && docId != 'boardView' && docId != 'boardPresentation' && docId != 'workspace')
+          || (docId == 'boardPresentation' && validBoardPresentation(classId))
           || (docId == 'boardView' && canPublishDirectedBoardView(classId))
           || (docId == 'boardControl' && canUpdateBoardControl(classId))
           || (docId == 'workspace' && (canWriteDirectedWorkspace(classId)

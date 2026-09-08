@@ -43,9 +43,14 @@ function Fixture() {
       editor.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
     }; apply();
   };
+  const mobileTouch = () => {
+    const editor = document.querySelector<HTMLElement>('[data-board-document]')!;
+    editor.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true }));
+  };
   return <UiLanguageProvider value={{ uiLanguage: 'pt', baseLanguage: 'pt' }}>
     <header style={{ background: 'white', height: 84 }}>
       <strong>Fixture {role}</strong> <button onClick={() => selectGap()}>Select gap</button><button onClick={() => selectGap(true)}>Reset gap</button>
+      <button onClick={mobileTouch}>Mobile touch</button>
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-directed-board] .overflow-x-hidden')!; el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 100 })); el.scrollTop = el.scrollHeight; }}>Bottom</button>
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-directed-board] .overflow-x-hidden')!; el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 })); el.scrollTop = 0; }}>Top</button>
       <button onClick={() => { const el = document.querySelector('[data-directed-board]')!; for (let i = 0; i < 20; i++) el.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, buttons: 0, clientX: i })); }}>Mouse move</button><button onClick={() => disableNetwork(db)}>Offline</button><button onClick={() => enableNetwork(db)}>Online</button>
@@ -55,6 +60,7 @@ function Fixture() {
     </header>
     {uid && classData && <div style={{ height: role === 'teacher' ? 620 : 480, width: role === 'teacher' ? '100%' : 390 }}>
       <WorkspaceCanvas classId={classId} userId={uid} userName={role} isTeacher={role === 'teacher'} classTeacherUserId={classData.teacherUid}
+        actualRole={role === 'teacher' ? 'teacher' : 'student'} effectiveRole={role === 'teacher' ? 'teacher' : 'student'}
         assignedRoster={classData.assignedStudentIds.map((id: string) => ({ uid: id, label: classData.labels[id], isOnline: true }))} />
     </div>}
   </UiLanguageProvider>;
