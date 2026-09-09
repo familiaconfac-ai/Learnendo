@@ -1791,6 +1791,7 @@ interface StableFloatingBlockProps {
   onEditorTyping?: () => void;
   onEditorFocus: (id: string, el: HTMLElement) => void;
   onEditorBlur: () => void;
+  onStudentBoardEvent?: (eventName: string, details?: Record<string, unknown>) => void;
   remoteSelections?: WorkspaceSelectionSnapshot[];
 }
 
@@ -1818,6 +1819,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
   onEditorTyping,
   onEditorFocus,
   onEditorBlur,
+  onStudentBoardEvent,
   remoteSelections = [],
 }) => {
   const contentRef = useRef<HTMLDivElement>(null);
@@ -2040,7 +2042,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
         background: item.type === 'text' ? (item.styles?.bgColor || '#ffffff') : 'transparent',
         cursor: 'default',
         userSelect: 'text',
-        touchAction: 'none',
+        touchAction: canEditThisContent && !isBlockedByLock ? 'manipulation' : 'none',
         boxShadow: isSlidesMode && item.type === 'text'
           ? (isSelected ? '0 0 0 3px rgba(37,99,235,0.12)' : 'none')
           : (isSelected ? '0 0 0 3px rgba(37,99,235,0.2)' : item.type === 'image' ? 'none' : '0 2px 8px rgba(0,0,0,0.08)'),
@@ -2383,6 +2385,32 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerCanUseStudentTools = board.own && !readOnly && (viewerIsAdmin || viewerIsTeacher || viewerIsStudent);
   const effectiveReadOnly = readOnly || !board.own;
   const viewerCanEditSharedDocument = !effectiveReadOnly && (viewerCanManageWorkspace || viewerIsStudent);
+  const logStudentBoardEvent = useCallback((eventName: string, details: Record<string, unknown> = {}) => {
+    if (!viewerIsStudent) return;
+    console.info('[BOARD_STUDENT_EDIT_DEBUG]', JSON.stringify({
+      event: eventName,
+      actualRole,
+      effectiveRole,
+      connected: board.connected,
+      acquisitionOpen: board.control?.acquisitionOpen ?? null,
+      controllerId: board.control?.controllerId ?? null,
+      controllerClientId: board.control?.controllerClientId ?? null,
+      controlEpoch: board.control?.epoch ?? null,
+      clientId: board.clientId,
+      own: board.own,
+      canEdit: viewerCanEditSharedDocument,
+      ...details,
+    }));
+  }, [actualRole, board.clientId, board.connected, board.control?.acquisitionOpen, board.control?.controllerClientId, board.control?.controllerId, board.control?.epoch, board.own, effectiveRole, viewerCanEditSharedDocument, viewerIsStudent]);
+  useEffect(() => {
+    logStudentBoardEvent('state', {
+      finalContentEditable: docRef.current?.isContentEditable ?? (board.own && viewerCanEditSharedDocument),
+      pointerEvents: docRef.current ? getComputedStyle(docRef.current).pointerEvents : null,
+      touchAction: docRef.current ? getComputedStyle(docRef.current).touchAction : null,
+      userSelect: docRef.current ? getComputedStyle(docRef.current).userSelect : null,
+      acquireError: board.acquireDebug.acquireError,
+    });
+  }, [board.acquireDebug.acquireError, board.own, logStudentBoardEvent, viewerCanEditSharedDocument]);
   const viewerCanManagePages = board.own && !readOnly;
   const viewerCanShowPages = !readOnly && (viewerCanManageWorkspace || board.own);
   const viewerCanBrowseSavedLibraries = viewerCanUseStudentTools;
@@ -6176,6 +6204,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         if (isBoardFullscreen && event.clientY <= 56) revealFullscreenToolbar();
       }}
       onPointerDownCapture={event => {
+        logStudentBoardEvent('pointerdown', {
+          pointerType: event.pointerType,
+          target: (event.target as HTMLElement).dataset.boardDocument ? 'document' : (event.target as HTMLElement).tagName,
+          defaultPrevented: event.defaultPrevented,
+        });
         if (isBoardFullscreen && event.clientY <= 72) revealFullscreenToolbar();
         if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
         if (!board.ownRef.current) {
@@ -6185,6 +6218,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         if (viewerCanManageWorkspace) board.intent(`pointerdown:${event.pointerType || 'unknown'}`);
       }}
       onTouchStartCapture={event => {
+        logStudentBoardEvent('touchstart', { defaultPrevented: event.defaultPrevented });
         if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
         if (!board.ownRef.current && !viewerCanManageWorkspace) {
           board.intent('touchstart');
@@ -6198,6 +6232,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         if (range && !range.collapsed && pendingTeacherRootRef.current?.contains(range.commonAncestorContainer)) pendingTeacherRangeRef.current = range.cloneRange();
       }}
       onClickCapture={event => {
+        logStudentBoardEvent('click', { defaultPrevented: event.defaultPrevented });
         if (!board.ownRef.current && !(event.target as HTMLElement).closest('[data-board-control-ui]')) { event.preventDefault(); event.stopPropagation(); }
       }}
       onChangeCapture={event => {
@@ -6210,11 +6245,15 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         }
       }}
       onKeyDownCapture={event => {
+        logStudentBoardEvent('keydown', { key: event.key, defaultPrevented: event.defaultPrevented });
         if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
         if (viewerCanManageWorkspace && board.ownRef.current) board.intent();
         if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); }
       }}
-      onBeforeInputCapture={event => { if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); } }}
+      onBeforeInputCapture={event => {
+        logStudentBoardEvent('beforeinput', { inputType: event.nativeEvent.inputType, defaultPrevented: event.defaultPrevented });
+        if (!board.ownRef.current) { event.preventDefault(); event.stopPropagation(); }
+      }}
       onWheelCapture={event => { if (viewerCanManageWorkspace && board.ownRef.current) board.intent(); else if (!board.ownRef.current) event.preventDefault(); }}
       onTouchMoveCapture={event => { if (viewerCanManageWorkspace && board.ownRef.current) board.intent(); else if (!board.ownRef.current) event.preventDefault(); }}
       onCompositionStartCapture={() => {
@@ -6940,11 +6979,44 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                 contentEditable={board.own && viewerCanEditSharedDocument}
                 suppressContentEditableWarning
                 spellCheck
-                onFocus={captureCurrentSelection}
+                onPointerDown={(event) => {
+                  logStudentBoardEvent('editor-pointerdown', {
+                    target: 'document',
+                    contentEditable: event.currentTarget.isContentEditable,
+                  });
+                  if (event.pointerType === 'touch' && board.own && event.currentTarget.isContentEditable) {
+                    event.currentTarget.focus({ preventScroll: true });
+                  }
+                }}
+                onTouchStart={() => logStudentBoardEvent('editor-touchstart', {
+                  target: 'document',
+                  contentEditable: docRef.current?.isContentEditable ?? false,
+                })}
+                onFocus={(event) => {
+                  logStudentBoardEvent('focus', {
+                    target: 'document',
+                    canEdit: viewerCanEditSharedDocument,
+                    contentEditable: event.currentTarget.isContentEditable,
+                  });
+                  captureCurrentSelection();
+                }}
+                onBeforeInput={(event) => logStudentBoardEvent('editor-beforeinput', {
+                  target: 'document',
+                  inputType: event.nativeEvent.inputType,
+                  canEdit: viewerCanEditSharedDocument,
+                  contentEditable: event.currentTarget.isContentEditable,
+                })}
                 onMouseUp={captureCurrentSelection}
                 onKeyUp={captureCurrentSelection}
                 onBlur={onDocBlur}
-                onInput={onDocInput}
+                onInput={(event) => {
+                  logStudentBoardEvent('input', {
+                    target: 'document',
+                    canEdit: viewerCanEditSharedDocument,
+                    contentEditable: event.currentTarget.isContentEditable,
+                  });
+                  onDocInput();
+                }}
                 onPaste={handleDocPaste}
                 className={`w-full focus:outline-none leading-relaxed ${
                   isSlidesMode
@@ -6955,6 +7027,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                   fontFamily,
                   fontSize: '16px',
                   color: '#000000',
+                  pointerEvents: board.own && viewerCanEditSharedDocument ? 'auto' : 'auto',
+                  touchAction: board.own && viewerCanEditSharedDocument ? 'manipulation' : 'auto',
+                  userSelect: board.own && viewerCanEditSharedDocument ? 'text' : 'none',
                   wordBreak: 'break-word',
                   backgroundColor: isSlidesMode ? activeSlideBackgroundColor : '#ffffff',
                   scrollbarWidth: isSlidesMode ? 'thin' : undefined,
