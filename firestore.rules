@@ -12,7 +12,7 @@ service cloud.firestore {
     function isAdmin() {
       return signedIn()
         && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        && userDoc().data.role == 'admin';
+        && userDoc().data.get('role', '') == 'admin';
     }
 
     function isTeacherAccount() {

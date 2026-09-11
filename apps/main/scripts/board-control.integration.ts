@@ -14,15 +14,18 @@ assert.ok(projectId.startsWith('demo-'));
 const admin = adminApp({ projectId }); const adb = adminFirestore(admin);
 const teacher = (await signInAnonymously(auth)).user.uid;
 const clients = [];
-for (let i = 0; i < 4; i++) {
+for (let i = 0; i < 5; i++) {
   const app = initializeApp({ projectId, apiKey: 'demo-key' }, `student-${i}`);
   const a = getAuth(app); connectAuthEmulator(a, `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`, { disableWarnings: true });
   const d = getFirestore(app); const [host, port] = process.env.FIRESTORE_EMULATOR_HOST!.split(':'); connectFirestoreEmulator(d, host, Number(port));
   clients.push({ app, db: d, uid: (await signInAnonymously(a)).user.uid, client: `student-client-${i}` });
 }
-const [joao, , , ana] = clients; const classId = `open-board-${Date.now()}`;
+const [joao, , , ana, outsider] = clients; const assignedStudents = clients.slice(0, 4); const classId = `open-board-${Date.now()}`;
 await adb.doc(`users/${teacher}`).set({ role: 'teacher', name: 'Teacher' });
-await adb.doc(`liveClasses/${classId}`).set({ createdBy: teacher, teacherUid: teacher, assignedStudentIds: clients.map(c => c.uid) });
+await adb.doc(`users/${joao.uid}`).set({ name: 'Gregório', email: 'gregorio@example.test' });
+await Promise.all(assignedStudents.slice(1).map(student => adb.doc(`users/${student.uid}`).set({ role: 'student', name: `Student ${student.uid.slice(-4)}` })));
+await adb.doc(`users/${outsider.uid}`).set({ role: 'student', name: 'Outsider' });
+await adb.doc(`liveClasses/${classId}`).set({ createdBy: teacher, teacherUid: teacher, assignedStudentIds: assignedStudents.map(c => c.uid) });
 const ref = doc(db, 'liveClasses', classId, 'shared', 'workspace');
 const control = () => getDoc(boardControlRef(classId)).then(s => s.data() as BoardControl);
 let epoch = await acquireBoard(classId, teacher, 'teacher-client', 'Teacher', true);
@@ -42,15 +45,41 @@ assert.equal((await getDoc(boardPresentationRef(classId))).data()!.presentationM
 await assert.rejects(setDoc(doc(joao.db, 'liveClasses', classId, 'shared', 'boardPresentation'), { presentationMode: false, updatedAt: serverTimestamp() }));
 await setBoardPresentationMode(classId, false);
 
-const studentClaim = async (student: typeof joao) => runTransaction(student.db, async tx => {
-  const r = doc(student.db, 'liveClasses', classId, 'shared', 'boardControl'); const old = (await tx.get(r)).data() as BoardControl;
-  const visual = (await tx.get(doc(student.db, 'liveClasses', classId, 'shared', 'boardView'))).data();
-  tx.update(r, { acquisitionOpen: false, view: visual?.epoch === old.epoch ? visual.view : old.view, controllerId: student.uid, controllerName: `Student ${student.uid.slice(-4)}`, controllerClientId: student.client, epoch: old.epoch + 1, teacherLeaseAt: null, updatedAt: serverTimestamp() });
+const studentClaim = async (student: typeof joao, targetClassId = classId, forgedControllerId = student.uid) => runTransaction(student.db, async tx => {
+  const r = doc(student.db, 'liveClasses', targetClassId, 'shared', 'boardControl'); const old = (await tx.get(r)).data() as BoardControl;
+  const visual = (await tx.get(doc(student.db, 'liveClasses', targetClassId, 'shared', 'boardView'))).data();
+  tx.set(r, { acquisitionOpen: false, view: visual?.epoch === old.epoch ? visual.view : old.view, controllerId: forgedControllerId, controllerName: `Student ${student.uid.slice(-4)}`, controllerClientId: student.client, epoch: old.epoch + 1, teacherLeaseAt: null, updatedAt: serverTimestamp() });
   return old.epoch + 1;
 });
-const writeAs = (student: typeof joao, version: number, html: string) => updateDoc(doc(student.db, 'liveClasses', classId, 'shared', 'workspace'), { docContent: html, docUpdatedBy: student.uid, updatedBy: student.uid, controlEpoch: version, controlClientId: student.client });
 
-for (const follower of clients) {
+// Production-shaped regression: assigned legacy student profiles can exist without a role field.
+const legacyProfileClassId = `${classId}-legacy-profile`;
+await adb.doc(`liveClasses/${legacyProfileClassId}`).set({ createdBy: teacher, teacherUid: teacher, assignedStudentIds: [joao.uid] });
+const legacyTeacherEpoch = await acquireBoard(legacyProfileClassId, teacher, 'teacher-legacy-client', 'Teacher', true);
+await publishBoardView(legacyProfileClassId, teacher, 'teacher-legacy-client', legacyTeacherEpoch, view);
+await setBoardStudentAcquisition(legacyProfileClassId, teacher, 'teacher-legacy-client', 'Teacher', true);
+const legacyStudentEpoch = await studentClaim(joao, legacyProfileClassId);
+const legacyControl = (await getDoc(doc(joao.db, 'liveClasses', legacyProfileClassId, 'shared', 'boardControl'))).data() as BoardControl;
+assert.equal(legacyControl.controllerId, joao.uid);
+assert.equal(legacyControl.controllerClientId, joao.client);
+assert.equal(legacyControl.acquisitionOpen, false);
+assert.equal(legacyControl.epoch, legacyStudentEpoch);
+assert.equal(legacyControl.epoch, legacyTeacherEpoch + 2);
+assert.equal(legacyControl.teacherLeaseAt, null);
+const writeAs = (student: typeof joao, version: number, html: string) => runTransaction(student.db, async tx => {
+  const workspace = doc(student.db, 'liveClasses', classId, 'shared', 'workspace');
+  const current = (await tx.get(workspace)).data()!;
+  tx.update(workspace, {
+    docContent: html,
+    docUpdatedBy: student.uid,
+    updatedBy: student.uid,
+    controlEpoch: version,
+    controlClientId: student.client,
+    workspaceRevision: (current.workspaceRevision ?? 0) + 1,
+  });
+});
+
+for (const follower of assignedStudents) {
   await assert.rejects(studentClaim(follower), 'students cannot acquire while T is active');
   await assert.rejects(updateDoc(doc(follower.db, 'liveClasses', classId, 'shared', 'boardControl'), { acquisitionOpen: true }));
   await assert.rejects(writeAs(follower, epoch, 'wrong student'));
@@ -58,14 +87,17 @@ for (const follower of clients) {
 
 await setBoardStudentAcquisition(classId, teacher, 'teacher-client', 'Teacher', true);
 assert.equal((await control()).acquisitionOpen, true);
-const race = await Promise.allSettled(clients.map(student => studentClaim(student)));
+await assert.rejects(studentClaim(outsider), 'an unassigned student cannot acquire an open Board');
+await assert.rejects(studentClaim(joao, classId, ana.uid), 'a student cannot forge another controllerId');
+const race = await Promise.allSettled(assignedStudents.map(student => studentClaim(student)));
 assert.equal(race.filter(result => result.status === 'fulfilled').length, 1, 'exactly one first touch wins');
 const winnerIndex = race.findIndex(result => result.status === 'fulfilled');
 const winner = clients[winnerIndex]; const winnerEpoch = (race[winnerIndex] as PromiseFulfilledResult<number>).value;
 assert.equal((await control()).controllerId, winner.uid); assert.equal((await control()).acquisitionOpen, false);
 await writeAs(winner, winnerEpoch, '<p>First student owns the Board</p>');
-for (const follower of clients.filter(student => student !== winner)) {
-  await assert.rejects(studentClaim(follower)); await assert.rejects(writeAs(follower, winnerEpoch, 'hijack'));
+for (const follower of assignedStudents.filter(student => student !== winner)) {
+  await assert.rejects(studentClaim(follower), 'another assigned student cannot steal a closed Board');
+  await assert.rejects(writeAs(follower, winnerEpoch, 'hijack'));
 }
 
 await setBoardStudentAcquisition(classId, teacher, 'teacher-client', 'Teacher', false);
