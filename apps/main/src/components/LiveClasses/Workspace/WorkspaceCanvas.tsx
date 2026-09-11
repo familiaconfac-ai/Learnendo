@@ -1,6 +1,6 @@
 import { useBoardControl } from './useBoardControl';
 import { BoardControlToolbar } from './BoardControlToolbar';
-import { boardContentFingerprint, type BoardView } from '../../../models/boardControl';
+import { boardContentFingerprint, resolveStudentControllerName, type BoardView } from '../../../models/boardControl';
 import { boardWriteStamp } from '../../../services/boardControlService';
 ﻿/**
  * WorkspaceCanvas ï¿½ collaborative document editor for live classes.
@@ -2376,10 +2376,18 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const viewerIsTeacher = isTeacher(viewerContext);
   const viewerIsStudent = isStudent(viewerContext);
   const viewerCanManageWorkspace = viewerIsAdmin || viewerIsTeacher;
+  const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
+  const ownRosterLabel = assignedRoster.find((student) => student.uid === userId)?.label;
+  const ownOfficialProfile = userAccounts.find((account) => account.uid === userId);
   const board = useBoardControl(classId, userId, userName, viewerCanManageWorkspace, {
     actualRole,
     effectiveRole,
     membershipAssigned: viewerCanManageWorkspace || assignedRoster.some(student => student.uid === userId),
+    studentControllerIdentity: viewerIsStudent ? {
+      rosterLabel: ownRosterLabel,
+      officialProfileName: ownOfficialProfile?.name,
+      email: ownOfficialProfile?.email ?? userEmail,
+    } : undefined,
   });
   const lastLatencySnapshotRef = useRef<number | null>(null);
   viewerContext.boardController = board.own;
@@ -3091,7 +3099,6 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const ITEM_GUARD_MS = 1500;
   const dirtyItemTimestampsRef = useRef<Record<string, number>>({});
   const deletedItemTimestampsRef = useRef<Record<string, number>>({});
-  const [userAccounts, setUserAccounts] = useState<UserAccountProfile[]>([]);
   const [remoteSelections, setRemoteSelections] = useState<WorkspaceSelectionSnapshot[]>([]);
   const composingRef = useRef(false);
   const compositionLeaseTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -3209,12 +3216,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     });
     return () => cancelAnimationFrame(frame);
   }, [board.control?.epoch, board.own]);
+  const activeControllerId = board.control?.controllerId ?? '';
+  const activeControllerRosterEntry = assignedRoster.find((student) => student.uid === activeControllerId);
+  const activeControllerProfile = userAccounts.find((account) => account.uid === activeControllerId);
+  const activeControllerIsStudent = Boolean(activeControllerRosterEntry || activeControllerProfile?.role === 'student');
+  const controllerDisplayName = activeControllerIsStudent
+    ? resolveStudentControllerName({
+        uid: activeControllerId,
+        rosterLabel: activeControllerRosterEntry?.label,
+        officialProfileName: activeControllerProfile?.name,
+        storedControllerName: board.control?.controllerName,
+        email: activeControllerProfile?.email ?? (activeControllerId === userId ? userEmail : null),
+      })
+    : board.control?.controllerName || activeControllerId;
+
   useEffect(() => {
     authoritativeViewRef.current = board.control?.view ?? null;
-    const controllerName = board.control?.controllerName
-      || assignedRoster.find((student) => student.uid === board.control?.controllerId)?.label
-      || userAccounts.find((account) => account.uid === board.control?.controllerId)?.name
-      || board.control?.controllerId;
     const remoteSelection = reconstructRemoteSelection(
       board.control?.view,
       board.control?.controllerId,
@@ -3224,7 +3241,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       surfaceMode,
       activePageId,
       Date.now(),
-      controllerName,
+      controllerDisplayName,
     );
     setRemoteSelections(remoteSelection ? [remoteSelection] : []);
     const snapshotReceivedAt = board.control?.viewReceivedAtMs ?? null;
@@ -3248,7 +3265,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [assignedRoster, board.clientId, board.control?.controllerClientId, board.control?.controllerId, board.control?.epoch, board.control?.view, board.control?.viewReceivedAtMs, board.control?.viewUpdatedAtMs, board.own, docHtml, items, activePageId, surfaceMode, applyAuthoritativeView, userAccounts, userId]);
+  }, [activePageId, applyAuthoritativeView, board.clientId, board.control?.controllerClientId, board.control?.controllerId, board.control?.epoch, board.control?.view, board.control?.viewReceivedAtMs, board.control?.viewUpdatedAtMs, board.own, controllerDisplayName, docHtml, items, surfaceMode, userId]);
 
 
   useEffect(() => {
@@ -6358,7 +6375,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       {(!isBoardFullscreen || fullscreenToolbarVisible) && (
         <div className={isBoardFullscreen ? 'fixed inset-x-0 top-0 z-[12050] shadow-lg' : ''}
           onPointerEnter={isBoardFullscreen ? revealFullscreenToolbar : undefined}>
-          <BoardControlToolbar board={board} teacher={viewerCanManageWorkspace} uid={userId} students={assignableStudents}
+          <BoardControlToolbar board={board} teacher={viewerCanManageWorkspace} uid={userId}
+            controllerDisplayName={controllerDisplayName}
             canEdit={viewerCanEditSharedDocument}
             contentEditable={docRef.current?.isContentEditable ?? (board.own && viewerCanEditSharedDocument)}
             onFullscreen={isSlidesMode || isBoardFullscreen ? undefined : () => void enterBoardFullscreen()} />

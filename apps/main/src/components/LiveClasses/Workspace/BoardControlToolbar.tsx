@@ -7,16 +7,16 @@ const COPY = {
   pt: { teacher: 'Professor', following: 'Acompanhando', controls: 'está controlando a Board', waiting: 'Aguardando um aluno...', take: 'Controle do professor', open: 'Abrir para alunos', error: 'Controle indisponível; reconecte para continuar' },
   es: { teacher: 'Profesor', following: 'Siguiendo', controls: 'controla la Board', waiting: 'Esperando a un alumno...', take: 'Control del profesor', open: 'Abrir a alumnos', error: 'Control no disponible; vuelve a conectarte' },
 };
-export function BoardControlToolbar({ board, teacher, uid, students, canEdit, contentEditable, onFullscreen }: {
+export function BoardControlToolbar({ board, teacher, uid, controllerDisplayName, canEdit, contentEditable, onFullscreen }: {
   board: ReturnType<typeof useBoardControl>; teacher: boolean; uid: string;
-  students: Array<{ uid: string; label: string; isOnline: boolean }>;
+  controllerDisplayName: string;
   canEdit: boolean;
   contentEditable: boolean;
   onFullscreen?: () => void;
 }) {
   const { uiLanguage } = useUiLanguage(); const copy = COPY[uiLanguage];
   const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
-  const name = board.control?.controllerName || students.find(student => student.uid === board.control?.controllerId)?.label || board.control?.controllerId || copy.teacher;
+  const name = controllerDisplayName || board.control?.controllerName || board.control?.controllerId || copy.teacher;
   const localDebugEnabled = typeof window !== 'undefined' && window.localStorage.getItem('boardDebug') === '1';
   const debugVisible = (!teacher && Boolean(board.error)) || localDebugEnabled;
   const diagnostics = {

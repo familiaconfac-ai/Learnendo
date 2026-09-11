@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { acquireBoard, publishBoardView, registerBoardWriter, setBoardPresentationMode, setBoardStudentAcquisition, subscribeBoardControl, subscribeBoardPresentation } from '../../../services/boardControlService';
-import { canAcquireBoard, ownsBoard, type BoardControl, type BoardView } from '../../../models/boardControl';
+import { canAcquireBoard, ownsBoard, resolveStudentControllerName, type BoardControl, type BoardView } from '../../../models/boardControl';
 
 type BoardAcquireResult = 'idle' | 'attempting' | 'granted' | 'denied' | 'skipped-disconnected' | 'skipped-closed';
 
@@ -8,6 +8,11 @@ export function useBoardControl(classId: string, uid: string, displayName: strin
   actualRole?: string;
   effectiveRole?: string;
   membershipAssigned?: boolean;
+  studentControllerIdentity?: {
+    rosterLabel?: string | null;
+    officialProfileName?: string | null;
+    email?: string | null;
+  };
 }) {
   const clientId = useRef(crypto.randomUUID()).current;
   const [control, setControl] = useState<BoardControl | null>(null);
@@ -27,6 +32,15 @@ export function useBoardControl(classId: string, uid: string, displayName: strin
   const lastRenewal = useRef(0);
   const own = connected && (teacher || armed) && (!teacher || !control?.acquisitionOpen) && ownsBoard(control, uid, clientId);
   const ownRef = useRef(false); ownRef.current = own;
+  const resolveControllerName = useCallback(() => teacher
+    ? displayName.trim() || uid
+    : resolveStudentControllerName({
+        uid,
+        rosterLabel: context?.studentControllerIdentity?.rosterLabel,
+        officialProfileName: context?.studentControllerIdentity?.officialProfileName,
+        storedControllerName: ref.current?.controllerId === uid ? ref.current.controllerName : null,
+        email: context?.studentControllerIdentity?.email,
+      }), [context?.studentControllerIdentity?.email, context?.studentControllerIdentity?.officialProfileName, context?.studentControllerIdentity?.rosterLabel, displayName, teacher, uid]);
   const debugSnapshot = useCallback((extra: Record<string, unknown> = {}) => {
     const current = ref.current;
     const payload = {
@@ -59,7 +73,7 @@ export function useBoardControl(classId: string, uid: string, displayName: strin
     if (claiming.current) return claiming.current;
     setAcquireDebug({ acquireAttempted: true, acquireResult: 'attempting', acquireError: { code: '', message: '' }, eventSource });
     debugSnapshot({ phase: 'acquire-attempt', eventSource, acquireAttempted: true, acquireResult: 'attempting' });
-    claiming.current = acquireBoard(classId, uid, clientId, displayName, teacher, ref.current?.view, transaction => {
+    claiming.current = acquireBoard(classId, uid, clientId, resolveControllerName(), teacher, ref.current?.view, transaction => {
       debugSnapshot({ ...transaction, eventSource, acquireAttempted: true, acquireResult: 'attempting' });
     }).then(epoch => {
       setError('');
@@ -74,7 +88,7 @@ export function useBoardControl(classId: string, uid: string, displayName: strin
       if (!teacher) setArmed(false); return false;
     }).finally(() => { claiming.current = null; });
     return claiming.current;
-  }, [classId, uid, clientId, displayName, teacher, debugSnapshot]);
+  }, [classId, uid, clientId, resolveControllerName, teacher, debugSnapshot]);
   const intent = useCallback((eventSource = 'programmatic') => {
     if (!connectedRef.current) {
       setAcquireDebug(current => ({ ...current, acquireResult: 'skipped-disconnected', eventSource }));

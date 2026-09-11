@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { boardContentFingerprint, canAcquireBoard, ownsBoard, teacherLeaseActive, TEACHER_IDLE_MS, TEACHER_LEASE_MS, type BoardControl } from './boardControl.ts';
+import { boardContentFingerprint, canAcquireBoard, ownsBoard, resolveStudentControllerName, teacherLeaseActive, TEACHER_IDLE_MS, TEACHER_LEASE_MS, type BoardControl } from './boardControl.ts';
 
 const control: BoardControl = { acquisitionOpen: false, controllerId: 'teacher', controllerName: 'Professor Ana', controllerClientId: 'desktop', epoch: 10, teacherLeaseAt: null, view: null, updatedAt: null };
 test('a closed Board rejects followers and teacher can always preempt', () => {
@@ -27,4 +27,16 @@ test('native ranges are only restored on matching document markup', () => {
   assert.equal(boardContentFingerprint(source), boardContentFingerprint(source));
   assert.notEqual(boardContentFingerprint(source), boardContentFingerprint('<p>Ub João bl</p>'));
   assert.notEqual(boardContentFingerprint(source), boardContentFingerprint('<p>Ub <b>-----</b> bl</p>'));
+});
+test('student controller names prefer the assigned roster over stale Auth/control names', () => {
+  assert.equal(resolveStudentControllerName({
+    uid: 'student-1',
+    rosterLabel: 'Gregório',
+    officialProfileName: 'Gregório Perfil',
+    storedControllerName: 'Grego CTLIB',
+    email: 'gregorio@example.test',
+  }), 'Gregório');
+  assert.equal(resolveStudentControllerName({ uid: 'student-1', officialProfileName: 'Gregório', storedControllerName: 'Grego CTLIB' }), 'Gregório');
+  assert.equal(resolveStudentControllerName({ uid: 'student-1', storedControllerName: 'Grego CTLIB', email: 'gregorio@example.test' }), 'Grego CTLIB');
+  assert.equal(resolveStudentControllerName({ uid: 'student-1', email: 'gregorio@example.test' }), 'gregorio@example.test');
 });

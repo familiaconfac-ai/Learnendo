@@ -35,3 +35,21 @@ export function boardContentFingerprint(html: string): string {
   for (let i = 0; i < html.length; i++) hash = Math.imul(hash ^ html.charCodeAt(i), 16777619);
   return `${html.length}:${hash >>> 0}`;
 }
+
+export function resolveStudentControllerName({
+  uid,
+  rosterLabel,
+  officialProfileName,
+  storedControllerName,
+  email,
+}: {
+  uid: string;
+  rosterLabel?: string | null;
+  officialProfileName?: string | null;
+  storedControllerName?: string | null;
+  email?: string | null;
+}): string {
+  return [rosterLabel, officialProfileName, storedControllerName, email, uid]
+    .map((value) => value?.trim() ?? '')
+    .find(Boolean) ?? uid;
+}
