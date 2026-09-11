@@ -40,6 +40,94 @@ const assertWorkspaceHtml = (workspace: Record<string, any>, pageId: string, exp
     boardContentFingerprint(pageHtml),
   ]).size, 1);
 };
+
+const legacyHtml = '<p>ABC MOST DEF</p>';
+const migratedHtml = '<p>ABC _____ DEF</p>';
+const legacyPage: WorkspacePage = { id: 'p1', name: 'Page 1', docContent: legacyHtml, items: [] };
+const seedRevisionWorkspace = async (targetClassId: string, revision?: number) => {
+  await adb.doc(`liveClasses/${targetClassId}/shared/workspace`).set({
+    currentPageId: legacyPage.id,
+    surfaceMode: 'document',
+    docContent: legacyHtml,
+    boardState: { pages: [legacyPage], currentPageId: legacyPage.id, docContent: legacyHtml, items: [] },
+    pages: [legacyPage],
+    items: [],
+    updatedBy: '',
+    updatedByName: '',
+    updatedAt: 1,
+    ...(revision === undefined ? {} : { workspaceRevision: revision }),
+  });
+};
+const setupRevisionClass = async (suffix: string, revision?: number) => {
+  const targetClassId = `${classId}-workspace-${suffix}`;
+  const controllerClientId = `teacher-${suffix}-client`;
+  await adb.doc(`liveClasses/${targetClassId}`).set({
+    createdBy: teacher,
+    teacherUid: teacher,
+    assignedStudentIds: assignedStudents.map(student => student.uid),
+  });
+  const controlEpoch = await acquireBoard(targetClassId, teacher, controllerClientId, 'Teacher', true);
+  await seedRevisionWorkspace(targetClassId, revision);
+  return { targetClassId, controllerClientId, controlEpoch };
+};
+const attemptRevisionUpdate = (
+  actorDb: typeof db,
+  targetClassId: string,
+  actorUid: string,
+  controllerClientId: string,
+  controlEpoch: number,
+  workspaceRevision: number,
+) => updateDoc(doc(actorDb, 'liveClasses', targetClassId, 'shared', 'workspace'), {
+  workspaceRevision,
+  workspaceMutationSeq: 1,
+  controlEpoch,
+  controlClientId: controllerClientId,
+  updatedBy: actorUid,
+  updatedByName: 'Revision rules test',
+  updatedAt: serverTimestamp(),
+});
+
+// Existing legacy workspaces have no revision/control stamp. Their first directed write must migrate to revision 1.
+const legacyWorkspace = await setupRevisionClass('legacy-allowed');
+const unregisterLegacyWorkspace = registerBoardWriter(
+  legacyWorkspace.targetClassId,
+  teacher,
+  () => ({ controlEpoch: legacyWorkspace.controlEpoch, controlClientId: legacyWorkspace.controllerClientId }),
+);
+await saveDocContent(
+  legacyWorkspace.targetClassId,
+  migratedHtml,
+  teacher,
+  'Teacher',
+  legacyPage.id,
+  [{ ...legacyPage, docContent: migratedHtml }],
+);
+const migratedWorkspace = (await getDoc(doc(db, 'liveClasses', legacyWorkspace.targetClassId, 'shared', 'workspace'))).data()!;
+assert.equal(migratedWorkspace.workspaceRevision, 1);
+assert.equal(typeof migratedWorkspace.workspaceMutationSeq, 'number');
+assert.equal(migratedWorkspace.controlEpoch, legacyWorkspace.controlEpoch);
+assert.equal(migratedWorkspace.controlClientId, legacyWorkspace.controllerClientId);
+assertWorkspaceHtml(migratedWorkspace, legacyPage.id, migratedHtml);
+unregisterLegacyWorkspace();
+
+const legacyRevisionTwo = await setupRevisionClass('legacy-revision-2');
+await assert.rejects(attemptRevisionUpdate(db, legacyRevisionTwo.targetClassId, teacher, legacyRevisionTwo.controllerClientId, legacyRevisionTwo.controlEpoch, 2));
+
+const revisionSix = await setupRevisionClass('revision-6', 5);
+await attemptRevisionUpdate(db, revisionSix.targetClassId, teacher, revisionSix.controllerClientId, revisionSix.controlEpoch, 6);
+assert.equal((await getDoc(doc(db, 'liveClasses', revisionSix.targetClassId, 'shared', 'workspace'))).data()!.workspaceRevision, 6);
+
+const sameRevision = await setupRevisionClass('same-revision', 5);
+await assert.rejects(attemptRevisionUpdate(db, sameRevision.targetClassId, teacher, sameRevision.controllerClientId, sameRevision.controlEpoch, 5));
+const skippedRevision = await setupRevisionClass('skipped-revision', 5);
+await assert.rejects(attemptRevisionUpdate(db, skippedRevision.targetClassId, teacher, skippedRevision.controllerClientId, skippedRevision.controlEpoch, 7));
+
+const followerLegacy = await setupRevisionClass('follower-legacy');
+await assert.rejects(attemptRevisionUpdate(joao.db, followerLegacy.targetClassId, joao.uid, followerLegacy.controllerClientId, followerLegacy.controlEpoch, 1));
+await assert.rejects(attemptRevisionUpdate(outsider.db, followerLegacy.targetClassId, outsider.uid, followerLegacy.controllerClientId, followerLegacy.controlEpoch, 1));
+await assert.rejects(attemptRevisionUpdate(db, followerLegacy.targetClassId, teacher, 'wrong-client', followerLegacy.controlEpoch, 1));
+await assert.rejects(attemptRevisionUpdate(db, followerLegacy.targetClassId, teacher, followerLegacy.controllerClientId, followerLegacy.controlEpoch + 1, 1));
+
 let epoch = await acquireBoard(classId, teacher, 'teacher-client', 'Teacher', true);
 const unregister = registerBoardWriter(classId, teacher, () => ({ controlEpoch: epoch, controlClientId: 'teacher-client' }));
 const page = { id: 'p1', name: 'Page 1', docContent: '<p>Ub ----- bl</p>', items: [] };
