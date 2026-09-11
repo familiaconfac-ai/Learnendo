@@ -56,7 +56,11 @@ import {
   summarizeFormattingValues,
   type MixedValue,
 } from './workspaceFormattingState';
-import { classifyWorkspaceSnapshotRevision } from './workspaceDocumentSync';
+import {
+  classifyWorkspaceSnapshotRevision,
+  isSameControllerDocumentSelfEcho,
+  shouldApplyWorkspaceDocumentSnapshot,
+} from './workspaceDocumentSync';
 import { app } from '../../../services/firebase';
 import {
   saveWorkspaceAsMaterial,
@@ -3638,9 +3642,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
       // Doc: suppress remote DOM writes while there is active local typing.
       const isLocallyTyping = composingRef.current || (board.ownRef.current && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS);
+      const documentSnapshotContext = {
+        ownsBoard: board.ownRef.current,
+        isLocallyTyping,
+        userId,
+        localClientId: board.clientId,
+        currentControlEpoch: board.control?.epoch ?? null,
+        docUpdatedBy: data?.docUpdatedBy ?? null,
+        snapshotControlClientId: data?.controlClientId ?? null,
+        snapshotControlEpoch: data?.controlEpoch ?? null,
+      };
+      const isSameControllerInstanceSelfEcho = isSameControllerDocumentSelfEcho(documentSnapshotContext);
       const currentDomHtml = docRef.current?.innerHTML ?? '';
-      let documentDecision = 'ignored-local-typing';
-      if (!isLocallyTyping) {
+      let documentDecision = isSameControllerInstanceSelfEcho
+        ? 'ignored-self-echo-same-generation'
+        : 'ignored-local-typing';
+      if (shouldApplyWorkspaceDocumentSnapshot(documentSnapshotContext)) {
         setDocHtml(nextDocContent);
         if (docRef.current && docRef.current.innerHTML !== nextDocContent) {
           const localSelection = window.getSelection();
@@ -3680,6 +3697,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         pendingDocSave: Boolean(pendingDocSaveRef.current),
         lastDocInputAt: lastDocInputRef.current || null,
         isLocallyTyping,
+        isDocSelfEcho,
+        isSameControllerInstanceSelfEcho,
         own: board.ownRef.current,
       });
 

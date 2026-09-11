@@ -37,6 +37,8 @@ assert.doesNotMatch(scrollWriter, /docContent|innerHTML|pages/, 'scroll awarenes
 assert.match(documentWriter, /currentPageId,/, 'document saves must identify the active page');
 assert.match(itemWriter, /commitBoardWorkspace\(classId, payload, 'items'\)/, 'item saves must preserve the committed document HTML');
 assert.match(canvas, /classifyWorkspaceSnapshotRevision/, 'workspace snapshots must use monotonic revision ordering');
+assert.match(canvas, /ignored-self-echo-same-generation/, 'same-client same-epoch document echoes must not replace the controller DOM');
+assert.match(canvas, /shouldApplyWorkspaceDocumentSnapshot/, 'document snapshot application must use the self-echo guard');
 assert.match(canvas, /const nextDocContent = remoteState\.docContent/, 'the live surface document must be authoritative over a stale page mirror');
 assert.match(canvas, /isSerializedRangeCollapsed\(selection\.range\)/, 'collapsed ranges must render as remote carets');
 assert.match(canvas, /applyingRemoteScrollRef\.current \|\| Date\.now\(\) < suppressScrollPublishUntilRef\.current/,
