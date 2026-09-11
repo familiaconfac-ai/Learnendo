@@ -1,6 +1,7 @@
-import { boardWriteStamp, boardControlRef, commitBoardWorkspace } from './boardControlService';
+import { boardWriteStamp, boardControlRef, commitBoardWorkspace, type BoardWriteStamp } from './boardControlService';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
+import { boardContentFingerprint } from '../models/boardControl';
 import type { SerializedSelectionRange } from '../components/LiveClasses/Workspace/workspaceSelectionAwareness';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -204,10 +205,10 @@ export async function saveDocContent(
   currentPageId?: string,
   pages?: WorkspacePage[],
   surfaceMode: WorkspaceSurfaceMode = 'document',
+  pendingControlStamp?: BoardWriteStamp,
 ): Promise<void> {
   if (!db) return;
-  const controlStamp = boardWriteStamp(classId, uid);
-  console.log(`[WS] saveDocContent by ${name} (${uid.slice(0, 6)})`);
+  const controlStamp = pendingControlStamp ?? boardWriteStamp(classId, uid);
   const syncedPages =
     currentPageId && pages
       ? pages.map((page) => (page.id === currentPageId ? { ...page, docContent } : page))
@@ -225,6 +226,7 @@ export async function saveDocContent(
   const payload = {
     ...controlStamp,
     surfaceMode,
+    currentPageId,
     docContent,
     docUpdatedBy: uid,
     ...(surfaceState ? { [modeKey]: surfaceState } : {}),
@@ -233,7 +235,32 @@ export async function saveDocContent(
     updatedByName: name,
     ...(remotePages ? { pages: remotePages } : {}),
   };
-  await commitBoardWorkspace(classId, payload, 'document');
+  console.info('[BOARD_WORKSPACE_SYNC]', {
+    phase: 'save-start',
+    userId: uid,
+    controlEpoch: controlStamp.controlEpoch,
+    controlClientId: controlStamp.controlClientId,
+    workspaceMutationSeq: controlStamp.workspaceMutationSeq,
+    htmlFingerprint: boardContentFingerprint(docContent),
+    currentPageId: currentPageId ?? null,
+    surfaceMode,
+  });
+  try {
+    await commitBoardWorkspace(classId, payload, 'document');
+  } catch (cause) {
+    const code = typeof cause === 'object' && cause !== null && 'code' in cause ? String((cause as { code: unknown }).code) : '';
+    const message = cause instanceof Error ? cause.message : String(cause);
+    console.error('[BOARD_WORKSPACE_SYNC]', {
+      phase: 'save-error',
+      code,
+      message,
+      expectedEpoch: controlStamp.controlEpoch,
+      expectedClientId: controlStamp.controlClientId,
+      workspaceMutationSeq: controlStamp.workspaceMutationSeq,
+      htmlFingerprint: boardContentFingerprint(docContent),
+    });
+    throw cause;
+  }
 
 }
 
@@ -455,7 +482,7 @@ export async function saveWorkspace(
     updatedByName: name,
     ...(remotePages ? { pages: remotePages } : {}),
   };
-  await commitBoardWorkspace(classId, payload);
+  await commitBoardWorkspace(classId, payload, 'items');
 
 }
 

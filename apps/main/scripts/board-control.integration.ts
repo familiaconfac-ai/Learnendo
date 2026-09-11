@@ -6,8 +6,9 @@ import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import { connectFirestoreEmulator, getFirestore, doc, getDoc, setDoc, updateDoc, runTransaction, serverTimestamp, terminate, disableNetwork, enableNetwork } from 'firebase/firestore';
 import { auth, db, firebaseRuntimeConfig } from '../src/services/firebase';
 import { acquireBoard, boardPresentationRef, boardWriteStamp, commitBoardWorkspace, setBoardPresentationMode, setBoardStudentAcquisition, publishBoardView, boardControlRef, boardViewRef, registerBoardWriter, subscribeBoardControl } from '../src/services/boardControlService';
-import { saveDocContent, savePageSwitch, saveWorkspaceItem } from '../src/services/workspaceService';
-import type { BoardControl, BoardView } from '../src/models/boardControl';
+import { saveDocContent, savePageSwitch, saveWorkspace, saveWorkspaceItem } from '../src/services/workspaceService';
+import type { WorkspacePage } from '../src/services/workspaceService';
+import { boardContentFingerprint, type BoardControl, type BoardView } from '../src/models/boardControl';
 
 const projectId = firebaseRuntimeConfig.projectId;
 assert.ok(projectId.startsWith('demo-'));
@@ -28,18 +29,49 @@ await adb.doc(`users/${outsider.uid}`).set({ role: 'student', name: 'Outsider' }
 await adb.doc(`liveClasses/${classId}`).set({ createdBy: teacher, teacherUid: teacher, assignedStudentIds: assignedStudents.map(c => c.uid) });
 const ref = doc(db, 'liveClasses', classId, 'shared', 'workspace');
 const control = () => getDoc(boardControlRef(classId)).then(s => s.data() as BoardControl);
+const assertWorkspaceHtml = (workspace: Record<string, any>, pageId: string, expectedHtml: string) => {
+  const pageHtml = workspace.pages.find((entry: WorkspacePage) => entry.id === pageId)?.docContent;
+  assert.equal(workspace.docContent, expectedHtml);
+  assert.equal(workspace.boardState.docContent, expectedHtml);
+  assert.equal(pageHtml, expectedHtml);
+  assert.deepEqual(new Set([
+    boardContentFingerprint(workspace.docContent),
+    boardContentFingerprint(workspace.boardState.docContent),
+    boardContentFingerprint(pageHtml),
+  ]).size, 1);
+};
 let epoch = await acquireBoard(classId, teacher, 'teacher-client', 'Teacher', true);
 const unregister = registerBoardWriter(classId, teacher, () => ({ controlEpoch: epoch, controlClientId: 'teacher-client' }));
 const page = { id: 'p1', name: 'Page 1', docContent: '<p>Ub ----- bl</p>', items: [] };
 await saveDocContent(classId, page.docContent, teacher, 'Teacher', page.id, [page]);
+const beforeTeacherEdit = (await getDoc(ref)).data()!;
+const teacherHtml = '<p>ABC ___ GHI</p>';
+await saveDocContent(classId, teacherHtml, teacher, 'Teacher', page.id, [{ ...page, docContent: teacherHtml }]);
+const afterTeacherEdit = (await getDoc(ref)).data()!;
+assert.equal(afterTeacherEdit.workspaceRevision, beforeTeacherEdit.workspaceRevision + 1);
+assertWorkspaceHtml(afterTeacherEdit, page.id, teacherHtml);
+assertWorkspaceHtml((await getDoc(doc(joao.db, 'liveClasses', classId, 'shared', 'workspace'))).data()!, page.id, teacherHtml);
+await saveWorkspace(classId, [], teacher, 'Teacher', page.id, [{ ...page, docContent: '<p>ABC DEF GHI</p>' }]);
+const afterStaleItemPayload = (await getDoc(ref)).data()!;
+assert.equal(afterStaleItemPayload.workspaceRevision, afterTeacherEdit.workspaceRevision + 1);
+assertWorkspaceHtml(afterStaleItemPayload, page.id, teacherHtml);
 
 const stale = boardWriteStamp(classId, teacher); const fresh = boardWriteStamp(classId, teacher);
 await commitBoardWorkspace(classId, { ...fresh, updatedBy: teacher, updatedByName: 'Teacher', docContent: '<p><span style="font-size: 18px">Stable</span></p>', docUpdatedBy: teacher });
 await commitBoardWorkspace(classId, { ...stale, updatedBy: teacher, updatedByName: 'Teacher', docContent: '<p><span style="font-size: 48px">Stale</span></p>', docUpdatedBy: teacher });
 assert.match((await getDoc(ref)).data()!.docContent, /18px/);
 const view: BoardView = { surfaceMode: 'document', pageId: 'p1', scrollRatio: 0.9, selection: { target: 'document', itemId: null, fingerprint: 'fixture', range: { startPath: [0, 0], endPath: [0, 0], startOffset: 3, endOffset: 8 } } };
+const beforeVisualUpdate = (await getDoc(ref)).data()!;
 await publishBoardView(classId, teacher, 'teacher-client', epoch, view);
 assert.deepEqual((await getDoc(boardViewRef(classId))).data()!.view, view);
+const afterVisualUpdate = (await getDoc(ref)).data()!;
+assert.equal(afterVisualUpdate.workspaceRevision, beforeVisualUpdate.workspaceRevision);
+assert.equal(afterVisualUpdate.docContent, beforeVisualUpdate.docContent);
+assert.equal(afterVisualUpdate.boardState.docContent, beforeVisualUpdate.boardState.docContent);
+assert.equal(
+  afterVisualUpdate.pages.find((entry: WorkspacePage) => entry.id === page.id)?.docContent,
+  beforeVisualUpdate.pages.find((entry: WorkspacePage) => entry.id === page.id)?.docContent,
+);
 await setBoardPresentationMode(classId, true);
 assert.equal((await getDoc(boardPresentationRef(classId))).data()!.presentationMode, true);
 await assert.rejects(setDoc(doc(joao.db, 'liveClasses', classId, 'shared', 'boardPresentation'), { presentationMode: false, updatedAt: serverTimestamp() }));
@@ -50,6 +82,26 @@ const studentClaim = async (student: typeof joao, targetClassId = classId, forge
   const visual = (await tx.get(doc(student.db, 'liveClasses', targetClassId, 'shared', 'boardView'))).data();
   tx.set(r, { acquisitionOpen: false, view: visual?.epoch === old.epoch ? visual.view : old.view, controllerId: forgedControllerId, controllerName: `Student ${student.uid.slice(-4)}`, controllerClientId: student.client, epoch: old.epoch + 1, teacherLeaseAt: null, updatedAt: serverTimestamp() });
   return old.epoch + 1;
+});
+const studentSaveDocument = async (student: typeof joao, version: number, html: string) => runTransaction(student.db, async tx => {
+  const workspace = doc(student.db, 'liveClasses', classId, 'shared', 'workspace');
+  const current = (await tx.get(workspace)).data()!;
+  const currentPageId = current.currentPageId as string;
+  const pages = (current.pages as WorkspacePage[]).map(entry => entry.id === currentPageId ? { ...entry, docContent: html } : entry);
+  const boardState = { ...current.boardState, pages, currentPageId, docContent: html };
+  tx.set(workspace, {
+    controlEpoch: version,
+    controlClientId: student.client,
+    workspaceMutationSeq: 1,
+    workspaceRevision: current.workspaceRevision + 1,
+    docContent: html,
+    docUpdatedBy: student.uid,
+    pages,
+    boardState,
+    updatedAt: serverTimestamp(),
+    updatedBy: student.uid,
+    updatedByName: `Student ${student.uid.slice(-4)}`,
+  }, { merge: true });
 });
 
 // Production-shaped regression: assigned legacy student profiles can exist without a role field.
@@ -94,7 +146,12 @@ assert.equal(race.filter(result => result.status === 'fulfilled').length, 1, 'ex
 const winnerIndex = race.findIndex(result => result.status === 'fulfilled');
 const winner = clients[winnerIndex]; const winnerEpoch = (race[winnerIndex] as PromiseFulfilledResult<number>).value;
 assert.equal((await control()).controllerId, winner.uid); assert.equal((await control()).acquisitionOpen, false);
-await writeAs(winner, winnerEpoch, '<p>First student owns the Board</p>');
+const beforeStudentEdit = (await getDoc(ref)).data()!;
+const studentHtml = '<p>ABC NEW GHI</p>';
+await studentSaveDocument(winner, winnerEpoch, studentHtml);
+const afterStudentEdit = (await getDoc(ref)).data()!;
+assert.equal(afterStudentEdit.workspaceRevision, beforeStudentEdit.workspaceRevision + 1);
+assertWorkspaceHtml(afterStudentEdit, page.id, studentHtml);
 for (const follower of assignedStudents.filter(student => student !== winner)) {
   await assert.rejects(studentClaim(follower), 'another assigned student cannot steal a closed Board');
   await assert.rejects(writeAs(follower, winnerEpoch, 'hijack'));
@@ -103,6 +160,13 @@ for (const follower of assignedStudents.filter(student => student !== winner)) {
 await setBoardStudentAcquisition(classId, teacher, 'teacher-client', 'Teacher', false);
 assert.equal((await control()).controllerId, teacher); assert.equal((await control()).acquisitionOpen, false);
 await assert.rejects(writeAs(winner, winnerEpoch, 'late keystroke'));
+epoch = (await control()).epoch;
+const formattedHtml = '<p>ABC <strong>NEW</strong> GHI</p>';
+await saveDocContent(classId, formattedHtml, teacher, 'Teacher', page.id, [{ ...page, docContent: studentHtml }]);
+const afterFormatting = (await getDoc(ref)).data()!;
+assert.equal(afterFormatting.workspaceRevision, afterStudentEdit.workspaceRevision + 1);
+assertWorkspaceHtml(afterFormatting, page.id, formattedHtml);
+assertWorkspaceHtml((await getDoc(doc(winner.db, 'liveClasses', classId, 'shared', 'workspace'))).data()!, page.id, formattedHtml);
 await setBoardStudentAcquisition(classId, teacher, 'teacher-client', 'Teacher', true);
 let joaoEpoch = await studentClaim(joao); await writeAs(joao, joaoEpoch, '<p>Ub João bl</p>');
 const refreshedClient = { ...joao, client: 'joao-refreshed-client' };

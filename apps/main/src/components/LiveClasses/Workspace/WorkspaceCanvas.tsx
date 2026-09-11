@@ -1,6 +1,7 @@
 import { useBoardControl } from './useBoardControl';
 import { BoardControlToolbar } from './BoardControlToolbar';
 import { boardContentFingerprint, type BoardView } from '../../../models/boardControl';
+import { boardWriteStamp } from '../../../services/boardControlService';
 ﻿/**
  * WorkspaceCanvas ï¿½ collaborative document editor for live classes.
  *
@@ -55,6 +56,7 @@ import {
   summarizeFormattingValues,
   type MixedValue,
 } from './workspaceFormattingState';
+import { classifyWorkspaceSnapshotRevision } from './workspaceDocumentSync';
 import { app } from '../../../services/firebase';
 import {
   saveWorkspaceAsMaterial,
@@ -3064,6 +3066,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     html: string;
     pages: WorkspacePage[];
     currentPageId: string;
+    surfaceMode: WorkspaceSurfaceMode;
+    timestamp: number;
+    controlStamp: ReturnType<typeof boardWriteStamp>;
   } | null>(null);
   const undoSnapshotRef = useRef<WorkspaceUndoSnapshot | null>(null);
   const itemsRef = useRef<WorkspaceItem[]>([]);
@@ -3093,7 +3098,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   useEffect(() => () => { if (compositionLeaseTimerRef.current) clearInterval(compositionLeaseTimerRef.current); }, []);
   const remoteDocHtmlRef = useRef('');
   const remoteItemsRef = useRef<WorkspaceItem[]>([]);
-  const lastAppliedWorkspaceRevisionRef = useRef(0);
+  const lastAppliedWorkspaceRevisionRef = useRef(-1);
   const applyingRemoteSelectionRef = useRef(false);
   const authoritativeViewRef = useRef<BoardView | null>(null);
   const lastAppliedViewRef = useRef('');
@@ -3403,14 +3408,33 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [items]);
 
   useEffect(() => {
+    lastAppliedWorkspaceRevisionRef.current = -1;
+  }, [classId]);
+
+  useEffect(() => {
     const unsub = subscribeWorkspace(classId, (data) => {
       const workspaceRevision = data?.workspaceRevision ?? 0;
-      if (workspaceRevision < lastAppliedWorkspaceRevisionRef.current) {
-        console.warn('[WS] ignoring stale workspace snapshot', {
+      const lastAppliedWorkspaceRevision = lastAppliedWorkspaceRevisionRef.current;
+      const revisionDecision = classifyWorkspaceSnapshotRevision(workspaceRevision, lastAppliedWorkspaceRevision);
+      if (revisionDecision !== 'apply') {
+        const incomingSurfaceMode = data?.surfaceMode ?? 'document';
+        const incomingHtml = (incomingSurfaceMode === 'slides' ? data?.slidesState?.docContent : data?.boardState?.docContent) ?? data?.docContent ?? '';
+        console.info('[BOARD_WORKSPACE_SYNC]', {
+          phase: 'snapshot',
+          decision: revisionDecision,
+          reason: revisionDecision === 'ignore-stale' ? 'older-workspace-revision' : 'awareness-or-metadata-without-new-revision',
           workspaceRevision,
-          lastAppliedWorkspaceRevision: lastAppliedWorkspaceRevisionRef.current,
-          updatedBy: data?.updatedBy,
-          updatedByName: data?.updatedByName,
+          lastAppliedWorkspaceRevision,
+          updatedBy: data?.updatedBy ?? null,
+          docUpdatedBy: data?.docUpdatedBy ?? null,
+          controlEpoch: data?.controlEpoch ?? null,
+          controlClientId: data?.controlClientId ?? null,
+          incomingFingerprint: boardContentFingerprint(incomingHtml),
+          currentDomFingerprint: boardContentFingerprint(docRef.current?.innerHTML ?? ''),
+          pendingDocSave: Boolean(pendingDocSaveRef.current),
+          lastDocInputAt: lastDocInputRef.current || null,
+          isLocallyTyping: composingRef.current || (board.ownRef.current && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS),
+          own: board.ownRef.current,
         });
         return;
       }
@@ -3420,18 +3444,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const remoteSurfaceMode = data?.surfaceMode ?? 'document';
       const remoteBoardState: WorkspaceSurfaceState = (() => {
         if (data?.boardState?.pages?.length) {
+          const normalizedPages = normalizeWorkspacePages(data.boardState.pages as Partial<WorkspacePage>[]);
+          const currentPageId = data.boardState.currentPageId;
           return {
-            pages: normalizeWorkspacePages(data.boardState.pages as Partial<WorkspacePage>[]),
-            currentPageId: data.boardState.currentPageId,
-            docContent: data.boardState.docContent ?? '',
+            pages: normalizedPages,
+            currentPageId,
+            docContent: data.boardState.docContent ?? normalizedPages.find((page) => page.id === currentPageId)?.docContent ?? '',
             items: data.boardState.items ?? [],
           };
         }
         if (remoteSurfaceMode === 'document' && data?.pages?.length) {
+          const normalizedPages = normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]);
+          const currentPageId = data.currentPageId ?? surfaceStatesRef.current.document.currentPageId;
           return {
-            pages: normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]),
-            currentPageId: data.currentPageId ?? surfaceStatesRef.current.document.currentPageId,
-            docContent: data.docContent ?? '',
+            pages: normalizedPages,
+            currentPageId,
+            docContent: data.docContent ?? normalizedPages.find((page) => page.id === currentPageId)?.docContent ?? '',
             items: data.items ?? [],
           };
         }
@@ -3439,18 +3467,22 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       })();
       const remoteSlidesState: WorkspaceSurfaceState = (() => {
         if (data?.slidesState?.pages?.length) {
+          const normalizedPages = normalizeWorkspacePages(data.slidesState.pages as Partial<WorkspacePage>[]);
+          const currentPageId = data.slidesState.currentPageId;
           return {
-            pages: normalizeWorkspacePages(data.slidesState.pages as Partial<WorkspacePage>[]),
-            currentPageId: data.slidesState.currentPageId,
-            docContent: data.slidesState.docContent ?? '',
+            pages: normalizedPages,
+            currentPageId,
+            docContent: data.slidesState.docContent ?? normalizedPages.find((page) => page.id === currentPageId)?.docContent ?? '',
             items: data.slidesState.items ?? [],
           };
         }
         if (remoteSurfaceMode === 'slides' && data?.pages?.length) {
+          const normalizedPages = normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]);
+          const currentPageId = data.currentPageId ?? surfaceStatesRef.current.slides.currentPageId;
           return {
-            pages: normalizeWorkspacePages(data.pages as Partial<WorkspacePage>[]),
-            currentPageId: data.currentPageId ?? surfaceStatesRef.current.slides.currentPageId,
-            docContent: data.docContent ?? '',
+            pages: normalizedPages,
+            currentPageId,
+            docContent: data.docContent ?? normalizedPages.find((page) => page.id === currentPageId)?.docContent ?? '',
             items: data.items ?? [],
           };
         }
@@ -3464,7 +3496,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const remoteActivePage = remotePages?.find((page) => page.id === remoteCurrentPageId) ?? null;
       const normalizedItems = (remoteActivePage?.items ?? remoteState.items ?? []).map(normalizeItemScope);
       const mergedItems = board.ownRef.current ? mergeRemoteItemsWithLocal(normalizedItems) : normalizedItems;
-      const nextDocContent = remoteActivePage?.docContent ?? remoteState.docContent ?? '';
+      const nextDocContent = remoteState.docContent;
       remoteDocHtmlRef.current = nextDocContent; remoteItemsRef.current = normalizedItems;
       const remotePresentationMode = Boolean(data?.presentationMode) && remoteSurfaceMode === 'slides';
       console.log('[LIVECLASS WORKSPACE] snapshot', {
@@ -3589,6 +3621,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
       // Doc: suppress remote DOM writes while there is active local typing.
       const isLocallyTyping = composingRef.current || (board.ownRef.current && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS);
+      const currentDomHtml = docRef.current?.innerHTML ?? '';
+      let documentDecision = 'ignored-local-typing';
       if (!isLocallyTyping) {
         setDocHtml(nextDocContent);
         if (docRef.current && docRef.current.innerHTML !== nextDocContent) {
@@ -3600,6 +3634,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
               ? serializeDomRange(docRef.current, localRange)
               : null;
           docRef.current.innerHTML = nextDocContent;
+          documentDecision = 'applied-new-revision';
           if (serializedLocalRange && localSelection) {
             const restoredLocalRange = restoreDomRange(docRef.current, serializedLocalRange);
             if (restoredLocalRange) {
@@ -3608,9 +3643,28 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
               savedSelectionRangeRef.current = restoredLocalRange.cloneRange();
             }
           }
+        } else {
+          documentDecision = 'ignored-identical-html';
         }
         syncActivePageDocRef(nextDocContent);
       }
+      console.info('[BOARD_WORKSPACE_SYNC]', {
+        phase: 'snapshot',
+        decision: documentDecision,
+        reason: documentDecision,
+        workspaceRevision,
+        lastAppliedWorkspaceRevision,
+        updatedBy: data?.updatedBy ?? null,
+        docUpdatedBy: data?.docUpdatedBy ?? null,
+        controlEpoch: data?.controlEpoch ?? null,
+        controlClientId: data?.controlClientId ?? null,
+        incomingFingerprint: boardContentFingerprint(nextDocContent),
+        currentDomFingerprint: boardContentFingerprint(currentDomHtml),
+        pendingDocSave: Boolean(pendingDocSaveRef.current),
+        lastDocInputAt: lastDocInputRef.current || null,
+        isLocallyTyping,
+        own: board.ownRef.current,
+      });
 
       requestAnimationFrame(() => applyAuthoritativeView());
 
@@ -3699,6 +3753,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (!pending) return;
     pendingDocSaveRef.current = null;
     lastDocSaveAtRef.current = Date.now();
+    console.info('[BOARD_WORKSPACE_SYNC]', {
+      phase: 'pending-flush',
+      workspaceMutationSeq: pending.controlStamp.workspaceMutationSeq,
+      htmlFingerprint: boardContentFingerprint(pending.html),
+      currentPageId: pending.currentPageId,
+      timestamp: pending.timestamp,
+    });
     saveDocContent(
       classId,
       pending.html,
@@ -3706,8 +3767,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       userName,
       pending.currentPageId,
       pending.pages,
-      surfaceModeRef.current,
-    ).catch(console.error);
+      pending.surfaceMode,
+      pending.controlStamp,
+    ).catch(() => {});
   }, [classId, userId, userName]);
 
   const scheduleItemsSave = useCallback(
@@ -3789,12 +3851,24 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const scheduleDocSave = useCallback(
     (html: string) => {
       if (effectiveReadOnly) return;
+      const timestamp = Date.now();
+      const controlStamp = boardWriteStamp(classId, userId);
       const syncedPages = syncActivePageDocRef(html);
       pendingDocSaveRef.current = {
         html,
         pages: syncedPages,
         currentPageId: activePageIdRef.current,
+        surfaceMode: surfaceModeRef.current,
+        timestamp,
+        controlStamp,
       };
+      console.info('[BOARD_WORKSPACE_SYNC]', {
+        phase: 'pending-save',
+        workspaceMutationSeq: controlStamp.workspaceMutationSeq,
+        htmlFingerprint: boardContentFingerprint(html),
+        currentPageId: activePageIdRef.current,
+        timestamp,
+      });
 
       if (saveDocDebounce.current) return;
 
@@ -3809,11 +3883,26 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         flushPendingDocSave();
       }, WORKSPACE_DOC_SYNC_DEBOUNCE_MS - elapsedMs);
     },
-    [effectiveReadOnly, flushPendingDocSave, syncActivePageDocRef],
+    [classId, effectiveReadOnly, flushPendingDocSave, syncActivePageDocRef, userId],
   );
 
   const onDocInput = () => {
     if (!docRef.current || !board.ownRef.current || composingRef.current) return;
+    const beforeHtml = docHtml;
+    const afterHtml = docRef.current.innerHTML;
+    console.info('[BOARD_WORKSPACE_SYNC]', {
+      phase: 'input-local',
+      userId,
+      controllerId: board.control?.controllerId ?? null,
+      clientId: board.clientId,
+      controlEpoch: board.control?.epoch ?? null,
+      own: board.own,
+      currentPageId: activePageIdRef.current,
+      surfaceMode: surfaceModeRef.current,
+      beforeFingerprint: boardContentFingerprint(beforeHtml),
+      afterFingerprint: boardContentFingerprint(afterHtml),
+      textExcerpt: docRef.current.textContent?.slice(0, 240) ?? '',
+    });
     board.intent(); queueBoardView();
     lastDocInputRef.current = Date.now();
     sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });

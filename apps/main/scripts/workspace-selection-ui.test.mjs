@@ -18,6 +18,14 @@ const scrollWriter = service.slice(
   service.indexOf('export async function saveParticipantScroll'),
   service.indexOf('/** Persist only the current workspace surface mode'),
 );
+const documentWriter = service.slice(
+  service.indexOf('export async function saveDocContent'),
+  service.indexOf('/** Persist scroll ratio'),
+);
+const itemWriter = service.slice(
+  service.indexOf('export async function saveWorkspace('),
+  service.indexOf('/** Persist a single floating item'),
+);
 
 assert.match(canvas, /serializeDomRange\(root, range\)/, 'local Range must be serialized relative to its editor root');
 assert.match(overlay, /restoreDomRange\(root, selection\.range\)/, 'remote Range must be reconstructed against the local DOM');
@@ -26,6 +34,10 @@ assert.match(awarenessWriter, /participantSelections\.\$\{participantId\}/);
 assert.match(awarenessWriter, /selection \?\? deleteField\(\)/, 'collapsed selections must clear awareness');
 assert.doesNotMatch(awarenessWriter, /docContent|innerHTML|pages/, 'awareness must not change persisted page HTML');
 assert.doesNotMatch(scrollWriter, /docContent|innerHTML|pages/, 'scroll awareness must not change persisted page HTML');
+assert.match(documentWriter, /currentPageId,/, 'document saves must identify the active page');
+assert.match(itemWriter, /commitBoardWorkspace\(classId, payload, 'items'\)/, 'item saves must preserve the committed document HTML');
+assert.match(canvas, /classifyWorkspaceSnapshotRevision/, 'workspace snapshots must use monotonic revision ordering');
+assert.match(canvas, /const nextDocContent = remoteState\.docContent/, 'the live surface document must be authoritative over a stale page mirror');
 assert.match(canvas, /isSerializedRangeCollapsed\(selection\.range\)/, 'collapsed ranges must render as remote carets');
 assert.match(canvas, /applyingRemoteScrollRef\.current \|\| Date\.now\(\) < suppressScrollPublishUntilRef\.current/,
   'applied remote scroll must not be published back');
@@ -40,6 +52,7 @@ assert.doesNotMatch(canvas.match(/const execFmt = useCallback[\s\S]*?const apply
 assert.match(canvas, /fontSize: '16px'/, 'toolbar inspection must not resize the whole document root');
 assert.match(canvas, /serializedLocalRange[\s\S]+restoredLocalRange/, 'remote content refresh must preserve a valid local caret/selection');
 assert.match(canvas, /reconstructRemoteSelection\(/, 'the controller selection must be reconstructed for followers');
+assert.match(canvas, /boardContentFingerprint\(root\.innerHTML\) !== selected\.fingerprint/, 'selection must wait until the local HTML fingerprint matches');
 assert.match(canvas, /contentEditable=\{board\.own && viewerCanEditSharedDocument\}/, 'the document editor must follow effective ownership');
 assert.match(canvas, /requestFullscreen\(\)/, 'Board fullscreen should use the native API when available');
 assert.match(canvas, /orientation\.lock\('landscape'\)/, 'Board fullscreen should request landscape as best effort');
