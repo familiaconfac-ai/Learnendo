@@ -53,6 +53,13 @@ assert.match(controlHook, /!teacher \|\| !control\?\.acquisitionOpen/, 'teacher 
 assert.match(controlToolbar, />T<\/[a-z]+>/, 'the teacher takeover control must remain visible');
 assert.match(controlToolbar, />S<\/[a-z]+>/, 'the open acquisition control must remain visible');
 assert.doesNotMatch(controlToolbar, /<select/, 'individual student designation must be removed');
+assert.match(controlToolbar, /!teacher && Boolean\(board\.error\)/, 'student control errors must reveal diagnostics without a URL flag');
+assert.doesNotMatch(controlToolbar, /URLSearchParams|window\.location\.search/, 'Board diagnostics must not depend on the current URL');
+assert.match(controlToolbar, /Detalhes do controle/, 'the in-Board diagnostic panel must be expandable');
+assert.match(controlToolbar, /Copiar diagnóstico/, 'the diagnostic payload must be copyable on the affected device');
+for (const field of ['connected', 'actualRole', 'effectiveRole', 'membershipAssigned', 'acquisitionOpen', 'studentAcquireEnabled', 'controllerId', 'controllerClientId', 'clientId', 'controlEpoch', 'armed', 'own', 'canEdit', 'contentEditable', 'acquireAttempted', 'acquireResult', 'eventSource', 'acquireError.code', 'acquireError.message']) {
+  assert.ok(controlToolbar.includes(field), `Board diagnostics must include ${field}`);
+}
 assert.match(service, /snap\.metadata\.hasPendingWrites/, 'pending local snapshots must not restore stale HTML');
 assert.match(service, /workspaceMutationSeq/, 'workspace writes must carry an ordering token');
 

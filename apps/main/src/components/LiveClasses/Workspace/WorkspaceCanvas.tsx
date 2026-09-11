@@ -6270,6 +6270,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div className={isBoardFullscreen ? 'fixed inset-x-0 top-0 z-[12050] shadow-lg' : ''}
           onPointerEnter={isBoardFullscreen ? revealFullscreenToolbar : undefined}>
           <BoardControlToolbar board={board} teacher={viewerCanManageWorkspace} uid={userId} students={assignableStudents}
+            canEdit={viewerCanEditSharedDocument}
+            contentEditable={docRef.current?.isContentEditable ?? (board.own && viewerCanEditSharedDocument)}
             onFullscreen={isSlidesMode || isBoardFullscreen ? undefined : () => void enterBoardFullscreen()} />
         </div>
       )}
