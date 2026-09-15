@@ -292,6 +292,14 @@ const unregisterGuarded = registerBoardWriter(classId, teacher, () => { if (!onl
 await disableNetwork(db); await offlineSnapshot;
 await assert.rejects(saveDocContent(classId, 'offline content', teacher, 'Teacher', 'p2', [page, page2], 'slides'));
 await enableNetwork(db); assert.notEqual((await getDoc(ref)).data()!.docContent, 'offline content');
+// Regression: a burst used to race revision + 1 and lose the final commit to Rules.
+const beforeBurst = (await getDoc(ref)).data()!.workspaceRevision;
+await Promise.all(Array.from({ length: 10 }, (_, index) =>
+  saveDocContent(classId, '<p>burst-' + index + '</p>', teacher, 'Teacher', 'p2', [page, page2], 'slides')));
+const afterBurst = (await getDoc(ref)).data()!;
+assert.equal(afterBurst.workspaceRevision, beforeBurst + 10);
+assert.equal(afterBurst.docContent, '<p>burst-9</p>');
+assert.equal((await getDoc(doc(ana.db, 'liveClasses', classId, 'shared', 'workspace'))).data()!.docContent, '<p>burst-9</p>');
 stopConnectivity(); unregisterGuarded(); unregister();
 console.log('Open Board T/S: first-touch race, teacher revoke, reconnect, stale epochs, view, teacher presentation, followers and offline guard passed.');
 await terminate(db); await Promise.all(clients.map(async c => { await terminate(c.db); await deleteApp(c.app); })); await deleteAdmin(admin);

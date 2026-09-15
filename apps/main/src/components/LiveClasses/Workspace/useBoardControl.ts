@@ -29,7 +29,6 @@ export function useBoardControl(classId: string, uid: string, displayName: strin
   const claiming = useRef<Promise<boolean> | null>(null);
   const pendingView = useRef<{ epoch: number; view: BoardView } | null>(null);
   const publishing = useRef(false);
-  const lastRenewal = useRef(0);
   const own = connected && (teacher || armed) && (!teacher || !control?.acquisitionOpen) && ownsBoard(control, uid, clientId);
   const ownRef = useRef(false); ownRef.current = own;
   const resolveControllerName = useCallback(() => teacher
@@ -103,8 +102,10 @@ export function useBoardControl(classId: string, uid: string, displayName: strin
       return;
     }
     if (ref.current?.acquisitionOpen || ref.current?.controllerId !== uid) return;
-    if (!ownsBoard(ref.current, uid, clientId) || Date.now() - lastRenewal.current > 900 || !ref.current?.teacherLeaseAt) {
-      lastRenewal.current = Date.now(); void acquire(eventSource);
+    // Directed ownership remains valid until an explicit handoff. Rewriting the
+    // control document on every activity interval conflicts with workspace transactions.
+    if (!ownsBoard(ref.current, uid, clientId) || !ref.current?.teacherLeaseAt) {
+      void acquire(eventSource);
     }
   }, [teacher, uid, clientId, acquire, debugSnapshot]);
   useEffect(() => {

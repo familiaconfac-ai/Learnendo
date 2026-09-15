@@ -56,7 +56,7 @@
     "@livekit/components-core": "^0.12.13",
     "@livekit/components-react": "^2.9.20",
     "@livekit/components-styles": "^1.2.0",
-    "firebase": "^12.9.0",
+    "firebase": "12.13.0",
     "firebase-admin": "13.7.0",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",

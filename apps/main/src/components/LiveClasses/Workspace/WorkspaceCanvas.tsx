@@ -1,3 +1,4 @@
+import { BoardClassSelectorContext } from './BoardClassSelectorContext';
 import { useBoardControl } from './useBoardControl';
 import { BoardControlToolbar } from './BoardControlToolbar';
 import { boardContentFingerprint, resolveStudentControllerName, type BoardView } from '../../../models/boardControl';
@@ -2704,14 +2705,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       ...current,
       pages: nextPages,
       currentPageId: activePageIdRef.current,
-      docContent: docRef.current?.innerHTML ?? docHtml,
+      docContent: docRef.current?.innerHTML ?? surfaceStatesRef.current[surfaceModeRef.current].docContent,
       items: nextItems,
     }));
     if (shouldUpdateState) {
       setPages(nextPages);
     }
     return nextPages;
-  }, [docHtml, updateSurfaceStateRef]);
+  }, [updateSurfaceStateRef]);
 
 
   // -- Materials state ------------------------------------------------------
@@ -2910,7 +2911,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (!newPage) return;
     // Cancel debounced saves to avoid stale writes after the switch.
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    saveItemsDebounce.current = null;
+    pendingItemsSaveRef.current = null;
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    saveDocDebounce.current = null;
+    pendingDocSaveRef.current = null;
     setDocHtml(newPage.docContent);
     if (docRef.current) docRef.current.innerHTML = newPage.docContent;
     const scopedNewPageItems = newPage.items.map(normalizeItemScope);
@@ -3048,6 +3053,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const fileRef = useRef<HTMLInputElement>(null);
   const slideImportRef = useRef<HTMLInputElement>(null);
+  const boardClassSelector = React.useContext(BoardClassSelectorContext);
   const overflowRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const docRef = useRef<HTMLDivElement>(null);
@@ -3074,6 +3080,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     currentPageId: string;
     forceSave?: boolean;
   }>>({});
+  const docSaveInFlightRef = useRef(false);
+  const flushDocSaveRef = useRef<() => void>(() => {});
   const pendingDocSaveRef = useRef<{
     html: string;
     pages: WorkspacePage[];
@@ -3120,7 +3128,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   useEffect(() => {
     const root = overflowRef.current;
     if (!root) return;
-    const blockFollowerScroll = (event: Event) => { if (!board.ownRef.current && !viewerCanManageWorkspace) event.preventDefault(); };
+    const blockFollowerScroll = (event: Event) => { if (!board.ownRef.current) event.preventDefault(); };
     root.addEventListener('wheel', blockFollowerScroll, { passive: false });
     root.addEventListener('touchmove', blockFollowerScroll, { passive: false });
     return () => { root.removeEventListener('wheel', blockFollowerScroll); root.removeEventListener('touchmove', blockFollowerScroll); };
@@ -3141,6 +3149,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       scroll.scrollTop = restoreScrollTop(view.scrollRatio, scroll.scrollHeight, scroll.clientHeight);
       requestAnimationFrame(() => { applyingRemoteScrollRef.current = false; });
     }
+    // Followers render selection through the existing overlay only.
+    if (!board.ownRef.current) { lastAppliedViewRef.current = signature; return; }
     const selected = view.selection;
     if (!selected) { lastAppliedViewRef.current = signature; return; }
     const root = selected.target === 'document' ? docRef.current
@@ -3186,6 +3196,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [board.publish]);
   useEffect(() => {
     authoritativeViewRef.current = board.control?.view ?? null;
+    // Cancel timers as well as buffers so old callbacks cannot flush a new owner's edits.
+    for (const timer of [saveItemsDebounce, saveSingleItemDebounce, saveDocDebounce, scrollDebounce, selectionAwarenessDebounce]) {
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = null;
+    }
     // Cancel every stale local buffer before accepting another epoch.
     pendingItemsSaveRef.current = null; pendingSingleItemSaveRef.current = {}; pendingDocSaveRef.current = null;
     lastDocInputRef.current = 0; lastItemEditRef.current = 0;
@@ -3440,7 +3455,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (revisionDecision !== 'apply') {
         const incomingSurfaceMode = data?.surfaceMode ?? 'document';
         const incomingHtml = (incomingSurfaceMode === 'slides' ? data?.slidesState?.docContent : data?.boardState?.docContent) ?? data?.docContent ?? '';
-        console.info('[BOARD_WORKSPACE_SYNC]', {
+        console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
           phase: 'snapshot',
           decision: revisionDecision,
           reason: revisionDecision === 'ignore-stale' ? 'older-workspace-revision' : 'awareness-or-metadata-without-new-revision',
@@ -3456,7 +3471,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
           lastDocInputAt: lastDocInputRef.current || null,
           isLocallyTyping: composingRef.current || (board.ownRef.current && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS),
           own: board.ownRef.current,
-        });
+        }));
         return;
       }
       lastAppliedWorkspaceRevisionRef.current = workspaceRevision;
@@ -3647,7 +3662,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         isLocallyTyping,
         userId,
         localClientId: board.clientId,
-        currentControlEpoch: board.control?.epoch ?? null,
+        currentControlEpoch: board.ref.current?.epoch ?? null,
         docUpdatedBy: data?.docUpdatedBy ?? null,
         snapshotControlClientId: data?.controlClientId ?? null,
         snapshotControlEpoch: data?.controlEpoch ?? null,
@@ -3682,7 +3697,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         }
         syncActivePageDocRef(nextDocContent);
       }
-      console.info('[BOARD_WORKSPACE_SYNC]', {
+      console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
         phase: 'snapshot',
         decision: documentDecision,
         reason: documentDecision,
@@ -3700,7 +3715,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         isDocSelfEcho,
         isSameControllerInstanceSelfEcho,
         own: board.ownRef.current,
-      });
+      }));
 
       requestAnimationFrame(() => applyAuthoritativeView());
 
@@ -3728,8 +3743,12 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   useEffect(() => () => {
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    saveItemsDebounce.current = null;
+    pendingItemsSaveRef.current = null;
     if (saveSingleItemDebounce.current) clearTimeout(saveSingleItemDebounce.current);
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    saveDocDebounce.current = null;
+    pendingDocSaveRef.current = null;
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
     if (selectionAwarenessDebounce.current) clearTimeout(selectionAwarenessDebounce.current);
     pendingItemsSaveRef.current = null;
@@ -3784,18 +3803,25 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [flushPendingSingleItemSaves]);
 
   const flushPendingDocSave = useCallback(() => {
-    if (!board.ownRef.current || composingRef.current) return;
+    if (!board.ownRef.current || composingRef.current || docSaveInFlightRef.current) return;
     const pending = pendingDocSaveRef.current;
     if (!pending) return;
+    if (pending.controlStamp.controlEpoch !== board.ref.current?.epoch || pending.controlStamp.controlClientId !== board.clientId) {
+      pendingDocSaveRef.current = null;
+      return;
+    }
+    // Order buffered HTML after sibling writes at publication time.
+    pending.controlStamp = boardWriteStamp(classId, userId);
     pendingDocSaveRef.current = null;
     lastDocSaveAtRef.current = Date.now();
-    console.info('[BOARD_WORKSPACE_SYNC]', {
+    console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
       phase: 'pending-flush',
       workspaceMutationSeq: pending.controlStamp.workspaceMutationSeq,
       htmlFingerprint: boardContentFingerprint(pending.html),
       currentPageId: pending.currentPageId,
       timestamp: pending.timestamp,
-    });
+    }));
+    docSaveInFlightRef.current = true;
     saveDocContent(
       classId,
       pending.html,
@@ -3805,8 +3831,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       pending.pages,
       pending.surfaceMode,
       pending.controlStamp,
-    ).catch(() => {});
+    ).catch(() => {}).finally(() => {
+      docSaveInFlightRef.current = false;
+      // Keep only the newest buffered HTML while a commit is in flight.
+      flushDocSaveRef.current();
+    });
   }, [classId, userId, userName]);
+  flushDocSaveRef.current = flushPendingDocSave;
 
   const scheduleItemsSave = useCallback(
     (
@@ -3886,7 +3917,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const scheduleDocSave = useCallback(
     (html: string) => {
-      if (effectiveReadOnly) return;
+      if (effectiveReadOnly || !board.ownRef.current) return;
       const timestamp = Date.now();
       const controlStamp = boardWriteStamp(classId, userId);
       const syncedPages = syncActivePageDocRef(html);
@@ -3898,13 +3929,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         timestamp,
         controlStamp,
       };
-      console.info('[BOARD_WORKSPACE_SYNC]', {
+      console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
         phase: 'pending-save',
         workspaceMutationSeq: controlStamp.workspaceMutationSeq,
         htmlFingerprint: boardContentFingerprint(html),
         currentPageId: activePageIdRef.current,
         timestamp,
-      });
+      }));
 
       if (saveDocDebounce.current) return;
 
@@ -3926,7 +3957,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (!docRef.current || !board.ownRef.current || composingRef.current) return;
     const beforeHtml = docHtml;
     const afterHtml = docRef.current.innerHTML;
-    console.info('[BOARD_WORKSPACE_SYNC]', {
+    console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
       phase: 'input-local',
       userId,
       controllerId: board.control?.controllerId ?? null,
@@ -3938,7 +3969,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       beforeFingerprint: boardContentFingerprint(beforeHtml),
       afterFingerprint: boardContentFingerprint(afterHtml),
       textExcerpt: docRef.current.textContent?.slice(0, 240) ?? '',
-    });
+    }));
     board.intent(); queueBoardView();
     lastDocInputRef.current = Date.now();
     sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });
@@ -3958,10 +3989,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const onScrollSync = () => {
     if (applyingRemoteScrollRef.current || Date.now() < suppressScrollPublishUntilRef.current) return;
     if (!board.ownRef.current) {
-      if (viewerCanManageWorkspace) {
-        const scroll = getScrollElement();
-        if (scroll) pendingTeacherScrollRef.current = serializeScrollRatio(scroll.scrollTop, scroll.scrollHeight, scroll.clientHeight);
-      } else applyAuthoritativeView(true);
+      applyAuthoritativeView(true);
       return;
     }
     queueBoardView();
@@ -4096,29 +4124,32 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       });
     } else {
       // -- Main document editor ----------------------------------------------
+      const formattingEpoch = board.ref.current?.epoch;
       docRef.current?.focus();
       if (!restoreSavedSelection()) return;
       // eslint-disable-next-line @typescript-eslint/no-deprecated
       document.execCommand(cmd, false, value ?? undefined);
       setTimeout(() => {
-        if (!docRef.current) return;
+        if (!board.ownRef.current || formattingEpoch !== board.ref.current?.epoch || !docRef.current) return;
         const html = docRef.current.innerHTML;
         setDocHtml(html);
         scheduleDocSave(html);
-      }, 50);
+      }, 0);
     }
     window.setTimeout(captureCurrentSelection, 0);
   }, [captureCurrentSelection, restoreSavedSelection, scheduleDocSave, scheduleItemsSave, userId, userName]);
 
   const applyFont = (family: string) => { setFontFamily(family); execFmt('fontName', family); };
   const applySize = (size: number) => {
+    if (!board.ownRef.current) return;
+    const formattingEpoch = board.ref.current?.epoch;
     setFontSize(size);
     const formattingRoot = savedSelectionRootRef.current;
     const formattingItemId = savedSelectionItemIdRef.current;
     const preexisting = new Set(formattingRoot?.querySelectorAll('font[size="7"]') ?? []);
     execFmt('fontSize', '7');
     setTimeout(() => {
-      if (!formattingRoot?.isConnected) return;
+      if (!board.ownRef.current || formattingEpoch !== board.ref.current?.epoch || !formattingRoot?.isConnected) return;
       if (formattingItemId) {
         const floatingId = formattingItemId;
         const floatingEl = formattingRoot;
@@ -5067,7 +5098,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         totalPageIds: updated.map((page) => page.id),
       });
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+      saveItemsDebounce.current = null;
+      pendingItemsSaveRef.current = null;
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+      saveDocDebounce.current = null;
+      pendingDocSaveRef.current = null;
       setDocHtml(firstImportedPage.docContent);
       if (docRef.current) docRef.current.innerHTML = firstImportedPage.docContent;
       setItems(firstImportedPage.items ?? []);
@@ -5361,7 +5396,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       pagesRef.current = [freshPage];
       setPages([freshPage]);
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+      saveItemsDebounce.current = null;
+      pendingItemsSaveRef.current = null;
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+      saveDocDebounce.current = null;
+      pendingDocSaveRef.current = null;
       setDocHtml('');
       if (docRef.current) docRef.current.innerHTML = '';
       setItems([]);
@@ -5388,7 +5427,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     pagesRef.current = remaining;
     setPages(remaining);
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    saveItemsDebounce.current = null;
+    pendingItemsSaveRef.current = null;
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    saveDocDebounce.current = null;
+    pendingDocSaveRef.current = null;
     setDocHtml(nextActivePage.docContent);
     if (docRef.current) docRef.current.innerHTML = nextActivePage.docContent;
     setItems(nextActivePage.items.map(normalizeItemScope));
@@ -5416,7 +5459,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     pagesRef.current = updated;
     setPages(updated);
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+    saveItemsDebounce.current = null;
+    pendingItemsSaveRef.current = null;
     if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    saveDocDebounce.current = null;
+    pendingDocSaveRef.current = null;
     setDocHtml('');
     if (docRef.current) docRef.current.innerHTML = '';
     itemsRef.current = [];
@@ -5450,7 +5497,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     if (isActive) {
       const nextPage = remaining[Math.max(0, idx - 1)];
       if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
+      saveItemsDebounce.current = null;
+      pendingItemsSaveRef.current = null;
       if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+      saveDocDebounce.current = null;
+      pendingDocSaveRef.current = null;
       setDocHtml(nextPage.docContent);
       if (docRef.current) docRef.current.innerHTML = nextPage.docContent;
       const scopedNextPageItems = nextPage.items.map(normalizeItemScope);
@@ -6403,14 +6454,14 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       )}
 
       {isBoardFullscreen && !forcedStudentPresentation && (
-        <button type="button" onClick={() => void exitBoardFullscreen()}
+        <button type="button" data-board-control-ui onClick={() => void exitBoardFullscreen()}
           onFocus={revealFullscreenToolbar}
           className={`fixed right-3 top-1 z-[12070] rounded-full bg-slate-950/75 px-3 py-2 text-sm font-bold text-white shadow-lg transition ${fullscreenToolbarVisible ? 'opacity-100' : 'opacity-40'}`}
           aria-label="Exit Board fullscreen" title="Exit Board fullscreen">X</button>
       )}
 
       {forcedStudentPresentation && !nativeBoardFullscreen && (
-        <button type="button" data-board-fullscreen-gesture onClick={() => void enterBoardFullscreen()}
+        <button type="button" data-board-control-ui data-board-fullscreen-gesture onClick={() => void enterBoardFullscreen()}
           className="fixed bottom-4 left-1/2 z-[12080] -translate-x-1/2 rounded-full bg-slate-950/85 px-4 py-2 text-sm font-bold text-white shadow-xl"
           aria-label="Toque para tela cheia" title="Toque para tela cheia">Toque para tela cheia</button>
       )}
@@ -6479,7 +6530,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <div className="w-px h-5 bg-slate-200 mx-0.5" />
           </>
         )}
-        {viewerCanManageWorkspace && (
+        {(viewerCanManageWorkspace || viewerCanEditSharedDocument) && (
           <>
             <select
               value={fontFamily}
@@ -6664,6 +6715,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             <svg className="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="1.75" viewBox="0 0 20 20"><path d="M3 7a1 1 0 011-1h4l2 2h6a1 1 0 011 1v7a1 1 0 01-1 1H4a1 1 0 01-1-1V7z"/></svg>
           </button>
         )}
+        {boardClassSelector}
 
         <div className="flex-1" />
 
@@ -6995,8 +7047,8 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       {/* -- Scrollable content ----------------------------------------------- */}
       <div
         ref={overflowRef}
-        onWheelCapture={event => { if (!board.ownRef.current && !viewerCanManageWorkspace) event.stopPropagation(); }}
-        className={`flex-1 overflow-x-hidden ${(presentationMode || isBoardFullscreen) ? 'relative overflow-hidden p-0' : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
+        onWheelCapture={event => { if (!board.ownRef.current) event.stopPropagation(); }}
+        className={`min-h-0 flex-1 overflow-x-hidden ${(presentationMode || isBoardFullscreen) ? (isSlidesMode ? 'relative overflow-hidden p-0' : 'relative overflow-y-auto p-0') : 'overflow-y-auto p-3 sm:p-4'} ${isSlidesMode ? 'bg-slate-900' : 'bg-slate-100'}`}
         onScroll={onScrollSync}
         onClick={onCanvasClick}
         onMouseUp={handleCanvasMouseUp}

@@ -1,3 +1,4 @@
+import { BoardClassSelectorContext } from './Workspace/BoardClassSelectorContext';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { User } from 'firebase/auth';
 import { LiveClass, LiveClassPresence, LiveClassSession, LiveTrailCompletion, SectionType } from '../../types';
@@ -665,8 +666,8 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     return (
       <LiveRoomErrorBoundary>
         <LiveLessonContextProvider liveClass={liveClass} session={session}>
-          {onSwitchClass && availableClasses.length > 1 ? (
-            <label className="fixed left-1/2 top-3 z-[13050] -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-950/90 px-2 py-1 text-[10px] font-bold text-slate-300 shadow-xl backdrop-blur-sm">
+          <BoardClassSelectorContext.Provider value={onSwitchClass && availableClasses.length > 1 ? (
+            <label data-board-control-ui className="inline-flex h-7 max-w-[min(12rem,42vw)] shrink-0 items-center">
               <span className="sr-only">Trocar turma da Live</span>
               <select
                 aria-label="Trocar turma da Live"
@@ -675,12 +676,12 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
                   const nextClass = availableClasses.find((item) => item.id === event.target.value);
                   if (nextClass && nextClass.id !== liveClass.id) onSwitchClass(nextClass);
                 }}
-                className="max-w-[42vw] bg-transparent text-xs font-black text-white outline-none"
+                className="h-7 w-full min-w-0 rounded border border-slate-200 bg-white px-1 text-xs font-semibold text-slate-700 outline-none"
               >
                 {availableClasses.map((item) => <option key={item.id} value={item.id} className="bg-slate-950">{item.title}</option>)}
               </select>
             </label>
-          ) : null}
+          ) : null}>
           <TeacherRoomView
             liveClass={liveClass}
             user={user}
@@ -702,6 +703,7 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
             onExit={onExit}
             statusMessage={sessionLoadError}
           />
+          </BoardClassSelectorContext.Provider>
           {isBattleStage ? (
             <BattleHubPage
               uid={user.uid}

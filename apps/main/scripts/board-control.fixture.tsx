@@ -1,3 +1,4 @@
+import { BoardClassSelectorContext } from '../src/components/LiveClasses/Workspace/BoardClassSelectorContext';
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { browserSessionPersistence, setPersistence, signInAnonymously } from 'firebase/auth';
@@ -8,6 +9,7 @@ import { UiLanguageProvider } from '../src/i18n/UiLanguageContext';
 const role = new URLSearchParams(location.search).get('role') ?? 'teacher';
 const classId = 'browser-board';
 function Fixture() {
+  const [selectedClass, setSelectedClass] = useState('demo-a');
   const [uid, setUid] = useState(''); const [classData, setClassData] = useState<any>(null);
   const [visualUpdates, setVisualUpdates] = useState(0);
   const [control, setControl] = useState<any>(null); const [updates, setUpdates] = useState(0);
@@ -49,7 +51,7 @@ function Fixture() {
   };
   return <UiLanguageProvider value={{ uiLanguage: 'pt', baseLanguage: 'pt' }}>
     <header style={{ background: 'white', height: 84 }}>
-      <strong>Fixture {role}</strong> <button onClick={() => selectGap()}>Select gap</button><button onClick={() => selectGap(true)}>Reset gap</button>
+      <strong>Fixture {role}</strong><span> Class: {selectedClass} </span> <button onClick={() => selectGap()}>Select gap</button><button onClick={() => selectGap(true)}>Reset gap</button>
       <button onClick={mobileTouch}>Mobile touch</button>
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-directed-board] .overflow-x-hidden')!; el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 100 })); el.scrollTop = el.scrollHeight; }}>Bottom</button>
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-directed-board] .overflow-x-hidden')!; el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 })); el.scrollTop = 0; }}>Top</button>
@@ -59,9 +61,17 @@ function Fixture() {
       <p>Visual: {visualUpdates} · Updates: {updates} · Epoch: {control?.epoch} · Writer: {classData?.labels?.[control?.controllerId] ?? 'none'} · Open: {control?.acquisitionOpen ? 'yes' : 'no'}</p>
     </header>
     {uid && classData && <div style={{ height: role === 'teacher' ? 620 : 480, width: role === 'teacher' ? '100%' : 390 }}>
+      <BoardClassSelectorContext.Provider value={role === 'teacher' && new URLSearchParams(location.search).has('selector') ? (
+        <label data-board-control-ui className="inline-flex h-7 max-w-[min(12rem,42vw)] shrink-0 items-center">
+          <select aria-label="Trocar turma da Live" value={selectedClass} onChange={event => setSelectedClass(event.target.value)} className="h-7 w-full min-w-0 rounded border border-slate-200 bg-white px-1 text-xs font-semibold text-slate-700 outline-none">
+            <option value="demo-a">Learnendo Juvenile</option><option value="demo-b">Learnendo Adults</option>
+          </select>
+        </label>
+      ) : null}>
       <WorkspaceCanvas classId={classId} userId={uid} userName={role} isTeacher={role === 'teacher'} classTeacherUserId={classData.teacherUid}
         actualRole={role === 'teacher' ? 'teacher' : 'student'} effectiveRole={role === 'teacher' ? 'teacher' : 'student'}
         assignedRoster={classData.assignedStudentIds.map((id: string) => ({ uid: id, label: classData.labels[id], isOnline: true }))} />
+      </BoardClassSelectorContext.Provider>
     </div>}
   </UiLanguageProvider>;
 }

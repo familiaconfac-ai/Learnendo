@@ -1,3 +1,4 @@
+import { queueBoardWorkspaceCommit } from './boardControlService';
 import { boardWriteStamp, boardControlRef, commitBoardWorkspace, type BoardWriteStamp } from './boardControlService';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
@@ -235,7 +236,7 @@ export async function saveDocContent(
     updatedByName: name,
     ...(remotePages ? { pages: remotePages } : {}),
   };
-  console.info('[BOARD_WORKSPACE_SYNC]', {
+  console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
     phase: 'save-start',
     userId: uid,
     controlEpoch: controlStamp.controlEpoch,
@@ -244,13 +245,13 @@ export async function saveDocContent(
     htmlFingerprint: boardContentFingerprint(docContent),
     currentPageId: currentPageId ?? null,
     surfaceMode,
-  });
+  }));
   try {
     await commitBoardWorkspace(classId, payload, 'document');
   } catch (cause) {
     const code = typeof cause === 'object' && cause !== null && 'code' in cause ? String((cause as { code: unknown }).code) : '';
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error('[BOARD_WORKSPACE_SYNC]', {
+    console.error('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
       phase: 'save-error',
       code,
       message,
@@ -258,7 +259,7 @@ export async function saveDocContent(
       expectedClientId: controlStamp.controlClientId,
       workspaceMutationSeq: controlStamp.workspaceMutationSeq,
       htmlFingerprint: boardContentFingerprint(docContent),
-    });
+    }));
     throw cause;
   }
 
@@ -502,7 +503,7 @@ export async function saveWorkspaceItem(
   const remoteItem = serializeWorkspaceItemForRemote(item);
 
   try {
-    await runTransaction(db, async (transaction) => {
+    await queueBoardWorkspaceCommit(classId, () => runTransaction(db, async (transaction) => {
       const control = (await transaction.get(boardControlRef(classId))).data();
       if (control?.epoch !== controlStamp.controlEpoch || control?.controllerClientId !== controlStamp.controlClientId || control?.controllerId !== uid) throw new Error('Board authority changed');
       const ref = workspaceRef(classId);
@@ -565,7 +566,7 @@ export async function saveWorkspaceItem(
         },
         { merge: true },
       );
-    });
+    }));
     console.log('[WS] saveWorkspaceItem ✅');
   } catch (err) { throw err; }
 

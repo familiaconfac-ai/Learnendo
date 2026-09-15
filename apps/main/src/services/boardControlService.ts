@@ -127,7 +127,8 @@ const writers = new Map<string, {
   stamp: () => { controlEpoch: number; controlClientId: string };
 }>();
 export function registerBoardWriter(classId: string, uid: string, stamp: () => { controlEpoch: number; controlClientId: string }) {
-  const entry = { uid, stamp, nextMutationSeq: 0 }; writers.set(classId, entry);
+  const previous = writers.get(classId);
+  const entry = { uid, stamp, nextMutationSeq: previous?.uid === uid ? previous.nextMutationSeq : 0 }; writers.set(classId, entry);
   return () => { if (writers.get(classId) === entry) writers.delete(classId); };
 }
 export function boardWriteStamp(classId: string, uid: string): BoardWriteStamp {
@@ -136,12 +137,31 @@ export function boardWriteStamp(classId: string, uid: string): BoardWriteStamp {
   return { ...writer.stamp(), workspaceMutationSeq: ++writer.nextMutationSeq };
 }
 
+// Serialize writes to one workspace: concurrent revision checks can fail Rules
+// before Firestore reports a retryable transaction conflict.
+const workspaceCommits = new Map<string, Promise<unknown>>();
+export function queueBoardWorkspaceCommit<T>(classId: string, commit: () => Promise<T>): Promise<T> {
+  const previous = workspaceCommits.get(classId) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(commit);
+  workspaceCommits.set(classId, next);
+  void next.finally(() => {
+    if (workspaceCommits.get(classId) === next) workspaceCommits.delete(classId);
+  }).catch(() => undefined);
+  return next;
+}
+
 /** Revalidate the captured capability at commit; the writer also requires server-confirmed connectivity. */
-export async function commitBoardWorkspace(
+export function commitBoardWorkspace(
   classId: string,
   value: Record<string, unknown>,
   mutationKind: WorkspaceMutationKind = 'structure',
 ) {
+  return queueBoardWorkspaceCommit(classId, () => commitBoardWorkspaceNow(classId, value, mutationKind));
+}
+
+async function commitBoardWorkspaceNow(classId: string, value: Record<string, unknown>, mutationKind: WorkspaceMutationKind) {
+  const startedAtMs = Date.now();
+  let transactionAttempts = 0;
   let observedControl: BoardControl | undefined;
   let previousRevision: number | null = null;
   let nextRevision: number | null = null;
@@ -149,6 +169,7 @@ export async function commitBoardWorkspace(
   let skippedAsStale = false;
   try {
     await runTransaction(db, async transaction => {
+      transactionAttempts++;
       const control = (await transaction.get(boardControlRef(classId))).data() as BoardControl | undefined;
       observedControl = control;
       if (!control || control.epoch !== value.controlEpoch || control.controllerId !== value.updatedBy || control.controllerClientId !== value.controlClientId) throw new Error('Board authority changed');
@@ -212,8 +233,9 @@ export async function commitBoardWorkspace(
       committedHtml = typeof nextValue.docContent === 'string' ? nextValue.docContent : currentDoc;
       transaction.set(workspace, nextValue, { merge: true });
     });
-    console.info('[BOARD_WORKSPACE_SYNC]', {
+    console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
       phase: skippedAsStale ? 'commit-skipped' : 'commit-success',
+      startedAtMs, elapsedMs: Date.now() - startedAtMs, transactionAttempts,
       mutationKind,
       previousWorkspaceRevision: previousRevision,
       workspaceRevision: nextRevision ?? previousRevision,
@@ -221,11 +243,11 @@ export async function commitBoardWorkspace(
       docContentFingerprint: boardContentFingerprint(committedHtml),
       updatedBy: value.updatedBy ?? null,
       docUpdatedBy: value.docUpdatedBy ?? null,
-    });
+    }));
   } catch (cause) {
     const code = typeof cause === 'object' && cause !== null && 'code' in cause ? String((cause as { code: unknown }).code) : '';
     const message = cause instanceof Error ? cause.message : String(cause);
-    console.error('[BOARD_WORKSPACE_SYNC]', {
+    console.error('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
       phase: 'commit-error',
       mutationKind,
       code,
@@ -237,7 +259,7 @@ export async function commitBoardWorkspace(
       workspaceMutationSeq: value.workspaceMutationSeq ?? null,
       previousWorkspaceRevision: previousRevision,
       nextWorkspaceRevision: nextRevision,
-    });
+    }));
     throw cause;
   }
 }
