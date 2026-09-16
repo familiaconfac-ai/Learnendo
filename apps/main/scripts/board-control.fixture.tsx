@@ -9,6 +9,8 @@ import { UiLanguageProvider } from '../src/i18n/UiLanguageContext';
 const role = new URLSearchParams(location.search).get('role') ?? 'teacher';
 const classId = 'browser-board';
 function Fixture() {
+  const [boardOpen, setBoardOpen] = useState(true);
+  const [backend, setBackend] = useState<any>(null);
   const [selectedClass, setSelectedClass] = useState('demo-a');
   const [uid, setUid] = useState(''); const [classData, setClassData] = useState<any>(null);
   const [visualUpdates, setVisualUpdates] = useState(0);
@@ -52,6 +54,9 @@ function Fixture() {
   return <UiLanguageProvider value={{ uiLanguage: 'pt', baseLanguage: 'pt' }}>
     <header style={{ background: 'white', height: 84 }}>
       <strong>Fixture {role}</strong><span> Class: {selectedClass} </span> <button onClick={() => selectGap()}>Select gap</button><button onClick={() => selectGap(true)}>Reset gap</button>
+      <button onClick={() => setBoardOpen(value => !value)}>{boardOpen ? 'Close Board' : 'Reopen Board'}</button>
+      <button onClick={async () => setBackend(await (await fetch('/backend')).json())}>Read backend</button>
+      {backend && <output data-backend-probe>{JSON.stringify({ readAtMs: backend.readAtMs, revision: backend.workspaceRevision, seq: backend.workspaceMutationSeq, epoch: backend.controlEpoch, html: backend.docContent?.slice(0, 130), serverAt: backend.updatedAt })}</output>}
       <button onClick={mobileTouch}>Mobile touch</button>
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-directed-board] .overflow-x-hidden')!; el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 100 })); el.scrollTop = el.scrollHeight; }}>Bottom</button>
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-directed-board] .overflow-x-hidden')!; el.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -100 })); el.scrollTop = 0; }}>Top</button>
@@ -60,7 +65,7 @@ function Fixture() {
       <button onClick={() => { const el = document.querySelector<HTMLElement>('[data-board-document]')!; el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: '漢' })); }}>IME end</button>
       <p>Visual: {visualUpdates} · Updates: {updates} · Epoch: {control?.epoch} · Writer: {classData?.labels?.[control?.controllerId] ?? 'none'} · Open: {control?.acquisitionOpen ? 'yes' : 'no'}</p>
     </header>
-    {uid && classData && <div style={{ height: role === 'teacher' ? 620 : 480, width: role === 'teacher' ? '100%' : 390 }}>
+    {boardOpen && uid && classData && <div style={{ height: role === 'teacher' ? 620 : 480, width: role === 'teacher' ? '100%' : 390 }}>
       <BoardClassSelectorContext.Provider value={role === 'teacher' && new URLSearchParams(location.search).has('selector') ? (
         <label data-board-control-ui className="inline-flex h-7 max-w-[min(12rem,42vw)] shrink-0 items-center">
           <select aria-label="Trocar turma da Live" value={selectedClass} onChange={event => setSelectedClass(event.target.value)} className="h-7 w-full min-w-0 rounded border border-slate-200 bg-white px-1 text-xs font-semibold text-slate-700 outline-none">

@@ -1,6 +1,7 @@
 import { queueBoardWorkspaceCommit } from './boardControlService';
+import { boardSyncTrace, boardSyncTraceEnabled } from './boardSyncTrace';
 import { boardWriteStamp, boardControlRef, commitBoardWorkspace, type BoardWriteStamp } from './boardControlService';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
 import { db } from './firebase';
 import { boardContentFingerprint } from '../models/boardControl';
 import type { SerializedSelectionRange } from '../components/LiveClasses/Workspace/workspaceSelectionAwareness';
@@ -247,8 +248,17 @@ export async function saveDocContent(
     surfaceMode,
   }));
   try {
+    boardSyncTrace('write-start', { classId, payload });
     await commitBoardWorkspace(classId, payload, 'document');
+    boardSyncTrace('write-resolved', { classId, ...controlStamp });
+    if (boardSyncTraceEnabled()) {
+      void getDocFromServer(workspaceRef(classId)).then(snapshot => {
+        const data = snapshot.data();
+        boardSyncTrace('backend-read-after-write', { classId, ...data, serverAtMs: data?.updatedAt?.toMillis?.(), pendingWrites: snapshot.metadata.hasPendingWrites });
+      }).catch(cause => boardSyncTrace('backend-read-error', { classId, message: String(cause) }));
+    }
   } catch (cause) {
+    boardSyncTrace('write-rejected', { classId, ...controlStamp, message: String(cause) });
     const code = typeof cause === 'object' && cause !== null && 'code' in cause ? String((cause as { code: unknown }).code) : '';
     const message = cause instanceof Error ? cause.message : String(cause);
     console.error('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
@@ -429,18 +439,26 @@ export function subscribeWorkspace(
     return () => {};
   }
   console.log(`[WS] subscribeWorkspace path=liveClasses/${classId}/shared/workspace`);
-  return onSnapshot(
+  boardSyncTrace('subscription-created', { classId });
+  const stop = onSnapshot(
     workspaceRef(classId),
     { includeMetadataChanges: true },
     (snap) => {
+      const data = snap.data() as WorkspaceDoc | undefined;
+      boardSyncTrace('snapshot-received', { classId, fromCache: snap.metadata.fromCache, pendingWrites: snap.metadata.hasPendingWrites,
+        workspaceRevision: data?.workspaceRevision, workspaceMutationSeq: data?.workspaceMutationSeq,
+        controlEpoch: data?.controlEpoch, controlClientId: data?.controlClientId, docUpdatedBy: data?.docUpdatedBy,
+        serverAtMs: (data?.updatedAt as unknown as { toMillis?: () => number })?.toMillis?.(), html: data?.docContent });
       if (snap.metadata.hasPendingWrites) return;
       console.log(`[WS] snapshot received exists=${snap.exists()} by=${(snap.data() as WorkspaceDoc | undefined)?.updatedByName ?? '?'}`);
       callback(snap.exists() ? (snap.data() as WorkspaceDoc) : null);
     },
     (err) => {
+      boardSyncTrace('subscription-error', { classId, code: err.code, message: err.message });
       console.error('[WS] subscribeWorkspace PERMISSION ERROR — student writes will not sync:', err.code, err.message);
     },
   );
+  return () => { boardSyncTrace('subscription-stopped', { classId }); stop(); };
 }
 
 // ── Write helpers ─────────────────────────────────────────────────────────────

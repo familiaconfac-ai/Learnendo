@@ -41,7 +41,7 @@ assert.match(canvas, /ignored-self-echo-same-generation/, 'same-client same-epoc
 assert.match(canvas, /shouldApplyWorkspaceDocumentSnapshot/, 'document snapshot application must use the self-echo guard');
 assert.match(canvas, /const nextDocContent = remoteState\.docContent/, 'the live surface document must be authoritative over a stale page mirror');
 assert.match(canvas, /isSerializedRangeCollapsed\(selection\.range\)/, 'collapsed ranges must render as remote carets');
-assert.match(canvas, /applyingRemoteScrollRef\.current \|\| Date\.now\(\) < suppressScrollPublishUntilRef\.current/,
+assert.match(canvas, /if \(applyingRemoteScrollRef\.current\) return;[\s\S]{0,240}if \(Date\.now\(\) < suppressScrollPublishUntilRef\.current\) return;/,
   'applied remote scroll must not be published back');
 assert.doesNotMatch(canvas, /if \(viewerIsStudent\) \{[\s\S]{0,500}lastRemoteScrollRatioRef/,
   'student scroll must no longer be forced back to a teacher-only value');
@@ -58,6 +58,8 @@ assert.match(canvas, /boardContentFingerprint\(root\.innerHTML\) !== selected\.f
 assert.match(canvas, /contentEditable=\{board\.own && viewerCanEditSharedDocument\}/, 'the document editor must follow effective ownership');
 assert.match(canvas, /requestFullscreen\(\)/, 'Board fullscreen should use the native API when available');
 assert.match(canvas, /orientation\.lock\('landscape'\)/, 'Board fullscreen should request landscape as best effort');
+assert.doesNotMatch(canvas, /shouldRotateBoardPresentation/, 'the editable Board must not use CSS rotation for mobile landscape');
+assert.match(canvas, /shouldRotatePresentation/, 'the existing Slides presentation rotation must remain intact');
 assert.match(canvas, /onTouchStartCapture=/, 'touch-only mobile browsers must reach the acquire intent');
 assert.match(canvas, /board\.intent\('touchstart'\)/, 'the mobile event source must be observable');
 assert.match(canvas, /forcedStudentPresentation/, 'teacher presentation must force the student CSS layout');
@@ -77,6 +79,14 @@ for (const field of ['connected', 'actualRole', 'effectiveRole', 'membershipAssi
 }
 assert.match(service, /snap\.metadata\.hasPendingWrites/, 'pending local snapshots must not restore stale HTML');
 assert.match(service, /workspaceMutationSeq/, 'workspace writes must carry an ordering token');
+assert.match(canvas, /if \(composingRef\.current\) \{[\s\S]{0,300}scheduleDocSave\(/,
+  'IME input must be persisted while composition remains active');
+assert.doesNotMatch(canvas, /if \(!docRef\.current \|\| !board\.ownRef\.current \|\| composingRef\.current\) return/,
+  'active composition must not discard the next input event');
+assert.match(canvas, /new ResizeObserver\(followLayout\)/,
+  'expanded-layout changes must republish or reapply the logical viewport');
+assert.doesNotMatch(overlay, /root\.scrollTop|root\.scrollLeft/,
+  'selection overlay coordinates must not double-count an internally scrolling editor');
 
 console.log('workspace selection UI tests passed');
 

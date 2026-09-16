@@ -1,4 +1,5 @@
 import { BoardClassSelectorContext } from './BoardClassSelectorContext';
+import { boardSyncTrace } from '../../../services/boardSyncTrace';
 import { useBoardControl } from './useBoardControl';
 import { BoardControlToolbar } from './BoardControlToolbar';
 import { boardContentFingerprint, resolveStudentControllerName, type BoardView } from '../../../models/boardControl';
@@ -1661,6 +1662,9 @@ const RemoteSelectionOverlay: React.FC<{
         .filter((rect) => rect.width > 0 && rect.height > 0)
         .slice(0, 24)
         .map((rect) => ({
+          // The overlay is a sibling of the editor. DOMRects are already in
+          // viewport coordinates, so adding the editor's own scroll would
+          // double-count internal scrolling in Slides mode.
           top: rect.top - rootRect.top,
           left: rect.left - rootRect.left,
           width: rect.width,
@@ -1731,11 +1735,13 @@ const RemoteSelectionOverlay: React.FC<{
     observer?.observe(root);
     root.addEventListener('scroll', updateRects, { passive: true });
     window.addEventListener('resize', updateRects);
+    window.addEventListener('scroll', updateRects, true);
     return () => {
       window.cancelAnimationFrame(frame);
       observer?.disconnect();
       root.removeEventListener('scroll', updateRects);
       window.removeEventListener('resize', updateRects);
+      window.removeEventListener('scroll', updateRects, true);
     };
   }, [rootRef, selection]);
 
@@ -1743,7 +1749,7 @@ const RemoteSelectionOverlay: React.FC<{
   const anchor = rects[0];
 
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
+    <div data-board-remote-selection className="pointer-events-none absolute inset-0 z-20 overflow-hidden">
       {rects.map((rect, index) => (
         <div
           key={`${rect.left}:${rect.top}:${rect.width}:${rect.height}:${index}`}
@@ -2500,6 +2506,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [presentationMode, setPresentationMode] = useState(false);
   const [boardFullscreen, setBoardFullscreen] = useState(false);
   const [nativeBoardFullscreen, setNativeBoardFullscreen] = useState(false);
+  const [orientationFallback, setOrientationFallback] = useState(false);
   const [fullscreenToolbarVisible, setFullscreenToolbarVisible] = useState(false);
   const boardRootRef = useRef<HTMLDivElement>(null);
   const fullscreenToolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2768,15 +2775,17 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const enterBoardFullscreen = useCallback(async () => {
     if (!forcedStudentPresentation) setBoardFullscreen(true);
     revealFullscreenToolbar();
-    if (viewerCanManageWorkspace) await board.setPresentation(true);
+    // Request native fullscreen in the gesture, before awaiting a network write.
+    if (viewerCanManageWorkspace) void board.setPresentation(true);
     const root = boardRootRef.current;
     if (root?.requestFullscreen) {
-      try { await root.requestFullscreen(); } catch { /* Keep the fixed-viewport fallback. */ }
+      try { await root.requestFullscreen(); } catch (cause) { boardSyncTrace('fullscreen-rejected', { message: String(cause) }); }
     }
     const orientation = window.screen?.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> };
     if (typeof orientation?.lock === 'function') {
-      try { await orientation.lock('landscape'); } catch { /* Best effort only. */ }
-    }
+      try { await orientation.lock('landscape'); setOrientationFallback(false); }
+      catch (cause) { setOrientationFallback(true); boardSyncTrace('orientation-rejected', { message: String(cause) }); }
+    } else setOrientationFallback(true);
   }, [board.setPresentation, forcedStudentPresentation, revealFullscreenToolbar, viewerCanManageWorkspace]);
 
   useEffect(() => {
@@ -2855,12 +2864,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
     syncViewportSize();
     window.addEventListener('orientationchange', syncViewportSize);
+    window.addEventListener('resize', syncViewportSize);
     visualViewport?.addEventListener('resize', syncViewportSize);
     return () => {
       if (rafId !== null) {
         window.cancelAnimationFrame(rafId);
       }
       window.removeEventListener('orientationchange', syncViewportSize);
+      window.removeEventListener('resize', syncViewportSize);
       visualViewport?.removeEventListener('resize', syncViewportSize);
     };
   }, [isBoardFullscreen, presentationMode]);
@@ -3081,6 +3092,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     forceSave?: boolean;
   }>>({});
   const docSaveInFlightRef = useRef(false);
+  const boardMountedRef = useRef(true);
   const flushDocSaveRef = useRef<() => void>(() => {});
   const pendingDocSaveRef = useRef<{
     html: string;
@@ -3137,7 +3149,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const getScrollElement = () => surfaceModeRef.current === 'slides' && docRef.current && docRef.current.scrollHeight > docRef.current.clientHeight
     ? docRef.current : overflowRef.current;
   const applyAuthoritativeView = useCallback((force = false) => {
-    if (composingRef.current) return;
+    if (board.ownRef.current && composingRef.current) return;
     const view = authoritativeViewRef.current;
     if (!view || view.pageId !== activePageIdRef.current || view.surfaceMode !== surfaceModeRef.current) return;
     const signature = JSON.stringify([board.ref.current?.epoch, view]);
@@ -3172,11 +3184,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     requestAnimationFrame(() => { applyingRemoteSelectionRef.current = false; });
   }, []);
   const queueBoardView = useCallback(() => {
-    if (!board.ownRef.current || applyingRemoteSelectionRef.current || composingRef.current) return;
+    if (!board.ownRef.current || applyingRemoteSelectionRef.current) return;
     if (selectionAwarenessDebounce.current) return;
     selectionAwarenessDebounce.current = setTimeout(() => {
       selectionAwarenessDebounce.current = null;
-      if (!board.ownRef.current || composingRef.current) return;
+      if (!board.ownRef.current) return;
       const native = window.getSelection(); const range = native?.rangeCount ? native.getRangeAt(0) : null;
       const floating = activeFloatingElRef.current;
       const root = range && floating?.contains(range.commonAncestorContainer) ? floating : docRef.current;
@@ -3195,9 +3207,31 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }, 40);
   }, [board.publish]);
   useEffect(() => {
+    // Expansion/keyboard/toolbar changes alter the scroll range even if view is unchanged.
+    let frame = 0;
+    const followLayout = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (!board.ownRef.current) applyAuthoritativeView(true);
+        else queueBoardView();
+      });
+    };
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(followLayout);
+    if (overflowRef.current) observer?.observe(overflowRef.current);
+    if (docRef.current) observer?.observe(docRef.current);
+    followLayout();
+    return () => { cancelAnimationFrame(frame); observer?.disconnect(); };
+  }, [applyAuthoritativeView, queueBoardView, isBoardFullscreen, presentationMode]);
+  useEffect(() => {
     authoritativeViewRef.current = board.control?.view ?? null;
+    if (!board.own) {
+      composingRef.current = false;
+      if (compositionLeaseTimerRef.current) clearInterval(compositionLeaseTimerRef.current);
+      compositionLeaseTimerRef.current = null;
+    }
     // Cancel timers as well as buffers so old callbacks cannot flush a new owner's edits.
     for (const timer of [saveItemsDebounce, saveSingleItemDebounce, saveDocDebounce, scrollDebounce, selectionAwarenessDebounce]) {
+      if (timer.current) boardSyncTrace('timer-cancelled-handoff', { classId, controlEpoch: board.ref.current?.epoch, documentTimer: timer === saveDocDebounce });
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
     }
@@ -3452,6 +3486,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       const workspaceRevision = data?.workspaceRevision ?? 0;
       const lastAppliedWorkspaceRevision = lastAppliedWorkspaceRevisionRef.current;
       const revisionDecision = classifyWorkspaceSnapshotRevision(workspaceRevision, lastAppliedWorkspaceRevision);
+      boardSyncTrace('snapshot-classified', { classId, workspaceRevision, lastAppliedWorkspaceRevision, revisionDecision });
       if (revisionDecision !== 'apply') {
         const incomingSurfaceMode = data?.surfaceMode ?? 'document';
         const incomingHtml = (incomingSurfaceMode === 'slides' ? data?.slidesState?.docContent : data?.boardState?.docContent) ?? data?.docContent ?? '';
@@ -3656,7 +3691,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
 
       // Doc: suppress remote DOM writes while there is active local typing.
-      const isLocallyTyping = composingRef.current || (board.ownRef.current && Date.now() - lastDocInputRef.current < TYPING_GUARD_MS);
+      const isLocallyTyping = board.ownRef.current && (composingRef.current || Date.now() - lastDocInputRef.current < TYPING_GUARD_MS);
       const documentSnapshotContext = {
         ownsBoard: board.ownRef.current,
         isLocallyTyping,
@@ -3677,7 +3712,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         if (docRef.current && docRef.current.innerHTML !== nextDocContent) {
           const localSelection = window.getSelection();
           const localRange = localSelection?.rangeCount ? localSelection.getRangeAt(0) : null;
-          const serializedLocalRange = localRange
+          const serializedLocalRange = board.ownRef.current && localRange
             && docRef.current.contains(localRange.startContainer)
             && docRef.current.contains(localRange.endContainer)
               ? serializeDomRange(docRef.current, localRange)
@@ -3697,6 +3732,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
         }
         syncActivePageDocRef(nextDocContent);
       }
+      boardSyncTrace('document-decision', { classId, workspaceRevision, workspaceMutationSeq: data?.workspaceMutationSeq,
+        controlEpoch: data?.controlEpoch, documentDecision, html: docRef.current?.innerHTML, own: board.ownRef.current, isLocallyTyping });
       console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
         phase: 'snapshot',
         decision: documentDecision,
@@ -3741,12 +3778,24 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     return () => document.removeEventListener('selectionchange', captureSharedSelection);
   }, [captureSharedSelection]);
 
-  useEffect(() => () => {
+  useEffect(() => {
+    boardMountedRef.current = true;
+    boardSyncTrace('board-mounted', { classId, userId, clientId: board.clientId });
+    return () => {
+      boardMountedRef.current = false;
+    const pending = pendingDocSaveRef.current;
+    boardSyncTrace('board-unmount', { classId, html: docRef.current?.innerHTML, composing: composingRef.current,
+      pending, inFlight: docSaveInFlightRef.current, cleanupFlush: Boolean(pending && board.ownRef.current) });
+    // Captured capability is revalidated by the transaction, including on close.
+    if (pending && board.ownRef.current) {
+      void saveDocContent(classId, pending.html, userId, userName, pending.currentPageId, pending.pages,
+        pending.surfaceMode, pending.controlStamp).catch(cause => boardSyncTrace('cleanup-flush-rejected', { classId, message: String(cause) }));
+    }
     if (saveItemsDebounce.current) clearTimeout(saveItemsDebounce.current);
     saveItemsDebounce.current = null;
     pendingItemsSaveRef.current = null;
     if (saveSingleItemDebounce.current) clearTimeout(saveSingleItemDebounce.current);
-    if (saveDocDebounce.current) clearTimeout(saveDocDebounce.current);
+    if (saveDocDebounce.current) { boardSyncTrace('debounce-cancelled-cleanup', { classId }); clearTimeout(saveDocDebounce.current); }
     saveDocDebounce.current = null;
     pendingDocSaveRef.current = null;
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
@@ -3754,6 +3803,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pendingItemsSaveRef.current = null;
     pendingSingleItemSaveRef.current = {};
     pendingDocSaveRef.current = null;
+    };
   }, []);
 
   const flushPendingItemsSave = useCallback(() => {
@@ -3803,7 +3853,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [flushPendingSingleItemSaves]);
 
   const flushPendingDocSave = useCallback(() => {
-    if (!board.ownRef.current || composingRef.current || docSaveInFlightRef.current) return;
+    if (!boardMountedRef.current || !board.ownRef.current || docSaveInFlightRef.current) return;
     const pending = pendingDocSaveRef.current;
     if (!pending) return;
     if (pending.controlStamp.controlEpoch !== board.ref.current?.epoch || pending.controlStamp.controlClientId !== board.clientId) {
@@ -3831,10 +3881,10 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       pending.pages,
       pending.surfaceMode,
       pending.controlStamp,
-    ).catch(() => {}).finally(() => {
+    ).catch(cause => boardSyncTrace('document-promise-rejected', { classId, message: String(cause) })).finally(() => {
       docSaveInFlightRef.current = false;
       // Keep only the newest buffered HTML while a commit is in flight.
-      flushDocSaveRef.current();
+      if (boardMountedRef.current) flushDocSaveRef.current();
     });
   }, [classId, userId, userName]);
   flushDocSaveRef.current = flushPendingDocSave;
@@ -3920,6 +3970,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       if (effectiveReadOnly || !board.ownRef.current) return;
       const timestamp = Date.now();
       const controlStamp = boardWriteStamp(classId, userId);
+      boardSyncTrace('mutation-created', { classId, html, timestamp, ...controlStamp });
       const syncedPages = syncActivePageDocRef(html);
       pendingDocSaveRef.current = {
         html,
@@ -3946,15 +3997,23 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       }
 
       saveDocDebounce.current = setTimeout(() => {
+        boardSyncTrace('debounce-executed', { classId });
         saveDocDebounce.current = null;
         flushPendingDocSave();
       }, WORKSPACE_DOC_SYNC_DEBOUNCE_MS - elapsedMs);
+      boardSyncTrace('debounce-scheduled', { classId, delayMs: WORKSPACE_DOC_SYNC_DEBOUNCE_MS - elapsedMs });
     },
     [classId, effectiveReadOnly, flushPendingDocSave, syncActivePageDocRef, userId],
   );
 
-  const onDocInput = () => {
-    if (!docRef.current || !board.ownRef.current || composingRef.current) return;
+  const onDocInput = (input?: InputEvent) => {
+    boardSyncTrace('input-event', { classId, userId, clientId: board.clientId, controlEpoch: board.ref.current?.epoch,
+      controllerId: board.ref.current?.controllerId, html: docRef.current?.innerHTML, composing: composingRef.current,
+      pending: Boolean(pendingDocSaveRef.current), inFlight: docSaveInFlightRef.current, debounce: Boolean(saveDocDebounce.current), own: board.ownRef.current,
+      inputType: input?.inputType, eventIsComposing: input?.isComposing });
+    if (!docRef.current || !board.ownRef.current) {
+      boardSyncTrace('input-blocked', { classId, reason: 'not-owner-or-no-editor' }); return;
+    }
     const beforeHtml = docHtml;
     const afterHtml = docRef.current.innerHTML;
     console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
@@ -3972,13 +4031,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     }));
     board.intent(); queueBoardView();
     lastDocInputRef.current = Date.now();
+    if (composingRef.current) {
+      // Publish the IME's current HTML without replacing its DOM or native Range.
+      scheduleDocSave(stripEmbeddedImagesFromHtml(docRef.current.innerHTML).cleanedHtml);
+      return;
+    }
     sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });
   };
   const onDocBlur = () => {
-    if (!board.ownRef.current || composingRef.current) return;
+    boardSyncTrace('editor-blur', { classId, composing: composingRef.current, pending: Boolean(pendingDocSaveRef.current) });
+    if (!board.ownRef.current) return;
     // On blur, flush any pending doc content immediately
     if (!docRef.current) return;
-    sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });
+    if (composingRef.current) scheduleDocSave(stripEmbeddedImagesFromHtml(docRef.current.innerHTML).cleanedHtml);
+    else sanitizeDocumentHtml(docRef.current.innerHTML, { persist: true });
     if (saveDocDebounce.current) {
       clearTimeout(saveDocDebounce.current);
       saveDocDebounce.current = null;
@@ -3987,11 +4053,16 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   };
 
   const onScrollSync = () => {
-    if (applyingRemoteScrollRef.current || Date.now() < suppressScrollPublishUntilRef.current) return;
+    const scroll = getScrollElement();
+    boardSyncTrace('scroll-event', { classId, own: board.ownRef.current, scrollTop: scroll?.scrollTop,
+      scrollLeft: scroll?.scrollLeft, scrollHeight: scroll?.scrollHeight, clientHeight: scroll?.clientHeight,
+      element: scroll === docRef.current ? 'document' : 'overflow', expanded: isBoardFullscreen, applyingRemote: applyingRemoteScrollRef.current });
+    if (applyingRemoteScrollRef.current) return;
     if (!board.ownRef.current) {
       applyAuthoritativeView(true);
       return;
     }
+    if (Date.now() < suppressScrollPublishUntilRef.current) return;
     queueBoardView();
   };
 
@@ -5913,7 +5984,9 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
   const hasNextSlide = currentSlideIndex >= 0 && currentSlideIndex < pages.length - 1;
   const isPortraitViewport = presentationViewport.height > presentationViewport.width + 4;
   const shouldRotatePresentation = presentationMode && isSlidesMode && isPortraitViewport;
-  const shouldRotateBoardPresentation = isBoardFullscreen && !isSlidesMode && isPortraitViewport;
+  // Keep the editable Board in the actual viewport axes. CSS rotation cannot
+  // rotate the operating system keyboard. Slides retain their existing
+  // presentation-only rotation behavior.
   const getSlidePreviewText = useCallback((page: WorkspacePage) => {
     const docText = (page.docContent ?? '')
       .replace(/<[^>]+>/g, ' ')
@@ -6421,6 +6494,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         }
       }}
       onKeyDownCapture={event => {
+        boardSyncTrace('key-event', { classId, key: event.key, composing: composingRef.current, own: board.ownRef.current });
         logStudentBoardEvent('keydown', { key: event.key, defaultPrevented: event.defaultPrevented });
         if ((event.target as HTMLElement).closest('[data-board-control-ui]')) return;
         if (viewerCanManageWorkspace && board.ownRef.current) board.intent();
@@ -6433,11 +6507,12 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
       onWheelCapture={event => { if (viewerCanManageWorkspace && board.ownRef.current) board.intent(); else if (!board.ownRef.current) event.preventDefault(); }}
       onTouchMoveCapture={event => { if (viewerCanManageWorkspace && board.ownRef.current) board.intent(); else if (!board.ownRef.current) event.preventDefault(); }}
       onCompositionStartCapture={() => {
+        boardSyncTrace('composition-start', { classId });
         composingRef.current = true; board.intent();
         if (viewerCanManageWorkspace && !compositionLeaseTimerRef.current) compositionLeaseTimerRef.current = setInterval(board.intent, 1600);
       }}
       onCompositionUpdateCapture={() => { if (viewerCanManageWorkspace) board.intent(); }}
-      onCompositionEndCapture={() => { composingRef.current = false; if (compositionLeaseTimerRef.current) clearInterval(compositionLeaseTimerRef.current); compositionLeaseTimerRef.current = null; if (board.ownRef.current) { onDocInput(); flushPendingSingleItemSaves(); flushPendingItemsSave(); queueBoardView(); } else { if (docRef.current) docRef.current.innerHTML = remoteDocHtmlRef.current; setDocHtml(remoteDocHtmlRef.current); setItems(remoteItemsRef.current); applyAuthoritativeView(true); } }}
+      onCompositionEndCapture={() => { boardSyncTrace('composition-end', { classId }); composingRef.current = false; if (compositionLeaseTimerRef.current) clearInterval(compositionLeaseTimerRef.current); compositionLeaseTimerRef.current = null; if (board.ownRef.current) { onDocInput(); flushPendingSingleItemSaves(); flushPendingItemsSave(); queueBoardView(); } else { if (docRef.current) docRef.current.innerHTML = remoteDocHtmlRef.current; setDocHtml(remoteDocHtmlRef.current); setItems(remoteItemsRef.current); applyAuthoritativeView(true); } }}
       className={`group flex h-full w-full flex-col overflow-hidden ${(presentationMode || isBoardFullscreen) ? 'fixed inset-0 z-[12000]' : ''} ${presentationMode ? 'bg-slate-950' : 'bg-slate-100'}`}
       style={{ fontFamily: 'Arial, sans-serif' }}
     >
@@ -6464,6 +6539,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <button type="button" data-board-control-ui data-board-fullscreen-gesture onClick={() => void enterBoardFullscreen()}
           className="fixed bottom-4 left-1/2 z-[12080] -translate-x-1/2 rounded-full bg-slate-950/85 px-4 py-2 text-sm font-bold text-white shadow-xl"
           aria-label="Toque para tela cheia" title="Toque para tela cheia">Toque para tela cheia</button>
+      )}
+      {isBoardFullscreen && isPortraitViewport && (orientationFallback || forcedStudentPresentation) && (
+        <div data-board-control-ui role="status" className="pointer-events-none absolute bottom-2 left-2 z-[12080] max-w-[80vw] rounded bg-slate-950/80 px-2 py-1 text-xs text-white">
+          {uiLang === 'en' ? 'Rotate your device for landscape editing.' : uiLang === 'es' ? 'Gira el dispositivo para editar en horizontal.' : 'Gire o aparelho para editar na horizontal.'}
+        </div>
       )}
 
       {/* -- Fixed toolbar --------------------------------------------------- */}
@@ -7057,7 +7137,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
         <div
           className={`${(presentationMode || isBoardFullscreen) ? 'h-full w-full' : 'mx-auto max-w-none'}`}
           style={
-            (shouldRotatePresentation || shouldRotateBoardPresentation)
+            shouldRotatePresentation
               ? {
                   position: 'absolute',
                   left: '50%',
@@ -7133,7 +7213,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
             }`}
             style={{
               minHeight: isBoardFullscreen
-                 ? (shouldRotateBoardPresentation ? `${presentationViewport.width}px` : '100dvh')
+                 ? `${presentationViewport.height}px`
                  : presentationMode
                 ? `${shouldRotatePresentation ? presentationViewport.width : presentationViewport.height}px`
                 : isSlidesMode
@@ -7195,7 +7275,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     canEdit: viewerCanEditSharedDocument,
                     contentEditable: event.currentTarget.isContentEditable,
                   });
-                  onDocInput();
+                  onDocInput(event.nativeEvent as InputEvent);
                 }}
                 onPaste={handleDocPaste}
                 className={`w-full focus:outline-none leading-relaxed ${
@@ -7494,4 +7574,3 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     </div>
   );
 };
-

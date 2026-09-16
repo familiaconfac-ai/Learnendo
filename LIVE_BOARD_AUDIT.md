@@ -1,5 +1,31 @@
 # Auditoria e correção Live/Board — 15/09/2026
 
+## Retomada auditada — 16/09/2026
+
+Antes desta retomada, o commit `0a55df2` já continha a fila serial por turma, revisão/sequência monotônicas, cancelamento de callbacks antigos no handoff, follow mode, scroll vertical da Board expandida, seletor único na toolbar e atualização do Firebase. A tentativa interrompida posterior deixou seis arquivos modificados e o novo `boardSyncTrace.ts`: instrumentação opt-in, persistência durante IME, observação de mudanças de layout, Fullscreen/Orientation API, fixture com leitura direta do backend e close/reopen. Não havia mudança em Grammar Focus nem na resolução de identidade.
+
+A causa específica restante de DELETE → INSERT era o guard de composição no cliente. DELETE era emitido fora da composição e persistia. O INSERT de teclado virtual/IME ocorria com `composingRef.current === true`; `onDocInput`, `queueBoardView` e `applyAuthoritativeView` retornavam sem publicar documento, seleção ou scroll. `blur`/`compositionend`, disparados ao fechar a Board, finalmente sanitizavam e publicavam o DOM. Portanto o INSERT do relato ficava no cliente até o fechamento; o professor não descartava um snapshot desse INSERT, porque ele ainda não existia no backend. Não foi encontrado `pending`, `isSaving`, revision, mutationSeq ou controlEpoch preso. A fila de commit e o debounce de 150 ms funcionavam; o bloqueio acontecia antes de criar/agendar a mutação.
+
+Na reprodução instrumentada corrigida, um INSERT `漢` durante composição ainda aberta chegou ao backend antes de fechar (`workspaceRevision=2`, `workspaceMutationSeq=4`) e apareceu no DOM do professor. Isso elimina a dependência de close/reopen. O cleanup mantém um flush defensivo somente se ainda houver buffer válido, revalidado pela autoridade da transação, mas não foi necessário para essa reprodução.
+
+O scroll expandido usa o mesmo `overflowRef` e o mesmo ratio lógico do modo normal. O problema remanescente era mudança do range de scroll ao expandir/abrir teclado/alterar toolbar sem republicar/reaplicar o viewport; um `ResizeObserver` agora recalcula o ratio do controlador ou reaplica o ratio no observador. A seleção remota continua em overlay e nunca move o caret nativo do observador; o overlay é recalculado em scroll de ancestrais e resize. Coordenadas não somam `root.scrollTop`, evitando dupla contagem no editor internamente rolável de Slides.
+
+No mobile, a chamada de Fullscreen ocorre diretamente no gesto antes da escrita assíncrona de apresentação, seguida de tentativa de `screen.orientation.lock('landscape')`. A Board editável não usa mais rotação CSS, pois CSS não gira o teclado do sistema. Quando lock não existe ou é rejeitado, é exibida orientação para girar o aparelho e o layout acompanha `window`/`visualViewport`. A rotação CSS já existente de Slides em apresentação foi preservada.
+
+A página `Line 1: document for logical scroll testing.` é criada por `scripts/board-control.browser.mjs`. Não era um teste Playwright nem continha `waitForFunction`: `npm run test:board-control-browser` iniciava um servidor HTTP manual e, por desenho, nunca encerrava. O harness não deixou alteração dinâmica no produto; a alteração parcial estava somente nos arquivos Git listados. O comando de teste agora executa apenas build finito; o servidor manual passou para `npm run dev:board-control-browser` e declara no log que permanece ativo até Ctrl+C.
+
+Validação desta retomada:
+
+- `npm run test:board-control-browser`: passou e encerrou normalmente.
+- `npm run test:board-control`: passou modelos, seleção, formatação, revisão, IME e assertions de UI.
+- `npm run test:board-control-integration`: passou corrida de aquisição, revoke, reconnect, epochs antigos, view, apresentação, followers, offline guard e commits concorrentes. Os `PERMISSION_DENIED` exibidos são casos negativos deliberados do teste.
+- `npm run test:grammar-focus`: passou integralmente.
+- `npm run build`: passou.
+- Navegador local com professor e aluno independentes: INSERT em composição chegou ao backend e ao professor antes de close; scroll lógico normal aluno→professor passou; scroll expandido aluno→professor e professor→aluno passou; seleção remota permaneceu visível nos dois sentidos com expansão.
+- Grammar Focus, resolução de nomes, seletor único após a pasta azul e fluxo de identidade não foram modificados nesta retomada.
+
+Riscos restantes: orientação/teclado precisam de confirmação em aparelhos físicos reais, pois o navegador/SO pode negar orientation lock; Fullscreen do aluno observador ainda exige o gesto local indicado pelo botão quando a política do navegador proíbe fullscreen programático. A aceitação completa de latência em 5/15/30 segundos e em backend de produção continua sendo teste físico, não coberto pelos emuladores. Não houve deploy, commit ou push.
+
 Correções implementadas, sem deploy e sem commit. Grammar Focus e resolução de identidade/nome não tiveram alterações de código. Os testes usam a WorkspaceCanvas real, dois clientes de navegador com autenticações Firebase independentes e emuladores Auth/Firestore. Isso verifica publicação, recebimento e aplicação no DOM remoto; não constitui aceitação em dois dispositivos físicos no backend de produção.
 
 ## Causas encontradas

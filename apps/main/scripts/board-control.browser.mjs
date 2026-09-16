@@ -5,23 +5,35 @@ import { execFileSync } from 'node:child_process';
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 
-const projectId = process.env.GCLOUD_PROJECT;
-if (!projectId?.startsWith('demo-') || !process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) throw Error('Demo emulators required');
-initializeApp({ projectId }); const db = getFirestore(); const out = 'node_modules/.cache/board-browser'; await mkdir(out, { recursive: true });
+const buildOnly = process.argv.includes('--build-only');
+const projectId = process.env.GCLOUD_PROJECT ?? (buildOnly ? 'demo-learnendo-board-browser-build' : '');
+const firestoreEmulatorHost = process.env.FIRESTORE_EMULATOR_HOST ?? '127.0.0.1:8080';
+const authEmulatorHost = process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '127.0.0.1:9099';
+if (!buildOnly && (!projectId.startsWith('demo-') || !process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST)) throw Error('Demo emulators required');
+const out = 'node_modules/.cache/board-browser'; await mkdir(out, { recursive: true });
 await build({ entryPoints: ['scripts/board-control.fixture.tsx'], bundle: true, format: 'esm', outfile: `${out}/fixture.js`, define: { 'import.meta.env': '{}' }, plugins: [{ name: 'demo-browser-firebase', setup(b) {
   b.onResolve({ filter: /\/firebase$/ }, () => ({ path: 'firebase', namespace: 'demo' }));
   b.onLoad({ filter: /.*/, namespace: 'demo' }, () => ({ resolveDir: process.cwd(), contents: `
     import { initializeApp } from 'firebase/app'; import { getAuth, connectAuthEmulator } from 'firebase/auth'; import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
     export const app = initializeApp({ projectId: '${projectId}', apiKey: 'demo-key' });
-    export const auth = getAuth(app); connectAuthEmulator(auth, 'http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}', {disableWarnings:true});
-    export const db = getFirestore(app); connectFirestoreEmulator(db, '${process.env.FIRESTORE_EMULATOR_HOST.split(':')[0]}', ${process.env.FIRESTORE_EMULATOR_HOST.split(':')[1]});
+    export const auth = getAuth(app); connectAuthEmulator(auth, 'http://${authEmulatorHost}', {disableWarnings:true});
+    export const db = getFirestore(app); connectFirestoreEmulator(db, '${firestoreEmulatorHost.split(':')[0]}', ${firestoreEmulatorHost.split(':')[1]});
     export const firebaseRuntimeConfig = { projectId: '${projectId}' };
   ` }));
 } }] });
 execFileSync(process.execPath, ['node_modules/tailwindcss/lib/cli.js', '-i', 'index.css', '-o', `${out}/style.css`, '--content', './src/**/*.{ts,tsx}']);
 await writeFile(`${out}/index.html`, '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"><div id="root"></div><script type="module" src="/fixture.js"></script>');
-if (!process.argv.includes('--build-only')) createServer(async (req, res) => {
+if (buildOnly) {
+  console.log('Board browser fixture build passed.');
+} else {
+  initializeApp({ projectId }); const db = getFirestore();
+  createServer(async (req, res) => {
   try {
+    if (req.url === '/backend') {
+      const snapshot = await db.doc('liveClasses/browser-board/shared/workspace').get();
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ readAtMs: Date.now(), ...snapshot.data() })); return;
+    }
     if (req.url === '/seed' && req.method === 'POST') {
       let body = ''; for await (const chunk of req) body += chunk;
       const {uid, role} = JSON.parse(body); if (!/^[A-Za-z0-9]+$/.test(uid) || !['teacher','joao','maria','pedro','ana'].includes(role)) throw Error('Invalid fixture actor');
@@ -41,4 +53,5 @@ if (!process.argv.includes('--build-only')) createServer(async (req, res) => {
     if (!['index.html','fixture.js','style.css'].includes(name)) { res.writeHead(404).end(); return; }
     res.setHeader('Content-Type', name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : 'text/html'); res.end(await readFile(`${out}/${name}`));
   } catch (error) { res.writeHead(500).end(String(error)); }
-}).listen(4180, '127.0.0.1', () => console.log('Board browser fixture: http://127.0.0.1:4180/?role=teacher (other tabs: joao/maria/pedro/ana)'));
+  }).listen(4180, '127.0.0.1', () => console.log('Board browser fixture (manual dev server; stop with Ctrl+C): http://127.0.0.1:4180/?role=teacher (other tabs: joao/maria/pedro/ana)'));
+}

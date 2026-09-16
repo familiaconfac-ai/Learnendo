@@ -1,5 +1,6 @@
 import { doc, onSnapshot, runTransaction, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db } from './firebase';
+import { boardSyncTrace } from './boardSyncTrace';
 import { boardContentFingerprint, canAcquireBoard, ownsBoard, type BoardControl, type BoardView } from '../models/boardControl';
 import type { WorkspaceItem, WorkspacePage, WorkspaceSurfaceMode, WorkspaceSurfaceState } from './workspaceService';
 
@@ -141,6 +142,7 @@ export function boardWriteStamp(classId: string, uid: string): BoardWriteStamp {
 // before Firestore reports a retryable transaction conflict.
 const workspaceCommits = new Map<string, Promise<unknown>>();
 export function queueBoardWorkspaceCommit<T>(classId: string, commit: () => Promise<T>): Promise<T> {
+  boardSyncTrace('commit-queued', { classId, waiting: workspaceCommits.has(classId) });
   const previous = workspaceCommits.get(classId) ?? Promise.resolve();
   const next = previous.catch(() => undefined).then(commit);
   workspaceCommits.set(classId, next);
@@ -160,6 +162,7 @@ export function commitBoardWorkspace(
 }
 
 async function commitBoardWorkspaceNow(classId: string, value: Record<string, unknown>, mutationKind: WorkspaceMutationKind) {
+  boardSyncTrace('transaction-start', { classId, mutationKind, payload: value });
   const startedAtMs = Date.now();
   let transactionAttempts = 0;
   let observedControl: BoardControl | undefined;
@@ -170,6 +173,7 @@ async function commitBoardWorkspaceNow(classId: string, value: Record<string, un
   try {
     await runTransaction(db, async transaction => {
       transactionAttempts++;
+      boardSyncTrace('transaction-attempt', { classId, transactionAttempts });
       const control = (await transaction.get(boardControlRef(classId))).data() as BoardControl | undefined;
       observedControl = control;
       if (!control || control.epoch !== value.controlEpoch || control.controllerId !== value.updatedBy || control.controllerClientId !== value.controlClientId) throw new Error('Board authority changed');
@@ -233,6 +237,7 @@ async function commitBoardWorkspaceNow(classId: string, value: Record<string, un
       committedHtml = typeof nextValue.docContent === 'string' ? nextValue.docContent : currentDoc;
       transaction.set(workspace, nextValue, { merge: true });
     });
+    boardSyncTrace('transaction-complete', { classId, skippedAsStale, previousRevision, nextRevision, ...value });
     console.info('[BOARD_WORKSPACE_SYNC]', JSON.stringify({
       phase: skippedAsStale ? 'commit-skipped' : 'commit-success',
       startedAtMs, elapsedMs: Date.now() - startedAtMs, transactionAttempts,
