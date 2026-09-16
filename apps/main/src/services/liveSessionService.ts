@@ -191,6 +191,8 @@ const mapPresence = (id: string, data: Record<string, any>): LiveClassPresence =
   role: (data.role ?? 'student') as LiveClassPresence['role'],
   isOnline: Boolean(data.isOnline),
   lastSeenAt: data.lastSeenAt?.toDate?.()?.toISOString?.() ?? data.lastSeenAt ?? undefined,
+  boardViewport: data.boardViewport ?? null,
+  boardViewportUpdatedAt: data.boardViewportUpdatedAt?.toDate?.()?.toISOString?.() ?? data.boardViewportUpdatedAt ?? undefined,
 });
 
 function toPresenceTimestamp(value: unknown): number | null {
@@ -630,6 +632,20 @@ export async function upsertLivePresence(
       isOnline: true,
       lastSeenAt: serverTimestamp(),
     },
+    { merge: true },
+  );
+}
+
+export async function publishLiveBoardViewport(
+  classId: string,
+  uid: string,
+  viewport: NonNullable<LiveClassPresence['boardViewport']>,
+): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  if (!classId || !uid) return;
+  await setDoc(
+    doc(db, LIVE_CLASSES_COLLECTION, classId, 'presence', uid),
+    { boardViewport: viewport, boardViewportUpdatedAt: serverTimestamp() },
     { merge: true },
   );
 }

@@ -5,6 +5,7 @@ const canvas = await readFile(new URL('../src/components/LiveClasses/Workspace/W
 const service = await readFile(new URL('../src/services/workspaceService.ts', import.meta.url), 'utf8');
 const controlHook = await readFile(new URL('../src/components/LiveClasses/Workspace/useBoardControl.ts', import.meta.url), 'utf8');
 const controlToolbar = await readFile(new URL('../src/components/LiveClasses/Workspace/BoardControlToolbar.tsx', import.meta.url), 'utf8');
+const studentMonitor = await readFile(new URL('../src/components/LiveClasses/Workspace/StudentBoardViewMonitor.tsx', import.meta.url), 'utf8');
 
 const overlay = canvas.slice(
   canvas.indexOf('const RemoteSelectionOverlay'),
@@ -63,7 +64,14 @@ assert.match(canvas, /shouldRotatePresentation/, 'the existing Slides presentati
 assert.match(canvas, /onTouchStartCapture=/, 'touch-only mobile browsers must reach the acquire intent');
 assert.match(canvas, /board\.intent\('touchstart'\)/, 'the mobile event source must be observable');
 assert.match(canvas, /forcedStudentPresentation/, 'teacher presentation must force the student CSS layout');
-assert.match(canvas, /Toque para tela cheia/, 'native fullscreen permission must have a local-gesture fallback');
+assert.match(canvas, /Abrir lousa em tela cheia/, 'native fullscreen permission must have a clear local-gesture fallback');
+assert.match(canvas, /captureLogicalScrollAnchor/, 'the controller must publish a logical document anchor');
+assert.match(canvas, /applyLogicalScrollAnchor/, 'followers must restore the logical document anchor');
+assert.match(canvas, /publishLiveBoardViewport/, 'participants must publish lightweight viewport metadata');
+assert.match(studentMonitor, /pointer-events-none/, 'the student viewport replica must remain read-only');
+assert.match(studentMonitor, /boardViewport/, 'the monitor must consume the selected participant viewport');
+assert.match(studentMonitor, /documentState\.html/, 'the monitor must reuse shared Board content');
+assert.doesNotMatch(studentMonitor, /getDisplayMedia|MediaStream|subscribeWorkspace/, 'the monitor must not capture a screen or create a document subscription');
 assert.match(controlHook, /next\?\.controllerId === uid && !next\.acquisitionOpen/, 'the current student must rebind after refresh/reconnect');
 assert.match(controlHook, /acquireError: \{ code, message \}/, 'acquire failures must preserve the Firebase code and message');
 assert.match(controlHook, /!teacher \|\| !control\?\.acquisitionOpen/, 'teacher editing must stop while S is waiting');

@@ -148,10 +148,24 @@ const stale = boardWriteStamp(classId, teacher); const fresh = boardWriteStamp(c
 await commitBoardWorkspace(classId, { ...fresh, updatedBy: teacher, updatedByName: 'Teacher', docContent: '<p><span style="font-size: 18px">Stable</span></p>', docUpdatedBy: teacher });
 await commitBoardWorkspace(classId, { ...stale, updatedBy: teacher, updatedByName: 'Teacher', docContent: '<p><span style="font-size: 48px">Stale</span></p>', docUpdatedBy: teacher });
 assert.match((await getDoc(ref)).data()!.docContent, /18px/);
-const view: BoardView = { surfaceMode: 'document', pageId: 'p1', scrollRatio: 0.9, selection: { target: 'document', itemId: null, fingerprint: 'fixture', range: { startPath: [0, 0], endPath: [0, 0], startOffset: 3, endOffset: 8 } } };
+const view: BoardView = {
+  surfaceMode: 'document',
+  pageId: 'p1',
+  scrollRatio: 0.9,
+  scrollAnchor: {
+    fingerprint: boardContentFingerprint('<p><span style="font-size: 18px">Stable</span></p>'),
+    viewportRatio: 0.5,
+    range: { startPath: [0, 0], endPath: [0, 0], startOffset: 3, endOffset: 3 },
+  },
+  selection: { target: 'document', itemId: null, fingerprint: 'fixture', range: { startPath: [0, 0], endPath: [0, 0], startOffset: 3, endOffset: 8 } },
+};
 const beforeVisualUpdate = (await getDoc(ref)).data()!;
 await publishBoardView(classId, teacher, 'teacher-client', epoch, view);
 assert.deepEqual((await getDoc(boardViewRef(classId))).data()!.view, view);
+await assert.rejects(publishBoardView(classId, teacher, 'teacher-client', epoch, {
+  ...view,
+  scrollAnchor: { ...view.scrollAnchor!, viewportRatio: 1.5 },
+}));
 const afterVisualUpdate = (await getDoc(ref)).data()!;
 assert.equal(afterVisualUpdate.workspaceRevision, beforeVisualUpdate.workspaceRevision);
 assert.equal(afterVisualUpdate.docContent, beforeVisualUpdate.docContent);
@@ -164,6 +178,27 @@ await setBoardPresentationMode(classId, true);
 assert.equal((await getDoc(boardPresentationRef(classId))).data()!.presentationMode, true);
 await assert.rejects(setDoc(doc(joao.db, 'liveClasses', classId, 'shared', 'boardPresentation'), { presentationMode: false, updatedAt: serverTimestamp() }));
 await setBoardPresentationMode(classId, false);
+
+const joaoPresenceRef = doc(joao.db, 'liveClasses', classId, 'presence', joao.uid);
+const participantViewport = {
+  clientId: joao.client,
+  viewportWidth: 390,
+  viewportHeight: 844,
+  boardWidth: 390,
+  boardHeight: 730,
+  orientation: 'portrait',
+  expanded: false,
+  nativeFullscreen: false,
+  surfaceMode: 'document',
+  pageId: 'p1',
+  scrollRatio: 0.4,
+  scrollAnchor: view.scrollAnchor,
+  zoom: 1,
+};
+await setDoc(joaoPresenceRef, { name: 'Gregório', role: 'student', isOnline: true, boardViewport: participantViewport }, { merge: true });
+assert.deepEqual((await getDoc(doc(db, 'liveClasses', classId, 'presence', joao.uid))).data()!.boardViewport, participantViewport);
+await assert.rejects(setDoc(doc(ana.db, 'liveClasses', classId, 'presence', joao.uid), { boardViewport: participantViewport }, { merge: true }));
+await assert.rejects(getDoc(doc(outsider.db, 'liveClasses', classId, 'presence', joao.uid)));
 
 const studentClaim = async (student: typeof joao, targetClassId = classId, forgedControllerId = student.uid) => runTransaction(student.db, async tx => {
   const r = doc(student.db, 'liveClasses', targetClassId, 'shared', 'boardControl'); const old = (await tx.get(r)).data() as BoardControl;

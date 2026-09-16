@@ -8,6 +8,7 @@ import {
   restoreScrollTop,
   serializeScrollRatio,
 } from './workspaceSelectionAwareness.ts';
+import { boardViewportOrientation, resolveAnchoredScrollTop } from '../../../models/boardViewport.ts';
 
 type FakeNode = {
   childNodes: FakeNode[];
@@ -44,6 +45,24 @@ assert.equal(isSerializedRangeCollapsed({ startPath: [0, 0], startOffset: 0, end
 assert.equal(serializeScrollRatio(450, 1100, 200), 0.5, 'serializes logical scroll position');
 assert.equal(restoreScrollTop(0.5, 600, 100), 250, 'restores the same logical region in another viewport');
 assert.equal(restoreScrollTop(2, 600, 100), 500, 'clamps remote scroll ratios');
+assert.equal(resolveAnchoredScrollTop({
+  currentScrollTop: 900,
+  anchorViewportTop: 620,
+  viewportTop: 100,
+  clientHeight: 800,
+  viewportRatio: 0.5,
+  maximumScrollTop: 3000,
+}), 1020, 'moves the same logical anchor to the same relative viewport position');
+assert.equal(resolveAnchoredScrollTop({
+  currentScrollTop: 50,
+  anchorViewportTop: 0,
+  viewportTop: 100,
+  clientHeight: 800,
+  viewportRatio: 0.5,
+  maximumScrollTop: 3000,
+}), 0, 'clamps an anchored viewport at the document top');
+assert.equal(boardViewportOrientation(390, 844), 'portrait');
+assert.equal(boardViewportOrientation(844, 390), 'landscape');
 
 const selectionRange = { startPath: [0, 0], startOffset: 1, endPath: [0, 0], endOffset: 4 };
 const remoteView = {

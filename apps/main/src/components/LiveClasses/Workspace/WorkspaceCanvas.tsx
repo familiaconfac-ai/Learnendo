@@ -3,7 +3,16 @@ import { boardSyncTrace } from '../../../services/boardSyncTrace';
 import { useBoardControl } from './useBoardControl';
 import { BoardControlToolbar } from './BoardControlToolbar';
 import { boardContentFingerprint, resolveStudentControllerName, type BoardView } from '../../../models/boardControl';
+import {
+  boardViewportOrientation,
+  clampBoardViewportRatio,
+  resolveAnchoredScrollTop,
+  type BoardMonitorDocumentState,
+  type BoardParticipantViewport,
+  type BoardScrollAnchor,
+} from '../../../models/boardViewport';
 import { boardWriteStamp } from '../../../services/boardControlService';
+import { publishLiveBoardViewport } from '../../../services/liveSessionService';
 ﻿/**
  * WorkspaceCanvas ï¿½ collaborative document editor for live classes.
  *
@@ -1109,6 +1118,7 @@ export interface WorkspaceCanvasProps {
   toolbarLeading?: React.ReactNode;
   onOpenBattleTemplate?: (template: SavedBattleTemplate) => void;
   onPresentationModeChange?: (active: boolean) => void;
+  onMonitorDocumentChange?: (state: BoardMonitorDocumentState) => void;
 }
 
 // -- UnifiedColorSwatch --------------------------------------------------------
@@ -2373,6 +2383,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   toolbarLeading,
   onOpenBattleTemplate,
   onPresentationModeChange,
+  onMonitorDocumentChange,
 }) => {
   console.log('[WorkspaceCanvas] INITIALIZED with userId:', userId, 'classId:', classId, 'userName:', userName);
 
@@ -2510,6 +2521,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const [fullscreenToolbarVisible, setFullscreenToolbarVisible] = useState(false);
   const boardRootRef = useRef<HTMLDivElement>(null);
   const fullscreenToolbarTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const remoteFullscreenAttemptedRef = useRef(false);
   const teacherBoardPresentation = board.presentationMode && !isSlidesMode;
   const isBoardFullscreen = (boardFullscreen || teacherBoardPresentation) && !isSlidesMode;
   const forcedStudentPresentation = teacherBoardPresentation && !viewerCanManageWorkspace;
@@ -2630,6 +2642,14 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   // Refs are kept in sync manually (no useEffect delay) so closures always see latest.
   const pagesRef = useRef<WorkspacePage[]>(surfaceStatesRef.current.document.pages);
   const activePageIdRef = useRef<string>(surfaceStatesRef.current.document.currentPageId);
+  useEffect(() => {
+    onMonitorDocumentChange?.({
+      html: docHtml,
+      surfaceMode,
+      pageId: activePageId,
+      items: items.map(({ id, type, x, y, w, h, content, imageUrl, assetUrl, styles }) => ({ id, type, x, y, w, h, content, imageUrl, assetUrl, styles })),
+    });
+  }, [activePageId, docHtml, items, onMonitorDocumentChange, surfaceMode]);
   useEffect(() => {
     setSelectedSlideIds((prev) => prev.filter((pageId) => pages.some((page) => page.id === pageId)));
     if (slideSelectionAnchorIdRef.current && !pages.some((page) => page.id === slideSelectionAnchorIdRef.current)) {
@@ -2772,21 +2792,43 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     try { orientation?.unlock?.(); } catch { /* Unsupported browser. */ }
   }, [board.setPresentation, forcedStudentPresentation, viewerCanManageWorkspace]);
 
-  const enterBoardFullscreen = useCallback(async () => {
-    if (!forcedStudentPresentation) setBoardFullscreen(true);
-    revealFullscreenToolbar();
-    // Request native fullscreen in the gesture, before awaiting a network write.
-    if (viewerCanManageWorkspace) void board.setPresentation(true);
+  const requestNativeBoardFullscreenAndLandscape = useCallback(async () => {
     const root = boardRootRef.current;
-    if (root?.requestFullscreen) {
-      try { await root.requestFullscreen(); } catch (cause) { boardSyncTrace('fullscreen-rejected', { message: String(cause) }); }
+    let fullscreenGranted = Boolean(document.fullscreenElement);
+    if (root?.requestFullscreen && !document.fullscreenElement) {
+      try { await root.requestFullscreen(); fullscreenGranted = true; }
+      catch (cause) {
+        setOrientationFallback(true);
+        boardSyncTrace('fullscreen-rejected', { message: String(cause) });
+      }
     }
     const orientation = window.screen?.orientation as ScreenOrientation & { lock?: (value: string) => Promise<void> };
     if (typeof orientation?.lock === 'function') {
       try { await orientation.lock('landscape'); setOrientationFallback(false); }
       catch (cause) { setOrientationFallback(true); boardSyncTrace('orientation-rejected', { message: String(cause) }); }
     } else setOrientationFallback(true);
-  }, [board.setPresentation, forcedStudentPresentation, revealFullscreenToolbar, viewerCanManageWorkspace]);
+    return fullscreenGranted;
+  }, []);
+
+  const enterBoardFullscreen = useCallback(async () => {
+    if (!forcedStudentPresentation) setBoardFullscreen(true);
+    revealFullscreenToolbar();
+    // Request native fullscreen in the gesture, before awaiting a network write.
+    if (viewerCanManageWorkspace) void board.setPresentation(true);
+    await requestNativeBoardFullscreenAndLandscape();
+  }, [board.setPresentation, forcedStudentPresentation, requestNativeBoardFullscreenAndLandscape, revealFullscreenToolbar, viewerCanManageWorkspace]);
+
+  useEffect(() => {
+    if (!forcedStudentPresentation) {
+      remoteFullscreenAttemptedRef.current = false;
+      return;
+    }
+    if (remoteFullscreenAttemptedRef.current || document.fullscreenElement) return;
+    remoteFullscreenAttemptedRef.current = true;
+    // Browsers normally reject this remote attempt. The visible CTA retries
+    // the same request inside the student's own gesture, where it is allowed.
+    void requestNativeBoardFullscreenAndLandscape();
+  }, [forcedStudentPresentation, requestNativeBoardFullscreenAndLandscape]);
 
   useEffect(() => {
     const syncNativeFullscreen = () => {
@@ -2798,8 +2840,11 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   }, [boardFullscreen, teacherBoardPresentation]);
 
   useEffect(() => {
-    if (!teacherBoardPresentation && !viewerCanManageWorkspace && !boardFullscreen && document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => undefined);
+    if (!teacherBoardPresentation && !viewerCanManageWorkspace && !boardFullscreen) {
+      if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+      const orientation = window.screen?.orientation as ScreenOrientation & { unlock?: () => void };
+      try { orientation?.unlock?.(); } catch { /* Unsupported browser. */ }
+      setOrientationFallback(false);
     }
   }, [boardFullscreen, teacherBoardPresentation, viewerCanManageWorkspace]);
 
@@ -3077,6 +3122,8 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
   const saveDocDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrollDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectionAwarenessDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const participantViewportDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastParticipantViewportSignatureRef = useRef('');
   const applyingRemoteScrollRef = useRef(false);
   const suppressScrollPublishUntilRef = useRef(0);
   const lastRemoteScrollUpdateRef = useRef(0);
@@ -3148,6 +3195,66 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
 
   const getScrollElement = () => surfaceModeRef.current === 'slides' && docRef.current && docRef.current.scrollHeight > docRef.current.clientHeight
     ? docRef.current : overflowRef.current;
+  const captureLogicalScrollAnchor = useCallback((): BoardScrollAnchor | null => {
+    const root = docRef.current;
+    const scroll = getScrollElement();
+    if (!root || !scroll || surfaceModeRef.current !== 'document') return null;
+    const viewportRatio = 0.5;
+    const scrollRect = scroll.getBoundingClientRect();
+    const rootRect = root.getBoundingClientRect();
+    const x = Math.max(scrollRect.left + 1, Math.min(scrollRect.right - 1, rootRect.left + rootRect.width / 2));
+    const y = scrollRect.top + scroll.clientHeight * viewportRatio;
+    const pointDocument = document as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    };
+    let range: Range | null = null;
+    const caret = pointDocument.caretPositionFromPoint?.(x, y);
+    if (caret && root.contains(caret.offsetNode)) {
+      range = document.createRange();
+      range.setStart(caret.offsetNode, caret.offset);
+      range.collapse(true);
+    } else {
+      const candidate = pointDocument.caretRangeFromPoint?.(x, y) ?? null;
+      if (candidate && root.contains(candidate.startContainer)) {
+        candidate.collapse(true);
+        range = candidate;
+      }
+    }
+    const serialized = range ? serializeDomRange(root, range) : null;
+    return serialized ? { range: serialized, viewportRatio, fingerprint: boardContentFingerprint(root.innerHTML) } : null;
+  }, []);
+
+  const applyLogicalScrollAnchor = useCallback((view: BoardView, scroll: HTMLElement): boolean => {
+    const anchor = view.scrollAnchor;
+    const root = docRef.current;
+    if (!anchor || !root || view.surfaceMode !== 'document' || boardContentFingerprint(root.innerHTML) !== anchor.fingerprint) return false;
+    const range = restoreDomRange(root, anchor.range);
+    if (!range) return false;
+    let rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) {
+      const probe = range.cloneRange();
+      const node = range.startContainer;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const length = node.nodeValue?.length ?? 0;
+        if (range.startOffset < length) probe.setEnd(node, range.startOffset + 1);
+        else if (range.startOffset > 0) probe.setStart(node, range.startOffset - 1);
+      }
+      rect = Array.from(probe.getClientRects())[0] ?? rect;
+    }
+    if (!Number.isFinite(rect.top) || (rect.width === 0 && rect.height === 0)) return false;
+    const scrollRect = scroll.getBoundingClientRect();
+    scroll.scrollTop = resolveAnchoredScrollTop({
+      currentScrollTop: scroll.scrollTop,
+      anchorViewportTop: rect.top,
+      viewportTop: scrollRect.top,
+      clientHeight: scroll.clientHeight,
+      viewportRatio: anchor.viewportRatio,
+      maximumScrollTop: Math.max(scroll.scrollHeight - scroll.clientHeight, 0),
+    });
+    return true;
+  }, []);
+
   const applyAuthoritativeView = useCallback((force = false) => {
     if (board.ownRef.current && composingRef.current) return;
     const view = authoritativeViewRef.current;
@@ -3158,7 +3265,9 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (scroll) {
       applyingRemoteScrollRef.current = true;
       suppressScrollPublishUntilRef.current = Date.now() + 300;
-      scroll.scrollTop = restoreScrollTop(view.scrollRatio, scroll.scrollHeight, scroll.clientHeight);
+      if (!applyLogicalScrollAnchor(view, scroll)) {
+        scroll.scrollTop = restoreScrollTop(view.scrollRatio, scroll.scrollHeight, scroll.clientHeight);
+      }
       requestAnimationFrame(() => { applyingRemoteScrollRef.current = false; });
     }
     // Followers render selection through the existing overlay only.
@@ -3182,30 +3291,76 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     activeFloatingIdRef.current = selected.itemId;
     lastAppliedViewRef.current = signature;
     requestAnimationFrame(() => { applyingRemoteSelectionRef.current = false; });
-  }, []);
+  }, [applyLogicalScrollAnchor]);
+
+  const captureBoardView = useCallback((): BoardView => {
+    const native = window.getSelection(); const range = native?.rangeCount ? native.getRangeAt(0) : null;
+    const floating = activeFloatingElRef.current;
+    const root = range && floating?.contains(range.commonAncestorContainer) ? floating : docRef.current;
+    const serialized = root && range && root.contains(range.commonAncestorContainer) ? serializeDomRange(root, range) : null;
+    const scroll = getScrollElement();
+    return {
+      surfaceMode: surfaceModeRef.current,
+      pageId: activePageIdRef.current,
+      scrollRatio: scroll ? serializeScrollRatio(scroll.scrollTop, scroll.scrollHeight, scroll.clientHeight) : 0,
+      scrollAnchor: captureLogicalScrollAnchor(),
+      selection: serialized && root ? {
+        target: root === docRef.current ? 'document' : 'item',
+        itemId: root === docRef.current ? null : activeFloatingIdRef.current,
+        range: serialized,
+        fingerprint: boardContentFingerprint(root.innerHTML),
+      } : null,
+    };
+  }, [captureLogicalScrollAnchor]);
+
+  const queueParticipantViewport = useCallback(() => {
+    if (readOnly || !viewerIsStudent || !classId || !userId) return;
+    if (participantViewportDebounce.current) clearTimeout(participantViewportDebounce.current);
+    participantViewportDebounce.current = setTimeout(() => {
+      participantViewportDebounce.current = null;
+      const scroll = getScrollElement();
+      if (!scroll) return;
+      const visualViewport = window.visualViewport;
+      const viewportWidth = Math.max(1, Math.round(visualViewport?.width ?? window.innerWidth));
+      const viewportHeight = Math.max(1, Math.round(visualViewport?.height ?? window.innerHeight));
+      const view = captureBoardView();
+      const viewport: BoardParticipantViewport = {
+        clientId: board.clientId,
+        viewportWidth,
+        viewportHeight,
+        boardWidth: Math.max(1, Math.round(scroll.clientWidth)),
+        boardHeight: Math.max(1, Math.round(scroll.clientHeight)),
+        orientation: boardViewportOrientation(viewportWidth, viewportHeight),
+        expanded: isBoardFullscreen,
+        nativeFullscreen: nativeBoardFullscreen,
+        surfaceMode: view.surfaceMode,
+        pageId: view.pageId,
+        scrollRatio: clampBoardViewportRatio(view.scrollRatio),
+        scrollAnchor: view.scrollAnchor ?? null,
+        zoom: Math.max(0.1, visualViewport?.scale ?? 1),
+      };
+      const signature = JSON.stringify(viewport);
+      if (signature === lastParticipantViewportSignatureRef.current) return;
+      lastParticipantViewportSignatureRef.current = signature;
+      void publishLiveBoardViewport(classId, userId, viewport).catch((cause) => {
+        boardSyncTrace('participant-viewport-rejected', { classId, message: String(cause) });
+      });
+    }, 180);
+  }, [board.clientId, captureBoardView, classId, isBoardFullscreen, nativeBoardFullscreen, readOnly, userId, viewerIsStudent]);
+
   const queueBoardView = useCallback(() => {
     if (!board.ownRef.current || applyingRemoteSelectionRef.current) return;
     if (selectionAwarenessDebounce.current) return;
     selectionAwarenessDebounce.current = setTimeout(() => {
       selectionAwarenessDebounce.current = null;
       if (!board.ownRef.current) return;
-      const native = window.getSelection(); const range = native?.rangeCount ? native.getRangeAt(0) : null;
-      const floating = activeFloatingElRef.current;
-      const root = range && floating?.contains(range.commonAncestorContainer) ? floating : docRef.current;
-      const serialized = root && range && root.contains(range.commonAncestorContainer) ? serializeDomRange(root, range) : null;
-      const scroll = getScrollElement();
-      const view: BoardView = {
-        surfaceMode: surfaceModeRef.current, pageId: activePageIdRef.current,
-        scrollRatio: scroll ? serializeScrollRatio(scroll.scrollTop, scroll.scrollHeight, scroll.clientHeight) : 0,
-        selection: serialized && root ? { target: root === docRef.current ? 'document' : 'item', itemId: root === docRef.current ? null : activeFloatingIdRef.current,
-          range: serialized, fingerprint: boardContentFingerprint(root.innerHTML) } : null,
-      };
+      const view = captureBoardView();
       const signature = JSON.stringify(view);
       if (lastPublishedSelectionRef.current === signature) return;
       lastPublishedSelectionRef.current = signature;
       void board.publish(view);
     }, 40);
-  }, [board.publish]);
+  }, [board.publish, captureBoardView]);
   useEffect(() => {
     // Expansion/keyboard/toolbar changes alter the scroll range even if view is unchanged.
     let frame = 0;
@@ -3214,6 +3369,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       frame = requestAnimationFrame(() => {
         if (!board.ownRef.current) applyAuthoritativeView(true);
         else queueBoardView();
+        queueParticipantViewport();
       });
     };
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(followLayout);
@@ -3221,7 +3377,20 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     if (docRef.current) observer?.observe(docRef.current);
     followLayout();
     return () => { cancelAnimationFrame(frame); observer?.disconnect(); };
-  }, [applyAuthoritativeView, queueBoardView, isBoardFullscreen, presentationMode]);
+  }, [applyAuthoritativeView, queueBoardView, queueParticipantViewport, isBoardFullscreen, presentationMode]);
+
+  useEffect(() => {
+    const publishViewport = () => queueParticipantViewport();
+    window.addEventListener('resize', publishViewport);
+    window.addEventListener('orientationchange', publishViewport);
+    window.visualViewport?.addEventListener('resize', publishViewport);
+    queueParticipantViewport();
+    return () => {
+      window.removeEventListener('resize', publishViewport);
+      window.removeEventListener('orientationchange', publishViewport);
+      window.visualViewport?.removeEventListener('resize', publishViewport);
+    };
+  }, [activePageId, isBoardFullscreen, nativeBoardFullscreen, queueParticipantViewport, surfaceMode]);
   useEffect(() => {
     authoritativeViewRef.current = board.control?.view ?? null;
     if (!board.own) {
@@ -3800,6 +3969,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     pendingDocSaveRef.current = null;
     if (scrollDebounce.current) clearTimeout(scrollDebounce.current);
     if (selectionAwarenessDebounce.current) clearTimeout(selectionAwarenessDebounce.current);
+    if (participantViewportDebounce.current) clearTimeout(participantViewportDebounce.current);
     pendingItemsSaveRef.current = null;
     pendingSingleItemSaveRef.current = {};
     pendingDocSaveRef.current = null;
@@ -4057,6 +4227,7 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
     boardSyncTrace('scroll-event', { classId, own: board.ownRef.current, scrollTop: scroll?.scrollTop,
       scrollLeft: scroll?.scrollLeft, scrollHeight: scroll?.scrollHeight, clientHeight: scroll?.clientHeight,
       element: scroll === docRef.current ? 'document' : 'overflow', expanded: isBoardFullscreen, applyingRemote: applyingRemoteScrollRef.current });
+    queueParticipantViewport();
     if (applyingRemoteScrollRef.current) return;
     if (!board.ownRef.current) {
       applyAuthoritativeView(true);
@@ -6537,8 +6708,11 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
 
       {forcedStudentPresentation && !nativeBoardFullscreen && (
         <button type="button" data-board-control-ui data-board-fullscreen-gesture onClick={() => void enterBoardFullscreen()}
-          className="fixed bottom-4 left-1/2 z-[12080] -translate-x-1/2 rounded-full bg-slate-950/85 px-4 py-2 text-sm font-bold text-white shadow-xl"
-          aria-label="Toque para tela cheia" title="Toque para tela cheia">Toque para tela cheia</button>
+          className="fixed bottom-5 left-1/2 z-[12080] min-h-12 -translate-x-1/2 rounded-full border border-white/30 bg-slate-950/90 px-6 py-3 text-base font-black text-white shadow-2xl backdrop-blur-sm"
+          aria-label={uiLang === 'en' ? 'Open board fullscreen' : uiLang === 'es' ? 'Abrir pizarra en pantalla completa' : 'Abrir lousa em tela cheia'}
+          title={uiLang === 'en' ? 'Open board fullscreen' : uiLang === 'es' ? 'Abrir pizarra en pantalla completa' : 'Abrir lousa em tela cheia'}>
+          {uiLang === 'en' ? 'Open board fullscreen' : uiLang === 'es' ? 'Abrir pizarra en pantalla completa' : 'Abrir lousa em tela cheia'}
+        </button>
       )}
       {isBoardFullscreen && isPortraitViewport && (orientationFallback || forcedStudentPresentation) && (
         <div data-board-control-ui role="status" className="pointer-events-none absolute bottom-2 left-2 z-[12080] max-w-[80vw] rounded bg-slate-950/80 px-2 py-1 text-xs text-white">

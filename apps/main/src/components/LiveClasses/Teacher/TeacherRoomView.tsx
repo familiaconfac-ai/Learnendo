@@ -12,6 +12,8 @@ import { isTrackReference } from '@livekit/components-core';
 import { ConnectionState, RoomEvent, Track, createLocalAudioTrack, createLocalVideoTrack } from 'livekit-client';
 import { User } from 'firebase/auth';
 import { WorkspaceCanvas } from '../Workspace/WorkspaceCanvas';
+import { StudentBoardViewMonitor } from '../Workspace/StudentBoardViewMonitor';
+import type { BoardMonitorDocumentState } from '../../../models/boardViewport';
 import { LiveClassRoomShell } from '../Shared/LiveClassRoomShell';
 import { BottomNavigationBattleButton } from '../../BottomNavigation/BottomNavigation';
 import { ExerciseSessionPanel } from '../ExerciseSessionPanel';
@@ -84,6 +86,7 @@ const TeacherStage: React.FC<{
   accountRole: UserRole;
   effectiveRole: UserRole;
   session: LiveClassSession;
+  presence: LiveClassPresence[];
   assignedRoster: Array<{ uid: string; label: string; isOnline: boolean }>;
   handleUpdateSession: (patch: Partial<LiveClassSession>) => Promise<void>;
   teacherUid: string;
@@ -105,6 +108,7 @@ const TeacherStage: React.FC<{
   accountRole,
   effectiveRole,
   session,
+  presence,
   assignedRoster,
   handleUpdateSession,
   teacherUid,
@@ -145,6 +149,7 @@ const TeacherStage: React.FC<{
   const [camError, setCamError] = useState<string | null>(null);
   const [micError, setMicError] = useState<string | null>(null);
   const [workspacePresentationActive, setWorkspacePresentationActive] = useState(false);
+  const [monitorDocumentState, setMonitorDocumentState] = useState<BoardMonitorDocumentState | null>(null);
   const [showWorkspaceGrammar, setShowWorkspaceGrammar] = useState(false);
   const [exercisePanelSelection, setExercisePanelSelection] = useState<GrammarNavigatorSelection | null>(null);
   const grammarScrollRef = useRef<HTMLDivElement>(null);
@@ -589,6 +594,7 @@ const TeacherStage: React.FC<{
                   assignedRoster={assignedRoster}
                   onOpenBattleTemplate={onOpenBattleTemplate}
                   onPresentationModeChange={setWorkspacePresentationActive}
+                  onMonitorDocumentChange={setMonitorDocumentState}
                 />
               </div>
             ) : null}
@@ -632,6 +638,11 @@ const TeacherStage: React.FC<{
       }
       desktopSidebar={
         <div className="flex h-full min-h-0 w-full flex-col gap-2 overflow-y-auto px-2 py-3">
+          <StudentBoardViewMonitor
+            presence={presence}
+            assignedRoster={assignedRoster}
+            documentState={monitorDocumentState}
+          />
           <span className="px-1 text-[10px] font-bold uppercase tracking-wider text-slate-500">
             {labels.cameras}
           </span>
@@ -882,7 +893,7 @@ const TeacherStage: React.FC<{
 };
 
 export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
-  const { liveClass, user, accountRole, effectiveRole, session, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onStartTrailBattle, onOpenPreviewTab, onOpenTrackTab, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
+  const { liveClass, user, accountRole, effectiveRole, session, presence, assignedRoster, handleUpdateSession, onOpenBattleHub, onOpenBattleTemplate, onStartTrailBattle, onOpenPreviewTab, onOpenTrackTab, onExit, showExerciseSession, setShowExerciseSession, statusMessage } = props;
   const [token, setToken] = useState<string | null>(null);
   const [wsUrl, setWsUrl] = useState<string | null>(null);
   const [liveKitError, setLiveKitError] = useState<string | null>(null);
@@ -1140,6 +1151,7 @@ export const TeacherRoomView: React.FC<TeacherRoomViewProps> = (props) => {
           accountRole={accountRole}
           effectiveRole={effectiveRole}
           session={session}
+          presence={presence}
           assignedRoster={assignedRoster}
           handleUpdateSession={handleUpdateSession}
           teacherUid={user.uid}

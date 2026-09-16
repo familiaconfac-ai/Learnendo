@@ -1,4 +1,5 @@
 import type { SerializedSelectionRange } from '../components/LiveClasses/Workspace/workspaceSelectionAwareness';
+import type { BoardScrollAnchor } from './boardViewport';
 
 export const TEACHER_IDLE_MS = 2200;
 export const TEACHER_LEASE_MS = 5000;
@@ -6,6 +7,7 @@ export interface BoardView {
   surfaceMode: 'document' | 'slides';
   pageId: string;
   scrollRatio: number;
+  scrollAnchor?: BoardScrollAnchor | null;
   selection: { target: 'document' | 'item'; itemId: string | null; range: SerializedSelectionRange; fingerprint: string } | null;
 }
 export interface BoardControl {

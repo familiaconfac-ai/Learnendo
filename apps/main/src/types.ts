@@ -1,5 +1,6 @@
 import type { TargetLanguage } from './models/languageContext';
 import type { SavedBattleTemplate } from './components/LiveClasses/Battle/battleTypes';
+import type { BoardParticipantViewport } from './models/boardViewport';
 
 export interface Course {
   id: string;
@@ -279,6 +280,8 @@ export interface LiveClassPresence {
   role: LiveClassRole;
   isOnline: boolean;
   lastSeenAt?: string;
+  boardViewport?: BoardParticipantViewport | null;
+  boardViewportUpdatedAt?: string;
 }
 
 export interface LiveClassSession {

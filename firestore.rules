@@ -430,6 +430,17 @@ service cloud.firestore {
     function boardControlDoc(classId) {
       return getAfter(/databases/$(database)/documents/liveClasses/$(classId)/shared/boardControl);
     }
+    function validBoardScrollAnchor(value) {
+      return value == null || (value is map
+        && value.keys().hasOnly(['range', 'viewportRatio', 'fingerprint'])
+        && value.viewportRatio is number && value.viewportRatio >= 0 && value.viewportRatio <= 1
+        && value.fingerprint is string && value.fingerprint.size() < 100
+        && value.range is map
+        && value.range.startPath is list && value.range.startPath.size() <= 64
+        && value.range.endPath is list && value.range.endPath.size() <= 64
+        && value.range.startOffset is int && value.range.startOffset >= 0
+        && value.range.endOffset is int && value.range.endOffset >= 0);
+    }
     function validBoardControl(value, leaseValid) {
       return value.keys().hasOnly(['acquisitionOpen', 'controllerId', 'controllerName', 'controllerClientId', 'epoch', 'teacherLeaseAt', 'view', 'updatedAt'])
         && value.acquisitionOpen is bool
@@ -439,9 +450,10 @@ service cloud.firestore {
         && leaseValid
         && value.updatedAt == request.time
         && (value.view == null || (value.view is map
-          && value.view.keys().hasOnly(['surfaceMode', 'pageId', 'scrollRatio', 'selection'])
+          && value.view.keys().hasOnly(['surfaceMode', 'pageId', 'scrollRatio', 'scrollAnchor', 'selection'])
           && value.view.surfaceMode in ['document', 'slides'] && value.view.pageId is string
           && value.view.scrollRatio is number && value.view.scrollRatio >= 0 && value.view.scrollRatio <= 1
+          && validBoardScrollAnchor(value.view.get('scrollAnchor', null))
           && (value.view.selection == null || (value.view.selection is map
             && value.view.selection.keys().hasOnly(['target', 'itemId', 'range', 'fingerprint'])
             && value.view.selection.target in ['document', 'item']
@@ -480,9 +492,10 @@ service cloud.firestore {
         && value.epoch == authority.epoch && value.controllerId == request.auth.uid
         && value.controllerId == authority.controllerId && value.controllerClientId == authority.controllerClientId
         && value.updatedAt == request.time
-        && value.view is map && value.view.keys().hasOnly(['surfaceMode', 'pageId', 'scrollRatio', 'selection'])
+        && value.view is map && value.view.keys().hasOnly(['surfaceMode', 'pageId', 'scrollRatio', 'scrollAnchor', 'selection'])
         && value.view.surfaceMode in ['document', 'slides'] && value.view.pageId is string
         && value.view.scrollRatio is number && value.view.scrollRatio >= 0 && value.view.scrollRatio <= 1
+        && validBoardScrollAnchor(value.view.get('scrollAnchor', null))
         && (value.view.selection == null || (value.view.selection is map
           && value.view.selection.keys().hasOnly(['target', 'itemId', 'range', 'fingerprint'])
           && value.view.selection.target in ['document', 'item']
