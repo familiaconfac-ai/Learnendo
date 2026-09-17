@@ -26,6 +26,13 @@ export interface BoardMonitorDocumentState {
   html: string;
   surfaceMode: 'document' | 'slides';
   pageId: string;
+  controllerId: string | null;
+  selection: {
+    target: 'document' | 'item';
+    itemId: string | null;
+    range: SerializedSelectionRange;
+    fingerprint: string;
+  } | null;
   items: Array<{
     id: string;
     type: 'text' | 'image';
@@ -38,6 +45,19 @@ export interface BoardMonitorDocumentState {
     assetUrl?: string;
     styles?: { fontFamily?: string; fontSize?: number; color?: string; bgColor?: string; textAlign?: string; bold?: boolean; italic?: boolean; underline?: boolean };
   }>;
+}
+
+export function chooseStudentMonitorUid(
+  students: Array<{ uid: string; isOnline: boolean }>,
+  selectedUid: string,
+  controllerId: string | null,
+  previousControllerId: string | null,
+): string {
+  const online = students.filter((student) => student.isOnline);
+  const controller = online.find((student) => student.uid === controllerId);
+  if (controller && (!selectedUid || controllerId !== previousControllerId)) return controller.uid;
+  if (online.some((student) => student.uid === selectedUid)) return selectedUid;
+  return online[0]?.uid ?? '';
 }
 
 export function clampBoardViewportRatio(value: number): number {

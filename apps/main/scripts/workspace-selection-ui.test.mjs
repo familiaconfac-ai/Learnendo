@@ -72,6 +72,10 @@ assert.match(studentMonitor, /pointer-events-none/, 'the student viewport replic
 assert.match(studentMonitor, /boardViewport/, 'the monitor must consume the selected participant viewport');
 assert.match(studentMonitor, /documentState\.html/, 'the monitor must reuse shared Board content');
 assert.doesNotMatch(studentMonitor, /getDisplayMedia|MediaStream|subscribeWorkspace/, 'the monitor must not capture a screen or create a document subscription');
+assert.match(studentMonitor, /student-view-scrollbar-hidden/, 'the monitor must hide its visual scrollbar');
+assert.match(studentMonitor, /viewportWidth/, 'the monitor must preserve the participant viewport aspect ratio');
+assert.match(studentMonitor, /data-student-view-selection/, 'the monitor must render the shared serialized selection');
+assert.match(studentMonitor, /chooseStudentMonitorUid/, 'the monitor must follow the active Board controller without removing manual selection');
 assert.match(controlHook, /next\?\.controllerId === uid && !next\.acquisitionOpen/, 'the current student must rebind after refresh/reconnect');
 assert.match(controlHook, /acquireError: \{ code, message \}/, 'acquire failures must preserve the Firebase code and message');
 assert.match(controlHook, /!teacher \|\| !control\?\.acquisitionOpen/, 'teacher editing must stop while S is waiting');

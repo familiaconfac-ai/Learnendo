@@ -2647,9 +2647,13 @@ export const WorkspaceCanvas: React.FC<WorkspaceCanvasProps> = ({
       html: docHtml,
       surfaceMode,
       pageId: activePageId,
+      controllerId: board.control?.controllerId ?? null,
+      selection: board.control?.view?.pageId === activePageId && board.control.view.surfaceMode === surfaceMode
+        ? board.control.view.selection
+        : null,
       items: items.map(({ id, type, x, y, w, h, content, imageUrl, assetUrl, styles }) => ({ id, type, x, y, w, h, content, imageUrl, assetUrl, styles })),
     });
-  }, [activePageId, docHtml, items, onMonitorDocumentChange, surfaceMode]);
+  }, [activePageId, board.control?.controllerId, board.control?.view?.selection, docHtml, items, onMonitorDocumentChange, surfaceMode]);
   useEffect(() => {
     setSelectedSlideIds((prev) => prev.filter((pageId) => pages.some((page) => page.id === pageId)));
     if (slideSelectionAnchorIdRef.current && !pages.some((page) => page.id === slideSelectionAnchorIdRef.current)) {

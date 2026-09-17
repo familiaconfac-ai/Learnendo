@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { LiveClassPresence } from '../../../types';
 import { boardContentFingerprint } from '../../../models/boardControl';
-import type { BoardMonitorDocumentState } from '../../../models/boardViewport';
+import { chooseStudentMonitorUid, type BoardMonitorDocumentState } from '../../../models/boardViewport';
 import { restoreDomRange, restoreScrollTop } from './workspaceSelectionAwareness';
 
 interface StudentBoardViewMonitorProps {
@@ -11,6 +11,68 @@ interface StudentBoardViewMonitorProps {
 }
 
 type StudentOption = { uid: string; label: string; isOnline: boolean; presence?: LiveClassPresence };
+
+const MonitorSelectionOverlay: React.FC<{
+  documentState: BoardMonitorDocumentState;
+  contentRef: React.RefObject<HTMLDivElement | null>;
+  canvasRef: React.RefObject<HTMLDivElement | null>;
+  itemRefs: React.RefObject<Map<string, HTMLDivElement>>;
+  scale: number;
+  scrollTop: number;
+}> = ({ documentState, contentRef, canvasRef, itemRefs, scale, scrollTop }) => {
+  const [rects, setRects] = useState<Array<{ top: number; left: number; width: number; height: number }>>([]);
+
+  useEffect(() => {
+    const selection = documentState.selection;
+    const canvas = canvasRef.current;
+    const root = selection?.target === 'item'
+      ? itemRefs.current.get(selection.itemId ?? '') ?? null
+      : contentRef.current;
+    if (!selection || !canvas || !root || boardContentFingerprint(root.innerHTML) !== selection.fingerprint) {
+      setRects([]);
+      return undefined;
+    }
+
+    const update = () => {
+      const range = restoreDomRange(root, selection.range);
+      if (!range) {
+        setRects([]);
+        return;
+      }
+      const canvasRect = canvas.getBoundingClientRect();
+      const next = Array.from(range.getClientRects())
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+        .slice(0, 24)
+        .map((rect) => ({
+          top: (rect.top - canvasRect.top) / Math.max(scale, 0.001),
+          left: (rect.left - canvasRect.left) / Math.max(scale, 0.001),
+          width: rect.width / Math.max(scale, 0.001),
+          height: rect.height / Math.max(scale, 0.001),
+        }));
+      setRects(next);
+    };
+    const frame = requestAnimationFrame(update);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update);
+    observer?.observe(root);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+  }, [canvasRef, contentRef, documentState, itemRefs, scale, scrollTop]);
+
+  if (rects.length === 0) return null;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30" data-student-view-selection>
+      {rects.map((rect, index) => (
+        <div
+          key={`${rect.left}:${rect.top}:${index}`}
+          className="absolute rounded-[3px] border border-blue-600/80 bg-blue-500/45 shadow-[0_0_0_1px_rgba(37,99,235,0.18)]"
+          style={{ left: rect.left, top: rect.top, width: rect.width, height: rect.height }}
+        />
+      ))}
+    </div>
+  );
+};
 
 export const StudentBoardViewMonitor: React.FC<StudentBoardViewMonitorProps> = ({
   presence,
@@ -22,6 +84,9 @@ export const StudentBoardViewMonitor: React.FC<StudentBoardViewMonitorProps> = (
   const [monitorScrollTop, setMonitorScrollTop] = useState(0);
   const measureRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef(new Map<string, HTMLDivElement>());
+  const previousControllerIdRef = useRef<string | null>(null);
 
   const students = useMemo<StudentOption[]>(() => {
     const byUid = new Map<string, StudentOption>();
@@ -39,8 +104,11 @@ export const StudentBoardViewMonitor: React.FC<StudentBoardViewMonitorProps> = (
   }, [assignedRoster, presence]);
 
   useEffect(() => {
-    if (selectedUid && !students.some((student) => student.uid === selectedUid)) setSelectedUid('');
-  }, [selectedUid, students]);
+    const controllerId = documentState?.controllerId ?? null;
+    const nextUid = chooseStudentMonitorUid(students, selectedUid, controllerId, previousControllerIdRef.current);
+    previousControllerIdRef.current = controllerId;
+    if (nextUid !== selectedUid) setSelectedUid(nextUid);
+  }, [documentState?.controllerId, selectedUid, students]);
 
   useEffect(() => {
     const element = measureRef.current;
@@ -54,8 +122,8 @@ export const StudentBoardViewMonitor: React.FC<StudentBoardViewMonitorProps> = (
 
   const selected = students.find((student) => student.uid === selectedUid) ?? null;
   const viewport = selected?.presence?.boardViewport ?? null;
-  const frameWidth = Math.max(1, viewport?.boardWidth ?? viewport?.viewportWidth ?? 360);
-  const frameHeight = Math.max(1, viewport?.boardHeight ?? viewport?.viewportHeight ?? 640);
+  const frameWidth = Math.max(1, viewport?.viewportWidth ?? viewport?.boardWidth ?? 360);
+  const frameHeight = Math.max(1, viewport?.viewportHeight ?? viewport?.boardHeight ?? 640);
   const scale = Math.min(1, availableWidth / frameWidth, 260 / frameHeight);
 
   useEffect(() => {
@@ -106,21 +174,34 @@ export const StudentBoardViewMonitor: React.FC<StudentBoardViewMonitorProps> = (
         {viewport ? <div>Página {viewport.pageId} · {viewport.surfaceMode === 'slides' ? 'slides' : 'documento'} · rolagem lógica</div> : null}
       </div>
 
-      <div ref={measureRef} className="flex w-full justify-center overflow-hidden rounded-lg bg-slate-900 p-1">
-        {viewport && documentState && viewport.pageId === documentState.pageId ? (
+      <style>{`
+        [data-student-view-monitor] .student-view-scrollbar-hidden,
+        [data-student-view-monitor] .student-view-scrollbar-hidden * {
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        [data-student-view-monitor] .student-view-scrollbar-hidden::-webkit-scrollbar,
+        [data-student-view-monitor] .student-view-scrollbar-hidden *::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
+        }
+      `}</style>
+      <div ref={measureRef} className="flex w-full justify-center overflow-hidden rounded-lg bg-slate-900">
+        {viewport && documentState && viewport.pageId === documentState.pageId && viewport.surfaceMode === documentState.surfaceMode ? (
           <div
-            className="relative overflow-hidden rounded border border-slate-600 bg-white shadow-inner"
-            style={{ width: frameWidth * scale, height: frameHeight * scale }}
+            className="student-view-scrollbar-hidden relative overflow-hidden rounded bg-white shadow-[inset_0_0_0_1px_rgba(71,85,105,1)]"
+            style={{ width: frameWidth * scale, height: frameHeight * scale, aspectRatio: `${frameWidth} / ${frameHeight}` }}
             aria-label={`Prévia da lousa de ${selected?.label ?? 'aluno'}`}
           >
             <div
-              className="pointer-events-none absolute left-0 top-0 origin-top-left overflow-hidden bg-slate-100"
+              className="student-view-scrollbar-hidden pointer-events-none absolute left-0 top-0 origin-top-left overflow-hidden bg-slate-100"
               style={{ width: frameWidth, height: frameHeight, transform: `scale(${scale})` }}
             >
-              <div className="relative" style={{ minHeight: Math.max(frameHeight, 1120), transform: `translateY(-${monitorScrollTop}px)` }}>
+              <div ref={canvasRef} className="relative" style={{ minHeight: Math.max(frameHeight, 1120), transform: `translateY(-${monitorScrollTop}px)` }}>
                 <div
                   ref={contentRef}
-                  className="min-h-full overflow-hidden bg-white px-6 py-5 text-slate-900"
+                  className="student-view-scrollbar-hidden min-h-full overflow-hidden bg-white px-6 py-5 text-slate-900"
                   style={{ width: frameWidth, minHeight: Math.max(frameHeight, 1120), fontFamily: 'Arial, sans-serif', fontSize: 16, lineHeight: 1.625 }}
                   dangerouslySetInnerHTML={{ __html: documentState.html }}
                 />
@@ -146,10 +227,25 @@ export const StudentBoardViewMonitor: React.FC<StudentBoardViewMonitorProps> = (
                     {item.type === 'image' ? (
                       <img src={item.assetUrl || item.imageUrl} alt="" className="h-full w-full object-contain" />
                     ) : (
-                      <div className="h-full w-full overflow-hidden p-1" dangerouslySetInnerHTML={{ __html: item.content ?? '' }} />
+                      <div
+                        ref={(element) => {
+                          if (element) itemRefs.current.set(item.id, element);
+                          else itemRefs.current.delete(item.id);
+                        }}
+                        className="h-full w-full overflow-hidden p-1"
+                        dangerouslySetInnerHTML={{ __html: item.content ?? '' }}
+                      />
                     )}
                   </div>
                 ))}
+                <MonitorSelectionOverlay
+                  documentState={documentState}
+                  contentRef={contentRef}
+                  canvasRef={canvasRef}
+                  itemRefs={itemRefs}
+                  scale={scale}
+                  scrollTop={monitorScrollTop}
+                />
               </div>
             </div>
           </div>

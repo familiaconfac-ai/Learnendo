@@ -8,7 +8,7 @@ import {
   restoreScrollTop,
   serializeScrollRatio,
 } from './workspaceSelectionAwareness.ts';
-import { boardViewportOrientation, resolveAnchoredScrollTop } from '../../../models/boardViewport.ts';
+import { boardViewportOrientation, chooseStudentMonitorUid, resolveAnchoredScrollTop } from '../../../models/boardViewport.ts';
 
 type FakeNode = {
   childNodes: FakeNode[];
@@ -63,6 +63,15 @@ assert.equal(resolveAnchoredScrollTop({
 }), 0, 'clamps an anchored viewport at the document top');
 assert.equal(boardViewportOrientation(390, 844), 'portrait');
 assert.equal(boardViewportOrientation(844, 390), 'landscape');
+const monitorStudents = [
+  { uid: 'student-a', isOnline: true },
+  { uid: 'student-b', isOnline: true },
+];
+assert.equal(chooseStudentMonitorUid(monitorStudents, '', null, null), 'student-a', 'selects the first online student initially');
+assert.equal(chooseStudentMonitorUid(monitorStudents, 'student-a', 'student-b', null), 'student-b', 'follows an explicit Board handoff');
+assert.equal(chooseStudentMonitorUid(monitorStudents, 'student-a', 'student-b', 'student-b'), 'student-a', 'preserves a manual choice while control is unchanged');
+assert.equal(chooseStudentMonitorUid([{ uid: 'student-a', isOnline: false }, { uid: 'student-b', isOnline: true }], 'student-a', null, null), 'student-b', 'moves away from a student who left');
+assert.equal(chooseStudentMonitorUid([], 'student-a', null, null), '', 'shows the empty state with no online students');
 
 const selectionRange = { startPath: [0, 0], startOffset: 1, endPath: [0, 0], endOffset: 4 };
 const remoteView = {
