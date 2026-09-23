@@ -73,6 +73,10 @@ const PLAYER_COPY = {
     audioChoiceHint: 'Listen once and choose the correct answer.',
     audioOpenHint: 'Listen once and type the answer.',
     speakingHint: 'Listen to the command and answer with a full sentence.',
+    playPromptAudio: 'Play question audio',
+    replayPromptAudio: 'Play audio again',
+    loadingPromptAudio: 'Loading audio...',
+    playingPromptAudio: 'Playing audio...',
     confirmAnswer: 'Confirm answer',
     yourSpeechAnswer: 'Your spoken answer appears here...',
     yourTypedAnswer: 'Type your answer...',
@@ -115,6 +119,10 @@ const PLAYER_COPY = {
     audioChoiceHint: 'Escute apenas uma vez e escolha a resposta entre as alternativas.',
     audioOpenHint: 'Escute apenas uma vez e digite a resposta.',
     speakingHint: 'Ouca o comando e responda falando uma frase completa.',
+    playPromptAudio: 'Ouvir audio da pergunta',
+    replayPromptAudio: 'Ouvir audio novamente',
+    loadingPromptAudio: 'Carregando audio...',
+    playingPromptAudio: 'Reproduzindo audio...',
     confirmAnswer: 'Confirmar resposta',
     yourSpeechAnswer: 'Sua resposta falada aparece aqui...',
     yourTypedAnswer: 'Digite sua resposta...',
@@ -157,6 +165,10 @@ const PLAYER_COPY = {
     audioChoiceHint: 'Escucha solo una vez y elige la respuesta correcta.',
     audioOpenHint: 'Escucha solo una vez y escribe la respuesta.',
     speakingHint: 'Escucha la consigna y responde con una frase completa.',
+    playPromptAudio: 'Escuchar audio de la pregunta',
+    replayPromptAudio: 'Escuchar audio de nuevo',
+    loadingPromptAudio: 'Cargando audio...',
+    playingPromptAudio: 'Reproduciendo audio...',
     confirmAnswer: 'Confirmar respuesta',
     yourSpeechAnswer: 'Tu respuesta hablada aparece aqui...',
     yourTypedAnswer: 'Escribe tu respuesta...',
@@ -179,6 +191,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const [showResults, setShowResults] = useState(false);
   const [musicVolume, setMusicVolume] = useState<number>(() => readBattleVolume('learnendo_battle_player_volume', 0.3));
   const [isListening, setIsListening] = useState(false);
+  const [promptAudioState, setPromptAudioState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'failed'>('idle');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const joinAttemptRef = useRef<string | null>(null);
   const joinInFlightRef = useRef(false);
@@ -186,6 +199,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const musicRef = useRef<ManagedBattleAudio | null>(null);
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
+  const promptAttemptedRef = useRef<string>('');
+  const promptPlaybackKeyRef = useRef<string>('');
   const musicMuted = musicVolume <= 0.1;
 
   function rollbackStudentSubmitLock() {
@@ -714,21 +729,62 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     });
   }, [classId, displayTime, effectiveFrozenTimeLeft, hasAnswered, session.id, session.status, timeLeft, uid]);
 
-  useEffect(() => {
+  const playPromptAudio = (source: 'auto' | 'interaction') => {
     if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) return;
     const promptKey = `${session.id}:${question.id}:${session.status}`;
-    if (promptPlayedRef.current === promptKey) return;
-
-    promptPlayedRef.current = promptKey;
     const audioText = getBattlePromptAudioText(question);
+    promptPlaybackKeyRef.current = promptKey;
+    setPromptAudioState('loading');
+    musicRef.current?.stop();
+    console.log('[BATTLE AUDIO] playback requested:', source);
     console.log('[BATTLE AUDIO] questionId:', question.id);
     console.log('[BATTLE AUDIO] question type:', question.kind);
     console.log('[BATTLE AUDIO] source field used for audio:', question.promptAudioText ? 'promptAudioText' : 'text');
     console.log('[BATTLE AUDIO] audio text resolved:', audioText);
-    window.setTimeout(() => {
-      speak(audioText, battleLanguage);
-    }, 250);
-  }, [session.id, session.status, question, battleLanguage]);
+    const resumeMusic = () => {
+      if (session.status === 'PLAYING') musicRef.current?.start();
+    };
+    const handle = speak(audioText, battleLanguage, {
+      onStart: () => {
+        if (promptPlaybackKeyRef.current !== promptKey) return;
+        promptPlayedRef.current = promptKey;
+        setPromptAudioState('playing');
+      },
+      onEnd: () => {
+        if (promptPlaybackKeyRef.current !== promptKey) return;
+        setPromptAudioState('played');
+        resumeMusic();
+      },
+      onError: () => {
+        if (promptPlaybackKeyRef.current !== promptKey) return;
+        setPromptAudioState('failed');
+        resumeMusic();
+      },
+    });
+    void handle.promise.then((result) => {
+      if (promptPlaybackKeyRef.current !== promptKey || result.state !== 'cancelled') return;
+      setPromptAudioState('failed');
+      resumeMusic();
+    });
+  };
+
+  useEffect(() => {
+    if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) {
+      setPromptAudioState('idle');
+      return;
+    }
+    const promptKey = `${session.id}:${question.id}:${session.status}`;
+    promptPlaybackKeyRef.current = promptKey;
+    if (promptPlayedRef.current === promptKey) {
+      setPromptAudioState('played');
+      return;
+    }
+    setPromptAudioState('idle');
+    if (promptAttemptedRef.current === promptKey) return;
+    promptAttemptedRef.current = promptKey;
+    const timer = window.setTimeout(() => playPromptAudio('auto'), 250);
+    return () => window.clearTimeout(timer);
+  }, [session.id, session.status, question?.id, question?.playAudioOnce, battleLanguage]);
 
   function startSpeechRecognition() {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -1577,6 +1633,22 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
             <p className="text-xs text-amber-300">
               {copy.speakingHint}
             </p>
+          )}
+          {(question.kind === 'audio-choice' || question.kind === 'audio-open' || question.kind === 'speaking') && question.playAudioOnce && (
+            <button
+              type="button"
+              onClick={() => playPromptAudio('interaction')}
+              disabled={promptAudioState === 'loading' || promptAudioState === 'playing'}
+              className="mx-auto inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-300 bg-amber-400 px-5 py-2 text-sm font-black text-slate-950 shadow-lg transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-70"
+            >
+              {promptAudioState === 'loading'
+                ? copy.loadingPromptAudio
+                : promptAudioState === 'playing'
+                  ? copy.playingPromptAudio
+                  : promptAudioState === 'played'
+                    ? `🔁 ${copy.replayPromptAudio}`
+                    : `🔊 ${copy.playPromptAudio}`}
+            </button>
           )}
         </div>
 
