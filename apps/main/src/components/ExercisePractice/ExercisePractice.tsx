@@ -149,6 +149,9 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
   const [reportComment, setReportComment] = useState('');
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [reportConfirmation, setReportConfirmation] = useState('');
+  const [reportDictationState, setReportDictationState] = useState<'idle' | 'listening'>('idle');
+  const [reportDictationMessage, setReportDictationMessage] = useState('');
+  const reportRecognitionRef = useRef<any>(null);
   const [lastStudentAnswer, setLastStudentAnswer] = useState<string | null>(null);
   const [lastAttemptCount, setLastAttemptCount] = useState(0);
   const [mastery, setMastery] = useState<MasterySessionState>(() => createMasterySession([]));
@@ -179,6 +182,88 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     if (window.history?.state?.learnendoExercise) window.history.replaceState(null, '');
     onBackRef.current();
   };
+
+  const stopReportDictation = (abort = false) => {
+    const recognition = reportRecognitionRef.current;
+    reportRecognitionRef.current = null;
+    if (recognition) {
+      try { abort ? recognition.abort() : recognition.stop(); } catch { /* recognition may already be stopped */ }
+    }
+    setReportDictationState('idle');
+  };
+
+  const closeReportForm = () => {
+    stopReportDictation(true);
+    setReportDictationMessage('');
+    setReportFormOpen(false);
+  };
+
+  const toggleReportDictation = () => {
+    if (reportDictationState === 'listening') {
+      stopReportDictation();
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setReportDictationMessage('O reconhecimento de voz não está disponível neste navegador.');
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    const baseComment = reportComment.trimEnd();
+    let dictatedText = '';
+    recognition.lang = interfaceLocale?.toLowerCase().startsWith('es')
+      ? 'es-ES'
+      : interfaceLocale?.toLowerCase().startsWith('en')
+        ? 'en-US'
+        : 'pt-BR';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+    recognition.onstart = () => {
+      setReportDictationState('listening');
+      setReportDictationMessage('Ouvindo… Fale seu comentário.');
+    };
+    recognition.onresult = (event: any) => {
+      let interimText = '';
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0]?.transcript?.trim() ?? '';
+        if (!transcript) continue;
+        if (event.results[index].isFinal) dictatedText = `${dictatedText} ${transcript}`.trim();
+        else interimText = `${interimText} ${transcript}`.trim();
+      }
+      const speech = `${dictatedText} ${interimText}`.trim();
+      setReportComment(`${baseComment}${baseComment && speech ? ' ' : ''}${speech}`.slice(0, 2000));
+    };
+    recognition.onerror = (event: any) => {
+      const message = event.error === 'not-allowed' || event.error === 'service-not-allowed'
+        ? 'A permissão do microfone foi negada. Libere o microfone no navegador e tente novamente.'
+        : event.error === 'audio-capture'
+          ? 'Nenhum microfone foi encontrado.'
+          : event.error === 'no-speech'
+            ? 'Nenhuma fala foi detectada. Toque no microfone para tentar novamente.'
+            : 'Não foi possível reconhecer a fala. Tente novamente.';
+      setReportDictationMessage(message);
+    };
+    recognition.onend = () => {
+      if (reportRecognitionRef.current === recognition) reportRecognitionRef.current = null;
+      setReportDictationState('idle');
+      setReportDictationMessage((message) => message.startsWith('Ouvindo') ? 'Ditado concluído.' : message);
+    };
+
+    reportRecognitionRef.current = recognition;
+    setReportDictationMessage('Ativando o microfone…');
+    try { recognition.start(); } catch {
+      reportRecognitionRef.current = null;
+      setReportDictationState('idle');
+      setReportDictationMessage('Não foi possível iniciar o microfone. Tente novamente.');
+    }
+  };
+
+  useEffect(() => () => {
+    try { reportRecognitionRef.current?.abort(); } catch { /* recognition may already be stopped */ }
+  }, []);
 
   useEffect(() => {
     const cached = readCachedDayOverrides(workbookId, lessonId, day.id, currentLanguage);
@@ -309,6 +394,10 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     setStorageWarning(false);
     setTechnicalHelpOpen(false);
     setContextualHelpOpen(false);
+    try { reportRecognitionRef.current?.abort(); } catch { /* recognition may already be stopped */ }
+    reportRecognitionRef.current = null;
+    setReportDictationState('idle');
+    setReportDictationMessage('');
     setReportFormOpen(false);
     setReportConfirmation('');
     setLastStudentAnswer(null);
@@ -516,6 +605,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     setMastery(reported);
     storeMastery(reported);
     setTechnicalHelpOpen(false);
+    setReportDictationMessage('');
     setReportFormOpen(true);
     setReportCategory('Exercício travado');
   };
@@ -576,7 +666,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
         screenSize: `${window.innerWidth}x${window.innerHeight}`,
       });
       setReportComment('');
-      setReportFormOpen(false);
+      closeReportForm();
       setReportConfirmation(result.duplicate ? `Relatório já recebido (${result.reportId}).` : `Relatório enviado (${result.reportId}).`);
       window.setTimeout(() => setReportConfirmation(''), 5000);
     } catch (error) {
@@ -666,12 +756,12 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
               </div>
             )}
             <button type="button" onClick={() => setContextualHelpOpen(false)} className="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-black text-white">Voltar ao exercício</button>
-            <button type="button" onClick={() => { setReportPreview(runtimeReaderRef.current?.() ?? null); setContextualHelpOpen(false); setReportFormOpen(true); }} className="mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold text-slate-300 underline decoration-slate-500 underline-offset-4">Reportar problema</button>
+            <button type="button" onClick={() => { setReportPreview(runtimeReaderRef.current?.() ?? null); setContextualHelpOpen(false); setReportDictationMessage(''); setReportFormOpen(true); }} className="mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold text-slate-300 underline decoration-slate-500 underline-offset-4">Reportar problema</button>
           </section>
         </div>
       )}
       {phase === 'exercise' && reportFormOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" onClick={() => !reportSubmitting && setReportFormOpen(false)}>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4" onClick={() => !reportSubmitting && closeReportForm()}>
           <form className="w-full max-w-md rounded-3xl border border-slate-600 bg-slate-900 p-5 text-left shadow-2xl" onClick={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); void submitProblemReport(); }}>
             <h2 className="text-xl font-black text-white">Reportar problema</h2>
             <p className="mt-1 text-sm text-slate-300">O exercício e seu progresso permanecerão exatamente como estão.</p>
@@ -690,11 +780,33 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
                 {EXERCISE_REPORT_CATEGORIES.map((category) => <option key={category}>{category}</option>)}
               </select>
             </label>
-            <label className="mt-4 block text-sm font-bold text-slate-200">Comentário (opcional)
-              <textarea value={reportComment} onChange={(event) => setReportComment(event.target.value)} maxLength={2000} disabled={reportSubmitting} className="mt-1 min-h-28 w-full rounded-xl border border-slate-600 bg-slate-800 p-3 font-normal text-white" placeholder="Conte o que aconteceu…" />
-            </label>
+            <div className="mt-4">
+              <label htmlFor="exercise-report-comment" className="block text-sm font-bold text-slate-200">Comentário (opcional)</label>
+              <div className="relative mt-1">
+                <textarea id="exercise-report-comment" value={reportComment} onChange={(event) => setReportComment(event.target.value)} maxLength={2000} disabled={reportSubmitting} className="min-h-28 w-full rounded-xl border border-slate-600 bg-slate-800 p-3 pb-14 pr-14 font-normal text-white" placeholder="Digite ou toque no microfone para falar…" />
+                <button
+                  type="button"
+                  disabled={reportSubmitting}
+                  onClick={toggleReportDictation}
+                  aria-label={reportDictationState === 'listening' ? 'Parar ditado' : 'Ditar comentário pelo microfone'}
+                  aria-pressed={reportDictationState === 'listening'}
+                  title={reportDictationState === 'listening' ? 'Parar ditado' : 'Ditar comentário'}
+                  className={`absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full border text-white shadow-lg transition disabled:opacity-50 ${reportDictationState === 'listening' ? 'border-rose-300 bg-rose-500 motion-safe:animate-pulse' : 'border-blue-400 bg-blue-600 hover:bg-blue-500'}`}
+                >
+                  {reportDictationState === 'listening' ? (
+                    <span className="h-3.5 w-3.5 rounded-sm bg-white" aria-hidden="true" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="9" y="2" width="6" height="12" rx="3" />
+                      <path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+              {reportDictationMessage && <p role="status" className={`mt-1 text-xs ${reportDictationState === 'listening' ? 'font-bold text-rose-300' : 'text-slate-300'}`}>{reportDictationMessage}</p>}
+            </div>
             <div className="mt-5 grid grid-cols-2 gap-3">
-              <button type="button" disabled={reportSubmitting} onClick={() => setReportFormOpen(false)} className="rounded-xl border border-slate-600 p-3 font-black text-white disabled:opacity-50">Cancelar</button>
+              <button type="button" disabled={reportSubmitting} onClick={closeReportForm} className="rounded-xl border border-slate-600 p-3 font-black text-white disabled:opacity-50">Cancelar</button>
               <button type="submit" disabled={reportSubmitting} className="rounded-xl bg-blue-600 p-3 font-black text-white disabled:opacity-50">{reportSubmitting ? 'Enviando…' : 'Enviar relatório'}</button>
             </div>
           </form>

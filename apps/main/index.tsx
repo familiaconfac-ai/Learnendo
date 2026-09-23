@@ -3,6 +3,30 @@ import ReactDOM from "react-dom/client";
 import App from "./src/App";
 import "./index.css";
 
+const PRELOAD_RECOVERY_STORAGE_KEY = "learnendo:preload-recovery-at";
+const PRELOAD_RECOVERY_GUARD_MS = 60_000;
+
+if (typeof window !== "undefined") {
+  window.addEventListener("vite:preloadError", (event) => {
+    let lastRecovery = 0;
+    try {
+      lastRecovery = Number(window.sessionStorage.getItem(PRELOAD_RECOVERY_STORAGE_KEY)) || 0;
+    } catch { /* private browsing may deny session storage */ }
+
+    if (Date.now() - lastRecovery < PRELOAD_RECOVERY_GUARD_MS) {
+      // Let the original error surface if a fresh reload did not solve it.
+      // This guard prevents a network outage from causing a reload loop.
+      return;
+    }
+
+    event.preventDefault();
+    try {
+      window.sessionStorage.setItem(PRELOAD_RECOVERY_STORAGE_KEY, String(Date.now()));
+    } catch { /* reloading still refreshes the application without storage */ }
+    window.location.reload();
+  });
+}
+
 if (import.meta.env.DEV && typeof window !== "undefined") {
   window.addEventListener(
     "load",
