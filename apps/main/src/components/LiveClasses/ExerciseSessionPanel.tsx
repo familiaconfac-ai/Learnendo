@@ -1092,11 +1092,7 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
                       key={trail.id}
                       type="button"
                       onClick={() => {
-                        setSelectedTrailIds((previous) => (
-                          previous.includes(trail.id)
-                            ? previous.filter((value) => value !== trail.id)
-                            : [...previous, trail.id]
-                        ));
+                        setSelectedTrailIds([trail.id]);
                       }}
                       className={`rounded-full border px-3 py-1.5 text-xs font-bold transition ${
                         isActive
@@ -1108,15 +1104,6 @@ export const ExerciseSessionPanel: React.FC<ExerciseSessionPanelProps> = ({
                     </button>
                   );
                 })}
-                {trailOptions.length > 1 ? (
-                  <button
-                    type="button"
-                    onClick={() => setSelectedTrailIds(trailOptions.map((trail) => trail.id))}
-                    className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-200"
-                  >
-                    All Trails
-                  </button>
-                ) : null}
               </div>
             </div>
           </div>

@@ -960,22 +960,29 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     [lessonId, workbook],
   );
 
-  const currentBlockIndex = useMemo(() => {
-    if (blocks.length === 0) return -1;
-    if (exerciseSession.currentBlockId === LIVE_TRAIL_COMPLETE_BLOCK_ID) return blocks.length;
-    const sharedIndex = exerciseSession.currentBlockId
-      ? blocks.findIndex((block) => block.id === exerciseSession.currentBlockId)
-      : -1;
-    if (sharedIndex >= 0) return sharedIndex;
-    return 0;
-  }, [blocks, exerciseSession.currentBlockId]);
-
   const currentBlock = useMemo(() => {
     if (blocks.length === 0) return null;
-    if (currentBlockIndex >= blocks.length) return null;
-    if (currentBlockIndex < 0) return blocks[0] ?? null;
-    return blocks[currentBlockIndex] ?? blocks[0] ?? null;
-  }, [blocks, currentBlockIndex]);
+    if (exerciseSession.currentBlockId === LIVE_TRAIL_COMPLETE_BLOCK_ID) return null;
+    return (exerciseSession.currentBlockId
+      ? blocks.find((block) => block.id === exerciseSession.currentBlockId)
+      : null) ?? blocks[0] ?? null;
+  }, [blocks, exerciseSession.currentBlockId]);
+
+  const activeTrailBlocks = useMemo(() => {
+    const activeTrailId = currentBlock?.sourceTrailId ?? session.activeTrailIds?.[0] ?? null;
+    if (!activeTrailId) return blocks;
+    const scopedBlocks = blocks.filter((block) => block.sourceTrailId === activeTrailId);
+    return scopedBlocks.length > 0 ? scopedBlocks : blocks;
+  }, [blocks, currentBlock?.sourceTrailId, session.activeTrailIds]);
+
+  const currentBlockIndex = useMemo(() => {
+    if (activeTrailBlocks.length === 0) return -1;
+    if (exerciseSession.currentBlockId === LIVE_TRAIL_COMPLETE_BLOCK_ID) return activeTrailBlocks.length;
+    const sharedIndex = currentBlock
+      ? activeTrailBlocks.findIndex((block) => block.id === currentBlock.id)
+      : -1;
+    return sharedIndex >= 0 ? sharedIndex : 0;
+  }, [activeTrailBlocks, currentBlock, exerciseSession.currentBlockId]);
 
   const trackedStudents = useMemo(() => {
     if (!currentBlock) return assignedRoster;
@@ -1627,7 +1634,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           setWaitingTeacherRelease(true);
         }
 
-        const nextBlock = blocks[currentBlockIndex + 1] ?? null;
+        const nextBlock = activeTrailBlocks[currentBlockIndex + 1] ?? null;
         if (allowSoloAdvance) {
           await saveExerciseSession(
             classId,
@@ -1641,7 +1648,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       }
 
       if (isTeacher) {
-        const nextBlock = blocks[currentBlockIndex + 1] ?? null;
+        const nextBlock = activeTrailBlocks[currentBlockIndex + 1] ?? null;
         if (nextBlock && nextBlock.sourceTrailId === currentBlock.sourceTrailId) {
           await setSharedCurrentBlock(nextBlock.id);
         } else if (lesson) {
@@ -1786,7 +1793,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             <button
               type="button"
               onClick={() => {
-                const previousBlock = blocks[currentBlockIndex - 1] ?? null;
+                const previousBlock = activeTrailBlocks[currentBlockIndex - 1] ?? null;
                 if (previousBlock) {
                   void setSharedCurrentBlock(previousBlock.id);
                 }
@@ -1801,12 +1808,12 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
             <button
               type="button"
               onClick={() => {
-                const nextBlock = blocks[currentBlockIndex + 1] ?? null;
+                const nextBlock = activeTrailBlocks[currentBlockIndex + 1] ?? null;
                 if (nextBlock) {
                   void setSharedCurrentBlock(nextBlock.id);
                 }
               }}
-              disabled={currentBlockIndex < 0 || currentBlockIndex >= blocks.length - 1}
+              disabled={currentBlockIndex < 0 || currentBlockIndex >= activeTrailBlocks.length - 1}
               title={copy.next}
               aria-label={copy.next}
               className="flex h-[38px] w-[38px] items-center justify-center rounded-2xl border border-slate-700 bg-slate-950/92 text-sm font-black text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
@@ -1864,7 +1871,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   {lesson?.title || session.activeTrailLabel || copy.liveTrail}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-300">
-                  {copy.question} {Math.max(currentBlockIndex + 1, 1)}/{Math.max(blocks.length, 1)}
+                  {copy.question} {Math.max(currentBlockIndex + 1, 1)}/{Math.max(activeTrailBlocks.length, 1)}
                 </p>
                 <p className="mt-1 text-[11px] text-slate-200">
                   {copy.answered}: {teacherSummary.respondedCount}/{trackedStudents.length || 0} | {copy.waiting}: {teacherSummary.pendingCount} | {copy.accuracy}: {teacherSummary.accuracyRate}%
@@ -1987,7 +1994,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   <button
                     type="button"
                     onClick={() => {
-                      const previousBlock = blocks[currentBlockIndex - 1] ?? null;
+                      const previousBlock = activeTrailBlocks[currentBlockIndex - 1] ?? null;
                       if (previousBlock) {
                         void setSharedCurrentBlock(previousBlock.id);
                       }
@@ -2002,12 +2009,12 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
                   <button
                     type="button"
                     onClick={() => {
-                      const nextBlock = blocks[currentBlockIndex + 1] ?? null;
+                      const nextBlock = activeTrailBlocks[currentBlockIndex + 1] ?? null;
                       if (nextBlock) {
                         void setSharedCurrentBlock(nextBlock.id);
                       }
                     }}
-                    disabled={currentBlockIndex < 0 || currentBlockIndex >= blocks.length - 1}
+                    disabled={currentBlockIndex < 0 || currentBlockIndex >= activeTrailBlocks.length - 1}
                     title={copy.next}
                     aria-label={copy.next}
                     className="flex h-[38px] w-[38px] items-center justify-center rounded-2xl border border-slate-700 bg-slate-950/92 text-sm font-black text-slate-100 shadow-2xl backdrop-blur-sm disabled:opacity-40"
@@ -2052,8 +2059,8 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           <PracticeSection
             item={practiceItem}
             onResult={() => {}}
-            currentIdx={Math.max((currentBlock?.order ?? 1) - 1, 0)}
-            totalItems={blocks.length}
+            currentIdx={Math.max(currentBlockIndex, 0)}
+            totalItems={activeTrailBlocks.length}
             lessonId={lessonNumber}
             currentLanguage={courseLanguage}
             uiLanguage={effectiveUiLanguage}
