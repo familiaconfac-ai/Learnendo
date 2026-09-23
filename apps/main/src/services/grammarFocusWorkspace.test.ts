@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { buildGrammarFocusSurfaceState, renderGrammarFocusWorkspaceHtml, resolveLegacyWorkspaceSurfaceState } from './grammarFocusWorkspace';
+import { buildGrammarFocusSurfaceState, nextWorkspaceRevision, renderGrammarFocusWorkspaceHtml, resolveLegacyWorkspaceSurfaceState } from './grammarFocusWorkspace';
+
+assert.equal(nextWorkspaceRevision({}), 1, 'the first Grammar Focus workspace write must start the revision sequence');
+assert.equal(nextWorkspaceRevision({ workspaceRevision: 7 }), 8, 'Grammar Focus workspace writes must advance the rules-enforced revision');
 
 const html = renderGrammarFocusWorkspaceHtml('English — Letters and Numbers', [
   '# Alphabet',

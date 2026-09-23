@@ -10,6 +10,10 @@ function surfaceStateKey(mode: WorkspaceSurfaceMode): 'boardState' | 'slidesStat
   return mode === 'slides' ? 'slidesState' : 'boardState';
 }
 
+export function nextWorkspaceRevision(workspace: Partial<WorkspaceDoc>): number {
+  return (typeof workspace.workspaceRevision === 'number' ? workspace.workspaceRevision : 0) + 1;
+}
+
 /** Materialize the active top-level workspace before switching a legacy document to another surface. */
 export function resolveLegacyWorkspaceSurfaceState(
   workspace: Partial<WorkspaceDoc>,
@@ -105,6 +109,7 @@ export async function appendGrammarFocusWorkspacePage(input: {
     const epoch = (previousControl?.epoch ?? 0) + 1;
     const controllerClientId = `grammar-${pageId}`;
     const workspace = (snapshot.data() ?? {}) as Partial<WorkspaceDoc>;
+    const workspaceRevision = nextWorkspaceRevision(workspace);
     const key = surfaceStateKey(input.mode);
     const activeMode = workspace.surfaceMode ?? 'document';
     const legacyActiveState = activeMode !== input.mode
@@ -137,6 +142,7 @@ export async function appendGrammarFocusWorkspacePage(input: {
       docUpdatedBy: input.userId,
       items: [],
       itemsUpdatedBy: input.userId,
+      workspaceRevision,
       updatedAt: Date.now(),
       updatedBy: input.userId,
       updatedByName: input.userName,
