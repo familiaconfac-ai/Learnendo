@@ -9,6 +9,7 @@ import type {
   BattleTemplateLanguage,
 } from './battleTypes';
 import { DEFAULT_BOT_AVATAR_ID } from './botAvatars';
+import { normalizeOpenTextAnswer } from '../../../utils/answerNormalization';
 
 export const BATTLE_BOT_UID = 'learnendo_battle_bot';
 export const BATTLE_BOT_NAME = 'Bot Learnendo';
@@ -286,15 +287,6 @@ export function getBattleQuestionDuration(
   return normalizeBattleDuration(question?.durationSeconds, fallback);
 }
 
-function normalizeBattleText(value: string): string {
-  return (repairBattleTextEncoding(value) ?? value)
-    .toLowerCase()
-    .trim()
-    .replace(/[\u2018\u2019\u02bc\u2032]/g, "'")
-    .replace(/[.,!?;:'"]/g, '')
-    .replace(/\s+/g, ' ');
-}
-
 function normalizeOptionalText(value?: string): string | undefined {
   const trimmed = repairBattleTextEncoding(value);
   return trimmed ? trimmed : undefined;
@@ -431,14 +423,14 @@ export function evaluateBattleAnswer(
     return selectedIndexes.every((value, index) => value === correctIndexes[index]);
   }
 
-  const response = normalizeBattleText(payload.responseText ?? '');
+  const response = normalizeOpenTextAnswer(payload.responseText ?? '');
   if (!response) return false;
 
   const accepted = [
     question.correctText ?? '',
     ...(question.acceptedAnswers ?? []),
   ]
-    .map(normalizeBattleText)
+    .map(normalizeOpenTextAnswer)
     .filter(Boolean);
 
   return accepted.includes(response);

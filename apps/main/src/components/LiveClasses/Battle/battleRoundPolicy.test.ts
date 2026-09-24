@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {
   getBattleRoundDurationMs,
+  evaluateBattleAnswer,
   isFirstCorrectAnswerQuestion,
   isOpenTextBattleQuestion,
   resolveFirstCorrectSubmission,
@@ -84,5 +85,37 @@ assert.equal(resolveFirstCorrectSubmission(null, false), 'retry');
 assert.equal(resolveFirstCorrectSubmission(null, true), 'accept-winner');
 // Once the transaction stores a winner, later correct submissions cannot replace it.
 assert.equal(resolveFirstCorrectSubmission('student-b', true), 'round-won');
+
+const contractionQuestion = {
+  kind: 'audio-open' as const,
+  responseMode: 'open-text' as const,
+  requiresTextInput: true,
+  text: 'Listen and answer.',
+  correctText: 'It is above the sink.',
+  acceptedAnswers: ['The picture is above the sink.'],
+};
+
+for (const answer of [
+  'It is above the sink.',
+  'it is above the sink',
+  'IT IS ABOVE THE SINK',
+  "It's above the sink.",
+  "it's above the sink",
+  'It’s above the sink!',
+  "   it's   above   the   sink   ",
+  'The picture is above the sink!',
+]) {
+  assert.equal(evaluateBattleAnswer(contractionQuestion, { responseText: answer }), true, answer);
+}
+
+for (const answer of [
+  "It's about the sink.",
+  "It's above the sync.",
+  'It is under the sink.',
+  'Above the sink.',
+  'It is above sink.',
+]) {
+  assert.equal(evaluateBattleAnswer(contractionQuestion, { responseText: answer }), false, answer);
+}
 
 console.log('battleRoundPolicy tests passed');

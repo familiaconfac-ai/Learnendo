@@ -6,8 +6,56 @@ import {
   isExactListeningWritingMatch,
   isSpeakingMatchAny,
   normalizeAnswer,
+  normalizeOpenTextAnswer,
   normalizeStrictWritingAnswer,
 } from './answerNormalization.ts';
+
+test('open text normalization accepts only mechanical and contraction equivalents', () => {
+  const expected = normalizeOpenTextAnswer('It is above the sink.');
+  const accepted = [
+    'It is above the sink.',
+    'it is above the sink',
+    'IT IS ABOVE THE SINK',
+    "It's above the sink.",
+    "it's above the sink",
+    'It’s above the sink!',
+    "   it's   above   the   sink   ",
+  ];
+  const rejected = [
+    "It's about the sink.",
+    "It's above the sync.",
+    'It is under the sink.',
+    'Above the sink.',
+    'It is above sink.',
+  ];
+
+  accepted.forEach((answer) => assert.equal(normalizeOpenTextAnswer(answer), expected, answer));
+  rejected.forEach((answer) => assert.notEqual(normalizeOpenTextAnswer(answer), expected, answer));
+});
+
+test('open text normalization expands supported English contractions', () => {
+  const cases = [
+    ["It's", 'it is'],
+    ["I'm", 'i am'],
+    ["you're", 'you are'],
+    ["he's", 'he is'],
+    ["she's", 'she is'],
+    ["that's", 'that is'],
+    ["there's", 'there is'],
+    ["we're", 'we are'],
+    ["they're", 'they are'],
+    ["isn't", 'is not'],
+    ["aren't", 'are not'],
+    ["don't", 'do not'],
+    ["doesn't", 'does not'],
+    ["can't", 'cannot'],
+    ["won't", 'will not'],
+  ];
+
+  cases.forEach(([contracted, expanded]) => {
+    assert.equal(normalizeOpenTextAnswer(contracted), expanded, contracted);
+  });
+});
 
 test('accepts the requested equivalent forms of eighteen', () => {
   for (const answer of ['18', 'eighteen', "It's 18", 'It is 18', "It's eighteen", 'It is eighteen']) {

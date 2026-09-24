@@ -41,6 +41,8 @@ export const expandCommonContractions = (value: string): string => value
   .replace(/\bwhere's\b/gi, 'where is')
   .replace(/\bwhen's\b/gi, 'when is')
   .replace(/\bhow's\b/gi, 'how is')
+  .replace(/\bthat's\b/gi, 'that is')
+  .replace(/\bthere's\b/gi, 'there is')
   .replace(/\bi'm\b/gi, 'i am')
   .replace(/\byou're\b/gi, 'you are')
   .replace(/\bwe're\b/gi, 'we are')
@@ -58,6 +60,23 @@ export const expandCommonContractions = (value: string): string => value
   .replace(/\bcannot\b/gi, 'can not')
   .replace(/\bwon't\b/gi, 'will not')
   .replace(/\bit['\u2019]s\b/gi, 'it is');
+
+/**
+ * Normalizes an open written answer without relaxing its required words.
+ * The result is suitable for exact token-sequence comparison, not fuzzy matching.
+ */
+export function normalizeOpenTextAnswer(answer: string): string {
+  const unicodeNormalized = answer
+    .normalize('NFKC')
+    .replace(/[\u2018\u2019\u02bc\u2032]/g, "'");
+
+  return expandCommonContractions(unicodeNormalized)
+    .toLocaleLowerCase('en')
+    .replace(/\bcan not\b/g, 'cannot')
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function replaceNumberWords(value: string, map: Record<string, string>): string {
   return Object.entries(map).reduce(
