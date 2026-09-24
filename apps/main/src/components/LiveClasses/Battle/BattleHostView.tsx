@@ -1433,15 +1433,17 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
           </div>
         </div>
 
-        <div className="h-1.5 flex-shrink-0 bg-slate-800">
-          <div
-            className="h-full transition-all duration-200"
-            style={{
-              width: `${Math.max(0, Math.min(1, timeRatio)) * 100}%`,
-              backgroundColor: timeRatio > 0.5 ? '#22c55e' : timeRatio > 0.25 ? '#f97316' : '#ef4444',
-            }}
-          />
-        </div>
+        {!isFirstCorrectRound ? (
+          <div className="h-1.5 flex-shrink-0 bg-slate-800">
+            <div
+              className="h-full transition-all duration-200"
+              style={{
+                width: `${Math.max(0, Math.min(1, timeRatio)) * 100}%`,
+                backgroundColor: timeRatio > 0.5 ? '#22c55e' : timeRatio > 0.25 ? '#f97316' : '#ef4444',
+              }}
+            />
+          </div>
+        ) : null}
 
         <div className="flex min-h-0 flex-1 flex-col items-center justify-start gap-5 overflow-y-auto px-6 py-4">
           {session.status === 'WAITING' ? (
@@ -1600,7 +1602,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                     </button>
                   ) : null}
                 </>
-              ) : (
+              ) : teacherCanPlay ? (
                 <div className="w-full max-w-lg space-y-3">
                   <textarea
                     value={typedAnswer}
@@ -1614,8 +1616,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                       {teacherOpenFeedback}
                     </p>
                   ) : null}
-                  {teacherCanPlay ? (
-                    <div className="flex gap-3">
+                  <div className="flex gap-3">
                       {(question.kind as BattleQuestionKind) === 'speaking' ? (
                         <button
                           onClick={startSpeechRecognition}
@@ -1632,10 +1633,9 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                       >
                         {copy.confirmTeacherAnswer}
                       </button>
-                    </div>
-                  ) : null}
+                  </div>
                 </div>
-              )}
+              ) : null}
 
               <div className="flex items-center gap-3 text-sm text-slate-400">
                 <span>{isFirstCorrectRound ? copy.firstCorrectWins : `${Math.ceil(displayTimeLeft)}s`}</span>

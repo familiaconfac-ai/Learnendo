@@ -975,6 +975,12 @@ service cloud.firestore {
                   'updatedAt',
                   'lastChange',
                   'roundParticipantIds',
+                  'correctAnswerWinnerUid',
+                  'correctAnswerAcceptedAt',
+                  'status',
+                  'roundStatus',
+                  'isRevealed',
+                  'showAnswer',
                 ])
             && (
               !request.resource.data.diff(resource.data).affectedKeys().hasAny(['participants'])
@@ -999,6 +1005,26 @@ service cloud.firestore {
             && (
               !request.resource.data.diff(resource.data).affectedKeys().hasAny(['roundParticipantIds'])
               || request.auth.uid in request.resource.data.roundParticipantIds
+            )
+            && (
+              !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+                'correctAnswerWinnerUid',
+                'correctAnswerAcceptedAt',
+                'status',
+                'roundStatus',
+                'isRevealed',
+                'showAnswer'
+              ])
+              || (
+                (!resource.data.keys().hasAny(['correctAnswerWinnerUid']) || resource.data.correctAnswerWinnerUid == null)
+                && request.resource.data.correctAnswerWinnerUid == request.auth.uid
+                && request.resource.data.correctAnswerAcceptedAt is int
+                && request.resource.data.status == 'REVEALED'
+                && request.resource.data.roundStatus == 'revealed'
+                && request.resource.data.isRevealed == true
+                && request.resource.data.showAnswer == true
+                && request.resource.data.currentAnswers[request.auth.uid].isCorrect == true
+              )
             )
           );
         allow delete: if isTeacherForClass(classId);

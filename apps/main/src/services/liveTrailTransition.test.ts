@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildLiveTrailCompletion, getLiveTrailRecoveryAction, isSameLiveTrailCompletion } from './liveTrailTransition';
+import { buildLiveTrailCompletion, buildLiveTrailRecoveryPlan, getLiveTrailRecoveryAction, isSameLiveTrailCompletion } from './liveTrailTransition';
 import type { Day } from '../types';
 
 const days = [
@@ -51,6 +51,51 @@ assert.equal(getLiveTrailRecoveryAction({
   mainStageMode: 'workspace',
   currentBlockId: '__complete__',
   completion: { ...first, status: 'battle' },
+}), 'none');
+
+const stuckFixture = {
+  state: {
+    mainStageMode: 'trail',
+    activeTrailIds: ['d1'],
+    trailCompletion: { ...first, status: 'battle' as const },
+  },
+  exercise: { currentBlockId: '__complete__', isActive: true },
+  battle: { id: 'battle', status: 'PLAYING' },
+};
+
+const resumePlan = buildLiveTrailRecoveryPlan({
+  mode: 'trail',
+  firstBlockId: 'block-first',
+  courseId: 'english',
+  workbookId: 2,
+  lessonId: 'lesson-1',
+  trailId: 'd1',
+  trailLabel: 'Trail 1',
+});
+assert.equal(stuckFixture.exercise.currentBlockId, '__complete__');
+assert.equal(resumePlan.exercise.currentBlockId, 'block-first');
+assert.equal(resumePlan.state.trailCompletion, null);
+assert.equal(resumePlan.state.mainStageMode, 'trail');
+assert.equal(resumePlan.deleteBattleSession, true);
+assert.equal(getLiveTrailRecoveryAction({
+  mainStageMode: resumePlan.state.mainStageMode,
+  currentBlockId: resumePlan.exercise.currentBlockId,
+  completion: resumePlan.state.trailCompletion,
+  activeTrailIds: resumePlan.state.activeTrailIds,
+}), 'none');
+
+const workspacePlan = buildLiveTrailRecoveryPlan({ mode: 'workspace' });
+assert.equal(workspacePlan.state.mainStageMode, 'workspace');
+assert.equal(workspacePlan.state.trailCompletion, null);
+assert.equal(workspacePlan.state.activeTrailIds.length, 0);
+assert.equal(workspacePlan.exercise.currentBlockId, null);
+assert.equal(workspacePlan.exercise.isActive, false);
+assert.equal(workspacePlan.deleteBattleSession, true);
+assert.equal(getLiveTrailRecoveryAction({
+  mainStageMode: workspacePlan.state.mainStageMode,
+  currentBlockId: workspacePlan.exercise.currentBlockId,
+  completion: workspacePlan.state.trailCompletion,
+  activeTrailIds: workspacePlan.state.activeTrailIds,
 }), 'none');
 
 console.log('liveTrailTransition tests passed');

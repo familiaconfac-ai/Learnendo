@@ -25,6 +25,8 @@ import {
   clearExerciseBlockStudentResponse,
   claimLiveTrailCompletionStatus,
   completeLiveTrailForDecision,
+  inspectLiveTrailRecoveryState,
+  normalizeLiveTrailRecoveryState,
   saveExerciseSession,
   seedExerciseSessionFromLessonTrails,
   setExerciseBlockStudentLock,
@@ -588,7 +590,10 @@ function mapLiveBlockToBattleQuestion(
       return sanitizeBattleQuestion({
         id: block.id,
         sourceExerciseId: block.sourceExerciseId ?? block.id,
+        sourceQuestionType: block.questionType,
         kind: shouldUseAudio ? 'audio-choice' : 'multiple-choice',
+        responseMode: 'choice',
+        requiresTextInput: false,
         text: visibleText || 'Listen and choose the correct answer.',
         options,
         correctIndex: correctIndex >= 0 ? correctIndex : 0,
@@ -606,7 +611,10 @@ function mapLiveBlockToBattleQuestion(
       return sanitizeBattleQuestion({
         id: block.id,
         sourceExerciseId: block.sourceExerciseId ?? block.id,
+        sourceQuestionType: block.questionType,
         kind: 'audio-open',
+        responseMode: 'open-text',
+        requiresTextInput: true,
         text: text || prompt.instruction || 'Type your answer.',
         correctText: expectedAnswer,
         acceptedAnswers: block.acceptedAnswers?.length ? block.acceptedAnswers : [expectedAnswer],
@@ -623,7 +631,10 @@ function mapLiveBlockToBattleQuestion(
       return sanitizeBattleQuestion({
         id: block.id,
         sourceExerciseId: block.sourceExerciseId ?? block.id,
+        sourceQuestionType: block.questionType,
         kind: 'speaking',
+        responseMode: 'open-text',
+        requiresTextInput: true,
         text: text || prompt.instruction || 'Speak your answer.',
         correctText: expectedAnswer,
         acceptedAnswers: block.acceptedAnswers?.length ? block.acceptedAnswers : [expectedAnswer],
@@ -643,7 +654,10 @@ function mapLiveBlockToBattleQuestion(
         return sanitizeBattleQuestion({
           id: block.id,
           sourceExerciseId: block.sourceExerciseId ?? block.id,
+          sourceQuestionType: block.questionType,
           kind: promptAudioText ? 'audio-choice' : 'multiple-choice',
+          responseMode: 'choice',
+          requiresTextInput: false,
           text: text || prompt.instruction || 'Choose the correct answer.',
           options,
           correctIndex: correctIndex >= 0 ? correctIndex : 0,
@@ -661,7 +675,10 @@ function mapLiveBlockToBattleQuestion(
       return sanitizeBattleQuestion({
         id: block.id,
         sourceExerciseId: block.sourceExerciseId ?? block.id,
+        sourceQuestionType: block.questionType,
         kind: 'audio-open',
+        responseMode: 'open-text',
+        requiresTextInput: true,
         text: text || prompt.instruction || 'Type your answer.',
         correctText: expectedAnswer,
         acceptedAnswers: block.acceptedAnswers?.length ? block.acceptedAnswers : [expectedAnswer],
@@ -945,6 +962,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [retryReleaseVersion, setRetryReleaseVersion] = useState(0);
   const [transitionBusy, setTransitionBusy] = useState(false);
   const [recoveryTimedOut, setRecoveryTimedOut] = useState(false);
+  const [recoveryErrorDetails, setRecoveryErrorDetails] = useState<string | null>(null);
   const [battleTimePerQuestion, setBattleTimePerQuestion] = useState(10);
   const [pendingContinue, setPendingContinue] = useState<{
     answer: string;
@@ -963,6 +981,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const applyingRemoteGrammarScrollRef = useRef(false);
   const grammarScrollSyncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resumedTransitionRef = useRef<string | null>(null);
+  const recoveryDiagnosticKeyRef = useRef<string | null>(null);
 
   const actorName = getActorName(user);
   const canPresentGrammar = userRole === 'teacher' || userRole === 'admin';
@@ -1465,6 +1484,19 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       .filter((question): question is BattleQuestion => question !== null);
     const randomizedQuestions = randomizeTrailBattleQuestions(questions);
 
+    console.info('[TrailBattleTransform] transformed questions', randomizedQuestions.map((question) => ({
+      sourceExerciseId: question.sourceExerciseId ?? null,
+      sourceQuestionType: question.sourceQuestionType ?? null,
+      battleKind: question.kind ?? null,
+      responseMode: question.responseMode ?? null,
+      requiresTextInput: question.requiresTextInput ?? null,
+      options: question.options ?? [],
+      acceptedAnswers: question.acceptedAnswers ?? [],
+      skill: question.skill ?? null,
+      hasPromptAudio: Boolean(question.promptAudioText),
+      instruction: question.text ?? '',
+    })));
+
     if (questions.length === 0) {
       setSaveError(copy.loadError);
       return null;
@@ -1770,16 +1802,18 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     if (!recoveryLessonId || !recoveryTrailId) {
       setTransitionBusy(true);
       try {
-        await updateLiveSession(
+        await normalizeLiveTrailRecoveryState({
           classId,
-          { trailCompletion: null, mainStageMode: 'workspace' },
-          user.uid,
-        );
+          mode: 'workspace',
+          updatedByUid: user.uid,
+          updatedByName: actorName,
+        });
         await onReturnToWorkspace?.();
       } catch (error) {
         console.warn('[LiveTrailRecovery] failed to return to the live workspace', error);
         setRecoveryTimedOut(true);
         setSaveError(copy.finishAnswerError);
+        setRecoveryErrorDetails(error instanceof Error ? error.message : String(error));
       } finally {
         setTransitionBusy(false);
       }
@@ -1788,35 +1822,97 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
 
     setTransitionBusy(true);
     setSaveError(null);
+    setRecoveryErrorDetails(null);
     try {
-      const seeded = await seedExerciseSessionFromLessonTrails({
+      const exactTrailFirstBlock = blocks
+        .filter((block) => block.sourceTrailId === recoveryTrailId)
+        .sort((left, right) => left.order - right.order)[0] ?? null;
+      const existingFirstBlock = exactTrailFirstBlock
+        ?? [...blocks].sort((left, right) => left.order - right.order)[0]
+        ?? null;
+      let firstBlockId = existingFirstBlock?.id ?? null;
+      let normalizedTrailId = existingFirstBlock?.sourceTrailId ?? recoveryTrailId;
+      let trailLabel = completion?.completedTrailLabel ?? session.activeTrailLabel ?? recoveryTrailId;
+
+      console.info('[LiveTrailRecovery] resume requested', {
         classId,
+        recoveryLessonId,
+        recoveryTrailId,
+        existingFirstBlockId: firstBlockId,
+        existingBlockCount: blocks.length,
+        matchingBlockCount: blocks.filter((block) => block.sourceTrailId === recoveryTrailId).length,
+        usedFallbackExistingBlock: Boolean(existingFirstBlock && !exactTrailFirstBlock),
+      });
+
+      if (!firstBlockId) {
+        const seeded = await seedExerciseSessionFromLessonTrails({
+          classId,
+          courseId,
+          workbookId,
+          lessonId: recoveryLessonId,
+          trailIds: [recoveryTrailId],
+          updatedByUid: user.uid,
+          updatedByName: actorName,
+        });
+        firstBlockId = seeded.firstBlockId;
+        normalizedTrailId = seeded.trailIds[0] ?? recoveryTrailId;
+        trailLabel = seeded.trailLabel;
+      }
+
+      await normalizeLiveTrailRecoveryState({
+        classId,
+        mode: 'trail',
+        updatedByUid: user.uid,
+        updatedByName: actorName,
+        firstBlockId,
         courseId,
         workbookId,
         lessonId: recoveryLessonId,
-        trailIds: [recoveryTrailId],
+        trailId: normalizedTrailId,
+        trailLabel,
+      });
+      setRecoveryTimedOut(false);
+    } catch (error) {
+      const details = error as { code?: string; message?: string };
+      console.error('[LiveTrailRecovery] failed to restore a usable trail', {
+        classId,
+        code: details?.code ?? null,
+        message: details?.message ?? String(error),
+        error,
+      });
+      setRecoveryTimedOut(true);
+      setSaveError(copy.finishAnswerError);
+      setRecoveryErrorDetails(`${details?.code ? `${details.code}: ` : ''}${details?.message ?? String(error)}`);
+    } finally {
+      setTransitionBusy(false);
+    }
+  };
+
+  const returnToLiveAndNormalize = async () => {
+    setTransitionBusy(true);
+    setSaveError(null);
+    setRecoveryErrorDetails(null);
+    try {
+      await normalizeLiveTrailRecoveryState({
+        classId,
+        mode: 'workspace',
         updatedByUid: user.uid,
         updatedByName: actorName,
       });
-      await updateLiveSession(
-        classId,
-        {
-          sessionStatus: 'active',
-          activeWorkbookId: workbookId,
-          activeLessonId: recoveryLessonId,
-          activeExerciseId: seeded.trailIds[0] ?? recoveryTrailId,
-          activeTrailIds: seeded.trailIds.length ? seeded.trailIds : [recoveryTrailId],
-          activeTrailLabel: seeded.trailLabel,
-          trailCompletion: null,
-          mainStageMode: 'trail',
-        },
-        user.uid,
-      );
+      resumedTransitionRef.current = null;
       setRecoveryTimedOut(false);
+      await onReturnToWorkspace?.();
     } catch (error) {
-      console.warn('[LiveTrailRecovery] failed to restore a usable trail', error);
+      const details = error as { code?: string; message?: string };
+      console.error('[LiveTrailRecovery] return-to-live normalization failed', {
+        classId,
+        code: details?.code ?? null,
+        message: details?.message ?? String(error),
+        error,
+      });
       setRecoveryTimedOut(true);
       setSaveError(copy.finishAnswerError);
+      setRecoveryErrorDetails(`${details?.code ? `${details.code}: ` : ''}${details?.message ?? String(error)}`);
     } finally {
       setTransitionBusy(false);
     }
@@ -1836,6 +1932,45 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
     await performContinue(payload);
   };
+
+  useEffect(() => {
+    if (currentBlock || exerciseSession.currentBlockId !== LIVE_TRAIL_COMPLETE_BLOCK_ID) return;
+    const diagnosticKey = `${classId}:${session.mainStageMode}:${session.trailCompletion?.id ?? 'legacy'}:${session.trailCompletion?.status ?? 'missing'}`;
+    if (recoveryDiagnosticKeyRef.current === diagnosticKey) return;
+    recoveryDiagnosticKeyRef.current = diagnosticKey;
+    let active = true;
+    void inspectLiveTrailRecoveryState(classId)
+      .then((snapshot) => {
+        if (!active) return;
+        const completedTrailId = session.trailCompletion?.completedTrailId ?? null;
+        const lessonDays = lesson?.days ?? [];
+        console.info('[LiveTrailRecovery] reconstructed stuck state', {
+          ...snapshot,
+          localSession: session,
+          localExerciseSession: exerciseSession,
+          completedTrailId,
+          completedTrailIndex: completedTrailId
+            ? lessonDays.findIndex((day) => day.id === completedTrailId)
+            : -1,
+          activeTrailIndex: session.activeTrailIds?.[0]
+            ? lessonDays.findIndex((day) => day.id === session.activeTrailIds?.[0])
+            : -1,
+          lessonTrailCount: lessonDays.length,
+        });
+      })
+      .catch((error) => {
+        const details = error as { code?: string; message?: string };
+        console.error('[LiveTrailRecovery] diagnostic read failed', {
+          classId,
+          code: details?.code ?? null,
+          message: details?.message ?? String(error),
+          error,
+        });
+      });
+    return () => {
+      active = false;
+    };
+  }, [classId, currentBlock, exerciseSession, lesson, session]);
 
   useEffect(() => {
     if (!isTeacher || currentBlock) return;
@@ -1986,15 +2121,19 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               </button>
               <button
                 type="button"
-                onClick={() => void onReturnToWorkspace?.()}
-                disabled={transitionBusy}
-                className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100 disabled:opacity-50"
+                onClick={() => void returnToLiveAndNormalize()}
+                className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100"
               >
                 {copy.returnToLive}
               </button>
             </div>
           ) : null}
           {saveError ? <p className="mt-4 text-xs font-semibold text-rose-200">{saveError}</p> : null}
+          {isTeacher && recoveryErrorDetails ? (
+            <p className="mt-2 break-words rounded-xl bg-rose-950/60 px-3 py-2 text-left text-[11px] text-rose-200">
+              {recoveryErrorDetails}
+            </p>
+          ) : null}
         </div>
       </div>
     );
@@ -2018,13 +2157,17 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               </button>
               <button
                 type="button"
-                onClick={() => void onReturnToWorkspace?.()}
-                disabled={transitionBusy}
-                className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100 disabled:opacity-50"
+                onClick={() => void returnToLiveAndNormalize()}
+                className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100"
               >
                 {copy.returnToLive}
               </button>
             </div>
+          ) : null}
+          {isTeacher && recoveryErrorDetails ? (
+            <p className="mt-2 break-words rounded-xl bg-rose-950/60 px-3 py-2 text-left text-[11px] text-rose-200">
+              {recoveryErrorDetails}
+            </p>
           ) : null}
         </div>
       </div>

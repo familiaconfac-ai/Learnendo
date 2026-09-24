@@ -13,9 +13,19 @@ import { DEFAULT_BOT_AVATAR_ID } from './botAvatars';
 export const BATTLE_BOT_UID = 'learnendo_battle_bot';
 export const BATTLE_BOT_NAME = 'Bot Learnendo';
 
+/** Classifies by answer behavior, including legacy questions without responseMode metadata. */
+export function isOpenTextBattleQuestion(question?: BattleQuestion | null): boolean {
+  if (!question) return false;
+  if (question.requiresTextInput === true || question.responseMode === 'open-text') return true;
+  if (question.requiresTextInput === false || question.responseMode === 'choice' || question.responseMode === 'speech') return false;
+  const hasChoiceOptions = Array.isArray(question.options) && question.options.length >= 2;
+  const hasTextAnswer = Boolean(question.correctText?.trim() || question.acceptedAnswers?.some((answer) => answer.trim()));
+  return !hasChoiceOptions && !isChoiceQuestion(question) && hasTextAnswer;
+}
+
 /** Written production rounds stay open until Firestore accepts the first correct answer. */
 export function isFirstCorrectAnswerQuestion(question?: BattleQuestion | null): boolean {
-  return question?.kind === 'audio-open';
+  return isOpenTextBattleQuestion(question);
 }
 
 export function getBattleRoundDurationMs(
@@ -341,6 +351,9 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
       id,
       ...(normalizeOptionalText(question.sourceExerciseId) ? { sourceExerciseId: normalizeOptionalText(question.sourceExerciseId) } : {}),
       kind,
+      ...(question.sourceQuestionType ? { sourceQuestionType: question.sourceQuestionType } : {}),
+      responseMode: question.responseMode ?? 'choice',
+      requiresTextInput: question.requiresTextInput === true,
       text,
       options,
       correctIndex: correctIndexes[0],
@@ -376,6 +389,9 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
     id,
     ...(normalizeOptionalText(question.sourceExerciseId) ? { sourceExerciseId: normalizeOptionalText(question.sourceExerciseId) } : {}),
     kind,
+    ...(question.sourceQuestionType ? { sourceQuestionType: question.sourceQuestionType } : {}),
+    responseMode: question.responseMode ?? (question.kind === 'speaking' && question.requiresTextInput === false ? 'speech' : 'open-text'),
+    requiresTextInput: question.requiresTextInput !== false,
     text,
     correctText,
     acceptedAnswers,

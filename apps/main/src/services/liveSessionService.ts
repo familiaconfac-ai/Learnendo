@@ -31,6 +31,7 @@ import type { Day, Exercise, Lesson } from '../types';
 import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from './liveWhiteboardActivities';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import { recordLiveAttendanceExercise } from './liveAttendanceService';
+import { buildLiveTrailRecoveryPlan } from './liveTrailTransition';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_SESSION_COLLECTION = 'session';
@@ -364,6 +365,139 @@ function getExerciseSessionRef(classId: string) {
 
 function getExerciseBlocksCollection(classId: string) {
   return collection(db, LIVE_CLASSES_COLLECTION, classId, LIVE_EXERCISE_BLOCKS_COLLECTION);
+}
+
+function getBattleSessionRef(classId: string) {
+  return doc(db, LIVE_CLASSES_COLLECTION, classId, LIVE_SESSION_COLLECTION, 'battle');
+}
+
+function getFirebaseErrorDetails(error: unknown) {
+  const candidate = error as { code?: unknown; message?: unknown; name?: unknown } | null;
+  return {
+    name: typeof candidate?.name === 'string' ? candidate.name : null,
+    code: typeof candidate?.code === 'string' ? candidate.code : null,
+    message: typeof candidate?.message === 'string' ? candidate.message : String(error),
+    permissionDenied: candidate?.code === 'permission-denied',
+    failedPrecondition: candidate?.code === 'failed-precondition',
+    notFound: candidate?.code === 'not-found',
+    transactionConflict: candidate?.code === 'aborted',
+  };
+}
+
+export async function inspectLiveTrailRecoveryState(classId: string) {
+  const [stateSnapshot, exerciseSnapshot, battleSnapshot] = await Promise.all([
+    getDoc(getSessionStateRef(classId)),
+    getDoc(getExerciseSessionRef(classId)),
+    getDoc(getBattleSessionRef(classId)),
+  ]);
+  const state = stateSnapshot.data() as Record<string, unknown> | undefined;
+  const exercise = exerciseSnapshot.data() as Record<string, unknown> | undefined;
+  const battle = battleSnapshot.data() as Record<string, unknown> | undefined;
+  return {
+    paths: {
+      state: getSessionStateRef(classId).path,
+      exercise: getExerciseSessionRef(classId).path,
+      battle: getBattleSessionRef(classId).path,
+    },
+    mainStageMode: state?.mainStageMode ?? null,
+    currentBlockId: exercise?.currentBlockId ?? null,
+    completedTrailId: (state?.trailCompletion as Record<string, unknown> | undefined)?.completedTrailId ?? state?.completedTrailId ?? null,
+    currentTrailId: state?.activeExerciseId ?? exercise?.sourceTrailIds ?? null,
+    trailCompletion: state?.trailCompletion ?? null,
+    activeTrailIds: state?.activeTrailIds ?? [],
+    sourceTrailIds: exercise?.sourceTrailIds ?? [],
+    activeBattleId: state?.activeBattleId ?? (battleSnapshot.exists() ? battleSnapshot.id : null),
+    battleStatus: battle?.status ?? null,
+    battleRoundStatus: battle?.roundStatus ?? null,
+    lessonId: state?.activeLessonId ?? exercise?.sourceLessonId ?? null,
+    participants: battle?.participants ?? null,
+    roundParticipantIds: battle?.roundParticipantIds ?? null,
+    snapshotMetadata: {
+      // Firestore Web DocumentSnapshot does not expose server updateTime.
+      updateTimeAvailable: false,
+      state: { fromCache: stateSnapshot.metadata.fromCache, hasPendingWrites: stateSnapshot.metadata.hasPendingWrites },
+      exercise: { fromCache: exerciseSnapshot.metadata.fromCache, hasPendingWrites: exerciseSnapshot.metadata.hasPendingWrites },
+      battle: { fromCache: battleSnapshot.metadata.fromCache, hasPendingWrites: battleSnapshot.metadata.hasPendingWrites },
+    },
+  };
+}
+
+export async function normalizeLiveTrailRecoveryState(params: {
+  classId: string;
+  mode: 'trail' | 'workspace';
+  updatedByUid: string;
+  updatedByName: string;
+  firstBlockId?: string | null;
+  courseId?: string | null;
+  workbookId?: number | null;
+  lessonId?: string | null;
+  trailId?: string | null;
+  trailLabel?: string | null;
+}): Promise<void> {
+  if (!db) throw new Error('Firestore is not initialized');
+  const stateRef = getSessionStateRef(params.classId);
+  const exerciseRef = getExerciseSessionRef(params.classId);
+  const battleRef = getBattleSessionRef(params.classId);
+  const plan = buildLiveTrailRecoveryPlan(params);
+  const restoringTrail = params.mode === 'trail';
+
+  const statePayload = {
+    ...plan.state,
+    completedTrailId: deleteField(),
+    currentTrailId: deleteField(),
+    pendingTransition: deleteField(),
+    transitionState: deleteField(),
+    trailTransition: deleteField(),
+    activeBattleId: deleteField(),
+    lastUpdatedBy: params.updatedByUid,
+    updatedAt: serverTimestamp(),
+  };
+  const exercisePayload = {
+    ...plan.exercise,
+    endedAt: restoringTrail ? null : new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+    updatedBy: buildExerciseActor(params.updatedByUid, params.updatedByName),
+  };
+  const diagnosticPayload = {
+    mode: params.mode,
+    state: {
+      mainStageMode: statePayload.mainStageMode,
+      sessionStatus: statePayload.sessionStatus,
+      activeCourseId: statePayload.activeCourseId,
+      activeWorkbookId: statePayload.activeWorkbookId,
+      activeLessonId: statePayload.activeLessonId,
+      activeExerciseId: statePayload.activeExerciseId,
+      activeTrailIds: statePayload.activeTrailIds,
+      activeTrailLabel: statePayload.activeTrailLabel,
+      trailCompletion: null,
+      clearedLegacyTransitionFields: ['completedTrailId', 'currentTrailId', 'pendingTransition', 'transitionState', 'trailTransition', 'activeBattleId'],
+    },
+    exercise: exercisePayload,
+    deletesBattleSession: true,
+  };
+  console.info('[LiveTrailRecovery] atomic normalization write', {
+    paths: { state: stateRef.path, exercise: exerciseRef.path, battle: battleRef.path },
+    payload: diagnosticPayload,
+  });
+
+  try {
+    const batch = writeBatch(db);
+    batch.set(stateRef, statePayload, { merge: true });
+    batch.set(exerciseRef, exercisePayload, { merge: true });
+    batch.delete(battleRef);
+    await batch.commit();
+    console.info('[LiveTrailRecovery] atomic normalization resolved', {
+      paths: { state: stateRef.path, exercise: exerciseRef.path, battle: battleRef.path },
+      mode: params.mode,
+    });
+  } catch (error) {
+    console.error('[LiveTrailRecovery] atomic normalization rejected', {
+      paths: { state: stateRef.path, exercise: exerciseRef.path, battle: battleRef.path },
+      payload: diagnosticPayload,
+      error: getFirebaseErrorDetails(error),
+    });
+    throw error;
+  }
 }
 
 function buildWhiteboardPayload(state: LiveWhiteboardState, updatedByUid: string, updatedByName: string) {

@@ -1034,23 +1034,27 @@ export async function submitBattleAnswer(
         return { status: 'retry', reason: 'incorrect', answer } as const;
       }
 
-      const winningAnswers = { [uid]: answer };
-      const nextParticipants = {
-        ...(liveSession.participants ?? {}),
-        [uid]: nextParticipant,
-      };
-      const nextScores = applyBattleRoundRankingToScores({
-        currentScores: liveSession.scores ?? {},
-        currentAnswers: winningAnswers,
-        roundParticipantIds: effectiveRoundParticipantIds,
-        participants: nextParticipants,
-        questionStartedAt: liveSession.questionStartedAt ?? 0,
+      const winnerScore = buildBattleParticipantRegistryRecord(previous, {
+        uid,
+        name,
+        avatarId: liveSession.participants?.[uid]?.avatarId,
+        isBot: liveSession.participants?.[uid]?.isBot,
+      }, {
+        lastAnswerCorrect: true,
+        score: (previous?.score ?? 0) + Math.max(0, answer.roundPoints ?? 0),
+        correctAnswersCount: (previous?.correctAnswersCount ?? 0) + 1,
+        streak: (previous?.streak ?? 0) + 1,
+        firstPlaceCount: (previous?.firstPlaceCount ?? 0) + 1,
+        bestElapsedMs: previous?.bestElapsedMs == null
+          ? answer.elapsedMs ?? null
+          : Math.min(previous.bestElapsedMs, answer.elapsedMs ?? previous.bestElapsedMs),
+        lastPlacement: 1,
       });
       transaction.update(docRef, {
         [`participants.${uid}`]: nextParticipant,
-        answers: winningAnswers,
-        currentAnswers: winningAnswers,
-        scores: nextScores,
+        [`answers.${uid}`]: answer,
+        [`currentAnswers.${uid}`]: answer,
+        [`scores.${uid}`]: winnerScore,
         answeredCount: 1,
         correctAnswerWinnerUid: uid,
         correctAnswerAcceptedAt: answeredAt,
@@ -1067,7 +1071,7 @@ export async function submitBattleAnswer(
       return {
         status: 'saved',
         answer,
-        updatedParticipant: nextScores[uid] ?? updatedParticipant,
+        updatedParticipant: winnerScore,
       } as const;
     }
 

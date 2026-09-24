@@ -1645,15 +1645,17 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
         </div>
       </div>
 
-      <div className="h-1.5 bg-slate-800">
-        <div
-          className="h-full transition-all bg-gradient-to-r from-green-500 to-orange-500"
-          style={{
-            width: `${timeRatio * 100}%`,
-            backgroundColor: timeRatio > 0.5 ? undefined : timeRatio > 0.25 ? '#f97316' : '#ef4444',
-          }}
-        />
-      </div>
+      {!isFirstCorrectRound ? (
+        <div className="h-1.5 bg-slate-800">
+          <div
+            className="h-full transition-all bg-gradient-to-r from-green-500 to-orange-500"
+            style={{
+              width: `${timeRatio * 100}%`,
+              backgroundColor: timeRatio > 0.5 ? undefined : timeRatio > 0.25 ? '#f97316' : '#ef4444',
+            }}
+          />
+        </div>
+      ) : null}
 
       <div className="border-b border-slate-800 bg-slate-900/50 px-4 py-2">
         <BattleLabIndicators />

@@ -7,6 +7,40 @@ export type LiveTrailRecoveryAction =
   | 'restore-active-trail'
   | 'none';
 
+export function buildLiveTrailRecoveryPlan(params: {
+  mode: 'trail' | 'workspace';
+  firstBlockId?: string | null;
+  courseId?: string | null;
+  workbookId?: number | null;
+  lessonId?: string | null;
+  trailId?: string | null;
+  trailLabel?: string | null;
+}) {
+  const restoringTrail = params.mode === 'trail';
+  if (restoringTrail && !params.firstBlockId) {
+    throw new Error('Trail recovery requires a valid first exercise block.');
+  }
+  return {
+    state: {
+      mainStageMode: restoringTrail ? 'trail' as const : 'workspace' as const,
+      sessionStatus: restoringTrail ? 'active' as const : 'idle' as const,
+      activeCourseId: restoringTrail ? params.courseId ?? null : null,
+      activeWorkbookId: restoringTrail ? params.workbookId ?? null : null,
+      activeLessonId: restoringTrail ? params.lessonId ?? null : null,
+      activeExerciseId: restoringTrail ? params.trailId ?? null : null,
+      activeTrailIds: restoringTrail && params.trailId ? [params.trailId] : [],
+      activeTrailLabel: restoringTrail ? params.trailLabel ?? null : null,
+      trailCompletion: null,
+    },
+    exercise: {
+      isActive: restoringTrail,
+      currentBlockId: restoringTrail ? params.firstBlockId ?? null : null,
+    },
+    clearLegacyTransitionFields: true,
+    deleteBattleSession: true,
+  };
+}
+
 export function getLiveTrailRecoveryAction(params: {
   mainStageMode?: string | null;
   currentBlockId?: string | null;

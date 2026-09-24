@@ -4,6 +4,7 @@ export type BattleDifficulty = 'easy' | 'normal' | 'hard';
 export type BattleScope = 'current-lesson' | 'current-book' | 'review';
 export type BattleStatus = 'WAITING' | 'PLAYING' | 'REVEALED' | 'FINISHED';
 export type BattleQuestionKind = 'multiple-choice' | 'image-choice' | 'audio-choice' | 'audio-open' | 'speaking';
+export type BattleResponseMode = 'choice' | 'open-text' | 'speech';
 export type BattleTemplateLanguage = 'en' | 'pt' | 'es' | 'el' | 'he';
 
 export interface BattleConfig {
@@ -25,6 +26,9 @@ export interface BattleQuestion {
   id?: string;
   sourceExerciseId?: string;
   kind?: BattleQuestionKind;
+  sourceQuestionType?: string;
+  responseMode?: BattleResponseMode;
+  requiresTextInput?: boolean;
   text?: string;          // question / prompt shown to students
   options?: string[];      // multiple-choice options when applicable
   correctIndex?: number;   // 0-based index into options
