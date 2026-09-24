@@ -11,6 +11,7 @@ import { isDictationWritingExercise, resolveSpokenOptionText } from '../utils/ex
 import { resolveExerciseSpeechLocale } from '../utils/exerciseSpeechLocale';
 import { reduceRepeatPlayback, repeatMicAvailable, type RepeatPlaybackState } from '../models/repeatPlaybackState';
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
+import { runAfterAudioPlayback } from '../utils/audioPlaybackSequence';
 import {
   isAnswerMatch,
   normalizeAnswer,
@@ -863,7 +864,7 @@ export const PracticeSection: React.FC<{
       rec.start();
     };
 
-    const handleCheck = (answerOverride?: string) => {
+    const handleCheck = (answerOverride?: string, optionPlayback?: TtsPlaybackHandle) => {
       if (exerciseActionLocked) return;
       if (isRepeat && !repeatMicAvailable(repeatPhase)) return;
       // Dismiss keyboard immediately so the footer is at its final position
@@ -895,6 +896,14 @@ export const PracticeSection: React.FC<{
           if (payload) onContinue?.(payload);
           onResult(true, answer);
         };
+      };
+      const playFeedbackAfterOption = (action: () => void) => {
+        const checkedItemId = item.id;
+        void runAfterAudioPlayback(
+          optionPlayback,
+          action,
+          () => currentItemIdRef.current === checkedItemId,
+        );
       };
 
       // Dictation writing: reject pure numeric input — student must type words
@@ -989,14 +998,18 @@ export const PracticeSection: React.FC<{
 
       if (isCorrect) {
         prepareCorrectAction(rawInput);
-        new Audio(SUCCESS_SOUND).play().catch(() => { });
         const p = PL.praise[Math.floor(Math.random() * PL.praise.length)];
         setPraiseText(p);
-        speak(p, 1, feedbackVoice);
+        playFeedbackAfterOption(() => {
+          new Audio(SUCCESS_SOUND).play().catch(() => { });
+          speak(p, 1, feedbackVoice);
+        });
       } else {
-        new Audio(ERR_SOUND).play().catch(() => { });
         setPraiseText(PL.tryAgain);
-        speak(PL.speakNoMatch, 1, feedbackVoice);
+        playFeedbackAfterOption(() => {
+          new Audio(ERR_SOUND).play().catch(() => { });
+          speak(PL.speakNoMatch, 1, feedbackVoice);
+        });
         if (item.type === 'writing') setHasWrongAttempt(true);
         if (lockWrongFeedbackImmediately) setLocalWrongFooterLocked(true);
       }
@@ -1055,7 +1068,7 @@ export const PracticeSection: React.FC<{
         if (wrongFooterLocked) return;
         if (clickTranslatorMode && onTranslatorWordSelect) return;
         setSelectedOption(opt);
-        speak(resolveSpokenOptionText(opt), 1, promptVoice, 'interaction', {}, 'option');
+        const optionPlayback = speak(resolveSpokenOptionText(opt), 1, promptVoice, 'interaction', {}, 'option');
         if (feedback === 'wrong') {
           setShowFooter(false);
           setFeedback('none');
@@ -1063,7 +1076,7 @@ export const PracticeSection: React.FC<{
         }
         if (validateChoiceOnSelect) {
           primaryActionInFlightRef.current = true;
-          handleCheck(opt);
+          handleCheck(opt, optionPlayback);
           window.setTimeout(() => { primaryActionInFlightRef.current = false; }, 0);
         }
       };
