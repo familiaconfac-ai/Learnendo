@@ -7,7 +7,7 @@ import type {
   BattleQuestionKind,
 } from './battleTypes';
 import { BattleLabIndicators } from './BattleLabIndicators';
-import { joinBattle, submitBattleAnswer } from './battleService';
+import { joinBattle, selectBattleParticipantAvatar, submitBattleAnswer } from './battleService';
 import { BattleResultsScreen } from './BattleResultsScreen';
 import {
   BATTLE_BOT_UID,
@@ -27,6 +27,8 @@ import {
   repairBattleTextEncoding,
 } from './battleUtils';
 import { createBattleThemeAudio, persistBattleVolume, readBattleVolume, type ManagedBattleAudio } from './battleAudio';
+import { BATTLE_PARTICIPANT_AVATARS } from './participantAvatars';
+import { BattleParticipantAvatar } from './BattleParticipantAvatar';
 
 interface Props {
   session: BattleSession;
@@ -82,6 +84,9 @@ const PLAYER_COPY = {
     yourTypedAnswer: 'Type your answer...',
     listening: 'Listening...',
     answerByVoice: 'Answer by voice',
+    chooseAvatar: 'Choose your Battle avatar',
+    avatarReady: 'Ready! Waiting for the teacher.',
+    avatarError: 'Could not save the avatar. Try again.',
   },
   pt: {
     waitingTitle: 'Batalha vai comecar!',
@@ -128,6 +133,9 @@ const PLAYER_COPY = {
     yourTypedAnswer: 'Digite sua resposta...',
     listening: 'Ouvindo...',
     answerByVoice: 'Responder falando',
+    chooseAvatar: 'Escolha seu avatar da Battle',
+    avatarReady: 'Pronto! Aguardando o professor.',
+    avatarError: 'Não foi possível salvar o avatar. Tente novamente.',
   },
   es: {
     waitingTitle: 'La batalla va a empezar!',
@@ -174,6 +182,9 @@ const PLAYER_COPY = {
     yourTypedAnswer: 'Escribe tu respuesta...',
     listening: 'Escuchando...',
     answerByVoice: 'Responder hablando',
+    chooseAvatar: 'Elige tu avatar de Battle',
+    avatarReady: '¡Listo! Esperando al profesor.',
+    avatarError: 'No fue posible guardar el avatar. Inténtalo de nuevo.',
   },
 } as const;
 
@@ -192,6 +203,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const [musicVolume, setMusicVolume] = useState<number>(() => readBattleVolume('learnendo_battle_player_volume', 0.3));
   const [isListening, setIsListening] = useState(false);
   const [promptAudioState, setPromptAudioState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'failed'>('idle');
+  const [avatarSaving, setAvatarSaving] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const joinAttemptRef = useRef<string | null>(null);
   const joinInFlightRef = useRef(false);
@@ -227,6 +240,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const question = hasCurrentQuestion ? session.questions[questionIdx] : null;
   const currentQuestionDuration = getBattleQuestionDuration(question, session.config);
   const currentQuestionId = question?.id ?? null;
+  const selectedAvatarId = session.participants?.[uid]?.avatarId ?? session.scores?.[uid]?.avatarId;
   const totalQ = session.questions.length;
   const registeredParticipantIds = useMemo(
     () => getBattleRegisteredParticipantIds(session),
@@ -286,6 +300,20 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
       ),
     [session.participants, session.roundParticipantIds, session.scores],
   );
+
+  const chooseAvatar = async (avatarId: string) => {
+    if (avatarSaving || session.status !== 'WAITING') return;
+    setAvatarSaving(true);
+    setAvatarError(null);
+    try {
+      await selectBattleParticipantAvatar(classId, uid, name, avatarId);
+    } catch (error) {
+      console.error('[BATTLE AVATAR] failed to save participant avatar', error);
+      setAvatarError(copy.avatarError);
+    } finally {
+      setAvatarSaving(false);
+    }
+  };
   const effectiveFrozenTimeLeft = frozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
   const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
   const roundStartedAt =
@@ -1223,13 +1251,38 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     console.log('[BATTLE PLAYER] render branch: waiting');
     return (
       <div className="fixed inset-0 z-[9000] flex items-center justify-center bg-black/85 backdrop-blur-sm">
-        <div className="text-center space-y-4 px-8">
+        <div className="w-full max-w-xl space-y-5 px-8 text-center">
           <div className="text-5xl animate-bounce">⏳</div>
           <h2 className="text-2xl font-bold text-white">{copy.waitingTitle}</h2>
           <p className="text-slate-300">{copy.waitingBody}</p>
-          <div className="mt-4 bg-slate-800/60 rounded-xl px-6 py-3 inline-block">
-            <p className="text-xs text-slate-400">{copy.yourScore}</p>
-            <p className="text-3xl font-black text-orange-400">{myScore.toLocaleString()}</p>
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/90 p-5">
+            <p className="text-sm font-black text-white">{copy.chooseAvatar}</p>
+            <div className="mt-4 grid grid-cols-4 gap-3">
+              {BATTLE_PARTICIPANT_AVATARS.map((avatar) => (
+                <button
+                  key={avatar.id}
+                  type="button"
+                  onClick={() => void chooseAvatar(avatar.id)}
+                  disabled={avatarSaving}
+                  aria-label={avatar.label}
+                  className={`rounded-2xl border px-2 py-3 transition disabled:opacity-60 ${
+                    selectedAvatarId === avatar.id
+                      ? 'border-emerald-400 bg-emerald-500/20 ring-2 ring-emerald-400/30'
+                      : 'border-slate-700 bg-slate-800 hover:border-orange-400'
+                  }`}
+                >
+                  <span className="block text-3xl">{avatar.icon}</span>
+                  <span className="mt-1 block text-[10px] font-bold text-slate-200">{avatar.label}</span>
+                </button>
+              ))}
+            </div>
+            {selectedAvatarId ? (
+              <div className="mt-4 flex items-center justify-center gap-2 text-sm font-bold text-emerald-300">
+                <BattleParticipantAvatar name={name} avatarId={selectedAvatarId} sizeClassName="h-9 w-9" />
+                {copy.avatarReady}
+              </div>
+            ) : null}
+            {avatarError ? <p className="mt-3 text-xs font-semibold text-rose-300">{avatarError}</p> : null}
           </div>
         </div>
       </div>

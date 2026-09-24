@@ -23,6 +23,7 @@ export interface BattleConfig {
 
 export interface BattleQuestion {
   id?: string;
+  sourceExerciseId?: string;
   kind?: BattleQuestionKind;
   text?: string;          // question / prompt shown to students
   options?: string[];      // multiple-choice options when applicable

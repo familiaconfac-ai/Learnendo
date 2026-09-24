@@ -36,6 +36,7 @@ import {
   repairBattleTextEncoding,
 } from './battleUtils';
 import { createBattleThemeAudio, persistBattleVolume, readBattleVolume, type ManagedBattleAudio } from './battleAudio';
+import { BattleParticipantAvatar } from './BattleParticipantAvatar';
 
 interface BattleHostViewProps {
   session: BattleSession;
@@ -94,6 +95,9 @@ const HOST_COPY = {
     top10: 'Top 10',
     noParticipantsYet: 'No participants yet',
     teacherShort: 'Teacher',
+    avatarReady: 'ready',
+    avatarChoosing: 'choosing',
+    avatarProgress: (ready: number, total: number) => `${ready}/${total} students ready`,
   },
   pt: {
     brandTitle: 'Learnendo Battle',
@@ -139,6 +143,9 @@ const HOST_COPY = {
     top10: 'Top 10',
     noParticipantsYet: 'Nenhum participante ainda',
     teacherShort: 'Prof',
+    avatarReady: 'pronto',
+    avatarChoosing: 'escolhendo',
+    avatarProgress: (ready: number, total: number) => `${ready}/${total} alunos prontos`,
   },
   es: {
     brandTitle: 'Batalla Learnendo',
@@ -184,6 +191,9 @@ const HOST_COPY = {
     top10: 'Top 10',
     noParticipantsYet: 'Todavia no hay participantes',
     teacherShort: 'Prof',
+    avatarReady: 'listo',
+    avatarChoosing: 'eligiendo',
+    avatarProgress: (ready: number, total: number) => `${ready}/${total} estudiantes listos`,
   },
 } as const;
 
@@ -232,6 +242,11 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const question = session.questions[questionIdx] ?? null;
   const currentQuestionDuration = getBattleQuestionDuration(question, session.config);
   const totalQuestions = session.questions.length;
+  const lobbyParticipants = useMemo(() => activeParticipants.map((participant) => ({
+    ...participant,
+    avatarId: session.participants?.[participant.uid]?.avatarId ?? session.scores?.[participant.uid]?.avatarId,
+  })), [activeParticipants, session.participants, session.scores]);
+  const readyAvatarCount = lobbyParticipants.filter((participant) => Boolean(participant.avatarId)).length;
   const battleLanguage = getBattleLanguage(session.config.courseId);
   const roundParticipantIds = useMemo(
     () => Array.from(new Set((session.roundParticipantIds ?? []).filter(Boolean))),
@@ -1272,6 +1287,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
           role: 'student',
           type: 'student',
           name: student.name,
+          avatarId: session.participants?.[student.uid]?.avatarId ?? session.scores?.[student.uid]?.avatarId,
         });
         seenUids.add(student.uid);
       });
@@ -1426,6 +1442,28 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                 <p className="text-xs text-slate-500 mt-4">
                   {totalQuestions} {copy.questionsWord} | {session.config.timePerQuestion}s {copy.each} | {session.config.difficulty}
                 </p>
+                {lobbyParticipants.length > 0 ? (
+                  <div className="mx-auto mt-5 w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900/80 p-4 text-left">
+                    <p className="mb-3 text-center text-xs font-black uppercase tracking-wide text-emerald-300">
+                      {copy.avatarProgress(readyAvatarCount, lobbyParticipants.length)}
+                    </p>
+                    <div className="space-y-2">
+                      {lobbyParticipants.map((participant) => (
+                        <div key={participant.uid} className="flex items-center gap-3 rounded-xl bg-slate-800/70 px-3 py-2">
+                          <BattleParticipantAvatar
+                            name={participant.name}
+                            avatarId={participant.avatarId}
+                            sizeClassName="h-9 w-9"
+                          />
+                          <span className="min-w-0 flex-1 truncate text-sm font-bold text-white">{participant.name}</span>
+                          <span className={`text-xs font-bold ${participant.avatarId ? 'text-emerald-300' : 'text-amber-300'}`}>
+                            {participant.avatarId ? copy.avatarReady : copy.avatarChoosing}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : question ? (
@@ -1645,6 +1683,12 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                   <span className="w-8 text-center text-base font-bold text-white">
                     {row.placement === 1 ? '🥇' : row.placement === 2 ? '🥈' : row.placement === 3 ? '🥉' : `#${row.placement}`}
                   </span>
+                  <BattleParticipantAvatar
+                    name={player.name}
+                    avatarId={player.avatarId}
+                    isBot={player.isBot}
+                    sizeClassName="h-9 w-9"
+                  />
                   <span className="flex-1 truncate text-white">
                     {player.name}
                     {player.uid === teacherUid ? <span className="ml-1 text-[10px] text-slate-500">({copy.teacherShort})</span> : null}

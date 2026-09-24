@@ -375,6 +375,7 @@ export type LiveExerciseAnswerVerdict = 'correct' | 'wrong' | 'correct_second_tr
 
 export interface LiveExerciseBlock {
   id: string;
+  sourceExerciseId?: string | null;
   order: number;
   prompt: string;
   sourceCourseId?: string | null;

@@ -319,6 +319,7 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
 
     return {
       id,
+      ...(normalizeOptionalText(question.sourceExerciseId) ? { sourceExerciseId: normalizeOptionalText(question.sourceExerciseId) } : {}),
       kind,
       text,
       options,
@@ -329,6 +330,11 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
       ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
       ...(promptAudioText ? { promptAudioText } : {}),
       ...(question.playAudioOnce ? { playAudioOnce: true } : {}),
+      ...(question.bookId != null ? { bookId: question.bookId } : {}),
+      ...(question.trailId != null ? { trailId: question.trailId } : {}),
+      ...(question.trailNumber != null ? { trailNumber: question.trailNumber } : {}),
+      ...(question.skill ? { skill: question.skill } : {}),
+      ...(question.difficulty ? { difficulty: question.difficulty } : {}),
     };
   }
 
@@ -348,6 +354,7 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
 
   return {
     id,
+    ...(normalizeOptionalText(question.sourceExerciseId) ? { sourceExerciseId: normalizeOptionalText(question.sourceExerciseId) } : {}),
     kind,
     text,
     correctText,
@@ -357,6 +364,11 @@ export function sanitizeBattleQuestion(question: BattleQuestion): BattleQuestion
     ...(resolvedHint ? { hint: resolvedHint } : {}),
     ...(normalizeOptionalText(question.imageUrl) ? { imageUrl: normalizeOptionalText(question.imageUrl) } : {}),
     ...(promptAudioText ? { promptAudioText } : {}),
+    ...(question.bookId != null ? { bookId: question.bookId } : {}),
+    ...(question.trailId != null ? { trailId: question.trailId } : {}),
+    ...(question.trailNumber != null ? { trailNumber: question.trailNumber } : {}),
+    ...(question.skill ? { skill: question.skill } : {}),
+    ...(question.difficulty ? { difficulty: question.difficulty } : {}),
   };
 }
 

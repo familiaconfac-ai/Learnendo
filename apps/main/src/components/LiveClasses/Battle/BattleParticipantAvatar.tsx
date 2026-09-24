@@ -1,5 +1,6 @@
 import React from 'react';
 import { renderBotAvatarIcon } from './botAvatars';
+import { getBattleParticipantAvatar } from './participantAvatars';
 
 interface Props {
   name: string;
@@ -19,6 +20,7 @@ export const BattleParticipantAvatar: React.FC<Props> = ({
   showBotBadge = false,
 }) => {
   const fallbackLetter = name.trim().charAt(0).toUpperCase() || '?';
+  const participantAvatar = getBattleParticipantAvatar(avatarId);
 
   return (
     <div className={`relative flex shrink-0 items-center justify-center rounded-full ${sizeClassName} ${className}`}>
@@ -29,7 +31,7 @@ export const BattleParticipantAvatar: React.FC<Props> = ({
             : 'border-slate-600 bg-slate-800 text-white'
         }`}
       >
-        {isBot ? renderBotAvatarIcon(avatarId) : fallbackLetter}
+        {isBot ? renderBotAvatarIcon(avatarId) : participantAvatar?.icon ?? fallbackLetter}
       </div>
       {isBot && showBotBadge ? (
         <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full bg-cyan-500 px-1.5 py-[1px] text-[8px] font-black uppercase tracking-wide text-slate-950">

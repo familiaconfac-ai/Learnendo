@@ -35,6 +35,7 @@ import {
   isReservedFirestoreFieldKey,
   sanitizeBattleQuestions,
 } from './battleUtils';
+import { isBattleParticipantAvatarId } from './participantAvatars';
 
 function battleDocRef(classId: string) {
   return doc(db, 'liveClasses', classId, 'session', 'battle');
@@ -846,6 +847,50 @@ export async function joinBattle(
   console.info('[BATTLE STUDENT JOIN] transaction completed', {
     classId,
     uid,
+  });
+}
+
+export async function selectBattleParticipantAvatar(
+  classId: string,
+  uid: string,
+  name: string,
+  avatarId: string,
+): Promise<void> {
+  if (!classId || !uid || !isBattleParticipantAvatarId(avatarId) || isReservedFirestoreFieldKey(uid)) return;
+  const docRef = battleDocRef(classId);
+  await runTransaction(db, async (transaction) => {
+    const snapshot = await transaction.get(docRef);
+    if (!snapshot.exists()) return;
+    const data = snapshot.data();
+    const participant = data.participants?.[uid] as BattleRosterParticipant | undefined;
+    const score = data.scores?.[uid] as BattleParticipant | undefined;
+    const joinedAt = participant?.joinedAt ?? Date.now();
+    transaction.update(docRef, {
+      [`participants.${uid}`]: omitUndefinedFields<BattleRosterParticipant>({
+        uid,
+        name: participant?.name ?? score?.name ?? name,
+        joinedAt,
+        avatarId,
+        isBot: participant?.isBot,
+      }),
+      [`scores.${uid}`]: omitUndefinedFields<BattleParticipant>({
+        uid,
+        name: score?.name ?? participant?.name ?? name,
+        score: score?.score ?? 0,
+        correctAnswersCount: score?.correctAnswersCount ?? 0,
+        streak: score?.streak ?? 0,
+        lastAnswerCorrect: score?.lastAnswerCorrect ?? null,
+        firstPlaceCount: score?.firstPlaceCount ?? 0,
+        secondPlaceCount: score?.secondPlaceCount ?? 0,
+        thirdPlaceCount: score?.thirdPlaceCount ?? 0,
+        bestElapsedMs: score?.bestElapsedMs ?? null,
+        lastPlacement: score?.lastPlacement ?? null,
+        avatarId,
+        isBot: score?.isBot,
+      }),
+      updatedAt: Date.now(),
+      lastChange: serverTimestamp(),
+    });
   });
 }
 

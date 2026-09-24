@@ -9,6 +9,7 @@ import {
 } from '../GrammarFocus/GrammarNavigatorModal';
 import type { BattleConfig, BattleQuestion, SavedBattleTemplate } from './Battle/battleTypes';
 import { buildBattleGeneratedHint, buildSavedBattleTemplate, normalizeBattleDuration, sanitizeBattleQuestion } from './Battle/battleUtils';
+import { randomizeTrailBattleQuestions } from './Battle/trailBattleQuestions';
 import {
   LiveClassResponse,
   LiveClassSession,
@@ -90,9 +91,15 @@ const TRAIL_COPY = {
     skipBattle: 'Skip Battle',
     battleTime: 'Time per question',
     seconds: 'seconds',
+    skipExerciseTitle: 'Skip this exercise?',
+    skipExerciseBody: 'Some students have not finished yet. Do you really want to skip this exercise?',
+    cancel: 'Cancel',
+    skip: 'Skip',
     battleDecisionBody: 'Would you like to start a Battle for this trail?',
     waitingBattleDecision: 'Waiting for the teacher to choose the next step...',
     resumingTrail: 'Resuming the trail flow...',
+    startingBattle: 'Preparing the Battle...',
+    advancingTrail: 'Preparing the next Trail...',
     grammar: 'Grammar',
     clickTranslator: 'Click translator',
     question: 'Question',
@@ -145,9 +152,15 @@ const TRAIL_COPY = {
     skipBattle: 'Pular Battle',
     battleTime: 'Tempo por questão',
     seconds: 'segundos',
+    skipExerciseTitle: 'Pular este exercício?',
+    skipExerciseBody: 'Alguns alunos ainda não terminaram. Deseja realmente pular este exercício?',
+    cancel: 'Cancelar',
+    skip: 'Pular',
     battleDecisionBody: 'Deseja iniciar um Battle desta trilha?',
     waitingBattleDecision: 'Aguardando o professor escolher a proxima etapa...',
     resumingTrail: 'Retomando o fluxo da trilha...',
+    startingBattle: 'Preparando a Battle...',
+    advancingTrail: 'Preparando a próxima Trail...',
     grammar: 'Gramática',
     clickTranslator: 'Tradutor por clique',
     question: 'Questão',
@@ -200,9 +213,15 @@ const TRAIL_COPY = {
     skipBattle: 'Omitir Battle',
     battleTime: 'Tiempo por pregunta',
     seconds: 'segundos',
+    skipExerciseTitle: '¿Omitir este ejercicio?',
+    skipExerciseBody: 'Algunos alumnos todavía no terminaron. ¿Realmente quieres omitir este ejercicio?',
+    cancel: 'Cancelar',
+    skip: 'Omitir',
     battleDecisionBody: 'Quieres iniciar un Battle de esta ruta?',
     waitingBattleDecision: 'Esperando que el profesor elija el siguiente paso...',
     resumingTrail: 'Reanudando el flujo de la ruta...',
+    startingBattle: 'Preparando la Battle...',
+    advancingTrail: 'Preparando la siguiente ruta...',
     grammar: 'Gramática',
     clickTranslator: 'Traductor por clic',
     question: 'Pregunta',
@@ -547,6 +566,7 @@ function mapLiveBlockToBattleQuestion(
   const displayIsIcon = displayValue.startsWith('fa-');
   const promptAudioText = prompt.audioValue?.trim() || undefined;
   const text = buildLiveTrailPromptText(block);
+  const explicitlyListening = /\b(listen|listening|hear|escute|ou[cç]a|escucha)\b/i.test(prompt.instruction);
   const expectedAnswer = block.expectedAnswer?.trim() ?? '';
   const trailId = block.sourceTrailId ?? context.trailIds[0] ?? null;
   const trailNumber = trailId ? getLessonNumberFromId(trailId) : null;
@@ -556,11 +576,13 @@ function mapLiveBlockToBattleQuestion(
     case 'identification': {
       const options = normalizeBattleOptions(prompt.options, expectedAnswer);
       const correctIndex = options.indexOf(expectedAnswer);
-      const shouldUseAudio = Boolean(promptAudioText) && (displayIsIcon || !displayValue);
+      const shouldUseAudio = Boolean(promptAudioText) && (displayIsIcon || !displayValue || explicitlyListening);
+      const visibleText = shouldUseAudio ? prompt.instruction : text;
       return sanitizeBattleQuestion({
         id: block.id,
+        sourceExerciseId: block.sourceExerciseId ?? block.id,
         kind: shouldUseAudio ? 'audio-choice' : 'multiple-choice',
-        text: text || promptAudioText || 'Choose the correct answer.',
+        text: visibleText || 'Listen and choose the correct answer.',
         options,
         correctIndex: correctIndex >= 0 ? correctIndex : 0,
         promptAudioText: shouldUseAudio ? promptAudioText : undefined,
@@ -576,10 +598,11 @@ function mapLiveBlockToBattleQuestion(
     case 'writing':
       return sanitizeBattleQuestion({
         id: block.id,
+        sourceExerciseId: block.sourceExerciseId ?? block.id,
         kind: 'audio-open',
         text: text || prompt.instruction || 'Type your answer.',
         correctText: expectedAnswer,
-        acceptedAnswers: [expectedAnswer],
+        acceptedAnswers: block.acceptedAnswers?.length ? block.acceptedAnswers : [expectedAnswer],
         promptAudioText,
         playAudioOnce: Boolean(promptAudioText),
         hint: buildBattleGeneratedHint(text || promptAudioText, expectedAnswer),
@@ -592,10 +615,11 @@ function mapLiveBlockToBattleQuestion(
     case 'speaking':
       return sanitizeBattleQuestion({
         id: block.id,
+        sourceExerciseId: block.sourceExerciseId ?? block.id,
         kind: 'speaking',
         text: text || prompt.instruction || 'Speak your answer.',
         correctText: expectedAnswer,
-        acceptedAnswers: [expectedAnswer],
+        acceptedAnswers: block.acceptedAnswers?.length ? block.acceptedAnswers : [expectedAnswer],
         promptAudioText,
         playAudioOnce: true,
         hint: buildBattleGeneratedHint(text || promptAudioText, expectedAnswer),
@@ -605,6 +629,45 @@ function mapLiveBlockToBattleQuestion(
         skill: inferBattleSkill(block),
         difficulty: inferBattleDifficulty(block),
       });
+    case 'dialogue': {
+      const options = normalizeBattleOptions(prompt.options, expectedAnswer);
+      if (options.length >= 2) {
+        const correctIndex = options.indexOf(expectedAnswer);
+        return sanitizeBattleQuestion({
+          id: block.id,
+          sourceExerciseId: block.sourceExerciseId ?? block.id,
+          kind: promptAudioText ? 'audio-choice' : 'multiple-choice',
+          text: text || prompt.instruction || 'Choose the correct answer.',
+          options,
+          correctIndex: correctIndex >= 0 ? correctIndex : 0,
+          promptAudioText,
+          playAudioOnce: Boolean(promptAudioText),
+          hint: buildBattleGeneratedHint(text || promptAudioText, expectedAnswer),
+          bookId: context.workbookId,
+          trailId,
+          trailNumber,
+          skill: promptAudioText ? 'listening' : 'reading',
+          difficulty: inferBattleDifficulty(block),
+        });
+      }
+      if (!expectedAnswer) return null;
+      return sanitizeBattleQuestion({
+        id: block.id,
+        sourceExerciseId: block.sourceExerciseId ?? block.id,
+        kind: 'audio-open',
+        text: text || prompt.instruction || 'Type your answer.',
+        correctText: expectedAnswer,
+        acceptedAnswers: block.acceptedAnswers?.length ? block.acceptedAnswers : [expectedAnswer],
+        promptAudioText,
+        playAudioOnce: Boolean(promptAudioText),
+        hint: buildBattleGeneratedHint(text || promptAudioText, expectedAnswer),
+        bookId: context.workbookId,
+        trailId,
+        trailNumber,
+        skill: promptAudioText ? 'listening' : 'reading',
+        difficulty: inferBattleDifficulty(block),
+      });
+    }
     default:
       return null;
   }
@@ -874,6 +937,11 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [retryReleaseVersion, setRetryReleaseVersion] = useState(0);
   const [transitionBusy, setTransitionBusy] = useState(false);
   const [battleTimePerQuestion, setBattleTimePerQuestion] = useState(10);
+  const [pendingContinue, setPendingContinue] = useState<{
+    answer: string;
+    isCorrect: boolean;
+    attemptNumber: number;
+  } | null>(null);
   const [practiceViewportTopOffset, setPracticeViewportTopOffset] = useState(LIVE_TRAIL_VIEWPORT_TOP_OFFSET);
   const previousStudentBlockStateRef = useRef<{
     blockId: string | null;
@@ -1383,6 +1451,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         trailIds,
       }))
       .filter((question): question is BattleQuestion => question !== null);
+    const randomizedQuestions = randomizeTrailBattleQuestions(questions);
 
     if (questions.length === 0) {
       setSaveError(copy.loadError);
@@ -1392,7 +1461,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     const config: BattleConfig = {
       scope: 'current-lesson',
       difficulty: 'normal',
-      questionCount: questions.length,
+      questionCount: randomizedQuestions.length,
       timePerQuestion: normalizeBattleDuration(selectedTime, 10),
       includeTeacher: false,
       botEnabled: false,
@@ -1403,7 +1472,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     };
 
     const templateTitle = `${lesson?.title || completion.completedTrailLabel || copy.liveTrail} • Battle`;
-    return buildSavedBattleTemplate(config, questions, templateTitle);
+    return buildSavedBattleTemplate(config, randomizedQuestions, templateTitle);
   };
 
   const advanceAfterTrailCompletion = async (completion: LiveTrailCompletion) => {
@@ -1595,7 +1664,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
   };
 
-  const handleContinue = async (payload: {
+  const performContinue = async (payload: {
     answer: string;
     isCorrect: boolean;
     attemptNumber: number;
@@ -1680,6 +1749,21 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
   };
 
+  const handleContinue = async (payload: {
+    answer: string;
+    isCorrect: boolean;
+    attemptNumber: number;
+  }) => {
+    const hasStudentsStillWorking = isTeacher && trackedStudents.some((student) => (
+      student.isOnline && !getResolvedStudentAnswer(currentBlock!, student.uid, latestResponsesByUser)
+    ));
+    if (hasStudentsStillWorking) {
+      setPendingContinue(payload);
+      return;
+    }
+    await performContinue(payload);
+  };
+
   useEffect(() => {
     if (!isTeacher || !session.trailCompletion) return;
     const completion = session.trailCompletion;
@@ -1728,7 +1812,13 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
           <p className="text-lg font-black text-emerald-300">{copy.trailComplete}</p>
           <p className="mt-2 text-sm text-slate-200">
             {isTeacher
-              ? awaitingDecision ? copy.battleDecisionBody : copy.resumingTrail
+              ? awaitingDecision
+                ? copy.battleDecisionBody
+                : completion.status === 'starting-battle'
+                  ? copy.startingBattle
+                  : completion.status === 'advancing'
+                    ? copy.advancingTrail
+                    : copy.resumingTrail
               : copy.waitingBattleDecision}
           </p>
           {isTeacher && awaitingDecision ? (
@@ -2122,6 +2212,35 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               setSelectedVocab({ text: word, rect });
             }}
           />
+        </div>
+      ) : null}
+
+      {pendingContinue ? (
+        <div className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
+          <div role="dialog" aria-modal="true" className="w-full max-w-sm rounded-3xl border border-amber-400/40 bg-slate-900 p-6 text-center shadow-2xl">
+            <h2 className="text-xl font-black text-white">{copy.skipExerciseTitle}</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-300">{copy.skipExerciseBody}</p>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setPendingContinue(null)}
+                className="rounded-xl border border-slate-600 px-4 py-3 text-sm font-bold text-slate-200 hover:border-slate-400"
+              >
+                {copy.cancel}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const payload = pendingContinue;
+                  setPendingContinue(null);
+                  void performContinue(payload);
+                }}
+                className="rounded-xl bg-amber-500 px-4 py-3 text-sm font-black text-slate-950 hover:bg-amber-400"
+              >
+                {copy.skip}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
 

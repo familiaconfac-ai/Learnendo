@@ -610,17 +610,17 @@ export const BattleHubPage: React.FC<Props> = ({
         ? { retryTrail: 'Repetir ruta', retryBattle: 'Repetir Battle', nextTrail: 'Siguiente ruta' }
         : { retryTrail: 'Redo Trail', retryBattle: 'Repeat Battle', nextTrail: 'Next Trail' };
 
-    const resetBattleThen = async (next: () => void | Promise<void>) => {
+    const transitionThenClearBattle = async (next: () => void | Promise<void>) => {
+      await next();
       await deleteBattleSession(activeLiveClass.id);
       setLiveSession(null);
-      await next();
     };
 
     return [
       {
         id: 'retry-trail',
         label: labels.retryTrail,
-        onClick: () => resetBattleThen(trailResultActions.onRetryTrail),
+        onClick: () => transitionThenClearBattle(trailResultActions.onRetryTrail),
       },
       {
         id: 'retry-battle',
@@ -648,7 +648,7 @@ export const BattleHubPage: React.FC<Props> = ({
       {
         id: 'next-trail',
         label: labels.nextTrail,
-        onClick: () => resetBattleThen(trailResultActions.onNextTrail),
+        onClick: () => transitionThenClearBattle(trailResultActions.onNextTrail),
         disabled: !trailResultActions.hasNextTrail,
       },
     ];
