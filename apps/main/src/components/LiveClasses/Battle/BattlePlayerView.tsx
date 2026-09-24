@@ -735,7 +735,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     const audioText = getBattlePromptAudioText(question);
     promptPlaybackKeyRef.current = promptKey;
     setPromptAudioState('loading');
-    musicRef.current?.stop();
+    musicRef.current?.pause();
     console.log('[BATTLE AUDIO] playback requested:', source);
     console.log('[BATTLE AUDIO] questionId:', question.id);
     console.log('[BATTLE AUDIO] question type:', question.kind);
@@ -747,11 +747,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     const handle = speak(audioText, battleLanguage, {
       onStart: () => {
         if (promptPlaybackKeyRef.current !== promptKey) return;
-        promptPlayedRef.current = promptKey;
         setPromptAudioState('playing');
       },
       onEnd: () => {
         if (promptPlaybackKeyRef.current !== promptKey) return;
+        promptPlayedRef.current = promptKey;
         setPromptAudioState('played');
         resumeMusic();
       },

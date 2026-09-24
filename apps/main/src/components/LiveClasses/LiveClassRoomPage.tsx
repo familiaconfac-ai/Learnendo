@@ -532,7 +532,36 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
     void handleUpdateSession({ mainStageMode: 'workspace' });
   }, [handleUpdateSession, isPreview]);
 
-  const handleContinueAfterTrailBattle = useCallback(async () => {
+  const handleRetryTrailAfterBattle = useCallback(async () => {
+    if (isPreview) return;
+    const completion = session.trailCompletion;
+    if (!completion || completion.status !== 'battle') return;
+
+    try {
+      const seeded = await seedExerciseSessionFromLessonTrails({
+        classId: liveClass.id,
+        courseId: liveClass.courseId ?? 'english',
+        workbookId: session.activeWorkbookId ?? liveClass.workbookId ?? 1,
+        lessonId: completion.lessonId,
+        trailIds: [completion.completedTrailId],
+        updatedByUid: user.uid,
+        updatedByName: user.displayName || user.email || 'Professor',
+      });
+      await handleUpdateSession({
+        sessionStatus: 'active',
+        activeLessonId: completion.lessonId,
+        activeExerciseId: seeded.trailIds[0] ?? null,
+        activeTrailIds: seeded.trailIds,
+        activeTrailLabel: seeded.trailLabel,
+        trailCompletion: null,
+        mainStageMode: 'trail',
+      });
+    } catch (error) {
+      console.warn('[LiveClass] failed to retry trail after battle:', error);
+    }
+  }, [handleUpdateSession, isPreview, liveClass.courseId, liveClass.id, liveClass.workbookId, session.activeWorkbookId, session.trailCompletion, user.displayName, user.email, user.uid]);
+
+  const handleNextTrailAfterBattle = useCallback(async () => {
     if (isPreview) return;
     const completion = session.trailCompletion;
     if (!completion || completion.status !== 'battle') {
@@ -719,8 +748,12 @@ export const LiveClassRoomPage: React.FC<LiveClassRoomPageProps> = ({
               stars={0}
               onlineParticipants={battleOnlineParticipants}
               onOpenLiveClasses={handleReturnToWorkspace}
-              onDismiss={session.trailCompletion?.status === 'battle' ? handleContinueAfterTrailBattle : handleReturnToWorkspace}
-              resultActionLabel={session.trailCompletion?.status === 'battle' ? 'Continue' : undefined}
+              onDismiss={handleReturnToWorkspace}
+              trailResultActions={session.trailCompletion?.status === 'battle' ? {
+                onRetryTrail: handleRetryTrailAfterBattle,
+                onNextTrail: handleNextTrailAfterBattle,
+                hasNextTrail: Boolean(session.trailCompletion.nextTrailId),
+              } : undefined}
               initialSetupTemplate={pendingBattleTemplate}
             />
           ) : null}

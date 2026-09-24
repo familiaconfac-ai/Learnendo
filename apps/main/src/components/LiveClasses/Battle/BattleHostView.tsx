@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { appLangToTts, speak } from '../../../services/ttsService';
-import { BattleResultsScreen } from './BattleResultsScreen';
+import { BattleResultsScreen, type BattleResultAction } from './BattleResultsScreen';
 import {
   advanceBattleQuestion,
   endBattle,
@@ -46,6 +46,7 @@ interface BattleHostViewProps {
   onNewBattle: () => void;
   uiLanguage?: 'en' | 'pt' | 'es';
   resultActionLabel?: string;
+  resultActions?: BattleResultAction[];
 }
 
 const HOST_COPY = {
@@ -55,6 +56,10 @@ const HOST_COPY = {
     activateMusic: 'Enable music',
     muteMusic: 'Mute music',
     musicVolume: 'Music volume',
+    playPromptAudio: 'Play question audio',
+    replayPromptAudio: 'Play audio again',
+    loadingPromptAudio: 'Loading audio...',
+    playingPromptAudio: 'Playing audio...',
     battleRoom: 'Battle Room',
     participantsOnline: (count: number) => `${count} participant(s) online`,
     waitingStudents: 'Waiting for students to join...',
@@ -96,6 +101,10 @@ const HOST_COPY = {
     activateMusic: 'Ativar musica',
     muteMusic: 'Silenciar musica',
     musicVolume: 'Volume da musica',
+    playPromptAudio: 'Ouvir audio da pergunta',
+    replayPromptAudio: 'Ouvir audio novamente',
+    loadingPromptAudio: 'Carregando audio...',
+    playingPromptAudio: 'Reproduzindo audio...',
     battleRoom: 'Sala de Batalha',
     participantsOnline: (count: number) => `${count} participante(s) online`,
     waitingStudents: 'Aguardando alunos entrarem...',
@@ -137,6 +146,10 @@ const HOST_COPY = {
     activateMusic: 'Activar musica',
     muteMusic: 'Silenciar musica',
     musicVolume: 'Volumen de la musica',
+    playPromptAudio: 'Escuchar audio de la pregunta',
+    replayPromptAudio: 'Escuchar audio de nuevo',
+    loadingPromptAudio: 'Cargando audio...',
+    playingPromptAudio: 'Reproduciendo audio...',
     battleRoom: 'Sala de Batalla',
     participantsOnline: (count: number) => `${count} participante(s) conectados`,
     waitingStudents: 'Esperando a que entren los alumnos...',
@@ -191,6 +204,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   onNewBattle,
   uiLanguage = 'en',
   resultActionLabel,
+  resultActions,
 }) => {
   const copy = HOST_COPY[uiLanguage] ?? HOST_COPY.en;
   const [timeLeft, setTimeLeft] = useState<number>(session.config.timePerQuestion);
@@ -200,6 +214,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const [selectedOptions, setSelectedOptions] = useState<number[]>([]);
   const [typedAnswer, setTypedAnswer] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [promptAudioState, setPromptAudioState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'failed'>('idle');
   const [teacherSubmitting, setTeacherSubmitting] = useState(false);
   const [teacherFrozenTimeLeft, setTeacherFrozenTimeLeft] = useState<number | null>(null);
   const [localCurrentAnswers, setLocalCurrentAnswers] = useState<Record<string, BattleAnswer>>({});
@@ -208,6 +223,8 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const audioRef = useRef<ManagedBattleAudio | null>(null);
   const recognitionRef = useRef<any>(null);
   const promptPlayedRef = useRef<string>('');
+  const promptAttemptedRef = useRef<string>('');
+  const promptPlaybackKeyRef = useRef<string>('');
   const botAnswerAttemptRef = useRef<string | null>(null);
   const autoRevealRoundKeyRef = useRef<string | null>(null);
 
@@ -635,17 +652,58 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     }
   }, [effectiveRoundStatus, effectiveStatus, session.status]);
 
-  useEffect(() => {
+  const playPromptAudio = (source: 'auto' | 'interaction') => {
     if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) return;
+    const promptKey = `${session.id}:${question.id}:${session.status}`;
+    const audioText = getBattlePromptAudioText(question);
+    promptPlaybackKeyRef.current = promptKey;
+    setPromptAudioState('loading');
+    audioRef.current?.pause();
+    console.log('[BATTLE AUDIO] host playback requested:', source, { questionId: question.id });
+    const resumeMusic = () => {
+      if (session.status === 'PLAYING') audioRef.current?.start();
+    };
+    const handle = speak(audioText, battleLanguage, {
+      onStart: () => {
+        if (promptPlaybackKeyRef.current !== promptKey) return;
+        setPromptAudioState('playing');
+      },
+      onEnd: () => {
+        if (promptPlaybackKeyRef.current !== promptKey) return;
+        promptPlayedRef.current = promptKey;
+        setPromptAudioState('played');
+        resumeMusic();
+      },
+      onError: () => {
+        if (promptPlaybackKeyRef.current !== promptKey) return;
+        setPromptAudioState('failed');
+        resumeMusic();
+      },
+    });
+    void handle.promise.then((result) => {
+      if (promptPlaybackKeyRef.current !== promptKey || result.state !== 'cancelled') return;
+      setPromptAudioState('failed');
+      resumeMusic();
+    });
+  };
 
-    const promptKey = `${session.id}:${(question.id as string)}:${session.status}`;
-    if (promptPlayedRef.current === promptKey) return;
-
-    promptPlayedRef.current = promptKey;
-    window.setTimeout(() => {
-      speak(getBattlePromptAudioText(question), battleLanguage);
-    }, 250);
-  }, [battleLanguage, question, session.id, session.status]);
+  useEffect(() => {
+    if (!question || session.status !== 'PLAYING' || !question.playAudioOnce) {
+      setPromptAudioState('idle');
+      return;
+    }
+    const promptKey = `${session.id}:${question.id}:${session.status}`;
+    promptPlaybackKeyRef.current = promptKey;
+    if (promptPlayedRef.current === promptKey) {
+      setPromptAudioState('played');
+      return;
+    }
+    setPromptAudioState('idle');
+    if (promptAttemptedRef.current === promptKey) return;
+    promptAttemptedRef.current = promptKey;
+    const timer = window.setTimeout(() => playPromptAudio('auto'), 250);
+    return () => window.clearTimeout(timer);
+  }, [battleLanguage, question?.id, question?.playAudioOnce, session.id, session.status]);
 
   useEffect(() => {
     if (!shouldAutoReveal) {
@@ -1294,6 +1352,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         validParticipantIds={finalParticipantIds}
         uiLanguage={uiLanguage}
         closeLabel={resultActionLabel}
+        resultActions={resultActions}
       />
     );
   }
@@ -1390,6 +1449,22 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                     alt="Question reference"
                     className="mx-auto max-h-52 w-auto rounded-xl border border-slate-700 bg-slate-900 object-contain"
                   />
+                ) : null}
+                {question.playAudioOnce ? (
+                  <button
+                    type="button"
+                    onClick={() => playPromptAudio('interaction')}
+                    disabled={promptAudioState === 'loading' || promptAudioState === 'playing'}
+                    className="mx-auto inline-flex min-h-11 items-center justify-center rounded-xl border border-amber-300 bg-amber-400 px-5 py-2 text-sm font-black text-slate-950 shadow-lg transition hover:bg-amber-300 disabled:cursor-wait disabled:opacity-70"
+                  >
+                    {promptAudioState === 'loading'
+                      ? copy.loadingPromptAudio
+                      : promptAudioState === 'playing'
+                        ? copy.playingPromptAudio
+                        : promptAudioState === 'played'
+                          ? `🔁 ${copy.replayPromptAudio}`
+                          : `🔊 ${copy.playPromptAudio}`}
+                  </button>
                 ) : null}
               </div>
 

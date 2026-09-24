@@ -8,7 +8,7 @@ import {
   type GrammarNavigatorSelection,
 } from '../GrammarFocus/GrammarNavigatorModal';
 import type { BattleConfig, BattleQuestion, SavedBattleTemplate } from './Battle/battleTypes';
-import { buildBattleGeneratedHint, buildSavedBattleTemplate, sanitizeBattleQuestion } from './Battle/battleUtils';
+import { buildBattleGeneratedHint, buildSavedBattleTemplate, normalizeBattleDuration, sanitizeBattleQuestion } from './Battle/battleUtils';
 import {
   LiveClassResponse,
   LiveClassSession,
@@ -88,6 +88,8 @@ const TRAIL_COPY = {
     next: 'Next',
     startBattle: 'Start Battle',
     skipBattle: 'Skip Battle',
+    battleTime: 'Time per question',
+    seconds: 'seconds',
     battleDecisionBody: 'Would you like to start a Battle for this trail?',
     waitingBattleDecision: 'Waiting for the teacher to choose the next step...',
     resumingTrail: 'Resuming the trail flow...',
@@ -141,6 +143,8 @@ const TRAIL_COPY = {
     next: 'Próxima',
     startBattle: 'Iniciar Battle',
     skipBattle: 'Pular Battle',
+    battleTime: 'Tempo por questão',
+    seconds: 'segundos',
     battleDecisionBody: 'Deseja iniciar um Battle desta trilha?',
     waitingBattleDecision: 'Aguardando o professor escolher a proxima etapa...',
     resumingTrail: 'Retomando o fluxo da trilha...',
@@ -194,6 +198,8 @@ const TRAIL_COPY = {
     next: 'Siguiente',
     startBattle: 'Iniciar Battle',
     skipBattle: 'Omitir Battle',
+    battleTime: 'Tiempo por pregunta',
+    seconds: 'segundos',
     battleDecisionBody: 'Quieres iniciar un Battle de esta ruta?',
     waitingBattleDecision: 'Esperando que el profesor elija el siguiente paso...',
     resumingTrail: 'Reanudando el flujo de la ruta...',
@@ -867,6 +873,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [liveResponses, setLiveResponses] = useState<LiveClassResponse[]>([]);
   const [retryReleaseVersion, setRetryReleaseVersion] = useState(0);
   const [transitionBusy, setTransitionBusy] = useState(false);
+  const [battleTimePerQuestion, setBattleTimePerQuestion] = useState(10);
   const [practiceViewportTopOffset, setPracticeViewportTopOffset] = useState(LIVE_TRAIL_VIEWPORT_TOP_OFFSET);
   const previousStudentBlockStateRef = useRef<{
     blockId: string | null;
@@ -1366,7 +1373,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     );
   };
 
-  const buildTrailBattleTemplate = (completion: LiveTrailCompletion) => {
+  const buildTrailBattleTemplate = (completion: LiveTrailCompletion, selectedTime = battleTimePerQuestion) => {
     if (blocks.length === 0) return null;
     const trailIds = [completion.completedTrailId];
     const questions = blocks
@@ -1386,7 +1393,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       scope: 'current-lesson',
       difficulty: 'normal',
       questionCount: questions.length,
-      timePerQuestion: 10,
+      timePerQuestion: normalizeBattleDuration(selectedTime, 10),
       includeTeacher: false,
       botEnabled: false,
       courseId,
@@ -1468,9 +1475,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     if (claimed) await performSkipBattle(claimed);
   };
 
-  const performStartBattle = async (completion: LiveTrailCompletion) => {
+  const performStartBattle = async (completion: LiveTrailCompletion, selectedTime = 10) => {
     resumedTransitionRef.current = `${completion.id}:starting-battle`;
-    const template = buildTrailBattleTemplate(completion);
+    const template = buildTrailBattleTemplate(completion, selectedTime);
     if (!template || !onStartTrailBattle) {
       await claimLiveTrailCompletionStatus({
         classId,
@@ -1510,7 +1517,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
       to: 'starting-battle',
       updatedByUid: user.uid,
     });
-    if (claimed) await performStartBattle(claimed);
+    if (claimed) await performStartBattle(claimed, battleTimePerQuestion);
   };
 
   const handleAttempt = async (payload: {
@@ -1686,7 +1693,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     if (completion.status === 'advancing') {
       void performSkipBattle(completion);
     } else {
-      void performStartBattle(completion);
+      void performStartBattle(completion, battleTimePerQuestion);
     }
   }, [isTeacher, session.trailCompletion]);
 
@@ -1725,23 +1732,56 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               : copy.waitingBattleDecision}
           </p>
           {isTeacher && awaitingDecision ? (
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => void handleStartBattle()}
-                disabled={transitionBusy || !onStartTrailBattle}
-                className="rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 px-5 py-3 text-sm font-black text-white disabled:opacity-50"
-              >
-                {copy.startBattle}
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSkipBattle()}
-                disabled={transitionBusy}
-                className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100 disabled:opacity-50"
-              >
-                {copy.skipBattle}
-              </button>
+            <div className="mt-6 space-y-4">
+              <label className="block text-left text-xs font-bold uppercase tracking-wide text-slate-300">
+                {copy.battleTime}
+                <div className="mt-2 flex items-center gap-2">
+                  {[10, 15, 20, 30].map((seconds) => (
+                    <button
+                      key={seconds}
+                      type="button"
+                      onClick={() => setBattleTimePerQuestion(seconds)}
+                      disabled={transitionBusy}
+                      className={`flex-1 rounded-xl border px-2 py-2 text-sm font-black transition disabled:opacity-50 ${
+                        battleTimePerQuestion === seconds
+                          ? 'border-orange-400 bg-orange-500 text-white'
+                          : 'border-slate-600 bg-slate-950/70 text-slate-200 hover:border-slate-400'
+                      }`}
+                    >
+                      {seconds}s
+                    </button>
+                  ))}
+                  <input
+                    type="number"
+                    min={5}
+                    max={180}
+                    value={battleTimePerQuestion}
+                    onChange={(event) => setBattleTimePerQuestion(normalizeBattleDuration(event.target.value, 10))}
+                    onBlur={() => setBattleTimePerQuestion((value) => normalizeBattleDuration(value, 10))}
+                    disabled={transitionBusy}
+                    aria-label={`${copy.battleTime} (${copy.seconds})`}
+                    className="w-20 rounded-xl border border-slate-600 bg-slate-950/70 px-2 py-2 text-center text-sm font-black text-white outline-none focus:border-orange-400 disabled:opacity-50"
+                  />
+                </div>
+              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => void handleStartBattle()}
+                  disabled={transitionBusy || !onStartTrailBattle}
+                  className="rounded-2xl bg-gradient-to-r from-orange-500 to-red-600 px-5 py-3 text-sm font-black text-white disabled:opacity-50"
+                >
+                  {copy.startBattle}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSkipBattle()}
+                  disabled={transitionBusy}
+                  className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100 disabled:opacity-50"
+                >
+                  {copy.skipBattle}
+                </button>
+              </div>
             </div>
           ) : null}
           {saveError ? <p className="mt-4 text-xs font-semibold text-rose-200">{saveError}</p> : null}

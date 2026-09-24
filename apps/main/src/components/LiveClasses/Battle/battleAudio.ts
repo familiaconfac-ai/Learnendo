@@ -10,6 +10,7 @@ const BATTLE_PODIUM_CANDIDATES = [
 
 export interface ManagedBattleAudio {
   start(): void;
+  pause(): void;
   stop(): void;
   setVolume(value: number): void;
   dispose(): void;
@@ -81,6 +82,10 @@ function createManagedBattleAudio(
       start() {
         desiredPlaying = true;
         tryPlay();
+      },
+      pause() {
+        desiredPlaying = false;
+        audio.pause();
       },
       stop() {
         desiredPlaying = false;

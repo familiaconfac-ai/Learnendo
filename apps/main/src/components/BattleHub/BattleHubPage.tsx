@@ -48,6 +48,11 @@ interface Props {
   onDismiss?: () => void;
   initialSetupTemplate?: SavedBattleTemplate | null;
   resultActionLabel?: string;
+  trailResultActions?: {
+    onRetryTrail: () => void | Promise<void>;
+    onNextTrail: () => void | Promise<void>;
+    hasNextTrail: boolean;
+  };
 }
 
 const COPY: Record<UILang, {
@@ -302,6 +307,7 @@ export const BattleHubPage: React.FC<Props> = ({
   onDismiss,
   initialSetupTemplate = null,
   resultActionLabel,
+  trailResultActions,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
   const supportedBattleUiLanguage = getSupportedBattleUiLanguage(uiLanguage);
@@ -595,6 +601,58 @@ export const BattleHubPage: React.FC<Props> = ({
       ).values()
     );
   }, [liveSession?.participants, onlineParticipants]);
+
+  const trailBattleResultActions = useMemo(() => {
+    if (!trailResultActions || !activeLiveClass?.id || !liveSession) return undefined;
+    const labels = supportedBattleUiLanguage === 'pt'
+      ? { retryTrail: 'Refazer Trail', retryBattle: 'Repetir Battle', nextTrail: 'Próxima Trail' }
+      : supportedBattleUiLanguage === 'es'
+        ? { retryTrail: 'Repetir ruta', retryBattle: 'Repetir Battle', nextTrail: 'Siguiente ruta' }
+        : { retryTrail: 'Redo Trail', retryBattle: 'Repeat Battle', nextTrail: 'Next Trail' };
+
+    const resetBattleThen = async (next: () => void | Promise<void>) => {
+      await deleteBattleSession(activeLiveClass.id);
+      setLiveSession(null);
+      await next();
+    };
+
+    return [
+      {
+        id: 'retry-trail',
+        label: labels.retryTrail,
+        onClick: () => resetBattleThen(trailResultActions.onRetryTrail),
+      },
+      {
+        id: 'retry-battle',
+        label: labels.retryBattle,
+        primary: true,
+        onClick: async () => {
+          const config = liveSession.config;
+          const questions = liveSession.questions;
+          await deleteBattleSession(activeLiveClass.id);
+          setLiveSession(null);
+          await createBattleSession(
+            activeLiveClass.id,
+            config,
+            uid,
+            name,
+            questions,
+            liveParticipants.map((participant) => ({
+              uid: participant.uid,
+              name: participant.name,
+              joinedAt: Date.now(),
+            })),
+          );
+        },
+      },
+      {
+        id: 'next-trail',
+        label: labels.nextTrail,
+        onClick: () => resetBattleThen(trailResultActions.onNextTrail),
+        disabled: !trailResultActions.hasNextTrail,
+      },
+    ];
+  }, [activeLiveClass?.id, liveParticipants, liveSession, name, supportedBattleUiLanguage, trailResultActions, uid]);
 
   return (
     <div className="min-h-screen bg-slate-900 px-4 pb-28 pt-6">
@@ -917,6 +975,7 @@ export const BattleHubPage: React.FC<Props> = ({
               activeParticipants={liveParticipants}
               uiLanguage={supportedBattleUiLanguage}
               resultActionLabel={resultActionLabel}
+              resultActions={trailBattleResultActions}
               onClose={() => {
                 void deleteBattleSession(activeLiveClass.id).finally(() => {
                   setLiveSession(null);

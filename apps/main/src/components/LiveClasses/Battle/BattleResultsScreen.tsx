@@ -17,6 +17,15 @@ interface Props {
   validParticipantIds?: string[];
   uiLanguage?: BattleUiLanguage;
   closeLabel?: string;
+  resultActions?: BattleResultAction[];
+}
+
+export interface BattleResultAction {
+  id: string;
+  label: string;
+  onClick: () => void | Promise<void>;
+  primary?: boolean;
+  disabled?: boolean;
 }
 
 const MEDALS = ['1', '2', '3'];
@@ -82,6 +91,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
   validParticipantIds,
   uiLanguage = 'en',
   closeLabel,
+  resultActions,
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
   const audioRef = useRef<ManagedBattleAudio | null>(null);
@@ -211,7 +221,24 @@ export const BattleResultsScreen: React.FC<Props> = ({
           ) : null}
         </div>
 
-        <div className="flex gap-2 px-4 py-4">
+        <div className={`px-4 py-4 ${resultActions?.length ? 'grid gap-2 sm:grid-cols-3' : 'flex gap-2'}`}>
+          {resultActions?.map((action) => (
+            <button
+              key={action.id}
+              type="button"
+              onClick={() => void action.onClick()}
+              disabled={action.disabled}
+              className={`rounded-xl px-3 py-2.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                action.primary
+                  ? 'bg-gradient-to-r from-orange-500 to-red-600 text-white hover:opacity-90'
+                  : 'border border-slate-600 text-slate-200 hover:border-slate-400'
+              }`}
+            >
+              {action.label}
+            </button>
+          ))}
+          {!resultActions?.length ? (
+            <>
           {isTeacher && onNewBattle ? (
             <button
               onClick={onNewBattle}
@@ -226,6 +253,8 @@ export const BattleResultsScreen: React.FC<Props> = ({
           >
             {closeLabel || (isTeacher ? copy.close : copy.ok)}
           </button>
+            </>
+          ) : null}
         </div>
       </div>
     </div>
