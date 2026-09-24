@@ -33,6 +33,7 @@ import {
   getBattlePromptAudioText,
   getMyBattleAnswer,
   isChoiceQuestion,
+  isFirstCorrectAnswerQuestion,
   repairBattleTextEncoding,
 } from './battleUtils';
 import { createBattleThemeAudio, persistBattleVolume, readBattleVolume, type ManagedBattleAudio } from './battleAudio';
@@ -57,8 +58,8 @@ const HOST_COPY = {
     activateMusic: 'Enable music',
     muteMusic: 'Mute music',
     musicVolume: 'Music volume',
-    playPromptAudio: 'Play question audio',
-    replayPromptAudio: 'Play audio again',
+    playPromptAudio: 'Listen Again',
+    replayPromptAudio: 'Listen Again',
     loadingPromptAudio: 'Loading audio...',
     playingPromptAudio: 'Playing audio...',
     battleRoom: 'Battle Room',
@@ -98,6 +99,8 @@ const HOST_COPY = {
     avatarReady: 'ready',
     avatarChoosing: 'choosing',
     avatarProgress: (ready: number, total: number) => `${ready}/${total} students ready`,
+    firstCorrectWins: 'First correct answer wins',
+    tryAgain: 'Try again',
   },
   pt: {
     brandTitle: 'Learnendo Battle',
@@ -105,7 +108,7 @@ const HOST_COPY = {
     activateMusic: 'Ativar musica',
     muteMusic: 'Silenciar musica',
     musicVolume: 'Volume da musica',
-    playPromptAudio: 'Ouvir audio da pergunta',
+    playPromptAudio: 'Ouvir novamente',
     replayPromptAudio: 'Ouvir audio novamente',
     loadingPromptAudio: 'Carregando audio...',
     playingPromptAudio: 'Reproduzindo audio...',
@@ -146,6 +149,8 @@ const HOST_COPY = {
     avatarReady: 'pronto',
     avatarChoosing: 'escolhendo',
     avatarProgress: (ready: number, total: number) => `${ready}/${total} alunos prontos`,
+    firstCorrectWins: 'A primeira resposta correta vence',
+    tryAgain: 'Tente novamente',
   },
   es: {
     brandTitle: 'Batalla Learnendo',
@@ -153,7 +158,7 @@ const HOST_COPY = {
     activateMusic: 'Activar musica',
     muteMusic: 'Silenciar musica',
     musicVolume: 'Volumen de la musica',
-    playPromptAudio: 'Escuchar audio de la pregunta',
+    playPromptAudio: 'Escuchar de nuevo',
     replayPromptAudio: 'Escuchar audio de nuevo',
     loadingPromptAudio: 'Cargando audio...',
     playingPromptAudio: 'Reproduciendo audio...',
@@ -194,6 +199,8 @@ const HOST_COPY = {
     avatarReady: 'listo',
     avatarChoosing: 'eligiendo',
     avatarProgress: (ready: number, total: number) => `${ready}/${total} estudiantes listos`,
+    firstCorrectWins: 'La primera respuesta correcta gana',
+    tryAgain: 'Inténtalo de nuevo',
   },
 } as const;
 
@@ -226,6 +233,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const [isListening, setIsListening] = useState(false);
   const [promptAudioState, setPromptAudioState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'failed'>('idle');
   const [teacherSubmitting, setTeacherSubmitting] = useState(false);
+  const [teacherOpenFeedback, setTeacherOpenFeedback] = useState<string | null>(null);
   const [teacherFrozenTimeLeft, setTeacherFrozenTimeLeft] = useState<number | null>(null);
   const [localCurrentAnswers, setLocalCurrentAnswers] = useState<Record<string, BattleAnswer>>({});
   const [showRankingOverlay, setShowRankingOverlay] = useState(false);
@@ -274,7 +282,9 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       revealParticipantIds.every((participantId) => participantId in mergedCurrentAnswers) ||
       effectiveAnsweredCount >= revealParticipantIds.length
     );
+  const isFirstCorrectRound = isFirstCorrectAnswerQuestion(question);
   const shouldAutoReveal =
+    !isFirstCorrectRound &&
     session.status === 'PLAYING' &&
     revealParticipantIds.length > 0 &&
     effectiveAnsweredCount >= revealParticipantIds.length;
@@ -293,7 +303,9 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
   const teacherHasAnswered = Boolean(myAnswer) || teacherSubmitting;
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
   const effectiveFrozenTimeLeft = teacherFrozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
-  const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
+  const roundDurationMs = isFirstCorrectRound
+    ? 0
+    : session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
   const roundStartedAt =
     typeof session.roundStartedAt === 'number' && session.roundStartedAt > 0
       ? session.roundStartedAt
@@ -310,7 +322,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         : roundDurationMs;
   const timeUp = effectiveStatus === 'PLAYING' && effectiveFrozenTimeLeft == null && endsAt != null && liveRemainingMs <= 0;
   const displayTimeLeft = effectiveFrozenTimeLeft ?? timeLeft;
-  const timeRatio = displayTimeLeft / currentQuestionDuration;
+  const timeRatio = isFirstCorrectRound ? 1 : displayTimeLeft / currentQuestionDuration;
 
   useEffect(() => {
     console.log('[BATTLE ROUND STATE DEBUG] render', {
@@ -580,6 +592,7 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     setTeacherFrozenTimeLeft(null);
     setTimeLeft(currentQuestionDuration);
     setLocalCurrentAnswers({});
+    setTeacherOpenFeedback(null);
     setShowRankingOverlay(false);
 
     if (recognitionRef.current) {
@@ -891,12 +904,14 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
     };
     const nextFrozenTimeLeft = localAnswer.frozenTimeLeft ?? 0;
 
-    setLocalCurrentAnswers((current) => ({ ...current, [teacherUid]: localAnswer }));
-    setTeacherFrozenTimeLeft(nextFrozenTimeLeft);
-    setTimeLeft(nextFrozenTimeLeft);
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
+    if (!isFirstCorrectRound) {
+      setLocalCurrentAnswers((current) => ({ ...current, [teacherUid]: localAnswer }));
+      setTeacherFrozenTimeLeft(nextFrozenTimeLeft);
+      setTimeLeft(nextFrozenTimeLeft);
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
     }
     console.info('[BATTLE HOST FREEZE] teacher timer frozen on answer', {
       classId,
@@ -912,7 +927,9 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
       elapsedMs,
       frozenTimeLeft: nextFrozenTimeLeft,
     });
-    const optimisticAnswers = { ...(session.currentAnswers ?? {}), ...localCurrentAnswers, [teacherUid]: localAnswer };
+    const optimisticAnswers = isFirstCorrectRound
+      ? { ...(session.currentAnswers ?? {}), ...localCurrentAnswers }
+      : { ...(session.currentAnswers ?? {}), ...localCurrentAnswers, [teacherUid]: localAnswer };
     const everyoneAnswered =
       revealParticipantIds.length > 0 &&
       revealParticipantIds.every((participantId) => participantId in optimisticAnswers);
@@ -949,6 +966,11 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
         payload,
         { forceCurrentRoundParticipation: true },
       );
+      if (result.status === 'retry') {
+        setTeacherOpenFeedback(copy.tryAgain);
+        setTypedAnswer('');
+        return;
+      }
       if (result.status !== 'saved') {
         console.warn('[LIVE BATTLE ANSWER] blocked', {
           reason: result.reason,
@@ -984,7 +1006,8 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
 
       console.log('[BATTLE ANSWER DEBUG] answer saved');
       console.log('[BATTLE PROFESSOR ANSWER DEBUG] answer saved');
-      if (everyoneAnswered) {
+      setLocalCurrentAnswers((current) => ({ ...current, [teacherUid]: result.answer }));
+      if (everyoneAnswered && !isFirstCorrectRound) {
         await showBattleAnswer(classId, revealParticipantIds);
       }
     } catch (error) {
@@ -1504,6 +1527,9 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                           : `🔊 ${copy.playPromptAudio}`}
                   </button>
                 ) : null}
+                {isFirstCorrectRound ? (
+                  <p className="text-sm font-bold text-amber-300">{copy.firstCorrectWins}</p>
+                ) : null}
               </div>
 
               {isChoiceQuestion(question) ? (
@@ -1583,6 +1609,11 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
                     placeholder={(question.kind as BattleQuestionKind) === 'speaking' ? copy.teacherSpeakingPlaceholder : copy.teacherTypingPlaceholder}
                     className="min-h-28 w-full rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
                   />
+                  {isFirstCorrectRound && teacherOpenFeedback ? (
+                    <p className="text-center text-sm font-bold text-amber-300" role="status">
+                      {teacherOpenFeedback}
+                    </p>
+                  ) : null}
                   {teacherCanPlay ? (
                     <div className="flex gap-3">
                       {(question.kind as BattleQuestionKind) === 'speaking' ? (
@@ -1607,8 +1638,8 @@ export const BattleHostView: React.FC<BattleHostViewProps> = ({
               )}
 
               <div className="flex items-center gap-3 text-sm text-slate-400">
-                <span>{Math.ceil(displayTimeLeft)}s</span>
-                <span>|</span>
+                <span>{isFirstCorrectRound ? copy.firstCorrectWins : `${Math.ceil(displayTimeLeft)}s`}</span>
+                {!isFirstCorrectRound ? <span>|</span> : null}
                 <span>{Math.min(effectiveAnsweredCount, revealParticipantIds.length)} / {revealParticipantIds.length} {copy.answered}</span>
               </div>
 

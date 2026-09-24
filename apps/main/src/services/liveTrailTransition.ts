@@ -1,5 +1,28 @@
 import type { Day, LiveTrailCompletion } from '../types';
 
+export type LiveTrailRecoveryAction =
+  | 'resume-starting-battle'
+  | 'resume-advancing'
+  | 'restore-completed-trail'
+  | 'restore-active-trail'
+  | 'none';
+
+export function getLiveTrailRecoveryAction(params: {
+  mainStageMode?: string | null;
+  currentBlockId?: string | null;
+  completion?: LiveTrailCompletion | null;
+  activeTrailIds?: string[];
+}): LiveTrailRecoveryAction {
+  if (params.mainStageMode !== 'trail' || params.currentBlockId !== '__complete__') return 'none';
+  if (!params.completion) {
+    return params.activeTrailIds?.length ? 'restore-active-trail' : 'none';
+  }
+  if (params.completion.status === 'starting-battle') return 'resume-starting-battle';
+  if (params.completion.status === 'advancing') return 'resume-advancing';
+  if (params.completion.status === 'battle') return 'restore-completed-trail';
+  return 'none';
+}
+
 export function buildLiveTrailCompletion(params: {
   lessonId: string;
   currentTrailId: string;

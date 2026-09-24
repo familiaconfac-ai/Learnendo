@@ -32,6 +32,9 @@ import {
   compareBattleParticipantsByRanking,
   evaluateBattleAnswer,
   getBattleQuestionDuration,
+  getBattleRoundDurationMs,
+  isFirstCorrectAnswerQuestion,
+  resolveFirstCorrectSubmission,
   isReservedFirestoreFieldKey,
   sanitizeBattleQuestions,
 } from './battleUtils';
@@ -95,17 +98,24 @@ function buildBattleSessionSnapshot(
   classId: string,
   data: Record<string, unknown>,
 ): BattleSession {
-  const answers = (data.answers as Record<string, BattleAnswer> | undefined)
+  const rawAnswers = (data.answers as Record<string, BattleAnswer> | undefined)
     ?? (data.currentAnswers as Record<string, BattleAnswer> | undefined)
     ?? {};
   const config = (data.config as BattleConfig | undefined);
   const questions = Array.isArray(data.questions) ? data.questions as BattleQuestion[] : [];
   const currentQuestionIndex = typeof data.currentQuestionIndex === 'number' ? data.currentQuestionIndex : 0;
   const currentQuestion = questions[currentQuestionIndex] ?? null;
-  const roundDurationMs =
-    (data.roundDurationMs as number | null | undefined) ??
-    (data.durationMs as number | null | undefined) ??
-    (config?.timePerQuestion ? getBattleQuestionDuration(currentQuestion, config) * 1000 : null);
+  const storedWinnerUid = (data.correctAnswerWinnerUid as string | null | undefined) ?? null;
+  // Legacy timed open rounds may contain wrong submissions that used to lock players.
+  // Treat them as attempts, not final answers, so an already-stuck round becomes playable.
+  const answers = isFirstCorrectAnswerQuestion(currentQuestion) && !storedWinnerUid
+    ? {}
+    : rawAnswers;
+  const roundDurationMs = isFirstCorrectAnswerQuestion(currentQuestion)
+    ? null
+    : (data.roundDurationMs as number | null | undefined) ??
+      (data.durationMs as number | null | undefined) ??
+      (config?.timePerQuestion ? getBattleRoundDurationMs(currentQuestion, config) : null);
   const rawRoundStart =
     (data.roundStartedAt as number | null | undefined) ??
     (typeof data.questionStartedAt === 'number' ? data.questionStartedAt : null);
@@ -157,6 +167,8 @@ function buildBattleSessionSnapshot(
     showAnswer:
       (data.showAnswer as boolean | undefined) ??
       isRevealed,
+    correctAnswerWinnerUid: storedWinnerUid,
+    correctAnswerAcceptedAt: (data.correctAnswerAcceptedAt as number | null | undefined) ?? null,
   } as BattleSession;
 }
 
@@ -348,7 +360,7 @@ export async function createBattleSession(
 
   const questions = sanitizeBattleQuestions(generatedQuestions);
   const firstQuestion = questions[0] ?? null;
-  const firstQuestionDuration = getBattleQuestionDuration(firstQuestion, config);
+  const firstQuestionDurationMs = getBattleRoundDurationMs(firstQuestion, config);
 
   if (questions.length === 0) {
     throw new Error('Nenhuma pergunta valida foi encontrada para iniciar o Battle.');
@@ -397,8 +409,8 @@ export async function createBattleSession(
     currentQuestionId: firstQuestion?.id ?? null,
     startedAt: null,
     roundStartedAt: null,
-    roundDurationMs: firstQuestionDuration * 1000,
-    durationMs: firstQuestionDuration * 1000,
+    roundDurationMs: firstQuestionDurationMs,
+    durationMs: firstQuestionDurationMs,
     endsAt: null,
     isRevealed: false,
     showAnswer: false,
@@ -409,6 +421,8 @@ export async function createBattleSession(
     scores: buildScoresForParticipants({}, seededParticipants, false),
     answers: {},
     currentAnswers: {},
+    correctAnswerWinnerUid: null,
+    correctAnswerAcceptedAt: null,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     lastChange: serverTimestamp() as unknown,
@@ -491,7 +505,7 @@ export async function startBattle(
   const config = beforeData?.config ?? session.config;
   const createdAt = beforeData?.createdAt ?? session.createdAt ?? now;
   const firstQuestion = questions[0] ?? null;
-  const firstQuestionDuration = getBattleQuestionDuration(firstQuestion, config);
+  const firstQuestionDurationMs = getBattleRoundDurationMs(firstQuestion, config);
   if (config.includeTeacher && requestedByUid) {
     canonicalParticipantIds.add(requestedByUid);
   }
@@ -561,9 +575,9 @@ export async function startBattle(
     currentQuestionId: firstQuestion?.id ?? session.currentQuestionId ?? null,
     startedAt: (beforeData?.startedAt as number | undefined) ?? now,
     roundStartedAt: now,
-    roundDurationMs: firstQuestionDuration * 1000,
-    durationMs: firstQuestionDuration * 1000,
-    endsAt: now + firstQuestionDuration * 1000,
+    roundDurationMs: firstQuestionDurationMs,
+    durationMs: firstQuestionDurationMs,
+    endsAt: firstQuestionDurationMs != null ? now + firstQuestionDurationMs : null,
     isRevealed: false,
     showAnswer: false,
     questionStartedAt: now,
@@ -573,6 +587,8 @@ export async function startBattle(
     scores: nextScores,
     answers: {},
     currentAnswers: {},
+    correctAnswerWinnerUid: null,
+    correctAnswerAcceptedAt: null,
     createdAt,
     updatedAt: now,
     lastChange: serverTimestamp(),
@@ -643,7 +659,7 @@ export async function advanceBattleQuestion(
     const isLast = computedNextIndex >= totalQuestions || computedNextIndex >= questions.length;
     const nextQuestion = isLast ? null : questions[computedNextIndex] ?? null;
     const nextQuestionId = nextQuestion?.id ?? null;
-    const nextQuestionDurationMs = nextQuestion ? getBattleQuestionDuration(nextQuestion, data.config as BattleConfig | undefined) * 1000 : null;
+    const nextQuestionDurationMs = getBattleRoundDurationMs(nextQuestion, data.config as BattleConfig | undefined);
     const liveScores = data.scores ?? existingScores ?? {};
 
     const uniqueParticipants = Array.from(
@@ -672,6 +688,8 @@ export async function advanceBattleQuestion(
       scores: buildScoresForParticipants(liveScores, uniqueParticipants, false),
       answers: {},
       currentAnswers: {},
+      correctAnswerWinnerUid: null,
+      correctAnswerAcceptedAt: null,
       updatedAt: now,
       lastChange: serverTimestamp(),
     });
@@ -909,7 +927,8 @@ export async function submitBattleAnswer(
   }
 ): Promise<
   | { status: 'saved'; answer: BattleAnswer; updatedParticipant: BattleParticipant }
-  | { status: 'ignored'; reason: 'already-answered' | 'not-active' | 'participant-not-recognized' | 'question-missing' }
+  | { status: 'retry'; reason: 'incorrect'; answer: BattleAnswer }
+  | { status: 'ignored'; reason: 'already-answered' | 'not-active' | 'participant-not-recognized' | 'question-missing' | 'round-won' }
 > {
   const docRef = battleDocRef(classId);
 
@@ -922,6 +941,8 @@ export async function submitBattleAnswer(
     const liveSession = buildBattleSessionSnapshot(classId, snap.data() as Record<string, unknown>);
 
     const liveRoundParticipantIds = getStableRoundParticipantIds(liveSession.roundParticipantIds);
+    const question = liveSession.questions[liveSession.currentQuestionIndex];
+    const isFirstCorrectRound = isFirstCorrectAnswerQuestion(question);
     const alreadyAnswered = uid in (liveSession.currentAnswers ?? {});
     const isInCurrentRound = liveRoundParticipantIds.includes(uid);
     const canAnswerCurrentRound = canBattleParticipantAnswerCurrentQuestion(liveSession, uid);
@@ -934,6 +955,10 @@ export async function submitBattleAnswer(
     const effectiveRoundParticipantIds = shouldForceCurrentRoundParticipation
       ? getStableRoundParticipantIds([...liveRoundParticipantIds, uid])
       : liveRoundParticipantIds;
+
+    if (isFirstCorrectRound && liveSession.correctAnswerWinnerUid) {
+      return { status: 'ignored', reason: 'round-won' } as const;
+    }
 
     if (alreadyAnswered) {
       return { status: 'ignored', reason: 'already-answered' } as const;
@@ -948,9 +973,6 @@ export async function submitBattleAnswer(
     }
 
     const answeredAt = Date.now();
-    const qIdx = liveSession.currentQuestionIndex;
-    const question = liveSession.questions[qIdx];
-
     if (!question) {
       return { status: 'ignored', reason: 'question-missing' } as const;
     }
@@ -976,7 +998,7 @@ export async function submitBattleAnswer(
       answeredAt,
       elapsedMs,
       roundPoints,
-      frozenTimeLeft: Math.max(0, currentQuestionDuration - elapsedMs / 1000),
+      frozenTimeLeft: isFirstCorrectRound ? undefined : Math.max(0, currentQuestionDuration - elapsedMs / 1000),
     }) as BattleAnswer;
 
     const nextParticipant = omitUndefinedFields<BattleRosterParticipant>({
@@ -994,6 +1016,60 @@ export async function submitBattleAnswer(
     }, {
       lastAnswerCorrect: isCorrect,
     });
+
+    if (isFirstCorrectRound) {
+      const outcome = resolveFirstCorrectSubmission(liveSession.correctAnswerWinnerUid, isCorrect);
+      if (outcome === 'round-won') {
+        return { status: 'ignored', reason: 'round-won' } as const;
+      }
+      if (outcome === 'retry') {
+        transaction.update(docRef, {
+          [`participants.${uid}`]: nextParticipant,
+          updatedAt: answeredAt,
+          lastChange: serverTimestamp(),
+          ...(shouldForceCurrentRoundParticipation
+            ? { roundParticipantIds: effectiveRoundParticipantIds }
+            : {}),
+        });
+        return { status: 'retry', reason: 'incorrect', answer } as const;
+      }
+
+      const winningAnswers = { [uid]: answer };
+      const nextParticipants = {
+        ...(liveSession.participants ?? {}),
+        [uid]: nextParticipant,
+      };
+      const nextScores = applyBattleRoundRankingToScores({
+        currentScores: liveSession.scores ?? {},
+        currentAnswers: winningAnswers,
+        roundParticipantIds: effectiveRoundParticipantIds,
+        participants: nextParticipants,
+        questionStartedAt: liveSession.questionStartedAt ?? 0,
+      });
+      transaction.update(docRef, {
+        [`participants.${uid}`]: nextParticipant,
+        answers: winningAnswers,
+        currentAnswers: winningAnswers,
+        scores: nextScores,
+        answeredCount: 1,
+        correctAnswerWinnerUid: uid,
+        correctAnswerAcceptedAt: answeredAt,
+        status: 'REVEALED',
+        roundStatus: 'revealed',
+        isRevealed: true,
+        showAnswer: true,
+        updatedAt: answeredAt,
+        lastChange: serverTimestamp(),
+        ...(shouldForceCurrentRoundParticipation
+          ? { roundParticipantIds: effectiveRoundParticipantIds }
+          : {}),
+      });
+      return {
+        status: 'saved',
+        answer,
+        updatedParticipant: nextScores[uid] ?? updatedParticipant,
+      } as const;
+    }
 
     const nextCurrentAnswers: Record<string, BattleAnswer> = {
       ...(liveSession.currentAnswers ?? {}),

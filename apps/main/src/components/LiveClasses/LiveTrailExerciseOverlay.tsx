@@ -16,6 +16,7 @@ import {
   LiveExerciseAnswerVerdict,
   LiveExerciseBlock,
   LiveExerciseBlockStatus,
+  LiveExerciseSession,
   LiveTrailCompletion,
   PracticeItem,
   Workbook,
@@ -35,7 +36,7 @@ import {
   updateExerciseBlockResponse,
   updateLiveSession,
 } from '../../services/liveSessionService';
-import { buildLiveTrailCompletion } from '../../services/liveTrailTransition';
+import { buildLiveTrailCompletion, getLiveTrailRecoveryAction } from '../../services/liveTrailTransition';
 import { recordLiveAttendanceGrammar } from '../../services/liveAttendanceService';
 import { appendGrammarFocusWorkspacePage } from '../../services/grammarFocusWorkspace';
 import type { UserRole } from '../../services/userRoles';
@@ -98,6 +99,8 @@ const TRAIL_COPY = {
     battleDecisionBody: 'Would you like to start a Battle for this trail?',
     waitingBattleDecision: 'Waiting for the teacher to choose the next step...',
     resumingTrail: 'Resuming the trail flow...',
+    resumeTrail: 'Resume Trail',
+    returnToLive: 'Return to Live',
     startingBattle: 'Preparing the Battle...',
     advancingTrail: 'Preparing the next Trail...',
     grammar: 'Grammar',
@@ -159,6 +162,8 @@ const TRAIL_COPY = {
     battleDecisionBody: 'Deseja iniciar um Battle desta trilha?',
     waitingBattleDecision: 'Aguardando o professor escolher a proxima etapa...',
     resumingTrail: 'Retomando o fluxo da trilha...',
+    resumeTrail: 'Retomar Trail',
+    returnToLive: 'Voltar para a Live',
     startingBattle: 'Preparando a Battle...',
     advancingTrail: 'Preparando a próxima Trail...',
     grammar: 'Gramática',
@@ -220,6 +225,8 @@ const TRAIL_COPY = {
     battleDecisionBody: 'Quieres iniciar un Battle de esta ruta?',
     waitingBattleDecision: 'Esperando que el profesor elija el siguiente paso...',
     resumingTrail: 'Reanudando el flujo de la ruta...',
+    resumeTrail: 'Retomar ruta',
+    returnToLive: 'Volver a la clase',
     startingBattle: 'Preparando la Battle...',
     advancingTrail: 'Preparando la siguiente ruta...',
     grammar: 'Gramática',
@@ -923,8 +930,9 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const { baseLanguage } = useUiLanguage();
   const [blocks, setBlocks] = useState<LiveExerciseBlock[]>([]);
   const [blocksError, setBlocksError] = useState<string | null>(null);
-  const [exerciseSession, setExerciseSession] = useState<{ currentBlockId: string | null }>({
+  const [exerciseSession, setExerciseSession] = useState<Pick<LiveExerciseSession, 'currentBlockId' | 'sourceTrailIds'>>({
     currentBlockId: null,
+    sourceTrailIds: [],
   });
   const [workbook, setWorkbook] = useState<Workbook | null>(null);
   const [loadingWorkbook, setLoadingWorkbook] = useState(false);
@@ -936,6 +944,7 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   const [liveResponses, setLiveResponses] = useState<LiveClassResponse[]>([]);
   const [retryReleaseVersion, setRetryReleaseVersion] = useState(0);
   const [transitionBusy, setTransitionBusy] = useState(false);
+  const [recoveryTimedOut, setRecoveryTimedOut] = useState(false);
   const [battleTimePerQuestion, setBattleTimePerQuestion] = useState(10);
   const [pendingContinue, setPendingContinue] = useState<{
     answer: string;
@@ -981,7 +990,10 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     setBlocksError(null);
     const unsubscribe = subscribeExerciseSession(
       classId,
-      (next) => setExerciseSession({ currentBlockId: next.currentBlockId ?? null }),
+      (next) => setExerciseSession({
+        currentBlockId: next.currentBlockId ?? null,
+        sourceTrailIds: next.sourceTrailIds ?? [],
+      }),
       () => setBlocksError(copy.loadError),
     );
 
@@ -1749,6 +1761,67 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
     }
   };
 
+  const recoverUsableTrail = async (completion?: LiveTrailCompletion | null) => {
+    const recoveryLessonId = completion?.lessonId ?? lessonId;
+    const recoveryTrailId = completion?.completedTrailId
+      ?? exerciseSession.sourceTrailIds?.[0]
+      ?? session.activeTrailIds?.[0]
+      ?? null;
+    if (!recoveryLessonId || !recoveryTrailId) {
+      setTransitionBusy(true);
+      try {
+        await updateLiveSession(
+          classId,
+          { trailCompletion: null, mainStageMode: 'workspace' },
+          user.uid,
+        );
+        await onReturnToWorkspace?.();
+      } catch (error) {
+        console.warn('[LiveTrailRecovery] failed to return to the live workspace', error);
+        setRecoveryTimedOut(true);
+        setSaveError(copy.finishAnswerError);
+      } finally {
+        setTransitionBusy(false);
+      }
+      return;
+    }
+
+    setTransitionBusy(true);
+    setSaveError(null);
+    try {
+      const seeded = await seedExerciseSessionFromLessonTrails({
+        classId,
+        courseId,
+        workbookId,
+        lessonId: recoveryLessonId,
+        trailIds: [recoveryTrailId],
+        updatedByUid: user.uid,
+        updatedByName: actorName,
+      });
+      await updateLiveSession(
+        classId,
+        {
+          sessionStatus: 'active',
+          activeWorkbookId: workbookId,
+          activeLessonId: recoveryLessonId,
+          activeExerciseId: seeded.trailIds[0] ?? recoveryTrailId,
+          activeTrailIds: seeded.trailIds.length ? seeded.trailIds : [recoveryTrailId],
+          activeTrailLabel: seeded.trailLabel,
+          trailCompletion: null,
+          mainStageMode: 'trail',
+        },
+        user.uid,
+      );
+      setRecoveryTimedOut(false);
+    } catch (error) {
+      console.warn('[LiveTrailRecovery] failed to restore a usable trail', error);
+      setRecoveryTimedOut(true);
+      setSaveError(copy.finishAnswerError);
+    } finally {
+      setTransitionBusy(false);
+    }
+  };
+
   const handleContinue = async (payload: {
     answer: string;
     isCorrect: boolean;
@@ -1765,21 +1838,48 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
   };
 
   useEffect(() => {
-    if (!isTeacher || !session.trailCompletion) return;
+    if (!isTeacher || currentBlock) return;
     const completion = session.trailCompletion;
-    if (completion.status !== 'advancing' && completion.status !== 'starting-battle') {
+    const recoveryAction = getLiveTrailRecoveryAction({
+      mainStageMode: session.mainStageMode,
+      currentBlockId: exerciseSession.currentBlockId,
+      completion,
+      activeTrailIds: exerciseSession.sourceTrailIds?.length
+        ? exerciseSession.sourceTrailIds
+        : session.activeTrailIds,
+    });
+    if (recoveryAction === 'none') {
       resumedTransitionRef.current = null;
       return;
     }
-    const resumeKey = `${completion.id}:${completion.status}`;
+    const resumeKey = completion
+      ? `${completion.id}:${recoveryAction}`
+      : `legacy:${recoveryAction}:${session.activeTrailIds?.[0] ?? ''}`;
     if (resumedTransitionRef.current === resumeKey) return;
     resumedTransitionRef.current = resumeKey;
-    if (completion.status === 'advancing') {
+    setRecoveryTimedOut(false);
+    if (recoveryAction === 'resume-advancing' && completion) {
       void performSkipBattle(completion);
-    } else {
+    } else if (recoveryAction === 'resume-starting-battle' && completion) {
       void performStartBattle(completion, battleTimePerQuestion);
+    } else {
+      const timer = window.setTimeout(() => {
+        void recoverUsableTrail(completion);
+      }, 750);
+      return () => window.clearTimeout(timer);
     }
-  }, [isTeacher, session.trailCompletion]);
+  }, [currentBlock, exerciseSession.currentBlockId, exerciseSession.sourceTrailIds, isTeacher, session.activeTrailIds, session.mainStageMode, session.trailCompletion]);
+
+  useEffect(() => {
+    if (!isTeacher || currentBlock || exerciseSession.currentBlockId !== LIVE_TRAIL_COMPLETE_BLOCK_ID) {
+      setRecoveryTimedOut(false);
+      return;
+    }
+    const completion = session.trailCompletion;
+    if (completion?.status === 'awaiting-decision') return;
+    const timer = window.setTimeout(() => setRecoveryTimedOut(true), 8_000);
+    return () => window.clearTimeout(timer);
+  }, [currentBlock, exerciseSession.currentBlockId, isTeacher, session.trailCompletion]);
 
   if (blocksError) {
     return (
@@ -1874,6 +1974,26 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
               </div>
             </div>
           ) : null}
+          {isTeacher && !awaitingDecision && recoveryTimedOut ? (
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void recoverUsableTrail(completion)}
+                disabled={transitionBusy}
+                className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50"
+              >
+                {copy.resumeTrail}
+              </button>
+              <button
+                type="button"
+                onClick={() => void onReturnToWorkspace?.()}
+                disabled={transitionBusy}
+                className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100 disabled:opacity-50"
+              >
+                {copy.returnToLive}
+              </button>
+            </div>
+          ) : null}
           {saveError ? <p className="mt-4 text-xs font-semibold text-rose-200">{saveError}</p> : null}
         </div>
       </div>
@@ -1886,6 +2006,26 @@ export const LiveTrailExerciseOverlay: React.FC<LiveTrailExerciseOverlayProps> =
         <div className="max-w-md rounded-3xl border border-emerald-500/30 bg-slate-900 p-6 text-center shadow-2xl">
           <p className="text-lg font-black text-emerald-300">{copy.trailComplete}</p>
           <p className="mt-2 text-sm text-slate-200">{copy.trailCompleteBody}</p>
+          {isTeacher ? (
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => void recoverUsableTrail(null)}
+                disabled={transitionBusy}
+                className="rounded-2xl bg-emerald-500 px-5 py-3 text-sm font-black text-slate-950 disabled:opacity-50"
+              >
+                {copy.resumeTrail}
+              </button>
+              <button
+                type="button"
+                onClick={() => void onReturnToWorkspace?.()}
+                disabled={transitionBusy}
+                className="rounded-2xl border border-slate-600 bg-slate-950/70 px-5 py-3 text-sm font-black text-slate-100 disabled:opacity-50"
+              >
+                {copy.returnToLive}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     );

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { BattleParticipant } from './battleTypes';
 import { BattleParticipantAvatar } from './BattleParticipantAvatar';
 import { compareBattleParticipantsByRanking } from './battleUtils';
@@ -95,6 +95,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
 }) => {
   const copy = COPY[uiLanguage] ?? COPY.en;
   const audioRef = useRef<ManagedBattleAudio | null>(null);
+  const [showConfetti, setShowConfetti] = useState(true);
 
   const sorted = useMemo(() => {
     const participantIds = new Set(validParticipantIds ?? Object.keys(scores));
@@ -130,8 +131,41 @@ export const BattleResultsScreen: React.FC<Props> = ({
     };
   }, []);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowConfetti(false), 2_200);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   return (
     <div className="fixed inset-0 z-[9100] flex items-center justify-center bg-black/90 backdrop-blur-md">
+      <style>{`
+        @keyframes battle-confetti-fall { from { transform: translate3d(0,-15vh,0) rotate(0deg); opacity: 1; } to { transform: translate3d(var(--drift),105vh,0) rotate(620deg); opacity: 0; } }
+        @keyframes battle-avatar-bob { 0%,100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-7px) rotate(2deg); } }
+        @keyframes battle-avatar-winner { 0%,100% { transform: translateY(0) scale(1); } 45% { transform: translateY(-10px) scale(1.06); } }
+        .battle-confetti { animation: battle-confetti-fall 1.8s ease-in forwards; }
+        .battle-avatar-celebrate { animation: battle-avatar-bob 1.9s ease-in-out infinite; }
+        .battle-avatar-winner { animation: battle-avatar-winner 1.45s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) {
+          .battle-confetti, .battle-avatar-celebrate, .battle-avatar-winner { animation: none !important; }
+          .battle-confetti { display: none; }
+        }
+      `}</style>
+      {showConfetti ? (
+        <div className="pointer-events-none fixed inset-0 z-[1] overflow-hidden" aria-hidden="true">
+          {Array.from({ length: 28 }, (_, index) => (
+            <span
+              key={index}
+              className="battle-confetti absolute top-0 h-3 w-2 rounded-sm"
+              style={{
+                left: `${(index * 37) % 100}%`,
+                backgroundColor: ['#facc15', '#fb7185', '#38bdf8', '#4ade80', '#c084fc'][index % 5],
+                animationDelay: `${(index % 9) * 0.07}s`,
+                ['--drift' as string]: `${((index % 7) - 3) * 18}px`,
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
       <div className="mx-4 w-full max-w-sm overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl">
         <div className="bg-gradient-to-b from-yellow-600/40 to-transparent py-6 text-center">
           <div className="mb-1 text-4xl">T</div>
@@ -163,7 +197,9 @@ export const BattleResultsScreen: React.FC<Props> = ({
                         name={participant.name}
                         avatarId={participant.avatarId}
                         isBot={participant.isBot}
-                        sizeClassName={index === 1 ? 'h-16 w-16' : 'h-12 w-12'}
+                        sizeClassName={index === 1 ? 'h-20 w-20' : 'h-16 w-16'}
+                        iconClassName={index === 1 ? 'text-6xl leading-none' : 'text-5xl leading-none'}
+                        className={index === 1 ? 'battle-avatar-winner' : 'battle-avatar-celebrate'}
                         showBotBadge
                       />
                       <p className="mt-2 max-w-[88px] truncate text-center text-xs font-bold text-white">
@@ -200,6 +236,7 @@ export const BattleResultsScreen: React.FC<Props> = ({
                 avatarId={participant.avatarId}
                 isBot={participant.isBot}
                 sizeClassName="h-8 w-8"
+                iconClassName="text-2xl leading-none"
                 showBotBadge
               />
               <span className="flex-1 truncate text-sm font-semibold text-white">

@@ -13,6 +13,26 @@ import { DEFAULT_BOT_AVATAR_ID } from './botAvatars';
 export const BATTLE_BOT_UID = 'learnendo_battle_bot';
 export const BATTLE_BOT_NAME = 'Bot Learnendo';
 
+/** Written production rounds stay open until Firestore accepts the first correct answer. */
+export function isFirstCorrectAnswerQuestion(question?: BattleQuestion | null): boolean {
+  return question?.kind === 'audio-open';
+}
+
+export function getBattleRoundDurationMs(
+  question: BattleQuestion | null | undefined,
+  config?: BattleConfig,
+): number | null {
+  return isFirstCorrectAnswerQuestion(question) ? null : getBattleQuestionDuration(question, config) * 1000;
+}
+
+export function resolveFirstCorrectSubmission(
+  currentWinnerUid: string | null | undefined,
+  isCorrect: boolean,
+): 'round-won' | 'retry' | 'accept-winner' {
+  if (currentWinnerUid) return 'round-won';
+  return isCorrect ? 'accept-winner' : 'retry';
+}
+
 export function isReservedFirestoreFieldKey(value: string): boolean {
   return /^__.*__$/.test(value.trim());
 }

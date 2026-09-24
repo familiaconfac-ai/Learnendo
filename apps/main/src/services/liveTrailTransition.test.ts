@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildLiveTrailCompletion, isSameLiveTrailCompletion } from './liveTrailTransition';
+import { buildLiveTrailCompletion, getLiveTrailRecoveryAction, isSameLiveTrailCompletion } from './liveTrailTransition';
 import type { Day } from '../types';
 
 const days = [
@@ -29,5 +29,28 @@ const last = buildLiveTrailCompletion({
 
 assert.equal(last.nextTrailId, null);
 assert.equal(last.isLessonComplete, true);
+
+assert.equal(getLiveTrailRecoveryAction({
+  mainStageMode: 'trail',
+  currentBlockId: '__complete__',
+  completion: { ...first, status: 'battle' },
+  activeTrailIds: ['d1'],
+}), 'restore-completed-trail');
+assert.equal(getLiveTrailRecoveryAction({
+  mainStageMode: 'trail',
+  currentBlockId: '__complete__',
+  completion: { ...first, status: 'advancing' },
+}), 'resume-advancing');
+assert.equal(getLiveTrailRecoveryAction({
+  mainStageMode: 'trail',
+  currentBlockId: '__complete__',
+  completion: null,
+  activeTrailIds: ['d1'],
+}), 'restore-active-trail');
+assert.equal(getLiveTrailRecoveryAction({
+  mainStageMode: 'workspace',
+  currentBlockId: '__complete__',
+  completion: { ...first, status: 'battle' },
+}), 'none');
 
 console.log('liveTrailTransition tests passed');

@@ -24,6 +24,7 @@ import {
   getBattleRegisteredParticipantIds,
   getMyBattleAnswer,
   isChoiceQuestion,
+  isFirstCorrectAnswerQuestion,
   repairBattleTextEncoding,
 } from './battleUtils';
 import { createBattleThemeAudio, persistBattleVolume, readBattleVolume, type ManagedBattleAudio } from './battleAudio';
@@ -75,8 +76,8 @@ const PLAYER_COPY = {
     audioChoiceHint: 'Listen once and choose the correct answer.',
     audioOpenHint: 'Listen once and type the answer.',
     speakingHint: 'Listen to the command and answer with a full sentence.',
-    playPromptAudio: 'Play question audio',
-    replayPromptAudio: 'Play audio again',
+    playPromptAudio: 'Listen Again',
+    replayPromptAudio: 'Listen Again',
     loadingPromptAudio: 'Loading audio...',
     playingPromptAudio: 'Playing audio...',
     confirmAnswer: 'Confirm answer',
@@ -87,6 +88,8 @@ const PLAYER_COPY = {
     chooseAvatar: 'Choose your Battle avatar',
     avatarReady: 'Ready! Waiting for the teacher.',
     avatarError: 'Could not save the avatar. Try again.',
+    firstCorrectWins: 'First correct answer wins',
+    tryAgain: 'Try again',
   },
   pt: {
     waitingTitle: 'Batalha vai comecar!',
@@ -124,7 +127,7 @@ const PLAYER_COPY = {
     audioChoiceHint: 'Escute apenas uma vez e escolha a resposta entre as alternativas.',
     audioOpenHint: 'Escute apenas uma vez e digite a resposta.',
     speakingHint: 'Ouca o comando e responda falando uma frase completa.',
-    playPromptAudio: 'Ouvir audio da pergunta',
+    playPromptAudio: 'Ouvir novamente',
     replayPromptAudio: 'Ouvir audio novamente',
     loadingPromptAudio: 'Carregando audio...',
     playingPromptAudio: 'Reproduzindo audio...',
@@ -136,6 +139,8 @@ const PLAYER_COPY = {
     chooseAvatar: 'Escolha seu avatar da Battle',
     avatarReady: 'Pronto! Aguardando o professor.',
     avatarError: 'Não foi possível salvar o avatar. Tente novamente.',
+    firstCorrectWins: 'A primeira resposta correta vence',
+    tryAgain: 'Tente novamente',
   },
   es: {
     waitingTitle: 'La batalla va a empezar!',
@@ -173,7 +178,7 @@ const PLAYER_COPY = {
     audioChoiceHint: 'Escucha solo una vez y elige la respuesta correcta.',
     audioOpenHint: 'Escucha solo una vez y escribe la respuesta.',
     speakingHint: 'Escucha la consigna y responde con una frase completa.',
-    playPromptAudio: 'Escuchar audio de la pregunta',
+    playPromptAudio: 'Escuchar de nuevo',
     replayPromptAudio: 'Escuchar audio de nuevo',
     loadingPromptAudio: 'Cargando audio...',
     playingPromptAudio: 'Reproduciendo audio...',
@@ -185,6 +190,8 @@ const PLAYER_COPY = {
     chooseAvatar: 'Elige tu avatar de Battle',
     avatarReady: '¡Listo! Esperando al profesor.',
     avatarError: 'No fue posible guardar el avatar. Inténtalo de nuevo.',
+    firstCorrectWins: 'La primera respuesta correcta gana',
+    tryAgain: 'Inténtalo de nuevo',
   },
 } as const;
 
@@ -205,6 +212,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const [promptAudioState, setPromptAudioState] = useState<'idle' | 'loading' | 'playing' | 'played' | 'failed'>('idle');
   const [avatarSaving, setAvatarSaving] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+  const [openAnswerFeedback, setOpenAnswerFeedback] = useState<string | null>(null);
+  const [openAnswerSubmitting, setOpenAnswerSubmitting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const joinAttemptRef = useRef<string | null>(null);
   const joinInFlightRef = useRef(false);
@@ -315,7 +324,10 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     }
   };
   const effectiveFrozenTimeLeft = frozenTimeLeft ?? myAnswer?.frozenTimeLeft ?? null;
-  const roundDurationMs = session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
+  const isFirstCorrectRound = isFirstCorrectAnswerQuestion(question);
+  const roundDurationMs = isFirstCorrectRound
+    ? 0
+    : session.roundDurationMs ?? session.durationMs ?? currentQuestionDuration * 1000;
   const roundStartedAt =
     typeof session.roundStartedAt === 'number' && session.roundStartedAt > 0
       ? session.roundStartedAt
@@ -346,6 +358,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     [currentRoundLocalAnswer, effectiveRoundParticipantIds, session.currentAnswers, uid]
   );
   const shouldAutoReveal =
+    !isFirstCorrectRound &&
     session.status === 'PLAYING' &&
     effectiveRoundParticipantIds.length > 0 &&
     roundAnswerCount >= effectiveRoundParticipantIds.length;
@@ -357,8 +370,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   const timeUp = effectiveStatus === 'PLAYING' && effectiveFrozenTimeLeft == null && endsAt != null && remainingMs <= 0;
   const displayTime = hasAnswered && effectiveFrozenTimeLeft != null ? effectiveFrozenTimeLeft : timeLeft;
   const battleLanguage = getBattleLanguage(session.config.courseId);
-  const timeRatio = displayTime / currentQuestionDuration;
-  const interactionLocked = hasAnswered || timeUp || effectiveStatus !== 'PLAYING';
+  const timeRatio = isFirstCorrectRound ? 1 : displayTime / currentQuestionDuration;
+  const interactionLocked = hasAnswered || timeUp || effectiveStatus !== 'PLAYING' || openAnswerSubmitting;
   const isOpenQuestion = question ? !isChoiceQuestion(question) : false;
   const showMicButton = question?.kind === 'speaking';
   const requiresChoiceConfirmation = question ? getBattleCorrectIndexes(question).length > 1 : false;
@@ -606,6 +619,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     setSubmitted(false);
     setLocalMyAnswer(null);
     setFrozenTimeLeft(null);
+    setOpenAnswerFeedback(null);
+    setOpenAnswerSubmitting(false);
     setTimeLeft(currentQuestionDuration);
     console.log('[BATTLE QUESTION] reset state after question change:', {
       questionId: currentQuestionId,
@@ -622,7 +637,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
   }, [currentQuestionDuration, currentQuestionId, questionIdx, session.questionStartedAt, uid]);
 
   useEffect(() => {
-    if (session.status !== 'PLAYING') return;
+    if (session.status !== 'PLAYING' || isFirstCorrectRound) return;
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (roundStartedAt == null || roundDurationMs <= 0) {
@@ -648,7 +663,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
     }, 200);
 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [currentQuestionDuration, endsAt, roundDurationMs, roundStartedAt, session.status, session.questionStartedAt, session.roundStartedAt]);
+  }, [currentQuestionDuration, endsAt, isFirstCorrectRound, roundDurationMs, roundStartedAt, session.status, session.questionStartedAt, session.roundStartedAt]);
 
   useEffect(() => {
     if (session.status === 'FINISHED') setShowResults(true);
@@ -1078,7 +1093,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
       sessionStatus: session.status,
       typedAnswer: typedAnswer.trim(),
     });
-    if (!question || !isOpenQuestion || hasAnswered || timeUp || session.status !== 'PLAYING' || !typedAnswer.trim()) {
+    if (!question || !isOpenQuestion || hasAnswered || timeUp || session.status !== 'PLAYING' || !typedAnswer.trim() || openAnswerSubmitting) {
       console.warn('[LIVE BATTLE ANSWER] blocked', {
         reason: !question
           ? 'missing-question'
@@ -1118,44 +1133,9 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
       return;
     }
     
-    const answeredAt = Date.now();
     const payload = { responseText: typedAnswer.trim() };
-    
-    const isCorrect = evaluateBattleAnswer(question, payload);
-    const { elapsedMs, roundPoints } = calculateBattleRoundScore({
-      answeredAt,
-      questionStartedAt: session.questionStartedAt,
-      timePerQuestion: currentQuestionDuration,
-      isCorrect,
-    });
-    const nextFrozenTimeLeft = Math.max(0, currentQuestionDuration - elapsedMs / 1000);
-    console.info('[BATTLE ANSWER]', {
-      uid,
-      answeredAt,
-      elapsedMs,
-      frozenTimeLeft: nextFrozenTimeLeft,
-      roundPoints,
-      roomId: classId,
-      battleId: session.id,
-    });
-    setLocalMyAnswer({
-      uid,
-      name,
-      responseText: payload.responseText,
-      isCorrect,
-      answeredAt,
-      elapsedMs,
-      roundPoints,
-      frozenTimeLeft: nextFrozenTimeLeft,
-    });
-    setFrozenTimeLeft(nextFrozenTimeLeft);
-    setTimeLeft(nextFrozenTimeLeft);
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-    setSubmitted(true);
-    
+    setOpenAnswerFeedback(null);
+    setOpenAnswerSubmitting(true);
     try {
       console.log('[LIVE BATTLE ANSWER] saving', {
         liveClassId: classId,
@@ -1169,6 +1149,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
       const result = await submitBattleAnswer(classId, session, uid, name, payload, {
         forceCurrentRoundParticipation: true,
       });
+      if (result.status === 'retry') {
+        setOpenAnswerFeedback(copy.tryAgain);
+        setTypedAnswer('');
+        return;
+      }
       if (result.status !== 'saved') {
         console.warn('[LIVE BATTLE ANSWER] blocked', {
           reason: result.reason,
@@ -1188,8 +1173,18 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
           hasAnswered,
         });
         console.warn('[BATTLE STUDENT SUBMIT] submit failed:', result.reason);
-        rollbackStudentSubmitLock();
         return;
+      }
+      setLocalMyAnswer(result.answer);
+      setSubmitted(true);
+      if (!isFirstCorrectRound) {
+        const nextFrozenTimeLeft = result.answer.frozenTimeLeft ?? 0;
+        setFrozenTimeLeft(nextFrozenTimeLeft);
+        setTimeLeft(nextFrozenTimeLeft);
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
       }
       console.log('[BATTLE ANSWER DEBUG] answer saved');
       console.log('[BATTLE STUDENT SCORE] uid:', uid);
@@ -1201,7 +1196,9 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
       console.error('[LIVE BATTLE ANSWER] failed', error);
       console.error('[BATTLE ANSWER DEBUG] answer failed', error);
       console.error('[BATTLE STUDENT SUBMIT] submit failed:', error);
-      rollbackStudentSubmitLock();
+      setOpenAnswerFeedback(copy.tryAgain);
+    } finally {
+      setOpenAnswerSubmitting(false);
     }
   }
 
@@ -1679,7 +1676,7 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
           )}
           {question.kind === 'audio-open' && (
             <p className="text-xs text-amber-300">
-              {copy.audioOpenHint}
+              {copy.firstCorrectWins}
             </p>
           )}
           {question.kind === 'speaking' && (
@@ -1775,6 +1772,11 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
               placeholder={(question.kind as BattleQuestionKind) === 'speaking' ? copy.yourSpeechAnswer : copy.yourTypedAnswer}
               className="w-full min-h-28 rounded-2xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm text-white outline-none focus:border-orange-400 disabled:opacity-60"
             />
+            {isFirstCorrectRound && openAnswerFeedback ? (
+              <p className="text-center text-sm font-bold text-amber-300" role="status">
+                {openAnswerFeedback}
+              </p>
+            ) : null}
             <div className="flex gap-3">
               {showMicButton && (
                 <button
@@ -1806,8 +1808,8 @@ export const BattlePlayerView: React.FC<Props> = ({ session, classId, uid, name,
 
       <div className="px-4 pb-4">
         <div className="flex justify-center gap-4 text-xs text-slate-500">
-          <span>{Math.ceil(displayTime)}s</span>
-          <span>|</span>
+          <span>{isFirstCorrectRound ? copy.firstCorrectWins : `${Math.ceil(displayTime)}s`}</span>
+          {!isFirstCorrectRound ? <span>|</span> : null}
           <span>{roundAnswerCount} / {effectiveRoundParticipantIds.length} {copy.answered}</span>
         </div>
       </div>

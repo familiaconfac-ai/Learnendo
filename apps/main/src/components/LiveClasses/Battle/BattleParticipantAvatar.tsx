@@ -8,6 +8,7 @@ interface Props {
   isBot?: boolean;
   sizeClassName?: string;
   className?: string;
+  iconClassName?: string;
   showBotBadge?: boolean;
 }
 
@@ -17,6 +18,7 @@ export const BattleParticipantAvatar: React.FC<Props> = ({
   isBot = false,
   sizeClassName = 'h-8 w-8',
   className = '',
+  iconClassName = 'text-sm',
   showBotBadge = false,
 }) => {
   const fallbackLetter = name.trim().charAt(0).toUpperCase() || '?';
@@ -25,7 +27,7 @@ export const BattleParticipantAvatar: React.FC<Props> = ({
   return (
     <div className={`relative flex shrink-0 items-center justify-center rounded-full ${sizeClassName} ${className}`}>
       <div
-        className={`flex h-full w-full items-center justify-center rounded-full border text-sm font-bold ${
+        className={`flex h-full w-full items-center justify-center overflow-hidden rounded-full border font-bold ${iconClassName} ${
           isBot
             ? 'border-dashed border-cyan-400/70 bg-cyan-500/10 text-cyan-200'
             : 'border-slate-600 bg-slate-800 text-white'

@@ -115,6 +115,9 @@ export interface BattleSession {
   answers?: Record<string, BattleAnswer>;
   // answers for the CURRENT question: uid → BattleAnswer
   currentAnswers: Record<string, BattleAnswer>;
+  /** Set atomically for written/open rounds so only the first valid answer wins. */
+  correctAnswerWinnerUid?: string | null;
+  correctAnswerAcceptedAt?: number | null;
   createdAt: number;
   updatedAt: number;
   lastChange?: unknown;
