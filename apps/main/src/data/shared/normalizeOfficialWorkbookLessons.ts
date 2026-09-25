@@ -155,7 +155,10 @@ function materializeTrailExercises(
   });
 }
 
-export function normalizeLessonsToOfficialTrails(lessons: Lesson[]): Lesson[] {
+export function normalizeLessonsToOfficialTrails(
+  lessons: Lesson[],
+  options: { preserveAuthoredTypesFor?: readonly string[] } = {},
+): Lesson[] {
   return lessons.map((lesson) => {
     const groupedRefs = buildRefPool(lesson.days ?? []);
     const allRefs = uniqueRefs(groupedRefs.flat());
@@ -188,6 +191,7 @@ export function normalizeLessonsToOfficialTrails(lessons: Lesson[]): Lesson[] {
 
     const isWorkbook1 = lesson.id.startsWith('wb1_');
     const isWorkbook1Lesson1 = lesson.id === 'wb1_l1';
+    const preserveDay5Types = options.preserveAuthoredTypesFor?.includes(`${lesson.id}_d5`) ?? false;
     const trail5Priorities = isWorkbook1Lesson1 ? [5, 4, 1, 6, 2, 3, 0] : [4, 5, 1, 6, 2, 3, 0];
     const trail5Refs = padRefs(
       selectRefsByPriority(groupedRefs, trail5Priorities, TARGET_TRAIL_COUNTS[4]),
@@ -233,7 +237,13 @@ export function normalizeLessonsToOfficialTrails(lessons: Lesson[]): Lesson[] {
         {
           id: `${lesson.id}_d5`,
           type: 'practice',
-          exercises: materializeTrailExercises(lesson, 5, trail5Refs, isWorkbook1 ? 'keep' : 'writing', isWorkbook1),
+          exercises: materializeTrailExercises(
+            lesson,
+            5,
+            trail5Refs,
+            isWorkbook1 || preserveDay5Types ? 'keep' : 'writing',
+            isWorkbook1,
+          ),
         },
         {
           id: `${lesson.id}_d6`,

@@ -96,10 +96,11 @@ export function buildLesson(
   lessonNumber: number,
   title: string,
   days: Array<{ type: 'practice' | 'review'; exercises: ExerciseInput[] }>,
+  dayTargets: readonly number[] = DAY_TARGETS,
 ): Lesson {
   const lessonId = `wb3_l${lessonNumber}`;
 
-  if (days.length !== DAY_TARGETS.length) {
+  if (days.length !== dayTargets.length) {
     throw new Error(`Lesson ${lessonNumber} must have exactly 7 days.`);
   }
 
@@ -107,7 +108,7 @@ export function buildLesson(
     id: lessonId,
     title,
     days: days.map((day, dayIndex) => {
-      const expectedCount = DAY_TARGETS[dayIndex];
+      const expectedCount = dayTargets[dayIndex];
       if (day.exercises.length !== expectedCount) {
         throw new Error(
           `Lesson ${lessonNumber} day ${dayIndex + 1} must have ${expectedCount} exercises, got ${day.exercises.length}.`,

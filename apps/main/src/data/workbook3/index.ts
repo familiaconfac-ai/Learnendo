@@ -4,5 +4,7 @@ import { normalizeLessonsToOfficialTrails } from '../shared/normalizeOfficialWor
 export const workbook3 = {
   id: 'wb3',
   title: 'Workbook 3',
-  lessons: normalizeLessonsToOfficialTrails(workbook3Lessons),
+  lessons: normalizeLessonsToOfficialTrails(workbook3Lessons, {
+    preserveAuthoredTypesFor: ['wb3_l25_d5'],
+  }),
 };

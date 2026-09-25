@@ -63,29 +63,220 @@ function buildStandardLesson(config: {
   day3: ChoiceSeed[];
   day6Exact: WritingSeed[];
   day6Short: WritingSeed[];
+  dayTargets?: readonly number[];
+  day5Exercises?: Array<Omit<Lesson['days'][number]['exercises'][number], 'id'>>;
+  day7ReplacementExercises?: Array<Omit<Lesson['days'][number]['exercises'][number], 'id'>>;
 }): Lesson {
   return buildLesson(config.number, config.title, [
     { type: 'practice', exercises: makeChoices(config.day1, config.day1Instruction) },
     { type: 'practice', exercises: makeChoices(config.day2, config.day2Instruction) },
     { type: 'practice', exercises: makeChoices(config.day3, config.day3Instruction) },
     { type: 'practice', exercises: makeSpeakings(speakingFromChoices(config.day3), SHORT_SPEAKING) },
-    { type: 'practice', exercises: makeWritings(translationsFromChoices(config.day1.slice(0, 10)), TRANSLATE_PT) },
+    { type: 'practice', exercises: config.day5Exercises ?? makeWritings(translationsFromChoices(config.day1.slice(0, 10)), TRANSLATE_PT) },
     { type: 'practice', exercises: [...makeWritings(config.day6Exact, TYPE_EXACTLY), ...makeWritings(config.day6Short, WRITE_SHORT)] },
     {
       type: 'review',
-      exercises: [
+      exercises: config.day7ReplacementExercises ? [
+        ...makeChoices(config.day1.slice(0, 5), config.day1Instruction),
+        ...makeChoices(config.day2.slice(0, 4), config.day2Instruction),
+        ...config.day7ReplacementExercises,
+        ...makeChoices(config.day3.slice(0, 5), config.day3Instruction),
+      ] : [
         ...makeChoices(config.day1.slice(0, 5), config.day1Instruction),
         ...makeChoices(config.day2.slice(0, 5), config.day2Instruction),
         ...makeChoices(config.day3.slice(0, 5), config.day3Instruction),
         ...makeSpeakings(speakingFromChoices(config.day3.slice(0, 5)), SHORT_SPEAKING),
       ],
     },
-  ]);
+  ], config.dayTargets);
 }
+
+const lesson25Day5Exercises = [
+  ...makeChoices([
+    choice(
+      'Which verb describes a sound reaching your ears?',
+      'The school bell rings loudly outside the classroom.',
+      ['hear', 'listen', 'say', 'tell'],
+      'hear',
+      undefined,
+      'identification',
+    ),
+    choice(
+      'The teacher ___ me the answer after class.',
+      'After class, the teacher gives the student the answer.',
+      ['told', 'said', 'heard', 'listened'],
+      'told',
+    ),
+    choice(
+      'What did you ___ to John?',
+      'You want to know which words were directed to John.',
+      ['say', 'tell', 'hear', 'lend'],
+      'say',
+    ),
+    choice(
+      'Please ___ the teacher\'s instructions.',
+      'The students need to pay attention while the teacher explains the homework.',
+      ['listen to', 'hear', 'say to', 'tell'],
+      'listen to',
+    ),
+    choice(
+      'Who ___ you that?',
+      'A classmate shares new information, and you ask about its source.',
+      ['told', 'said', 'heard', 'listened'],
+      'told',
+    ),
+    choice(
+      'Can I ___ your book after class?',
+      'You want to use a classmate\'s book for one afternoon and return it tomorrow.',
+      ['borrow', 'lend', 'hear', 'tell'],
+      'borrow',
+    ),
+  ], 'Listen to the situation and choose the best answer.'),
+  ...makeWritings([
+    {
+      display: 'What happened?',
+      audio: 'I forgot my pencil. Anna gives me hers for today\'s lesson.',
+      correct: 'I borrowed Anna\'s pencil.',
+      accepted: ['Anna lent me her pencil.', 'Anna lent her pencil to me.'],
+      instruction: 'Listen and write what happened.',
+    },
+    {
+      display: 'I ___ a book from Anna yesterday.',
+      audio: 'Anna let me use one of her books yesterday.',
+      correct: 'borrowed',
+      instruction: 'Complete the sentence.',
+    },
+    {
+      display: 'Correct: She said me the truth.',
+      audio: 'A student wrote: She said me the truth. Correct the sentence.',
+      correct: 'She told me the truth.',
+      accepted: ['She said the truth to me.'],
+      instruction: 'Correct the sentence.',
+    },
+    {
+      display: 'Correct: I listened a noise outside the classroom.',
+      audio: 'There was a strange sound outside, and a student noticed it.',
+      correct: 'I heard a noise outside the classroom.',
+      instruction: 'Correct the sentence.',
+    },
+    {
+      display: 'John lent a book ___ me.',
+      audio: 'John let me use one of his books for the lesson.',
+      correct: 'to',
+      instruction: 'Complete the sentence.',
+    },
+    {
+      display: 'The students are ___ to the teacher.',
+      audio: 'The teacher explains the test, and the students pay close attention.',
+      correct: 'listening',
+      instruction: 'Complete the sentence.',
+    },
+  ], 'Complete or correct the sentence.'),
+  ...makeSpeakings([
+    {
+      display: 'You need your classmate\'s pencil for this lesson. Ask politely.',
+      audio: 'You need to use your classmate\'s pencil during today\'s lesson.',
+      correct: 'Can I borrow your pencil?',
+      accepted: [
+        'Could I borrow your pencil?',
+        'May I borrow your pencil?',
+        'Can you lend me your pencil?',
+        'Could you lend me your pencil?',
+      ],
+    },
+    {
+      display: 'Ask your teacher for information about the answer.',
+      audio: 'You need information from your teacher about the answer.',
+      correct: 'Can you tell me the answer?',
+      accepted: [
+        'Could you tell me the answer?',
+        'Can you tell me what the answer is?',
+        'Could you tell me what the answer is?',
+      ],
+    },
+    {
+      display: 'Your friend is not paying attention to the teacher. Give a short instruction.',
+      audio: 'Your friend is talking while the teacher explains the homework.',
+      correct: 'Listen to the teacher.',
+      accepted: ['Please listen to the teacher.', 'Listen to the teacher, please.'],
+    },
+  ], 'Respond naturally to the situation.'),
+];
+
+const lesson25Day7Exercises = [
+  ...makeChoices([
+    choice(
+      'Which sentence uses say + something to someone and tell + someone + something?',
+      'After class, John receives a greeting and information about the answer.',
+      [
+        'She said hello to John and told him the answer.',
+        'She said John hello and told him the answer.',
+        'She told hello to John and said the answer him.',
+        'She said hello to John and told the answer him.',
+      ],
+      'She said hello to John and told him the answer.',
+    ),
+    choice(
+      'Choose the correct pair: Listen me, please. / I listened a noise.',
+      'A sudden noise surprises you outside class. Then you ask your classmate to pay attention to you.',
+      [
+        'Listen to me, please. / I heard a noise.',
+        'Listen me, please. / I heard a noise.',
+        'Listen to me, please. / I listened a noise.',
+        'Listen me, please. / I listened to a noise.',
+      ],
+      'Listen to me, please. / I heard a noise.',
+      undefined,
+      'identification',
+    ),
+    choice(
+      'Choose the target-verb correction: Can you borrow me your pencil?',
+      'You are asking a classmate to give you a pencil for the lesson.',
+      [
+        'Can you lend me your pencil?',
+        'Can you borrow your pencil from me?',
+        'Can I lend you your pencil?',
+        'Can you borrow me your pencil?',
+      ],
+      'Can you lend me your pencil?',
+    ),
+    choice(
+      'Choose the correction: Can I lend your pencil?',
+      'You need to use your classmate\'s pencil for a short time.',
+      [
+        'Can I borrow your pencil?',
+        'Can I lend my pencil to you?',
+        'Can you borrow your pencil from me?',
+        'Can I borrow a pencil for you?',
+      ],
+      'Can I borrow your pencil?',
+    ),
+    choice(
+      'Choose the correction that keeps the meaning and uses borrow: I borrowed a book of my friend.',
+      'A student used a friend\'s book and is correcting the sentence.',
+      [
+        'I borrowed a book from my friend.',
+        'I borrowed a book for my friend.',
+        'I borrowed a book with my friend.',
+        'I borrowed my friend a book.',
+      ],
+      'I borrowed a book from my friend.',
+    ),
+    choice(
+      'Anna lent a book ___ me.',
+      'The classmate received a book from Anna for today\'s lesson.',
+      ['to', 'from', 'at', 'for'],
+      'to',
+    ),
+  ], 'Choose the correct answer.'),
+];
 
 const lesson25 = buildStandardLesson({
   number: 25,
   title: 'Lesson 25: School',
+  dayTargets: [25, 10, 10, 10, 15, 10, 20],
+  day5Exercises: lesson25Day5Exercises,
+  day7ReplacementExercises: lesson25Day7Exercises,
   day1Instruction: CHOOSE_FORM,
   day1: [
     choice('The teacher ___ the lesson every morning.', 'The teacher explains the lesson every morning.', ['explain', 'explains', 'explaining', 'explained'], 'explains', 'A professora explica a lição toda manhã.'),

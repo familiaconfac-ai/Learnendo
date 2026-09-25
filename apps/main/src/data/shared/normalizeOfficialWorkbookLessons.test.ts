@@ -36,6 +36,28 @@ test('the question-production correction is scoped to Workbook 1', () => {
   assert.equal(normalized.days.flatMap((day) => day.exercises).some((exercise) => exercise.promptMode === 'write-question'), false);
 });
 
+test('selected authored trails can preserve their exercise types', () => {
+  const days = Array.from({ length: 7 }, (_, index) => filler(index + 1));
+  days[4] = {
+    id: 'wb3_l25_d5',
+    type: 'practice',
+    exercises: [
+      { ...choice('authored-choice', 'A situation?', 'answer'), id: 'authored-choice' },
+      { id: 'authored-writing', type: 'writing', instruction: 'Complete.', audioValue: 'Context.', correctValue: 'word' },
+      { id: 'authored-speaking', type: 'speaking', instruction: 'Respond.', audioValue: 'Context.', correctValue: 'response' },
+    ],
+  };
+  const lesson: Lesson = { id: 'wb3_l25', title: 'Lesson 25', days };
+  const normalized = normalizeLessonsToOfficialTrails([lesson], {
+    preserveAuthoredTypesFor: ['wb3_l25_d5'],
+  })[0];
+
+  assert.deepEqual(normalized.days[4].exercises.slice(0, 3).map((exercise) => exercise.type), [
+    'multiple-choice', 'writing', 'speaking',
+  ]);
+  assert.equal(normalized.days[4].exercises.length, 15);
+});
+
 test('Day 4 preserves discrimination and comprehension when audio is not the answer', () => {
   const days = Array.from({ length: 7 }, (_, index) => filler(index + 1));
   days[3] = { id: 'source_d4', type: 'practice', exercises: [{
