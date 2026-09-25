@@ -297,9 +297,12 @@ export interface LiveClassSession {
   sharedGrammarWorkbookId?: number | null;
   sharedGrammarLessonNumber?: number | null;
   sharedGrammarScrollRatio?: number | null;
-  liveAudioTransport?: 'not-configured' | 'connecting' | 'connected';
+  mediaTransport?: 'none' | 'livekit-connecting' | 'livekit-active' | 'meet';
   teacherLiveMicEnabled?: boolean;
   teacherCameraEnabled?: boolean;
+  teacherScreenShareEnabled?: boolean;
+  anyStudentMediaActive?: boolean;
+  mediaIdleSince?: string | null;
   allowStudentLiveMic?: boolean;
   studentCameraMode?: 'off' | 'follow-mic' | 'required';
   allowStudentWhiteboardEdit?: boolean;

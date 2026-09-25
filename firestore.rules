@@ -1030,6 +1030,52 @@ service cloud.firestore {
         allow delete: if isTeacherForClass(classId);
       }
 
+      match /mediaParticipants/{uid} {
+        allow read: if canAccessLiveClassRoom(classId);
+        allow create, update: if canAccessLiveClassRoom(classId)
+          && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly([
+            'uid', 'role', 'tabId', 'connecting', 'microphoneActive',
+            'cameraActive', 'screenShareActive', 'updatedAt'
+          ])
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.role in ['teacher', 'student']
+          && (
+            (request.resource.data.role == 'teacher' && isTeacherForClass(classId))
+            || (request.resource.data.role == 'student' && isStudentAssignedToClass(classId))
+          )
+          && request.resource.data.tabId is string
+          && request.resource.data.tabId.size() > 0
+          && request.resource.data.tabId.size() <= 32
+          && request.resource.data.connecting is bool
+          && request.resource.data.microphoneActive is bool
+          && request.resource.data.cameraActive is bool
+          && request.resource.data.screenShareActive is bool
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if request.auth.uid == uid || isTeacherForClass(classId);
+      }
+
+      match /mediaTelemetry/{eventId} {
+        allow read: if isTeacherForClass(classId);
+        allow create: if canAccessLiveClassRoom(classId)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.keys().hasOnly([
+            'event', 'uid', 'role', 'classId', 'tabId', 'connectedAt',
+            'disconnectedAt', 'disconnectReason', 'activationReason',
+            'mediaTransport', 'approximateDurationMs', 'createdAt'
+          ])
+          && request.resource.data.event in ['connected', 'disconnected']
+          && request.resource.data.role in ['teacher', 'student']
+          && (
+            (request.resource.data.role == 'teacher' && isTeacherForClass(classId))
+            || (request.resource.data.role == 'student' && isStudentAssignedToClass(classId))
+          )
+          && request.resource.data.classId == classId
+          && request.resource.data.tabId is string
+          && request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
+      }
+
       match /shared/{docId} {
         allow read: if canAccessLiveClassRoom(classId);
         allow create: if (isTeacherForClass(classId) && docId != 'boardControl' && docId != 'boardView' && docId != 'boardPresentation')

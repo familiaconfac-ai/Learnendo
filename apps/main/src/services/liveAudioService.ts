@@ -71,19 +71,22 @@ function createLiveKitTabId() {
   return Math.random().toString(36).slice(2, 10);
 }
 
-function getLiveKitParticipantIdentity(role: LiveClassRole, userId: string) {
-  const baseIdentity = `${role}:${userId}`;
-  if (typeof window === 'undefined') return baseIdentity;
+export function getLiveKitTabId(): string {
+  if (typeof window === 'undefined') return 'server';
   try {
     const existing = window.sessionStorage.getItem(LIVEKIT_TAB_ID_STORAGE_KEY)?.trim();
     const tabId = existing || createLiveKitTabId();
-    if (!existing) {
-      window.sessionStorage.setItem(LIVEKIT_TAB_ID_STORAGE_KEY, tabId);
-    }
-    return `${baseIdentity}:${tabId}`;
+    if (!existing) window.sessionStorage.setItem(LIVEKIT_TAB_ID_STORAGE_KEY, tabId);
+    return tabId;
   } catch {
-    return baseIdentity;
+    return createLiveKitTabId();
   }
+}
+
+function getLiveKitParticipantIdentity(role: LiveClassRole, userId: string) {
+  const baseIdentity = `${role}:${userId}`;
+  if (typeof window === 'undefined') return baseIdentity;
+  return `${baseIdentity}:${getLiveKitTabId()}`;
 }
 
 export async function requestLiveAudioCredentials({
@@ -117,10 +120,8 @@ export async function requestLiveAudioCredentials({
         ...(idToken ? { authorization: `Bearer ${idToken}` } : {}),
       },
       body: JSON.stringify({
-        room: roomName,
-        username: userName,
-        participantIdentity,
-        metadata: JSON.stringify({ classId, userId, role }),
+        classId,
+        tabId: getLiveKitTabId(),
       }),
     });
   } catch (err) {

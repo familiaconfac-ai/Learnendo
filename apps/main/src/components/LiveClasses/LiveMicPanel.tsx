@@ -31,10 +31,11 @@ interface ParticipantSummary {
   cameraEnabled: boolean;
 }
 
-const roomTransportLabelMap: Record<NonNullable<LiveClassSession['liveAudioTransport']>, string> = {
-  'not-configured': 'Room transport pending',
-  connecting: 'Room transport connecting',
-  connected: 'Room transport connected',
+const roomTransportLabelMap: Record<NonNullable<LiveClassSession['mediaTransport']>, string> = {
+  none: 'Room transport idle',
+  'livekit-connecting': 'Room transport connecting',
+  'livekit-active': 'Room transport connected',
+  meet: 'Google Meet transport',
 };
 
 const localConnectionLabelMap: Record<ConnectionState, string> = {
@@ -179,7 +180,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     onUpdateSessionRef.current = onUpdateSession;
   }, [onUpdateSession]);
 
-  const roomTransportLabel = roomTransportLabelMap[session.liveAudioTransport ?? 'not-configured'];
+  const roomTransportLabel = roomTransportLabelMap[session.mediaTransport ?? 'none'];
   const localConnectionLabel = localConnectionLabelMap[connectionState];
   const studentCameraMode = session.studentCameraMode ?? 'off';
   const studentCameraPolicyLabel = studentCameraModeLabelMap[studentCameraMode];
@@ -312,7 +313,7 @@ export const LiveMicPanel: React.FC<LiveMicPanelProps> = ({
     await onUpdateSessionRef.current({
       teacherLiveMicEnabled: isParticipantMicEnabled(activeRoom.localParticipant),
       teacherCameraEnabled: isParticipantCameraEnabled(activeRoom.localParticipant),
-      liveAudioTransport: activeRoom.state === ConnectionState.Connected ? 'connected' : 'connecting',
+      mediaTransport: activeRoom.state === ConnectionState.Connected ? 'livekit-active' : 'livekit-connecting',
     }).catch((error) => {
       console.warn('[LiveMicPanel] teacher room state sync failed:', error);
     });

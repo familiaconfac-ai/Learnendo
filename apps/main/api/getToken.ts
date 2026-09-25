@@ -1,5 +1,13 @@
 import { AccessToken } from 'livekit-server-sdk';
+import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { adminAuth, adminDb } from '../server/firebaseAdmin.js';
+import {
+  buildAuthorizedLiveKitIdentity,
+  requireLiveKitBearerToken,
+  resolveLiveKitRole,
+  sanitizeLiveKitTabId,
+} from '../server/liveKitTokenPolicy.js';
 
 type VercelRequestLike = IncomingMessage & {
   method?: string;
@@ -12,15 +20,15 @@ type VercelResponseLike = ServerResponse<IncomingMessage> & {
 };
 
 interface TokenRequestBody {
-  room?: string;
-  username?: string;
-  participantIdentity?: string;
-  metadata?: string;
+  classId?: string;
+  tabId?: string;
 }
 
 const requiredLiveKitEnvKeys = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET'] as const;
 const defaultTokenTtlSeconds = 6 * 60 * 60;
 const defaultTokenTtlLabel = '6h';
+const RATE_WINDOW_MS = 60_000;
+const RATE_LIMIT_PER_USER_AND_CLASS = 12;
 
 interface LiveKitDiagnostics {
   apiKeyConfigured: boolean;
@@ -59,12 +67,24 @@ function sendJson(res: VercelResponseLike, statusCode: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
-function toSafeIdentity(username: string) {
-  return username
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '') || `guest-${Date.now()}`;
+async function enforceRateLimit(key: string) {
+  const now = Date.now();
+  const bucketId = createHash('sha256').update(key).digest('hex');
+  const bucketRef = adminDb.doc(`liveKitRateLimits/${bucketId}`);
+  await adminDb.runTransaction(async (transaction) => {
+    const snapshot = await transaction.get(bucketRef);
+    const data = snapshot.data() as { windowStartedAtMs?: number; count?: number } | undefined;
+    const withinWindow = typeof data?.windowStartedAtMs === 'number' && now - data.windowStartedAtMs < RATE_WINDOW_MS;
+    const count = withinWindow && typeof data?.count === 'number' ? data.count : 0;
+    if (count >= RATE_LIMIT_PER_USER_AND_CLASS) {
+      throw Object.assign(new Error('Too many LiveKit token requests. Try again shortly.'), { statusCode: 429 });
+    }
+    transaction.set(bucketRef, {
+      windowStartedAtMs: withinWindow ? data?.windowStartedAtMs : now,
+      count: count + 1,
+      expiresAtMs: now + RATE_WINDOW_MS,
+    });
+  });
 }
 
 function getKeySuffix(value?: string) {
@@ -109,39 +129,6 @@ function resolveRuntimeEnvironment() {
   };
 }
 
-function safeParseMetadata(metadata: string) {
-  if (!metadata.trim()) {
-    return {
-      role: 'unknown',
-      classId: '',
-      userId: '',
-      metadataJsonValid: false,
-    };
-  }
-
-  try {
-    const parsed = JSON.parse(metadata) as {
-      role?: string;
-      classId?: string;
-      userId?: string;
-    };
-
-    return {
-      role: parsed.role?.trim() || 'unknown',
-      classId: parsed.classId?.trim() || '',
-      userId: parsed.userId?.trim() || '',
-      metadataJsonValid: true,
-    };
-  } catch {
-    return {
-      role: 'unknown',
-      classId: '',
-      userId: '',
-      metadataJsonValid: false,
-    };
-  }
-}
-
 function getExpectedExpirationIso(nowMs: number, ttlSeconds: number) {
   return new Date(nowMs + ttlSeconds * 1000).toISOString();
 }
@@ -180,42 +167,62 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
     ...diagnostics,
   });
 
-  if (missingEnv.length > 0 || !wsUrl || !apiKey || !apiSecret) {
-    sendJson(res, 500, {
-      error: 'LiveKit server environment is not configured.',
-      missingEnv,
-      diagnostics,
-    });
-    return;
-  }
-
-  const urlValidation = validateLiveKitUrl(wsUrl);
-  if ('reason' in urlValidation) {
-    sendJson(res, 500, {
-      error: urlValidation.reason,
-      diagnostics,
-    });
-    return;
-  }
-
   try {
+    const decoded = await adminAuth.verifyIdToken(requireLiveKitBearerToken(req.headers.authorization));
+    if (missingEnv.length > 0 || !wsUrl || !apiKey || !apiSecret) {
+      sendJson(res, 500, {
+        error: 'LiveKit server environment is not configured.',
+        missingEnv,
+        diagnostics,
+      });
+      return;
+    }
+
+    const urlValidation = validateLiveKitUrl(wsUrl);
+    if ('reason' in urlValidation) {
+      sendJson(res, 500, {
+        error: urlValidation.reason,
+        diagnostics,
+      });
+      return;
+    }
+
     const rawBody = typeof req.body === 'object' && req.body !== null
       ? (req.body as TokenRequestBody)
       : await readJsonBody(req);
-
-    // Keep the server contract intentionally small so the frontend never needs API keys.
-    const room = rawBody.room?.trim() || '';
-    const username = rawBody.username?.trim() || '';
-    const participantIdentity = rawBody.participantIdentity?.trim() || toSafeIdentity(username);
-    const metadata = rawBody.metadata?.trim() || '';
-    const metadataDetails = safeParseMetadata(metadata);
-    const issuedAtMs = Date.now();
-    const expectedExpirationIso = getExpectedExpirationIso(issuedAtMs, defaultTokenTtlSeconds);
-
-    if (!room || !username) {
-      sendJson(res, 400, { error: 'room and username are required.' });
+    const classId = rawBody.classId?.trim() || '';
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(classId)) {
+      sendJson(res, 400, { error: 'A valid classId is required.' });
       return;
     }
+
+    await enforceRateLimit(`${decoded.uid}:${classId}`);
+    const [classSnapshot, profileSnapshot] = await Promise.all([
+      adminDb.doc(`liveClasses/${classId}`).get(),
+      adminDb.doc(`users/${decoded.uid}`).get(),
+    ]);
+    if (!classSnapshot.exists) {
+      sendJson(res, 404, { error: 'Live class not found.' });
+      return;
+    }
+    const role = resolveLiveKitRole(
+      decoded.uid,
+      decoded.email,
+      profileSnapshot.data()?.role,
+      classSnapshot.data() ?? {},
+    );
+    if (!role) {
+      sendJson(res, 403, { error: 'You do not have access to this live class.' });
+      return;
+    }
+
+    const room = `learnendo-live-${classId}`;
+    const tabId = sanitizeLiveKitTabId(rawBody.tabId);
+    const participantIdentity = buildAuthorizedLiveKitIdentity(role, decoded.uid);
+    const username = decoded.name || profileSnapshot.data()?.name || decoded.email || (role === 'teacher' ? 'Professor' : 'Aluno');
+    const metadata = JSON.stringify({ classId, userId: decoded.uid, role, tabId });
+    const issuedAtMs = Date.now();
+    const expectedExpirationIso = getExpectedExpirationIso(issuedAtMs, defaultTokenTtlSeconds);
 
     console.info('[LiveKit][getToken] issuing token', {
       timestamp: new Date(issuedAtMs).toISOString(),
@@ -223,10 +230,9 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       room,
       participantIdentity,
       participantName: username,
-      role: metadataDetails.role,
-      classId: metadataDetails.classId,
-      userId: metadataDetails.userId,
-      metadataJsonValid: metadataDetails.metadataJsonValid,
+      role,
+      classId,
+      userId: decoded.uid,
       urlHost: diagnostics.urlHost || urlValidation.host,
       apiKeyPrefix: diagnostics.apiKeyPrefix,
       apiKeySuffix: diagnostics.apiKeySuffix,
@@ -255,7 +261,7 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       ...runtimeEnvironment,
       room,
       participantIdentity,
-      role: metadataDetails.role,
+      role,
       urlHost: diagnostics.urlHost || urlValidation.host,
       ttl: defaultTokenTtlLabel,
       expiresAt: expectedExpirationIso,
@@ -266,17 +272,22 @@ export default async function handler(req: VercelRequestLike, res: VercelRespons
       token: jwt,
       url: wsUrl,
       room,
+      roomName: room,
+      wsUrl,
       participantIdentity,
       participantName: username,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unable to create LiveKit token.';
+    const statusCode = typeof error === 'object' && error !== null && 'statusCode' in error
+      ? Number((error as { statusCode?: number }).statusCode) || 500
+      : (typeof error === 'object' && error !== null && 'code' in error && String((error as { code?: string }).code).startsWith('auth/') ? 401 : 500);
     console.warn('[LiveKit][getToken] token generation failed', {
       message,
       timestamp: new Date().toISOString(),
       ...runtimeEnvironment,
       diagnostics,
     });
-    sendJson(res, 500, { error: message });
+    sendJson(res, statusCode, { error: message });
   }
 }

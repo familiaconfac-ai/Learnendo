@@ -18,8 +18,12 @@ import { LiveTrailExerciseOverlay } from '../LiveTrailExerciseOverlay';
 import { subscribeBattleSession } from '../Battle/battleService';
 import { BattleSession } from '../Battle/battleTypes';
 import { LiveBattleSimple, USE_SIMPLE_LIVE_BATTLE } from '../../BattleHub/LiveBattleSimple';
-import { requestLiveAudioCredentials } from '../../../services/liveAudioService';
+import { getLiveKitTabId, requestLiveAudioCredentials } from '../../../services/liveAudioService';
 import { logLiveKitDebug, nextLiveKitDebugCounter } from '../../../services/liveKitDebug';
+import { createLiveMediaTabLease, confirmLiveMediaTakeover, type LiveMediaTabLease } from '../../../services/liveMediaTabLease';
+import { shouldConnectForTransport } from '../../../services/liveMediaPolicy';
+import { updateLiveMediaParticipant } from '../../../services/liveMediaParticipantService';
+import { recordLiveMediaConnected, recordLiveMediaDisconnected, type LiveMediaActivationReason } from '../../../services/liveMediaTelemetry';
 import { getLiveClassMeetLink } from '../../../services/liveClassesService';
 import { BASE_UI_LANGUAGE_STORAGE_KEY, getScopedStorageItem } from '../../../utils/tabScopedStorage';
 import {
@@ -82,7 +86,7 @@ const StudentStage: React.FC<{
   setShowExerciseSession: (show: boolean) => void;
   onOpenBattleHub: () => void;
   onExit: () => void;
-  ensureLiveRoomConnected: () => Promise<void>;
+  ensureLiveRoomConnected: (reason?: LiveMediaActivationReason, allowTakeoverPrompt?: boolean) => Promise<void>;
   liveKitError: string | null;
 }> = ({
   liveClass,
@@ -554,7 +558,7 @@ const StudentStage: React.FC<{
           return;
         }
 
-        await ensureLiveRoomConnected();
+        await ensureLiveRoomConnected('student-media', true);
         console.info('[StudentRoomView][media] toggleMicrophone start', {
           forceEnable,
           isMicrophoneEnabled,
@@ -603,7 +607,7 @@ const StudentStage: React.FC<{
           return;
         }
 
-        await ensureLiveRoomConnected();
+        await ensureLiveRoomConnected('student-media', true);
         console.info('[StudentRoomView][media] toggleCamera start', {
           forceEnable,
           isCameraEnabled,
@@ -1060,6 +1064,58 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
   const connectPromiseRef = useRef<Promise<void> | null>(null);
   const pendingRoomConnectionRef = useRef<Promise<void> | null>(null);
   const lastConnectKeyRef = useRef<string | null>(null);
+  const tabIdRef = useRef(getLiveKitTabId());
+  const mediaLeaseRef = useRef<LiveMediaTabLease | null>(null);
+  const connectedTelemetryRef = useRef(false);
+  const suppressDisconnectEventRef = useRef(false);
+  const mediaTransportRef = useRef(session.mediaTransport);
+  mediaTransportRef.current = session.mediaTransport;
+
+  const writeStudentParticipantState = useCallback((connecting = false) => {
+    if (mediaLeaseRef.current && !mediaLeaseRef.current.isOwner()) return Promise.resolve();
+    const participant = roomInstance.localParticipant;
+    const microphone = participant.getTrackPublication(Track.Source.Microphone);
+    const camera = participant.getTrackPublication(Track.Source.Camera);
+    return updateLiveMediaParticipant(liveClass.id, {
+      uid: user.uid,
+      role: 'student',
+      tabId: tabIdRef.current,
+      connecting,
+      microphoneActive: Boolean(microphone?.track && microphone.isMuted === false),
+      cameraActive: Boolean(camera?.track && camera.isMuted === false),
+      screenShareActive: false,
+    });
+  }, [liveClass.id, roomInstance, user.uid]);
+
+  const disconnectStudentRoom = useCallback((reason: string, clearParticipantState = true) => {
+    if (roomInstance.state !== ConnectionState.Disconnected) {
+      suppressDisconnectEventRef.current = true;
+      roomInstance.disconnect();
+      window.setTimeout(() => { suppressDisconnectEventRef.current = false; }, 0);
+    }
+    if (clearParticipantState) {
+      void updateLiveMediaParticipant(liveClass.id, {
+        uid: user.uid,
+        role: 'student',
+        tabId: tabIdRef.current,
+        connecting: false,
+        microphoneActive: false,
+        cameraActive: false,
+        screenShareActive: false,
+      }).catch(() => undefined);
+    }
+    if (connectedTelemetryRef.current) {
+      connectedTelemetryRef.current = false;
+      recordLiveMediaDisconnected({
+        uid: user.uid,
+        role: 'student',
+        classId: liveClass.id,
+        tabId: tabIdRef.current,
+      }, reason, mediaTransportRef.current);
+    }
+  }, [liveClass.id, roomInstance, user.uid]);
+  const disconnectStudentRoomRef = useRef(disconnectStudentRoom);
+  disconnectStudentRoomRef.current = disconnectStudentRoom;
 
   const waitForPendingRoomConnection = useCallback(async () => {
     if (roomInstance.state === ConnectionState.Connected) {
@@ -1107,7 +1163,22 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
     return pendingConnection;
   }, [roomInstance]);
 
-  const ensureLiveRoomConnected = useCallback(async () => {
+  const ensureLiveRoomConnected = useCallback(async (
+    reason: LiveMediaActivationReason = 'recovery',
+    allowTakeoverPrompt = false,
+  ) => {
+    if (mediaTransportRef.current === 'meet') {
+      throw new Error('livekit-disabled-while-meet-is-active');
+    }
+    const lease = mediaLeaseRef.current;
+    if (lease && !lease.isOwner()) {
+      if (!lease.acquire(false)) {
+        if (!allowTakeoverPrompt || !confirmLiveMediaTakeover() || !lease.acquire(true)) {
+          setLiveKitError('Áudio/vídeo já está ativo em outra aba.');
+          throw new Error('livekit-active-in-another-tab');
+        }
+      }
+    }
     if (!token || !wsUrl) {
       logLiveKitDebug('connect skipped: missing credentials', {
         source: 'StudentRoomView',
@@ -1159,6 +1230,7 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
     const connectPromise = (async () => {
       const attemptNumber = nextLiveKitDebugCounter('student_connect_attempt');
       try {
+        if (reason === 'student-media') await writeStudentParticipantState(true);
         if (roomInstance.state === ConnectionState.Connected && lastConnectKeyRef.current !== connectKey) {
           logLiveKitDebug('connect reset: connected with a different key', {
             source: 'StudentRoomView',
@@ -1166,7 +1238,9 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
             classId: liveClass.id,
             roomState: roomInstance.state,
           });
+          suppressDisconnectEventRef.current = true;
           roomInstance.disconnect();
+          window.setTimeout(() => { suppressDisconnectEventRef.current = false; }, 0);
         } else if (roomInstance.state !== ConnectionState.Disconnected) {
           logLiveKitDebug('connect reset: disconnecting non-disconnected room before reconnect', {
             source: 'StudentRoomView',
@@ -1174,7 +1248,9 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
             classId: liveClass.id,
             roomState: roomInstance.state,
           });
+          suppressDisconnectEventRef.current = true;
           roomInstance.disconnect();
+          window.setTimeout(() => { suppressDisconnectEventRef.current = false; }, 0);
         }
         logLiveKitDebug(`connect attempt #${attemptNumber}`, {
           source: 'StudentRoomView',
@@ -1195,8 +1271,18 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
         });
         await roomInstance.connect(wsUrl, token);
         await roomInstance.startAudio().catch(() => {});
+        await writeStudentParticipantState(false).catch(() => undefined);
         lastConnectKeyRef.current = connectKey;
         setLiveKitError(null);
+        if (!connectedTelemetryRef.current) {
+          connectedTelemetryRef.current = true;
+          recordLiveMediaConnected({
+            uid: user.uid,
+            role: 'student',
+            classId: liveClass.id,
+            tabId: tabIdRef.current,
+          }, reason, session.mediaTransport);
+        }
         logLiveKitDebug(`connect success #${attemptNumber}`, {
           source: 'StudentRoomView',
           role: 'student',
@@ -1204,6 +1290,7 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
           roomState: roomInstance.state,
         });
       } catch (error) {
+        await writeStudentParticipantState(false).catch(() => undefined);
         console.error('[StudentRoomView][LiveKitRoom] connect error', error);
         setLiveKitError('Nao foi possivel conectar a sala de audio/video. Tente novamente em alguns segundos.');
         logLiveKitDebug(`connect failed #${attemptNumber}`, {
@@ -1221,7 +1308,7 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
 
     connectPromiseRef.current = connectPromise;
     return connectPromise;
-  }, [liveClass.id, roomInstance, token, waitForPendingRoomConnection, wsUrl]);
+  }, [liveClass.id, roomInstance, token, user.uid, waitForPendingRoomConnection, writeStudentParticipantState, wsUrl]);
 
   useEffect(() => {
     const handleConnected = () => {
@@ -1230,6 +1317,10 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
     const handleDisconnected = () => {
       if (roomInstance.state === ConnectionState.Disconnected) {
         setLiveKitError('A conexao de audio/video caiu. Tente ligar a camera ou o microfone de novo.');
+        if (!suppressDisconnectEventRef.current && mediaLeaseRef.current?.isOwner()) {
+          disconnectStudentRoomRef.current('unexpected-disconnect');
+          mediaLeaseRef.current.release();
+        }
       }
     };
 
@@ -1267,15 +1358,75 @@ export const StudentRoomView: React.FC<StudentRoomViewProps> = (props) => {
   }, [liveClass.id, user.displayName, user.uid]);
 
   useEffect(() => {
+    const lease = createLiveMediaTabLease(liveClass.id, user.uid, tabIdRef.current, () => {
+      disconnectStudentRoomRef.current('tab-takeover', false);
+    });
+    mediaLeaseRef.current = lease;
+    return () => {
+      lease.dispose();
+      if (mediaLeaseRef.current === lease) mediaLeaseRef.current = null;
+    };
+  }, [liveClass.id, user.uid]);
+
+  useEffect(() => {
     if (!token || !wsUrl) return;
-    void ensureLiveRoomConnected().catch(() => {});
-  }, [ensureLiveRoomConnected, token, wsUrl]);
+    if (shouldConnectForTransport(session.mediaTransport)) {
+      void ensureLiveRoomConnected('recovery', false).catch(() => undefined);
+      return;
+    }
+    disconnectStudentRoom(session.mediaTransport === 'meet' ? 'meet-selected' : 'media-idle-timeout');
+    mediaLeaseRef.current?.release();
+  }, [disconnectStudentRoom, ensureLiveRoomConnected, session.mediaTransport, token, wsUrl]);
+
+  useEffect(() => {
+    const syncConfirmedTracks = () => {
+      void writeStudentParticipantState(false).catch(() => undefined);
+    };
+    roomInstance.on(RoomEvent.LocalTrackPublished, syncConfirmedTracks);
+    roomInstance.on(RoomEvent.LocalTrackUnpublished, syncConfirmedTracks);
+    roomInstance.on(RoomEvent.TrackMuted, syncConfirmedTracks);
+    roomInstance.on(RoomEvent.TrackUnmuted, syncConfirmedTracks);
+    return () => {
+      roomInstance.off(RoomEvent.LocalTrackPublished, syncConfirmedTracks);
+      roomInstance.off(RoomEvent.LocalTrackUnpublished, syncConfirmedTracks);
+      roomInstance.off(RoomEvent.TrackMuted, syncConfirmedTracks);
+      roomInstance.off(RoomEvent.TrackUnmuted, syncConfirmedTracks);
+    };
+  }, [roomInstance, writeStudentParticipantState]);
+
+  useEffect(() => {
+    const heartbeat = window.setInterval(() => {
+      const local = roomInstance.localParticipant;
+      const microphone = local.getTrackPublication(Track.Source.Microphone);
+      const camera = local.getTrackPublication(Track.Source.Camera);
+      const active = Boolean(microphone?.track && microphone.isMuted === false)
+        || Boolean(camera?.track && camera.isMuted === false);
+      if (active) void writeStudentParticipantState(false).catch(() => undefined);
+    }, 5_000);
+    return () => window.clearInterval(heartbeat);
+  }, [roomInstance, writeStudentParticipantState]);
 
   useEffect(() => {
     return () => {
-      roomInstance.disconnect();
+      const ownsMediaLease = mediaLeaseRef.current?.isOwner() ?? true;
+      if (roomInstance.state !== ConnectionState.Disconnected) {
+        suppressDisconnectEventRef.current = true;
+        roomInstance.disconnect();
+      }
+      mediaLeaseRef.current?.release();
+      if (ownsMediaLease) {
+        void updateLiveMediaParticipant(liveClass.id, {
+          uid: user.uid,
+          role: 'student',
+          tabId: tabIdRef.current,
+          connecting: false,
+          microphoneActive: false,
+          cameraActive: false,
+          screenShareActive: false,
+        }).catch(() => undefined);
+      }
     };
-  }, [roomInstance]);
+  }, [liveClass.id, roomInstance, user.uid]);
 
   if (!liveClass?.id || !user?.uid) {
     return (

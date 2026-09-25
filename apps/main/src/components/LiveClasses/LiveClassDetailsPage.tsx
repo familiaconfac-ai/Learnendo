@@ -66,9 +66,12 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
     activeWorkbookId: null,
     activeLessonId: null,
     activeExerciseId: null,
-    liveAudioTransport: 'not-configured',
+    mediaTransport: 'none',
     teacherLiveMicEnabled: false,
     teacherCameraEnabled: false,
+    teacherScreenShareEnabled: false,
+    anyStudentMediaActive: false,
+    mediaIdleSince: null,
     allowStudentLiveMic: false,
     studentCameraMode: 'off',
     audioNotesEnabled: true,
@@ -314,7 +317,7 @@ export const LiveClassDetailsPage: React.FC<LiveClassDetailsPageProps> = ({
         <p className="text-sm text-slate-200">activeWorkbookId: {session.activeWorkbookId ?? '-'}</p>
         <p className="text-sm text-slate-200">activeLessonId: {session.activeLessonId ?? '-'}</p>
         <p className="text-sm text-slate-200">activeExerciseId: {session.activeExerciseId ?? '-'}</p>
-        <p className="text-sm text-slate-200">Live audio transport: {session.liveAudioTransport ?? 'not-configured'}</p>
+        <p className="text-sm text-slate-200">Live media transport: {session.mediaTransport ?? 'none'}</p>
         <p className="text-sm text-slate-200">Teacher live mic: {session.teacherLiveMicEnabled ? 'live' : 'muted'}</p>
         <p className="text-sm text-slate-200">Teacher camera: {session.teacherCameraEnabled ? 'live' : 'off'}</p>
         <p className="text-sm text-slate-200">Student live mic: {session.allowStudentLiveMic ? 'allowed' : 'muted by room'}</p>

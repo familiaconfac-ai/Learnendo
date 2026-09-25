@@ -32,6 +32,7 @@ import { loadWorkbookForWhiteboard, resolveLessonForWhiteboard } from './liveWhi
 import { expandAcceptedAnswerVariants } from '../utils/answerVariants';
 import { recordLiveAttendanceExercise } from './liveAttendanceService';
 import { buildLiveTrailRecoveryPlan } from './liveTrailTransition';
+import { normalizeMediaTransport } from './liveMediaPolicy';
 
 const LIVE_CLASSES_COLLECTION = 'liveClasses';
 const LIVE_SESSION_COLLECTION = 'session';
@@ -159,9 +160,12 @@ const mapSession = (data: Record<string, any> | undefined): LiveClassSession => 
     Number.isFinite(data?.sharedGrammarLessonNumber) ? Number(data.sharedGrammarLessonNumber) : null,
   sharedGrammarScrollRatio:
     Number.isFinite(data?.sharedGrammarScrollRatio) ? Number(data.sharedGrammarScrollRatio) : null,
-  liveAudioTransport: (data?.liveAudioTransport ?? 'not-configured') as LiveClassSession['liveAudioTransport'],
+  mediaTransport: normalizeMediaTransport(data?.mediaTransport ?? data?.liveAudioTransport),
   teacherLiveMicEnabled: Boolean(data?.teacherLiveMicEnabled),
   teacherCameraEnabled: Boolean(data?.teacherCameraEnabled),
+  teacherScreenShareEnabled: Boolean(data?.teacherScreenShareEnabled),
+  anyStudentMediaActive: Boolean(data?.anyStudentMediaActive),
+  mediaIdleSince: data?.mediaIdleSince?.toDate?.()?.toISOString?.() ?? data?.mediaIdleSince ?? null,
   allowStudentLiveMic: Boolean(data?.allowStudentLiveMic),
   studentCameraMode: (data?.studentCameraMode ?? 'off') as LiveClassSession['studentCameraMode'],
   allowStudentWhiteboardEdit: Boolean(data?.allowStudentWhiteboardEdit),
@@ -593,9 +597,12 @@ export async function updateLiveSession(
   if ('sharedGrammarWorkbookId' in patch) payload.sharedGrammarWorkbookId = patch.sharedGrammarWorkbookId ?? null;
   if ('sharedGrammarLessonNumber' in patch) payload.sharedGrammarLessonNumber = patch.sharedGrammarLessonNumber ?? null;
   if ('sharedGrammarScrollRatio' in patch) payload.sharedGrammarScrollRatio = patch.sharedGrammarScrollRatio ?? null;
-  if ('liveAudioTransport' in patch) payload.liveAudioTransport = patch.liveAudioTransport ?? 'not-configured';
+  if ('mediaTransport' in patch) payload.mediaTransport = patch.mediaTransport ?? 'none';
   if ('teacherLiveMicEnabled' in patch) payload.teacherLiveMicEnabled = Boolean(patch.teacherLiveMicEnabled);
   if ('teacherCameraEnabled' in patch) payload.teacherCameraEnabled = Boolean(patch.teacherCameraEnabled);
+  if ('teacherScreenShareEnabled' in patch) payload.teacherScreenShareEnabled = Boolean(patch.teacherScreenShareEnabled);
+  if ('anyStudentMediaActive' in patch) payload.anyStudentMediaActive = Boolean(patch.anyStudentMediaActive);
+  if ('mediaIdleSince' in patch) payload.mediaIdleSince = patch.mediaIdleSince ? new Date(patch.mediaIdleSince) : null;
   if ('allowStudentLiveMic' in patch) payload.allowStudentLiveMic = Boolean(patch.allowStudentLiveMic);
   if ('studentCameraMode' in patch) payload.studentCameraMode = patch.studentCameraMode ?? 'off';
   if ('allowStudentWhiteboardEdit' in patch) {

@@ -28,7 +28,14 @@ export const TeacherLiveControlPanel: React.FC<TeacherLiveControlPanelProps> = (
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateLiveSession(classId, local, user.uid);
+      const editable: Partial<LiveClassSession> = { ...local };
+      delete editable.mediaTransport;
+      delete editable.teacherLiveMicEnabled;
+      delete editable.teacherCameraEnabled;
+      delete editable.teacherScreenShareEnabled;
+      delete editable.anyStudentMediaActive;
+      delete editable.mediaIdleSince;
+      await updateLiveSession(classId, editable, user.uid);
     } catch (error) {
       console.warn('[TeacherLiveControlPanel] update failed:', error);
     } finally {
@@ -77,33 +84,9 @@ export const TeacherLiveControlPanel: React.FC<TeacherLiveControlPanelProps> = (
           placeholder="activeExerciseId"
         />
 
-        <select
-          value={local.liveAudioTransport ?? 'not-configured'}
-          onChange={(e) => setField('liveAudioTransport', e.target.value as LiveClassSession['liveAudioTransport'])}
-          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-        >
-          <option value="not-configured">Transport pending</option>
-          <option value="connecting">Connecting</option>
-          <option value="connected">Connected</option>
-        </select>
-
-        <select
-          value={local.teacherLiveMicEnabled ? 'live' : 'muted'}
-          onChange={(e) => setField('teacherLiveMicEnabled', e.target.value === 'live')}
-          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-        >
-          <option value="muted">Teacher live mic muted</option>
-          <option value="live">Teacher live mic live</option>
-        </select>
-
-        <select
-          value={local.teacherCameraEnabled ? 'live' : 'off'}
-          onChange={(e) => setField('teacherCameraEnabled', e.target.value === 'live')}
-          className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white"
-        >
-          <option value="off">Teacher camera off</option>
-          <option value="live">Teacher camera live</option>
-        </select>
+        <div className="rounded-xl border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-slate-200">
+          Media: {local.mediaTransport ?? 'none'} · mic {local.teacherLiveMicEnabled ? 'on' : 'off'} · camera {local.teacherCameraEnabled ? 'on' : 'off'} · share {local.teacherScreenShareEnabled ? 'on' : 'off'}
+        </div>
 
         <select
           value={local.allowStudentLiveMic ? 'open' : 'muted'}
