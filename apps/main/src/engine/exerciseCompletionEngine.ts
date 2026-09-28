@@ -200,13 +200,19 @@ function migrateRecord(record: LegacyRecord | ExerciseCompletionRecord): Exercis
     lastPracticedAt: record.completedAt, bestAccuracy: accuracy, totalPracticePoints: record.points, source: 'exercise' };
 }
 
-export function loadExerciseProgress(storage: Pick<Storage, 'getItem'> | null, userId: string): ExerciseProgressState {
+function exerciseProgressStorageKey(userId: string, courseId: string): string {
+  return `learnendo_exercise_progress_v${EXERCISE_PROGRESS_VERSION}:${userId}:${courseId}`;
+}
+
+export function loadExerciseProgress(
+  storage: Pick<Storage, 'getItem'> | null,
+  userId: string,
+  courseId: string,
+): ExerciseProgressState {
   if (!storage) return emptyExerciseProgress();
   try {
-    const currentRaw = storage.getItem(`learnendo_exercise_progress_v${EXERCISE_PROGRESS_VERSION}:${userId}`);
-    const version2Raw = storage.getItem(`learnendo_exercise_progress_v2:${userId}`);
-    const legacyRaw = storage.getItem(`learnendo_exercise_progress_v1:${userId}`);
-    const parsed = JSON.parse(currentRaw ?? version2Raw ?? legacyRaw ?? 'null') as Partial<ExerciseProgressState> | null;
+    const currentRaw = storage.getItem(exerciseProgressStorageKey(userId, courseId));
+    const parsed = JSON.parse(currentRaw ?? 'null') as Partial<ExerciseProgressState> | null;
     if (!parsed?.records || typeof parsed.records !== 'object') return emptyExerciseProgress();
     return { version: EXERCISE_PROGRESS_VERSION,
       records: Object.fromEntries(Object.entries(parsed.records).map(([key, record]) => [key, migrateRecord(record as LegacyRecord)])),
@@ -214,9 +220,14 @@ export function loadExerciseProgress(storage: Pick<Storage, 'getItem'> | null, u
   } catch { return emptyExerciseProgress(); }
 }
 
-export function saveExerciseProgress(storage: Pick<Storage, 'setItem'> | null, userId: string, state: ExerciseProgressState): boolean {
+export function saveExerciseProgress(
+  storage: Pick<Storage, 'setItem'> | null,
+  userId: string,
+  courseId: string,
+  state: ExerciseProgressState,
+): boolean {
   if (!storage) return false;
-  try { storage.setItem(`learnendo_exercise_progress_v${EXERCISE_PROGRESS_VERSION}:${userId}`, JSON.stringify(state)); return true; }
+  try { storage.setItem(exerciseProgressStorageKey(userId, courseId), JSON.stringify(state)); return true; }
   catch { return false; }
 }
 

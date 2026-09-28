@@ -88,24 +88,31 @@ test('7. local persistence survives a reload', () => {
   const memory = new Map<string, string>();
   const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); } };
   const completed = completeExercise(emptyExerciseProgress(), input()).state;
-  assert.equal(saveExerciseProgress(storage, 'student-1', completed), true);
-  assert.deepEqual(loadExerciseProgress(storage, 'student-1'), completed);
+  assert.equal(saveExerciseProgress(storage, 'student-1', 'english', completed), true);
+  assert.deepEqual(loadExerciseProgress(storage, 'student-1', 'english'), completed);
 });
 
 test('8. anonymous progress remains isolated under its own key', () => {
   const memory = new Map<string, string>();
   const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); } };
-  saveExerciseProgress(storage, 'anonymous', completeExercise(emptyExerciseProgress(), input()).state);
-  assert.equal(Object.keys(loadExerciseProgress(storage, 'signed-in').records).length, 0);
+  saveExerciseProgress(storage, 'anonymous', 'english', completeExercise(emptyExerciseProgress(), input()).state);
+  assert.equal(Object.keys(loadExerciseProgress(storage, 'signed-in', 'english').records).length, 0);
+});
+
+test('8b. exercise progress remains isolated by course', () => {
+  const memory = new Map<string, string>();
+  const storage = { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => { memory.set(key, value); } };
+  saveExerciseProgress(storage, 'student-1', 'english', completeExercise(emptyExerciseProgress(), input()).state);
+  assert.equal(Object.keys(loadExerciseProgress(storage, 'student-1', 'spanish').records).length, 0);
 });
 
 test('9. persistence failure is non-blocking and returns false', () => {
   const storage = { setItem: () => { throw new Error('quota'); } };
-  assert.equal(saveExerciseProgress(storage, 'student-1', emptyExerciseProgress()), false);
+  assert.equal(saveExerciseProgress(storage, 'student-1', 'english', emptyExerciseProgress()), false);
 });
 
 test('10. corrupt cached data safely falls back to an empty state', () => {
-  assert.deepEqual(loadExerciseProgress({ getItem: () => '{bad json' }, 'student-1'), emptyExerciseProgress());
+  assert.deepEqual(loadExerciseProgress({ getItem: () => '{bad json' }, 'student-1', 'english'), emptyExerciseProgress());
 });
 
 test('11. only explicitly flagged vocabulary becomes a mastery target', () => {

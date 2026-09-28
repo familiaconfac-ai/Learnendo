@@ -28,7 +28,6 @@
  *   groups/{groupId}          — class schedule config
  *   users/{uid}/meta/status   — user group assignment
  *
- * TODO: Remove weeklyProgress reads after full migration to courseProgress.
  */
 
 import {
@@ -38,7 +37,6 @@ import {
   getDocs,
   collection,
   serverTimestamp,
-  deleteDoc,
   runTransaction,
 } from 'firebase/firestore';
 import { db } from '../services/firebase';
@@ -353,7 +351,6 @@ export async function ensureLessonStarted(
  *
  * Returns rebuilt LessonStats so the UI can update immediately.
  *
- * TODO: Remove weeklyProgress parallel writes after full migration.
  */
 /** Optional per-day analytics to store alongside the completion. */
 export interface DayAnalytics {

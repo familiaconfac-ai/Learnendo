@@ -83,8 +83,8 @@ test('correct answers persist before Continue and active retry state survives re
   assert.ok(attemptHandler >= 0 && completionWrite > attemptHandler);
   assert.ok(completionWrite > continueHandler, 'completion is expected in the attempt path, not only in Continue');
   assert.match(exercisePracticeSource, /window\.localStorage\.setItem\(masteryStorageKey/);
-  assert.match(exercisePracticeSource, /window\.sessionStorage\.removeItem\(activeRunStorageKey\)/, 'legacy run state must be removed after migration or completion');
-  assert.match(exercisePracticeSource, /window\.sessionStorage\.removeItem\(masteryStorageKey\(targetRunId\)\)/, 'legacy mastery state must not restore a finished run');
+  assert.match(exercisePracticeSource, /learnendo_active_practice_run_v1:\$\{userId\}:\$\{editorialCourseId\}/, 'active runs must be scoped by course');
+  assert.doesNotMatch(exercisePracticeSource, /window\.sessionStorage/, 'practice state must use only the current localStorage cache');
   const backHandler = exercisePracticeSource.match(/const backToTrail = \(\) => \{([\s\S]*?)\n  \};/);
   assert.ok(backHandler);
   assert.doesNotMatch(backHandler[1], /removeItem/, 'Back must not discard an unresolved retry queue');

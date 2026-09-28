@@ -307,13 +307,11 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     ? crypto.randomUUID()
     : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  const activeRunStorageKey = `learnendo_active_practice_run_v1:${userId}:w${workbookId}:${lessonId}:${day.id}`;
+  const activeRunStorageKey = `learnendo_active_practice_run_v1:${userId}:${editorialCourseId}:w${workbookId}:${lessonId}:${day.id}`;
   const masteryStorageKey = (targetRunId: string) => `${activeRunStorageKey}:${targetRunId}:mastery`;
   const clearActiveRunStorage = (targetRunId: string) => {
     try { window.localStorage.removeItem(activeRunStorageKey); } catch { /* non-blocking */ }
     try { window.localStorage.removeItem(masteryStorageKey(targetRunId)); } catch { /* non-blocking */ }
-    try { window.sessionStorage.removeItem(activeRunStorageKey); } catch { /* legacy cleanup */ }
-    try { window.sessionStorage.removeItem(masteryStorageKey(targetRunId)); } catch { /* legacy cleanup */ }
   };
   const storeMastery = (next: MasterySessionState, targetRunId = runId) => {
     if (!targetRunId) return;
@@ -328,10 +326,10 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       ...Object.entries(progress.days ?? {}).filter(([, completed]) => completed).map(([id]) => id),
     ]);
     if (isDayCompleted) completedDayIds.add(day.id);
-    const loaded = loadExerciseProgress(storage, userId);
+    const loaded = loadExerciseProgress(storage, userId, editorialCourseId);
     const legacyMerged = workbook ? mergeLegacyCompletedDays(loaded, workbook, completedDayIds) : loaded;
     const restored = workbook ? migrateMovedExerciseProgress(legacyMerged, workbook) : legacyMerged;
-    if (restored !== loaded) saveExerciseProgress(storage, userId, restored);
+    if (restored !== loaded) saveExerciseProgress(storage, userId, editorialCourseId, restored);
     const firstIncomplete = exercises.findIndex((exercise) =>
       !restored.records[exerciseCompletionKey(workbookId, lessonId, day.id, exercise.id)]
     );
@@ -339,13 +337,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     const historicallyComplete = start.isReplay;
     let nextRunId = '';
     try {
-      nextRunId = window.localStorage.getItem(activeRunStorageKey)
-        ?? window.sessionStorage.getItem(activeRunStorageKey)
-        ?? '';
-      if (nextRunId) {
-        window.localStorage.setItem(activeRunStorageKey, nextRunId);
-        window.sessionStorage.removeItem(activeRunStorageKey);
-      }
+      nextRunId = window.localStorage.getItem(activeRunStorageKey) ?? '';
     } catch { /* non-blocking */ }
     if (!nextRunId) {
       nextRunId = createRunId();
@@ -372,14 +364,12 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       .map((exercise) => exercise.id);
     let nextMastery = createMasterySession(targetExerciseIds);
     try {
-      const cachedRaw = window.localStorage.getItem(masteryStorageKey(nextRunId))
-        ?? window.sessionStorage.getItem(masteryStorageKey(nextRunId));
+      const cachedRaw = window.localStorage.getItem(masteryStorageKey(nextRunId));
       const cached = JSON.parse(cachedRaw ?? 'null') as MasterySessionState | null;
       const currentDayIds = new Set(exercises.map((exercise) => exercise.id));
       if (cached && cached.exerciseIds?.length && cached.exerciseIds.every((id) => currentDayIds.has(id)) && cached.items) {
         nextMastery = restoreMasterySession(cached);
         window.localStorage.setItem(masteryStorageKey(nextRunId), JSON.stringify(nextMastery));
-        window.sessionStorage.removeItem(masteryStorageKey(nextRunId));
       }
     } catch { /* a corrupt session cache safely starts a new mastery run */ }
     masteryRef.current = nextMastery;
@@ -404,7 +394,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
     setLastAttemptCount(0);
     isCompletedRef.current = false;
     completionPromiseRef.current = null;
-  }, [day.id, editorialLoadStatus, exercises, lessonId, userId, workbookId, initialExerciseIndex, workbook, isDayCompleted]);
+  }, [day.id, editorialCourseId, editorialLoadStatus, exercises, lessonId, userId, workbookId, initialExerciseIndex, workbook, isDayCompleted]);
 
   const dayNumber = (() => {
     const match = day.id.match(/d(\d+)/);
@@ -557,7 +547,7 @@ export const ExercisePractice: React.FC<ExercisePracticeProps> = ({
       exerciseProgressRef.current = result.state;
       setExerciseProgress(result.state);
       const storage = typeof window === 'undefined' ? null : window.localStorage;
-      setStorageWarning(!saveExerciseProgress(storage, userId, result.state));
+      setStorageWarning(!saveExerciseProgress(storage, userId, editorialCourseId, result.state));
     }
     if (!isCorrect && attemptNumber >= MAX_TECHNICAL_FAILURES) setTechnicalHelpOpen(true);
   };

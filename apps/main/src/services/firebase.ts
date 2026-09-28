@@ -15,7 +15,13 @@ import {
   sendPasswordResetEmail,
   connectAuthEmulator,
 } from "firebase/auth";
-import { connectFirestoreEmulator, getFirestore, initializeFirestore } from "firebase/firestore";
+import {
+  connectFirestoreEmulator,
+  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+} from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 import { getStorage } from "firebase/storage";
 import { firebaseConfig } from './firebaseConfig';
@@ -33,6 +39,7 @@ const db = (() => {
     return initializeFirestore(app, {
       ignoreUndefinedProperties: true,
       experimentalForceLongPolling: true,
+      localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
   } catch (error) {
     console.warn('[Firebase] Falling back to existing Firestore instance:', error);
