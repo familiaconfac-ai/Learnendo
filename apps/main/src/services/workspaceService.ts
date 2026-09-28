@@ -1,7 +1,15 @@
 import { queueBoardWorkspaceCommit } from './boardControlService';
 import { boardSyncTrace, boardSyncTraceEnabled } from './boardSyncTrace';
 import { boardWriteStamp, boardControlRef, commitBoardWorkspace, type BoardWriteStamp } from './boardControlService';
-import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
+import {
+  deleteField,
+  doc,
+  getDocFromServer,
+  onSnapshot,
+  runTransaction,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
 import { db } from './firebase';
 import { boardContentFingerprint } from '../models/boardControl';
 import type { SerializedSelectionRange } from '../components/LiveClasses/Workspace/workspaceSelectionAwareness';
@@ -281,7 +289,6 @@ export async function saveScrollRatio(
   scrollRatio: number,
 ): Promise<void> {
   if (!db) return;
-  const { updateDoc } = await import('firebase/firestore');
   await updateDoc(workspaceRef(classId), { scrollRatio }).catch(() => {
     // ignore if doc doesn't exist yet
   });
@@ -294,7 +301,6 @@ export async function saveParticipantSelection(
   selection: WorkspaceSelectionSnapshot | null,
 ): Promise<void> {
   if (!db) return;
-  const { deleteField, updateDoc, setDoc } = await import('firebase/firestore');
   const field = `participantSelections.${participantId}`;
   try {
     await updateDoc(workspaceRef(classId), { [field]: selection ?? deleteField() });
@@ -311,7 +317,6 @@ export async function saveParticipantScroll(
   scroll: WorkspaceScrollSnapshot | null,
 ): Promise<void> {
   if (!db) return;
-  const { deleteField, updateDoc, setDoc } = await import('firebase/firestore');
   const field = `participantScroll.${participantId}`;
   try {
     await updateDoc(workspaceRef(classId), { [field]: scroll ?? deleteField() });
@@ -517,7 +522,6 @@ export async function saveWorkspaceItem(
   if (!db) return;
   const controlStamp = boardWriteStamp(classId, uid);
   console.log(`[WS] saveWorkspaceItem by ${name} (${uid.slice(0, 6)}) — ${item.id}`);
-  const { runTransaction } = await import('firebase/firestore');
   const remoteItem = serializeWorkspaceItemForRemote(item);
 
   try {
