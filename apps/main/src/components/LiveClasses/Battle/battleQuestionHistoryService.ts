@@ -36,7 +36,9 @@ function buildSharedHistoryDocId(context: BattleHistoryContext): string {
   ].join('__');
 }
 
-function getSharedHistoryDocRef(context: Required<Pick<BattleHistoryContext, 'classId' | 'teacherId'>>) {
+function getSharedHistoryDocRef(
+  context: BattleHistoryContext & Required<Pick<BattleHistoryContext, 'classId' | 'teacherId'>>,
+) {
   return doc(
     db,
     'liveClasses',

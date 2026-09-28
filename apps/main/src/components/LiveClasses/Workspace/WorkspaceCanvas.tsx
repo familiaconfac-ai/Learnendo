@@ -2180,7 +2180,7 @@ const StableFloatingBlock: React.FC<StableFloatingBlockProps> = React.memo(({
               />
             )}
             {item.boxRole !== 'student' && boxRoleBadgeLabel ? (
-              <span className={`rounded px-1.5 py-0.5 text-[9px] ${item.boxRole === 'student' ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-100 text-violet-700'}`}>
+              <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] text-violet-700">
                 {boxRoleBadgeLabel}
               </span>
             ) : null}
@@ -5596,7 +5596,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
     ).catch(console.error);
   }
 
-  const handleSlideThumbnailClick = (event: React.MouseEvent<HTMLButtonElement>, pageId: string) => {
+  const handleSlideThumbnailClick = (event: { shiftKey: boolean }, pageId: string) => {
     if (!viewerCanManagePages) return;
     const currentPages = pagesRef.current;
     if (event.shiftKey && slideSelectionAnchorIdRef.current) {
@@ -7600,7 +7600,7 @@ img{max-width:100%}@media print{@page{margin:1.5cm}}</style>
                     onKeyDown={(event) => {
                       if (event.key === 'Enter' || event.key === ' ') {
                         event.preventDefault();
-                        handleSlideThumbnailClick(event as unknown as React.MouseEvent<HTMLElement>, page.id);
+                        handleSlideThumbnailClick(event, page.id);
                       }
                     }}
                     onDragStart={(event) => {

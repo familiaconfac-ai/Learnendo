@@ -32,6 +32,14 @@ const ERR_SOUND = "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview
 
 const TRANSLATIONS: Record<string, string> = {};
 
+const getGrammarGuidePoints = (
+  guide: (typeof GRAMMAR_GUIDES)[string] | undefined,
+): string[] => {
+  if (Array.isArray(guide)) return guide;
+  return guide?.sections.flatMap((section) => section.lines)
+    ?? ['Complete this track to master the concepts.'];
+};
+
 const COLOR_STYLE_MAP: Record<string, string> = {
   'Red': 'text-red-500',
   'Blue': 'text-blue-700',
@@ -340,7 +348,7 @@ export const LearningPathView: React.FC<{
             <h3 className="text-xl font-black text-slate-800 mb-4 uppercase tracking-tight">{moduleNames[selectedMod] || "Track Details"}</h3>
             <div className="space-y-3 mb-8">
               <p className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Grammar Guide:</p>
-              {(GRAMMAR_GUIDES[selectedMod] || ["Complete this track to master the concepts."])?.map((point, i) => (
+              {getGrammarGuidePoints(GRAMMAR_GUIDES[selectedMod]).map((point, i) => (
                 <div key={i} className="flex gap-2 items-start">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-1.5 shrink-0" />
                   <p className="text-xs font-bold text-slate-600 leading-relaxed">{point}</p>

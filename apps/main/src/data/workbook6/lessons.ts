@@ -1,5 +1,5 @@
 import { Lesson } from "../../types";
-import { buildLesson, ChoiceSeed, makeChoices, makeSpeakings, makeWritings, SpeakingSeed, WritingSeed } from "./helpers";
+import { buildLesson, ChoiceSeed, type ExerciseInput, makeChoices, makeSpeakings, makeWritings, SpeakingSeed, WritingSeed } from "./helpers";
 import { buildBlankAudioText, buildFullSentenceFromPrompt, hasBlankPlaceholder } from "../../utils/fillInBlankAudio";
 
 const VOCABULARY_INSTRUCTION = "Listen and choose the correct word.";
@@ -649,7 +649,7 @@ const workbook6Configs: LessonConfig[] = [
       g("___ you going to take care of the rabbit?", "Are", ["Are", "Will", "Is", "Do"], "Are you going to take care of the rabbit?", c("Will you going to take care of the rabbit?", "Are you going to take care of the rabbit?", ["Are you going to take care of the rabbit?", "Will you going to take care of the rabbit?", "Do you going to take care of the rabbit?", "Is you going to take care of the rabbit?"])),
       g("I think this toy ___ help the puppy.", "will", ["will", "is going to", "are going to", "do"], "I think this toy will help the puppy."),
       g("We ___ buy shampoo this afternoon.", "are going to", ["are going to", "will to", "is going to", "did"], "We are going to buy shampoo this afternoon."),
-      g("He ___ not buy the scratching post today.", "will", ["will", "is", "does", "has"], "He will not buy the scratching post today.", ["will not", "won't"]),
+      g("He ___ not buy the scratching post today.", "will", ["will", "is", "does", "has"], "He will not buy the scratching post today.", undefined, ["will not", "won't"]),
       g("The family ___ going to adopt a dog this year.", "isn't", ["isn't", "aren't", "won't", "doesn't"], "The family isn't going to adopt a dog this year."),
       g("The cat ___ probably hide the treat.", "will", ["will", "is going to", "are", "do"], "The cat will probably hide the treat."),
     ],
@@ -869,7 +869,7 @@ const workbook6Configs: LessonConfig[] = [
       g("A spider ___ build a web very quickly.", "can", ["can", "must", "must not", "is"], "A spider can build a web very quickly.", c("A spider must build a web very quickly.", "A spider can build a web very quickly.", ["A spider can build a web very quickly.", "A spider must build a web very quickly.", "A spider can builds a web very quickly.", "A spider is build a web very quickly."])),
       g("We ___ leave food open near ants.", "must not", ["must not", "must", "can", "do"], "We must not leave food open near ants.", c("We can not leave food open near ants.", "We must not leave food open near ants.", ["We must not leave food open near ants.", "We can not leave food open near ants.", "We must not leaving food open near ants.", "We do not must leave food open near ants."])),
       g("Visitors ___ read the safety sign before entering.", "must", ["must", "can", "must not", "are"], "Visitors must read the safety sign before entering.", c("Visitors are read the safety sign before entering.", "Visitors must read the safety sign before entering.", ["Visitors must read the safety sign before entering.", "Visitors are read the safety sign before entering.", "Visitors can reads the safety sign before entering.", "Visitors must not readed the safety sign before entering."])),
-      g("This beetle ___ fly, but it crawls fast.", "can't", ["can't", "mustn't", "doesn't", "isn't"], "This beetle can't fly, but it crawls fast.", ["can't", "cannot"]),
+      g("This beetle ___ fly, but it crawls fast.", "can't", ["can't", "mustn't", "doesn't", "isn't"], "This beetle can't fly, but it crawls fast.", undefined, ["can't", "cannot"]),
       g("You ___ wear gloves when you clean the old hive box.", "must", ["must", "must not", "can", "were"], "You must wear gloves when you clean the old hive box."),
       g("Children ___ throw stones at insects.", "must not", ["must not", "must", "can", "did"], "Children must not throw stones at insects."),
       g("Some butterflies ___ travel long distances.", "can", ["can", "must", "must not", "are"], "Some butterflies can travel long distances."),

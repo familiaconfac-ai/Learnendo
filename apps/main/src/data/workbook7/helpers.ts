@@ -1,6 +1,6 @@
 import { Exercise, Lesson } from '../../types';
 
-type ExerciseInput = Omit<Exercise, 'id'>;
+export type ExerciseInput = Omit<Exercise, 'id'>;
 
 type ChoiceType = 'multiple-choice' | 'identification';
 

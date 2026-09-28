@@ -21,6 +21,7 @@ import {
   getBattleQuestionDuration,
   getSavedBattleTemplateLanguage,
   normalizeBattleDuration,
+  repairBattleTextEncoding,
   sanitizeBattleQuestion,
   sanitizeBattleQuestions,
 } from './battleUtils';

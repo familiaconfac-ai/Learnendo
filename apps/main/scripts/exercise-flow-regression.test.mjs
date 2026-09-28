@@ -63,7 +63,11 @@ test('Enter uses one contextual action with duplicate-dispatch protection', () =
 
 test('choice exercises validate on selection and render only the feedback Continue', () => {
   assert.match(exercisePracticeSource, /validateChoiceOnSelect/);
-  assert.match(uiSource, /handleCheck\(opt\)/, 'the selected option must call the existing validator directly');
+  assert.match(
+    uiSource,
+    /handleCheck\(opt, optionPlayback\)/,
+    'the selected option must call the existing validator directly and preserve its audio playback handle',
+  );
   assert.match(uiSource, /\(!validateChoiceOnSelect \|\| !isMultipleChoice \|\| showFooter\)/,
     'the feedback footer must not exist before a choice is validated');
   assert.match(uiSource, /\(!validateChoiceOnSelect \|\| !isMultipleChoice\).*allowContinueWithoutAnswer/s,

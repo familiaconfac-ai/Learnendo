@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:vercel": "vercel dev",
-    "build": "vite build",
+    "build": "npm run lint && npm run test:exercise-flow && vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "test:answer-normalization": "node --experimental-strip-types src/utils/answerNormalization.test.ts && node --experimental-strip-types src/utils/writingPrompt.test.ts && node --experimental-strip-types src/utils/exerciseAudio.test.ts",

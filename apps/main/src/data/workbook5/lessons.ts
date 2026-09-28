@@ -1,5 +1,5 @@
 import { Lesson } from "../../types";
-import { buildLesson, ChoiceSeed, makeChoices, makeSpeakings, makeWritings, SpeakingSeed, WritingSeed } from "./helpers";
+import { buildLesson, ChoiceSeed, type ExerciseInput, makeChoices, makeSpeakings, makeWritings, SpeakingSeed, WritingSeed } from "./helpers";
 import { buildBlankAudioText, buildFullSentenceFromPrompt, hasBlankPlaceholder } from "../../utils/fillInBlankAudio";
 
 const VOCABULARY_INSTRUCTION = "Listen and choose the correct word.";
